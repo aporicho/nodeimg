@@ -277,7 +277,7 @@
 | 分类 | filter |
 | 输入引脚 | image (Image, 必需) |
 | 输出引脚 | image (Image) |
-| 参数 | method: String + Enum(["sobel","canny","laplacian"]), 默认 sobel |
+| 参数 | method: String + Enum(["sobel","canny（未实现，回退 sobel）","laplacian"]), 默认 sobel |
 | 行为 | 提取图像边缘 |
 
 ### Emboss

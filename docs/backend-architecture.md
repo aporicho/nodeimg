@@ -142,6 +142,8 @@ python/
 ├── server.py           # FastAPI 路由 + 启动入口
 ├── registry.py         # NodeRegistry
 ├── executor.py         # GraphExecutor
+├── device.py           # GPU/CUDA 设备检测
+├── download_models.py  # 模型下载工具
 ├── nodes/              # 节点执行函数（每个一个文件）
 │   ├── __init__.py     # 注册所有节点
 │   ├── load_checkpoint.py
