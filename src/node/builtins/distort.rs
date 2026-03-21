@@ -1,3 +1,6 @@
+use crate::gpu::pipeline::{create_io_params_bind_group, dispatch_compute};
+use crate::gpu::texture::GpuTexture;
+use crate::gpu::GpuContext;
 use crate::node::category::CategoryId;
 use crate::node::constraint::Constraint;
 use crate::node::registry::{NodeDef, NodeRegistry, ParamDef, PinDef};
@@ -47,7 +50,7 @@ pub fn register(registry: &mut NodeRegistry) {
         ],
         has_preview: false,
         process: Some(Box::new(process)),
-        gpu_process: None,
+        gpu_process: Some(Box::new(gpu_process)),
     });
 }
 
@@ -68,5 +71,70 @@ fn process(
         let result = crate::processing::transform::distort(img, distort_type, strength);
         outputs.insert("image".into(), Value::Image(Arc::new(result)));
     }
+    outputs
+}
+
+fn gpu_process(
+    gpu: &GpuContext,
+    inputs: &HashMap<String, Value>,
+    params: &HashMap<String, Value>,
+) -> HashMap<String, Value> {
+    let mut outputs = HashMap::new();
+
+    let gpu_input = match inputs.get("image") {
+        Some(Value::GpuImage(tex)) => Arc::clone(tex),
+        Some(Value::Image(img)) => {
+            Arc::new(GpuTexture::from_dynamic_image(&gpu.device, &gpu.queue, img))
+        }
+        _ => return outputs,
+    };
+
+    let distort_type = match params.get("type") {
+        Some(Value::String(s)) => s.as_str(),
+        _ => "barrel",
+    };
+    let strength = match params.get("strength") {
+        Some(Value::Float(v)) => *v,
+        _ => 0.5,
+    };
+
+    let type_val: u32 = match distort_type {
+        "barrel" => 0,
+        "pincushion" => 1,
+        "swirl" => 2,
+        _ => 0,
+    };
+
+    let output_tex = GpuTexture::create_empty(&gpu.device, gpu_input.width, gpu_input.height);
+
+    #[repr(C)]
+    #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+    struct Params {
+        distort_type: u32,
+        strength: f32,
+        center_x: f32,
+        center_y: f32,
+    }
+
+    let p = Params {
+        distort_type: type_val,
+        strength,
+        center_x: (gpu_input.width as f32 - 1.0) / 2.0,
+        center_y: (gpu_input.height as f32 - 1.0) / 2.0,
+    };
+
+    let pipeline = gpu.pipeline("distort", include_str!("../../gpu/shaders/distort.wgsl"));
+    let bind_group =
+        create_io_params_bind_group(&gpu.device, &pipeline, &gpu_input, &output_tex, &p);
+    dispatch_compute(
+        &gpu.device,
+        &gpu.queue,
+        &pipeline,
+        &bind_group,
+        output_tex.width,
+        output_tex.height,
+    );
+
+    outputs.insert("image".into(), Value::GpuImage(Arc::new(output_tex)));
     outputs
 }
