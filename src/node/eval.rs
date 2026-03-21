@@ -212,8 +212,17 @@ impl EvalEngine {
                 }
             }
 
-            // CPU path
+            // CPU path — auto-convert GpuImage inputs to CPU Image via readback
             if let Some(ref process) = def.process {
+                if let Some(ctx) = gpu_ctx {
+                    for val in inputs.values_mut() {
+                        if let Value::GpuImage(tex) = val {
+                            *val = Value::Image(std::sync::Arc::new(
+                                tex.to_dynamic_image(&ctx.device, &ctx.queue),
+                            ));
+                        }
+                    }
+                }
                 eprintln!("[eval] node {} ({}) → CPU", node_id, def.title);
                 let outputs = process(&inputs, &instance.params);
                 cache.insert(node_id, outputs);
