@@ -1,6 +1,10 @@
+pub mod cache;
 pub mod category;
 pub mod constraint;
+pub mod eval;
+pub mod menu;
 pub mod registry;
+pub mod serial;
 pub mod types;
 pub mod widget;
 
