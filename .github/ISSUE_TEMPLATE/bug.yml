@@ -1,0 +1,35 @@
+name: "fix: Bug 修复"
+description: 报告一个 Bug
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "## Bug 报告"
+  - type: textarea
+    id: description
+    attributes:
+      label: 描述
+      description: 清晰描述 Bug 的表现
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 如何触发这个 Bug
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 正确的行为应该是什么
+    validations:
+      required: false
+  - type: textarea
+    id: files
+    attributes:
+      label: 相关文件
+      description: 涉及哪些文件或模块
+    validations:
+      required: false

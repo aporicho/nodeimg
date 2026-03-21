@@ -1,0 +1,28 @@
+name: "refactor: 重构"
+description: 代码重构或架构改进
+labels: ["refactor"]
+body:
+  - type: markdown
+    attributes:
+      value: "## 重构提案"
+  - type: textarea
+    id: description
+    attributes:
+      label: 描述
+      description: 描述当前问题和改进方向
+    validations:
+      required: true
+  - type: textarea
+    id: work
+    attributes:
+      label: 需要的工作
+      description: 列出具体的重构步骤
+    validations:
+      required: false
+  - type: textarea
+    id: files
+    attributes:
+      label: 相关文件
+      description: 涉及哪些文件或模块
+    validations:
+      required: false
