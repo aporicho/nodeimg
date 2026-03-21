@@ -1,0 +1,66 @@
+use crate::node::category::CategoryId;
+use crate::node::constraint::Constraint;
+use crate::node::registry::{NodeDef, NodeRegistry, ParamDef, PinDef};
+use crate::node::types::{DataTypeId, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+pub fn register(registry: &mut NodeRegistry) {
+    registry.register(NodeDef {
+        type_id: "rotate".into(),
+        title: "Rotate".into(),
+        category: CategoryId::new("transform"),
+        inputs: vec![PinDef {
+            name: "image".into(),
+            data_type: DataTypeId::new("image"),
+            required: true,
+        }],
+        outputs: vec![PinDef {
+            name: "image".into(),
+            data_type: DataTypeId::new("image"),
+            required: false,
+        }],
+        params: vec![
+            ParamDef {
+                name: "angle".into(),
+                data_type: DataTypeId::new("float"),
+                constraint: Constraint::Range {
+                    min: -360.0,
+                    max: 360.0,
+                },
+                default: Value::Float(0.0),
+                widget_override: None,
+            },
+            ParamDef {
+                name: "fill".into(),
+                data_type: DataTypeId::new("color"),
+                constraint: Constraint::None,
+                default: Value::Color([0.0, 0.0, 0.0, 0.0]),
+                widget_override: None,
+            },
+        ],
+        has_preview: false,
+        process: Some(Box::new(process)),
+        gpu_process: None,
+    });
+}
+
+fn process(
+    inputs: &HashMap<String, Value>,
+    params: &HashMap<String, Value>,
+) -> HashMap<String, Value> {
+    let mut outputs = HashMap::new();
+    if let Some(Value::Image(img)) = inputs.get("image") {
+        let angle = match params.get("angle") {
+            Some(Value::Float(v)) => *v,
+            _ => 0.0,
+        };
+        let fill = match params.get("fill") {
+            Some(Value::Color(c)) => *c,
+            _ => [0.0, 0.0, 0.0, 0.0],
+        };
+        let result = crate::processing::transform::rotate(img, angle, fill);
+        outputs.insert("image".into(), Value::Image(Arc::new(result)));
+    }
+    outputs
+}
