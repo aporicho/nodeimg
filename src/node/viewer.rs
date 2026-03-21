@@ -297,6 +297,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                     &self.type_registry,
                     &mut self.cache,
                     None, // no backend → skips AI nodes
+                    self.gpu_ctx.as_ref(),
                 ) {
                     self.backend_status = Some(e);
                 } else {

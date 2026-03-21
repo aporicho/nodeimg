@@ -1,8 +1,10 @@
+use crate::gpu::GpuContext;
 use crate::node::backend::BackendClient;
 use crate::node::cache::{Cache, NodeId};
 use crate::node::registry::{NodeInstance, NodeRegistry};
 use crate::node::types::{DataTypeRegistry, Value};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 pub struct EvalEngine;
 
@@ -135,6 +137,7 @@ impl EvalEngine {
         type_registry: &DataTypeRegistry,
         cache: &mut Cache,
         backend: Option<&BackendClient>,
+        gpu_ctx: Option<&Arc<GpuContext>>,
     ) -> Result<(), String> {
         let order = Self::topo_sort(target, connections)?;
 
@@ -161,49 +164,61 @@ impl EvalEngine {
                 None => continue,
             };
 
-            if let Some(ref process) = def.process {
-                // Local node: gather inputs with type conversion and execute
-                let mut inputs: HashMap<String, Value> = HashMap::new();
-                for conn in connections {
-                    if conn.to_node == node_id {
-                        if let Some(upstream_outputs) = cache.get(conn.from_node) {
-                            if let Some(val) = upstream_outputs.get(&conn.from_pin) {
-                                let expected_type = def
-                                    .inputs
-                                    .iter()
-                                    .find(|pin| pin.name == conn.to_pin)
-                                    .map(|pin| &pin.data_type);
+            // Gather inputs (shared by GPU and CPU paths)
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            for conn in connections {
+                if conn.to_node == node_id {
+                    if let Some(upstream_outputs) = cache.get(conn.from_node) {
+                        if let Some(val) = upstream_outputs.get(&conn.from_pin) {
+                            let expected_type = def
+                                .inputs
+                                .iter()
+                                .find(|pin| pin.name == conn.to_pin)
+                                .map(|pin| &pin.data_type);
 
-                                let upstream_type = nodes
-                                    .get(&conn.from_node)
-                                    .and_then(|inst| node_registry.get(&inst.type_id))
-                                    .and_then(|upstream_def| {
-                                        upstream_def
-                                            .outputs
-                                            .iter()
-                                            .find(|pin| pin.name == conn.from_pin)
-                                            .map(|pin| &pin.data_type)
-                                    });
+                            let upstream_type = nodes
+                                .get(&conn.from_node)
+                                .and_then(|inst| node_registry.get(&inst.type_id))
+                                .and_then(|upstream_def| {
+                                    upstream_def
+                                        .outputs
+                                        .iter()
+                                        .find(|pin| pin.name == conn.from_pin)
+                                        .map(|pin| &pin.data_type)
+                                });
 
-                                let converted = match (upstream_type, expected_type) {
-                                    (Some(from_type), Some(to_type)) if from_type != to_type => {
-                                        type_registry
-                                            .convert(val.clone(), from_type, to_type)
-                                            .unwrap_or_else(|| val.clone())
-                                    }
-                                    _ => val.clone(),
-                                };
+                            let converted = match (upstream_type, expected_type) {
+                                (Some(from_type), Some(to_type)) if from_type != to_type => {
+                                    type_registry
+                                        .convert(val.clone(), from_type, to_type)
+                                        .unwrap_or_else(|| val.clone())
+                                }
+                                _ => val.clone(),
+                            };
 
-                                inputs.insert(conn.to_pin.clone(), converted);
-                            }
+                            inputs.insert(conn.to_pin.clone(), converted);
                         }
                     }
                 }
+            }
 
+            // GPU path (highest priority)
+            if let Some(ref gpu_process) = def.gpu_process {
+                if let Some(ctx) = gpu_ctx {
+                    eprintln!("[eval] node {} ({}) → GPU", node_id, def.title);
+                    let outputs = gpu_process(ctx, &inputs, &instance.params);
+                    cache.insert(node_id, outputs);
+                    continue;
+                }
+            }
+
+            // CPU path
+            if let Some(ref process) = def.process {
+                eprintln!("[eval] node {} ({}) → CPU", node_id, def.title);
                 let outputs = process(&inputs, &instance.params);
                 cache.insert(node_id, outputs);
-            } else {
-                // AI node (process == None): send to backend
+            } else if def.gpu_process.is_none() {
+                // AI node (process == None && gpu_process == None): send to backend
                 if let Some(client) = backend {
                     Self::execute_ai_subgraph(
                         node_id,
@@ -411,6 +426,7 @@ mod tests {
                 }
                 out
             })),
+            gpu_process: None,
         });
 
         node_reg.register(NodeDef {
@@ -436,6 +452,7 @@ mod tests {
                 }
                 out
             })),
+            gpu_process: None,
         });
 
         let mut nodes = HashMap::new();
@@ -469,6 +486,7 @@ mod tests {
             &node_reg,
             &type_reg,
             &mut cache,
+            None,
             None,
         )
         .unwrap();
