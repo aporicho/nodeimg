@@ -8,6 +8,7 @@ pub mod menu;
 pub mod registry;
 pub mod serial;
 pub mod types;
+pub mod viewer;
 pub mod widget;
 
 pub use category::{CategoryId, CategoryInfo, CategoryRegistry};
