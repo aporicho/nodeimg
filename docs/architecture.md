@@ -83,6 +83,7 @@
 | Dropdown | `widget/dropdown.rs` | 下拉列表，选项渲染 |
 | FilePicker | `widget/file_picker.rs` | 文件对话框触发，路径显示 |
 | NumberInput | `widget/number_input.rs` | 数值输入框，手动输入 |
+| TextInput | `widget/text_input.rs` | 文本输入框 |
 | RadioGroup | `widget/radio_group.rs` | 单选按钮组 |
 
 ---
@@ -98,7 +99,7 @@
 
 **依赖：** 无。独立组件。
 
-**内置注册：** 数据型、生成型、颜色处理型、空间变换型、滤镜型、合成型、工具型。
+**内置注册：** 数据型、生成型、颜色处理型、空间变换型、滤镜型、合成型、工具型、AI 型。
 
 ---
 
@@ -321,6 +322,7 @@ src/
     │   ├── dropdown.rs
     │   ├── file_picker.rs
     │   ├── number_input.rs
+    │   ├── text_input.rs
     │   └── radio_group.rs
     └── builtins/        # 内置节点定义（每个节点一个文件，完整列表见 catalog.md）
         ├── mod.rs       # 统一注册所有内置节点
@@ -355,12 +357,19 @@ src/
         ├── mask.rs
         ├── channel_merge.rs
         ├── preview.rs
-        ├── histogram.rs
-        ├── load_checkpoint.rs
-        ├── clip_text_encode.rs
-        ├── empty_latent_image.rs
-        ├── ksampler.rs
-        └── vae_decode.rs
+        └── histogram.rs
+```
+
+> **注意：** AI 节点（Load Checkpoint、CLIP Text Encode 等）不存在于 Rust 前端。它们由 Python 后端通过 `GET /node_types` 动态注册到 NodeRegistry，前端自动生成 UI。详见 `protocol.md`。
+
+#### GPU 子系统
+
+```
+src/gpu/
+├── mod.rs               # GpuContext（wgpu device + queue + pipeline cache）
+├── texture.rs           # GpuTexture 封装
+├── pipeline.rs          # compute pipeline 创建、dispatch、bind group 辅助函数
+└── shaders/             # WGSL compute shaders（30 个，每个 GPU 节点对应一个或多个）
 ```
 
 ### 构建顺序

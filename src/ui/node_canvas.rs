@@ -51,7 +51,7 @@ impl NodeCanvas {
                     });
                 }
                 SnarlWidget::new()
-                    .id(Id::new("node-image-studio"))
+                    .id(Id::new("nodeimg"))
                     .style(self.style)
                     .show(snarl, viewer, ui);
             });

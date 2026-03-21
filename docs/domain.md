@@ -69,8 +69,8 @@ AI 节点（如 SDXL pipeline）的中间数据类型（Model、Clip、Vae、Con
 
 | 源 → 目标 | 转换方式 |
 |-----------|---------|
-| Mask → Image | 灰度复制到 RGB，Alpha 设为 255 |
-| Image → Mask | 取亮度通道 |
+| Mask → Image | 灰度复制到 RGB，Alpha 设为 255（**未实现，当前为直通占位**） |
+| Image → Mask | 取亮度通道（**未实现，当前为直通占位**） |
 | Int → Float | 直接转换 |
 | Float → Int | 四舍五入 |
 | Boolean → Int | true=1, false=0 |
@@ -96,7 +96,7 @@ AI 节点（如 SDXL pipeline）的中间数据类型（Model、Clip、Vae、Con
 | 连接数 | 最多 1 条 | 不限 | 最多 1 条 |
 | 位置 | 节点左侧 | 节点右侧 | 节点左侧（参数控件旁） |
 
-### 参数引脚的特殊性
+### 参数引脚的特殊性（v2，未实现）
 
 - 每个参数自动生成一个同类型的输入引脚
 - 未连线时：显示手动控件（滑块、下拉框等），用户直接操作
