@@ -251,8 +251,8 @@ impl BackendClient {
             Value::String(s) => serde_json::json!(s),
             Value::Boolean(b) => serde_json::json!(*b),
             Value::Color(c) => serde_json::json!(c),
-            // Image/Mask cannot be serialized to params
-            Value::Image(_) | Value::Mask(_) => serde_json::Value::Null,
+            // Image/Mask/GpuImage cannot be serialized to params
+            Value::Image(_) | Value::Mask(_) | Value::GpuImage(_) => serde_json::Value::Null,
         }
     }
 
