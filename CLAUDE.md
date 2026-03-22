@@ -6,21 +6,24 @@
 
 ```bash
 cargo build --release
-cargo run --release
-cargo test
+cargo run -p nodeimg-app --release
+cargo test --workspace
 ```
 
-## 项目结构
+## 项目结构（Workspace）
 
-- `src/app.rs` — 应用入口，管理生命周期、后端启动、项目 I/O
-- `src/gpu/` — GPU 加速（GpuContext、GpuTexture、pipeline 辅助、WGSL shaders）
-- `src/node/` — 节点系统核心（registry、types、eval、cache、viewer、backend）
-- `src/node/builtins/` — 32 个内置节点，每个文件一个 `register()` 函数
-- `src/node/widget/` — 参数控件（slider、checkbox、dropdown 等）
-- `src/processing/` — CPU 图像处理算法（被 builtins 的 process 函数调用）
-- `src/theme/` — 亮色/暗色主题
-- `src/ui/` — 节点画布、预览面板
-- `python/` — AI 后端（FastAPI + SDXL）
+```
+crates/
+├── nodeimg-types/       — 基础数据类型（Value、DataType、Constraint、GpuTexture…）
+├── nodeimg-gpu/         — GPU 计算（GpuContext、pipeline、WGSL shaders）
+├── nodeimg-processing/  — CPU 图像算法（color、filter、transform、composite、generate）
+├── nodeimg-engine/      — 执��引擎（NodeRegistry、EvalEngine、Cache、BackendClient、32 个内置节点）
+├── nodeimg-app/         — 编辑器 UI（eframe/egui、节点画布、预览面板、参数控件、主题）
+└── nodeimg-server/      — HTTP 服务（空壳，待实现）
+python/                  — AI 后端（FastAPI + SDXL）
+```
+
+���赖方向：types ← gpu/processing ← engine ← app/server
 
 ## 设计文档
 
@@ -42,7 +45,7 @@ cargo test
 
 ## 开发约定
 
-- 新增节点：在 `builtins/` 创建文件，实现 `register()` 注册 NodeDef，在 `builtins/mod.rs` 中调用
-- GPU 加速：在 `gpu/shaders/` 添加 WGSL shader，在节点的 `gpu_process` 中通过 `include_str!` 引用
-- CPU 算法：放在 `processing/` 对应模块中，由 builtin 的 `process` 函数调用
+- 新增节点：在 `crates/nodeimg-engine/src/builtins/` 创建文件，实现 `register()` 注册 NodeDef，在 `builtins/mod.rs` 中调用
+- GPU 加速：在 `crates/nodeimg-gpu/src/shaders/` 添加 WGSL shader，在 `shaders.rs` 中导出常量，在节点中通过 `nodeimg_gpu::shaders::XXX` 引用
+- CPU 算法：放在 `crates/nodeimg-processing/src/` 对应模块中，由 builtin 的 `process` 函数调用
 - 所有 compute shader 使用 16x16 workgroup size

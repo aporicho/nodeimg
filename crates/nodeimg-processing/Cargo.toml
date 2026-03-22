@@ -1,0 +1,8 @@
+[package]
+name = "nodeimg-processing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nodeimg-types = { path = "../nodeimg-types" }
+image = "0.25"

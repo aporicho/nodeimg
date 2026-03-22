@@ -1,0 +1,10 @@
+[package]
+name = "nodeimg-gpu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nodeimg-types = { path = "../nodeimg-types" }
+wgpu = "27"
+bytemuck = { version = "1", features = ["derive"] }
+image = "0.25"

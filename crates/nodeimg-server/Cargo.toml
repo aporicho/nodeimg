@@ -1,0 +1,7 @@
+[package]
+name = "nodeimg-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nodeimg-engine = { path = "../nodeimg-engine" }
