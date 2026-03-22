@@ -87,15 +87,23 @@ fn bicubic(src_x: f32, src_y: f32) -> vec4<f32> {
     let fy = src_y - floor(src_y);
 
     var color = vec4<f32>(0.0);
+    var weight_sum = 0.0;
 
     // 4x4 kernel: offsets -1, 0, 1, 2 relative to the integer position
     for (var j = -1; j <= 2; j = j + 1) {
         let wy = cubic_weight(f32(j) - fy);
         for (var i = -1; i <= 2; i = i + 1) {
             let wx = cubic_weight(f32(i) - fx);
+            let w = wx * wy;
             let sample = load_clamped(ix + i, iy + j);
-            color = color + sample * wx * wy;
+            color = color + sample * w;
+            weight_sum = weight_sum + w;
         }
+    }
+
+    // Normalize to ensure weights sum to 1
+    if (weight_sum > 0.0) {
+        color = color / weight_sum;
     }
 
     return clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));

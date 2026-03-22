@@ -34,6 +34,14 @@ pub struct NodeDef {
     pub gpu_process: Option<GpuProcessFn>,
 }
 
+impl NodeDef {
+    /// Returns true if this node has no local process function and no GPU process function,
+    /// meaning it must be executed by the AI backend.
+    pub fn is_ai_node(&self) -> bool {
+        self.process.is_none() && self.gpu_process.is_none()
+    }
+}
+
 /// Runtime node instance stored in the graph.
 #[derive(Clone, Debug)]
 pub struct NodeInstance {

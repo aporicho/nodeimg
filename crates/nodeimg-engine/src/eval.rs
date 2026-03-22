@@ -110,7 +110,7 @@ impl EvalEngine {
                 Some(d) => d,
                 None => continue,
             };
-            if def.process.is_none() && def.gpu_process.is_none() {
+            if def.is_ai_node() {
                 last_ai = Some(node_id);
             }
         }
@@ -511,5 +511,64 @@ mod tests {
             Some(Value::Float(v)) => assert_eq!(*v, 6.0),
             other => panic!("expected Float(6.0), got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_evaluate_gpu_only_node_without_gpu_context_returns_error() {
+        use nodeimg_types::category::CategoryId;
+        use nodeimg_types::data_type::DataTypeId;
+        use crate::registry::{NodeDef, PinDef};
+
+        let mut node_reg = NodeRegistry::new();
+        let type_reg = DataTypeRegistry::with_builtins();
+
+        // GPU-only 节点：只有 gpu_process，没有 process（CPU 回退）
+        node_reg.register(NodeDef {
+            type_id: "gpu_only".into(),
+            title: "GPU Only Node".into(),
+            category: CategoryId::new("tool"),
+            inputs: vec![],
+            outputs: vec![PinDef {
+                name: "out".into(),
+                data_type: DataTypeId::new("float"),
+                required: false,
+            }],
+            params: vec![],
+            has_preview: false,
+            process: None,
+            gpu_process: Some(Box::new(|_ctx, _inputs, _params| HashMap::new())),
+        });
+
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            0,
+            NodeInstance {
+                type_id: "gpu_only".into(),
+                params: HashMap::new(),
+            },
+        );
+
+        let connections = vec![];
+        let mut cache = Cache::new();
+
+        // gpu_ctx: None 时，GPU-only 节点应返回包含 "requires GPU" 的错误
+        let result = EvalEngine::evaluate(
+            0,
+            &nodes,
+            &connections,
+            &node_reg,
+            &type_reg,
+            &mut cache,
+            None,
+            None, // 没有 GPU 上下文
+        );
+
+        assert!(result.is_err(), "期望返回错误，但返回了 Ok");
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("requires GPU"),
+            "错误信息应包含 'requires GPU'，实际为：{}",
+            err_msg
+        );
     }
 }
