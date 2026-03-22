@@ -69,6 +69,7 @@ crates/nodeimg-types/src/
 ├── constraint.rs       # Constraint 枚举（slider 范围、dropdown 选项等）
 ├── category.rs         # CategoryId
 ├── gpu_texture.rs      # GpuTexture 结构体（从 gpu/texture.rs 搬来）
+├── widget_id.rs        # WidgetId（纯 newtype，被 ParamDef 引用）
 └── serial_data.rs      # 序列化用的纯数据结构（SerializedGraph, SerializedNode, SerializedValue）
 ```
 
@@ -88,6 +89,7 @@ crates/nodeimg-types/src/
 - nodeimg-types 依赖 wgpu 是合理的——GPU 纹理是这个项目的基础数据类型
 - ProcessFn 和 GpuProcessFn 放在 nodeimg-engine，因为 GpuProcessFn 引用 GpuContext（在 nodeimg-gpu 中），放 types 会造成循环依赖
 - serial.rs 中操作 Snarl/egui 的序列化函数留在 nodeimg-app，types 只存纯数据结构
+- WidgetId 是纯 newtype（`pub struct WidgetId(pub String)`），被 ParamDef 引用，所以放 types 层。WidgetRegistry 和渲染逻辑留在 engine/app
 
 ---
 
@@ -158,7 +160,7 @@ crates/nodeimg-engine/src/
 ├── backend.rs          # BackendClient（AI 后端 HTTP 通信）
 ├── ai_task.rs          # AiExecutor（AI 任务异步执行）
 ├── menu.rs             # 节点菜单（搜索、分类浏览）
-├── widget_def.rs       # WidgetId, WidgetRegistry 定义（不含 UI 渲染）
+├── widget_def.rs       # WidgetRegistry 定义（WidgetId 在 types 层，不含 UI 渲染）
 └── builtins/           # 32 个内置节点定义
     ├── mod.rs           # register_all()
     ├── blur.rs
@@ -197,6 +199,7 @@ crates/nodeimg-app/src/
 ├── main.rs             # 程序入口（eframe 启动）
 ├── app.rs              # NodeImgApp（eframe::App 实现）
 ├── viewer.rs           # NodeViewer（SnarlViewer 实现，连接 UI 和引擎）
+├── serial.rs           # snapshot()/restore() 序列化操作（依赖 Snarl/egui）
 ├── ui/
 │   ├── mod.rs
 │   ├── node_canvas.rs  # 节点画布
@@ -299,7 +302,8 @@ executor.spawn(Box::new(move || ctx.request_repaint()), ...);
 **现状**：WidgetId、Widget trait（含 egui 渲染）、具体控件实现，全在 src/node/widget/。
 
 **改为**：
-- WidgetId + WidgetRegistry 定义 → nodeimg-engine/widget_def.rs
+- WidgetId → nodeimg-types/widget_id.rs（纯 newtype，被 ParamDef 引用）
+- WidgetRegistry 定义 → nodeimg-engine/widget_def.rs
 - Widget trait + 具体渲染实现 → nodeimg-app/widget/
 
 ### 5. types.rs：拆分为多文件
