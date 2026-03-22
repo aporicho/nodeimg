@@ -1,17 +1,14 @@
-[package]
-name = "nodeimg"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "crates/nodeimg-app",
+]
+resolver = "2"
 
-[dependencies]
-eframe = { version = "0.33", features = ["wgpu"] }
-egui_extras = { version = "0.33", features = ["image", "file"] }
-egui-snarl = { version = "0.9", features = ["serde"] }
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 image = "0.25"
 wgpu = "27"
 bytemuck = { version = "1", features = ["derive"] }
-rfd = "0.17"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 base64 = "0.22"

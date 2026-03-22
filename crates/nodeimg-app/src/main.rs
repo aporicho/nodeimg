@@ -1,5 +1,5 @@
 use eframe::egui;
-use nodeimg::app;
+use nodeimg_app::app;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
