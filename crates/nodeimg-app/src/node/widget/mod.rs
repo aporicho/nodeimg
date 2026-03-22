@@ -12,14 +12,7 @@ use crate::node::types::{DataTypeId, Value};
 use eframe::egui;
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct WidgetId(pub String);
-
-impl WidgetId {
-    pub fn new(id: &str) -> Self {
-        Self(id.to_string())
-    }
-}
+pub use nodeimg_types::widget_id::WidgetId;
 
 /// Key for matching data type + constraint to widget(s).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

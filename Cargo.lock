@@ -2480,8 +2480,20 @@ dependencies = [
  "egui-snarl",
  "egui_extras",
  "image",
+ "nodeimg-types",
  "reqwest",
  "rfd",
+ "serde",
+ "serde_json",
+ "wgpu",
+]
+
+[[package]]
+name = "nodeimg-types"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "image",
  "serde",
  "serde_json",
  "wgpu",

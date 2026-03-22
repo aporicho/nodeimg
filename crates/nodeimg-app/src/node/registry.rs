@@ -1,27 +1,9 @@
 use crate::gpu::GpuContext;
 use crate::node::category::CategoryId;
-use crate::node::constraint::Constraint;
-use crate::node::types::{DataTypeId, Value};
-use crate::node::widget::WidgetId;
+use crate::node::types::Value;
 use std::collections::HashMap;
 
-/// Describes an input or output pin.
-#[derive(Clone, Debug)]
-pub struct PinDef {
-    pub name: String,
-    pub data_type: DataTypeId,
-    pub required: bool,
-}
-
-/// Describes a node parameter.
-#[derive(Clone, Debug)]
-pub struct ParamDef {
-    pub name: String,
-    pub data_type: DataTypeId,
-    pub constraint: Constraint,
-    pub default: Value,
-    pub widget_override: Option<WidgetId>,
-}
+pub use nodeimg_types::node_def::{ParamDef, PinDef};
 
 /// Processing function signature: inputs + params → outputs.
 pub type ProcessFn = Box<
@@ -110,6 +92,8 @@ impl NodeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::constraint::Constraint;
+    use crate::node::types::DataTypeId;
 
     #[test]
     fn test_node_instance_creation() {

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/nodeimg-app",
+    "crates/nodeimg-types",
 ]
 resolver = "2"
 
