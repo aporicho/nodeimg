@@ -16,7 +16,7 @@ cargo test --workspace
 crates/
 ├── nodeimg-types/       — 基础数据类型（Value、DataType、Constraint、GpuTexture…）
 ├── nodeimg-gpu/         — GPU 计算（GpuContext、pipeline、WGSL shaders）
-├── nodeimg-processing/  — CPU 图像算法（color、filter、transform、composite、generate）
+├── nodeimg-processing/  — CPU 辅助算法（histogram 计算/渲染、LUT 文件解析）
 ├── nodeimg-engine/      — 执��引擎（NodeRegistry、EvalEngine、Cache、BackendClient、32 个内置节点）
 ├── nodeimg-app/         — 编辑器 UI（eframe/egui、节点画布、预览面板、参数控件、主题）
 └── nodeimg-server/      — HTTP 服务（空壳，待实现）
@@ -48,6 +48,8 @@ python/                  — AI 后端（FastAPI + SDXL）
 ## 开发约定
 
 - 新增节点：在 `crates/nodeimg-engine/src/builtins/` 创建文件，实现 `register()` 注册 NodeDef，在 `builtins/mod.rs` 中调用
-- GPU 加速：在 `crates/nodeimg-gpu/src/shaders/` 添加 WGSL shader，在 `shaders.rs` 中导出常量，在节点中通过 `nodeimg_gpu::shaders::XXX` 引用
-- CPU 算法：放在 `crates/nodeimg-processing/src/` 对应模块中，由 builtin 的 `process` 函数调用
+- GPU 优先：像素级运算只写 WGSL shader（`process: None, gpu_process: Some(...)`），不写 CPU 重复实现
+- GPU shader：在 `crates/nodeimg-gpu/src/shaders/` 添加 WGSL shader，在 `shaders.rs` 中导出常量，在节点中通过 `nodeimg_gpu::shaders::XXX` 引用
+- CPU 仅用于 GPU 做不到的事：文件 I/O（load_image、save_image）、数据分析（histogram）、文件解析（LUT）
+- AI 节点判据：`process.is_none() && gpu_process.is_none()`（通过 `NodeDef::is_ai_node()` 方法）
 - 所有 compute shader 使用 16x16 workgroup size
