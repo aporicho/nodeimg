@@ -43,6 +43,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
+    // Reference input to prevent binding elimination by WGSL compiler
+    _ = textureLoad(input, vec2<i32>(0, 0));
+
     let uv = vec2<f32>(f32(id.x), f32(id.y));
     let frequency = params.scale * 0.02;
     let p = uv * frequency + vec2<f32>(params.seed * 17.0, params.seed * 31.0);

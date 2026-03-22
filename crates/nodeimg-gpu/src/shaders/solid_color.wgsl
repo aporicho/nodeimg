@@ -13,5 +13,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
+    // Reference input to prevent binding elimination by WGSL compiler
+    _ = textureLoad(input, vec2<i32>(0, 0));
+
     textureStore(output, vec2<i32>(id.xy), params.color);
 }
