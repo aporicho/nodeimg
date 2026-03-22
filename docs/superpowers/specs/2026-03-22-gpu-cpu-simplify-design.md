@@ -1,6 +1,6 @@
 # GPU/CPU 双实现精简设计
 
-关联 Issue：#59（refactor: GPU/CPU 双实现精简）
+关联 Issue：#59（refactor: GPU/CPU 双实现精简）、#6（feat: GPU Resize 支持 Bicubic/Lanczos3）
 
 ## 目标
 
@@ -74,7 +74,7 @@ if def.process.is_none() && (def.gpu_process.is_none() || gpu_ctx.is_none()) {
 
 resize.wgsl 目前只支持 bilinear，缺 bicubic 和 lanczos3。需要补全，否则 resize 节点在删除 CPU 后会丢功能。
 
-这可以和 #6（GPU Resize 支持 Bicubic/Lanczos3）合并完成。如果 #6 不在本次范围内，resize 节点暂时保留 CPU fallback。
+本次一并完成 #6（GPU Resize 支持 Bicubic/Lanczos3），在 resize.wgsl 中实现 bicubic（4x4 采样核）和 lanczos3（6x6 采样核）插值，确保 resize 节点可以完全去掉 CPU fallback。
 
 ## 影响范围
 
