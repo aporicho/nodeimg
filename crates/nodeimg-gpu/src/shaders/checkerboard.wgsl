@@ -18,6 +18,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
 
+    // Reference input to prevent binding elimination by WGSL compiler
+    _ = textureLoad(input, vec2<i32>(0, 0));
+
     let cell_size = u32(max(params.size, 1.0));
     let cx = id.x / cell_size;
     let cy = id.y / cell_size;

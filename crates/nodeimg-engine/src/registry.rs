@@ -183,4 +183,42 @@ mod tests {
             _ => panic!("expected float param"),
         }
     }
+
+    #[test]
+    fn test_list_by_category() {
+        let mut reg = NodeRegistry::new();
+        reg.register(NodeDef {
+            type_id: "a".into(),
+            title: "A".into(),
+            category: CategoryId::new("color"),
+            inputs: vec![],
+            outputs: vec![],
+            params: vec![],
+            has_preview: false,
+            process: Some(Box::new(|_, _| HashMap::new())),
+            gpu_process: None,
+        });
+        reg.register(NodeDef {
+            type_id: "b".into(),
+            title: "B".into(),
+            category: CategoryId::new("filter"),
+            inputs: vec![],
+            outputs: vec![],
+            params: vec![],
+            has_preview: false,
+            process: Some(Box::new(|_, _| HashMap::new())),
+            gpu_process: None,
+        });
+
+        let color_cat = CategoryId::new("color");
+        let color_nodes = reg.list(Some(&color_cat));
+        assert_eq!(color_nodes.len(), 1);
+        assert_eq!(color_nodes[0].type_id, "a");
+    }
+
+    #[test]
+    fn test_instantiate_nonexistent_returns_none() {
+        let reg = NodeRegistry::new();
+        assert!(reg.instantiate("nonexistent").is_none());
+    }
 }

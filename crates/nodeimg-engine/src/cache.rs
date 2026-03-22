@@ -100,4 +100,30 @@ mod tests {
         assert!(cache.get(1).is_none()); // invalidated
         assert!(cache.get(2).is_some()); // independent branch unaffected
     }
+
+    #[test]
+    fn test_invalidate_all() {
+        let mut cache = Cache::new();
+        cache.insert(0, HashMap::new());
+        cache.insert(1, HashMap::new());
+        cache.insert(2, HashMap::new());
+
+        cache.invalidate_all();
+        assert!(cache.get(0).is_none());
+        assert!(cache.get(1).is_none());
+        assert!(cache.get(2).is_none());
+    }
+
+    #[test]
+    fn test_cache_overwrite() {
+        let mut cache = Cache::new();
+        cache.insert(0, HashMap::from([("a".into(), Value::Float(1.0))]));
+        cache.insert(0, HashMap::from([("a".into(), Value::Float(2.0))]));
+
+        let result = cache.get(0).unwrap();
+        match result.get("a") {
+            Some(Value::Float(v)) => assert_eq!(*v, 2.0),
+            other => panic!("expected Float(2.0), got {:?}", other),
+        }
+    }
 }

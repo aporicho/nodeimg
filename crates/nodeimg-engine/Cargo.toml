@@ -14,3 +14,7 @@ base64 = "0.22"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 wgpu = "27"
 bytemuck = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+nodeimg-gpu = { path = "../nodeimg-gpu", features = ["test-helpers"] }
+nodeimg-processing = { path = "../nodeimg-processing", features = ["test-helpers"] }
