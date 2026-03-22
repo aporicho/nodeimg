@@ -44,7 +44,7 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -163,34 +163,3 @@ fn gpu_process(
     outputs
 }
 
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let path = match params.get("path") {
-            Some(Value::String(s)) => s.clone(),
-            _ => String::new(),
-        };
-        let intensity = match params.get("intensity") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-
-        if !path.is_empty() {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                match nodeimg_processing::color::parse_cube_lut(&content) {
-                    Ok(lut) => {
-                        let result = nodeimg_processing::color::lut_apply(img, &lut, intensity);
-                        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-                    }
-                    Err(e) => {
-                        eprintln!("LUT parse error: {e}");
-                    }
-                }
-            }
-        }
-    }
-    outputs
-}

@@ -51,7 +51,7 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -116,26 +116,3 @@ fn gpu_process(
     outputs
 }
 
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let amount = match params.get("amount") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.3,
-        };
-        let size = match params.get("size") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-        let seed = match params.get("seed") {
-            Some(Value::Int(v)) => *v,
-            _ => 0,
-        };
-        let result = nodeimg_processing::filter::film_grain(img, amount, size, seed);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
-}

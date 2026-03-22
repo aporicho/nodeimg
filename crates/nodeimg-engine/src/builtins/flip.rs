@@ -38,25 +38,9 @@ pub fn register(registry: &mut NodeRegistry) {
             widget_override: None,
         }],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let direction = match params.get("direction") {
-            Some(Value::String(s)) => s.as_str(),
-            _ => "horizontal",
-        };
-        let result = nodeimg_processing::transform::flip(img, direction);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(

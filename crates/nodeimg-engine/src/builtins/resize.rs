@@ -61,33 +61,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let w = match params.get("width") {
-            Some(Value::Int(v)) => *v as u32,
-            _ => 512,
-        };
-        let h = match params.get("height") {
-            Some(Value::Int(v)) => *v as u32,
-            _ => 512,
-        };
-        let method = match params.get("method") {
-            Some(Value::String(s)) => s.as_str(),
-            _ => "bilinear",
-        };
-        let result = nodeimg_processing::transform::resize(img, w, h, method);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(
@@ -114,15 +90,16 @@ fn gpu_process(
         _ => 512,
     };
 
-    // GPU only implements bilinear; bicubic/lanczos3 fall back to CPU
-    let method = match params.get("method") {
-        Some(Value::String(s)) => s.clone(),
-        _ => "bilinear".into(),
+    let method_id: u32 = match params.get("method") {
+        Some(Value::String(s)) => match s.as_str() {
+            "nearest" => 0,
+            "bilinear" => 1,
+            "bicubic" => 2,
+            "lanczos3" => 3,
+            _ => 1,
+        },
+        _ => 1,
     };
-    if method == "bicubic" || method == "lanczos3" {
-        // Fall back to CPU path by returning empty (engine will use cpu process)
-        return outputs;
-    }
 
     // Output texture has target dimensions
     let output_tex = GpuTexture::create_empty(&gpu.device, dst_w, dst_h);
@@ -134,6 +111,10 @@ fn gpu_process(
         src_height: f32,
         dst_width: f32,
         dst_height: f32,
+        method: u32,
+        _pad0: u32,
+        _pad1: u32,
+        _pad2: u32,
     }
 
     let p = Params {
@@ -141,6 +122,10 @@ fn gpu_process(
         src_height: gpu_input.height as f32,
         dst_width: dst_w as f32,
         dst_height: dst_h as f32,
+        method: method_id,
+        _pad0: 0,
+        _pad1: 0,
+        _pad2: 0,
     };
 
     let pipeline = gpu.pipeline("resize", nodeimg_gpu::shaders::RESIZE);

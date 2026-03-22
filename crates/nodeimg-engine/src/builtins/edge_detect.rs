@@ -38,29 +38,9 @@ pub fn register(registry: &mut NodeRegistry) {
             widget_override: None,
         }],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let method = match params.get("method") {
-            Some(Value::String(s)) => s.as_str(),
-            _ => "sobel",
-        };
-        let result = match method {
-            "laplacian" => nodeimg_processing::filter::edge_detect_laplacian(img),
-            // TODO: implement full Canny edge detection; falling back to Sobel for now
-            _ => nodeimg_processing::filter::edge_detect_sobel(img),
-        };
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(

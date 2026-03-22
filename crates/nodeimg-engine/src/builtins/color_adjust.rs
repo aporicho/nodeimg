@@ -57,33 +57,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let b = match params.get("brightness") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.0,
-        };
-        let s = match params.get("saturation") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.0,
-        };
-        let c = match params.get("contrast") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.0,
-        };
-        let result = nodeimg_processing::color::color_adjust(img, b, c, s);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(

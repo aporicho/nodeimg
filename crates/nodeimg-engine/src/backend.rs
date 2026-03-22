@@ -124,7 +124,7 @@ impl BackendClient {
         // Check that the output node is an AI node
         let output_instance = nodes.get(&output_node_id)?;
         let output_def = node_registry.get(&output_instance.type_id)?;
-        if output_def.process.is_some() {
+        if !output_def.is_ai_node() {
             return None; // Not an AI node
         }
 
@@ -143,7 +143,7 @@ impl BackendClient {
                     // Only include upstream nodes that are also AI nodes
                     if let Some(inst) = nodes.get(&conn.from_node) {
                         if let Some(def) = node_registry.get(&inst.type_id) {
-                            if def.process.is_none() {
+                            if def.is_ai_node() {
                                 queue.push_back(conn.from_node);
                             }
                         }
@@ -272,7 +272,7 @@ impl BackendClient {
         // Check that the output node itself is AI
         if let Some(inst) = nodes.get(&output_node_id) {
             if let Some(def) = node_registry.get(&inst.type_id) {
-                if def.process.is_none() {
+                if def.is_ai_node() {
                     queue.push_back(output_node_id);
                 }
             }
@@ -286,7 +286,7 @@ impl BackendClient {
                 if conn.to_node == node_id && !ai_nodes.contains(&conn.from_node) {
                     if let Some(inst) = nodes.get(&conn.from_node) {
                         if let Some(def) = node_registry.get(&inst.type_id) {
-                            if def.process.is_none() {
+                            if def.is_ai_node() {
                                 queue.push_back(conn.from_node);
                             }
                         }

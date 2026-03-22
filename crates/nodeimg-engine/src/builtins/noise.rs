@@ -63,37 +63,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    _inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let seed = match params.get("seed") {
-        Some(Value::Int(v)) => *v,
-        _ => 0,
-    };
-    let scale = match params.get("scale") {
-        Some(Value::Float(v)) => *v,
-        _ => 1.0,
-    };
-    let w = match params.get("width") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-    let h = match params.get("height") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-
-    let img = nodeimg_processing::generate::perlin_noise(w as u32, h as u32, seed, scale);
-    outputs.insert("image".into(), Value::Image(Arc::new(img)));
-    outputs
 }
 
 fn gpu_process(

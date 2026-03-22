@@ -65,42 +65,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let in_black = match params.get("in_black") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.0,
-        };
-        let in_white = match params.get("in_white") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-        let gamma = match params.get("gamma") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-        let out_black = match params.get("out_black") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.0,
-        };
-        let out_white = match params.get("out_white") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-        let result =
-            nodeimg_processing::color::levels(img, in_black, in_white, gamma, out_black, out_white);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(

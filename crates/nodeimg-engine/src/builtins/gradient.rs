@@ -70,47 +70,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    _inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let color_start = match params.get("color_start") {
-        Some(Value::Color(c)) => *c,
-        _ => [0.0, 0.0, 0.0, 1.0],
-    };
-    let color_end = match params.get("color_end") {
-        Some(Value::Color(c)) => *c,
-        _ => [1.0, 1.0, 1.0, 1.0],
-    };
-    let direction = match params.get("direction") {
-        Some(Value::String(s)) => s.clone(),
-        _ => "horizontal".into(),
-    };
-    let w = match params.get("width") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-    let h = match params.get("height") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-
-    let img = nodeimg_processing::generate::gradient(
-        w as u32,
-        h as u32,
-        color_start,
-        color_end,
-        &direction,
-    );
-    outputs.insert("image".into(), Value::Image(Arc::new(img)));
-    outputs
 }
 
 fn gpu_process(

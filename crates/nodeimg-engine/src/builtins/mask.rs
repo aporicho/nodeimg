@@ -40,37 +40,9 @@ pub fn register(registry: &mut NodeRegistry) {
             widget_override: None,
         }],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let img = match inputs.get("image") {
-        Some(Value::Image(i)) => i,
-        _ => return outputs,
-    };
-
-    // Mask input can arrive as Value::Mask or Value::Image (after type conversion)
-    let mask_img = match inputs.get("mask") {
-        Some(Value::Image(m)) => m,
-        Some(Value::Mask(m)) => m,
-        _ => return outputs,
-    };
-
-    let invert = match params.get("invert") {
-        Some(Value::Boolean(b)) => *b,
-        _ => false,
-    };
-
-    let result = nodeimg_processing::composite::mask_apply(img, mask_img, invert);
-    outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    outputs
 }
 
 fn gpu_process(

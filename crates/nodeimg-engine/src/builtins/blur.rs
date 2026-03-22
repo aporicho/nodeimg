@@ -49,7 +49,7 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -139,26 +139,3 @@ fn gpu_process(
     outputs
 }
 
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let radius = match params.get("radius") {
-            Some(Value::Float(v)) => *v,
-            _ => 5.0,
-        };
-        let method = match params.get("method") {
-            Some(Value::String(s)) => s.as_str(),
-            _ => "gaussian",
-        };
-        let result = if method == "box" {
-            nodeimg_processing::filter::box_blur(img, radius)
-        } else {
-            nodeimg_processing::filter::gaussian_blur(img, radius)
-        };
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
-}

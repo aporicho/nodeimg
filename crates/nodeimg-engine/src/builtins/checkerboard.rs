@@ -67,47 +67,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    _inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let color_a = match params.get("color_a") {
-        Some(Value::Color(c)) => *c,
-        _ => [1.0, 1.0, 1.0, 1.0],
-    };
-    let color_b = match params.get("color_b") {
-        Some(Value::Color(c)) => *c,
-        _ => [0.0, 0.0, 0.0, 1.0],
-    };
-    let size = match params.get("size") {
-        Some(Value::Int(v)) => *v,
-        _ => 32,
-    };
-    let w = match params.get("width") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-    let h = match params.get("height") {
-        Some(Value::Int(v)) => *v,
-        _ => 512,
-    };
-
-    let img = nodeimg_processing::generate::checkerboard(
-        w as u32,
-        h as u32,
-        color_a,
-        color_b,
-        size as u32,
-    );
-    outputs.insert("image".into(), Value::Image(Arc::new(img)));
-    outputs
 }
 
 fn gpu_process(
