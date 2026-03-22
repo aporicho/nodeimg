@@ -39,9 +39,11 @@ python/                  — AI 后端（FastAPI + SDXL）
 遵循 `docs/开发工作流程.md` 中的规范：
 - 主分支为 `main`
 - 每个功能/修复 = 一个独立分支 + 一个 PR
-- 分支命名：`feature/功能名`、`fix/问题描述`、`hotfix/紧急修复`
+- 分支命名：`feature/功能名`、`fix/问题描述`、`hotfix/紧急修复`、`refactor/重构描述`、`docs/文档描述`
 - Commit 信息使用规范前缀（feat/fix/docs/style/refactor/test/chore）
 - PR 描述中用 `Closes #N` / `Fixes #N` 关联 Issue
+- 新功能/架构变更需要先走 brainstorming 设计流程，再写实现计划，再开发
+- Code Review 分级：简单 PR 快速扫描，复杂 PR 使用 superpowers:requesting-code-review
 
 ## 开发约定
 
