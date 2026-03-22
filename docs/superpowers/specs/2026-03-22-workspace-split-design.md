@@ -65,11 +65,11 @@ crates/nodeimg-types/src/
 ├── lib.rs              # 公开导出
 ├── value.rs            # Value 枚举（Image, GpuImage, Mask, Float, Int, Color, Boolean, String）
 ├── data_type.rs        # DataTypeId, DataTypeInfo, DataTypeRegistry
-├── node_def.rs         # NodeDef, PinDef, ParamDef, ProcessFn, GpuProcessFn
+├── node_def.rs         # NodeDef, PinDef, ParamDef（不含 ProcessFn/GpuProcessFn）
 ├── constraint.rs       # Constraint 枚举（slider 范围、dropdown 选项等）
 ├── category.rs         # CategoryId
 ├── gpu_texture.rs      # GpuTexture 结构体（从 gpu/texture.rs 搬来）
-└── serial.rs           # 项目文件序列化/反序列化
+└── serial_data.rs      # 序列化用的纯数据结构（SerializedGraph, SerializedNode, SerializedValue）
 ```
 
 **来源映射**：
@@ -77,16 +77,17 @@ crates/nodeimg-types/src/
 |--------|--------|
 | value.rs | src/node/types.rs（Value 枚举部分） |
 | data_type.rs | src/node/types.rs（DataType 部分） |
-| node_def.rs | src/node/registry.rs（NodeDef、PinDef、ParamDef、ProcessFn、GpuProcessFn） |
+| node_def.rs | src/node/registry.rs（NodeDef、PinDef、ParamDef，不含 ProcessFn/GpuProcessFn） |
 | constraint.rs | src/node/constraint.rs |
 | category.rs | src/node/category.rs |
 | gpu_texture.rs | src/gpu/texture.rs |
-| serial.rs | src/node/serial.rs |
+| serial_data.rs | src/node/serial.rs（仅纯数据结构部分） |
 
 **关键决策**：
 - GpuTexture 放在这里，因为它是 Value 枚举的一部分，属于基础数据类型
-- ProcessFn 和 GpuProcessFn 类型别名放在 node_def.rs 中，因为它们是节点定义的一部分
 - nodeimg-types 依赖 wgpu 是合理的——GPU 纹理是这个项目的基础数据类型
+- ProcessFn 和 GpuProcessFn 放在 nodeimg-engine，因为 GpuProcessFn 引用 GpuContext（在 nodeimg-gpu 中），放 types 会造成循环依赖
+- serial.rs 中操作 Snarl/egui 的序列化函数留在 nodeimg-app，types 只存纯数据结构
 
 ---
 
@@ -102,7 +103,7 @@ crates/nodeimg-gpu/src/
 ├── lib.rs              # 公开 GpuContext 和管线相关 API
 ├── context.rs          # GpuContext（设备初始化、管线缓存）
 ├── pipeline.rs         # compute pipeline 创建辅助
-└── shaders/            # 21 个 WGSL 着色器（原样搬迁）
+└── shaders/            # 30 个 WGSL 着色器（原样搬迁）
     ├── gaussian_blur_h.wgsl
     ├── gaussian_blur_v.wgsl
     ├── crop.wgsl
@@ -151,7 +152,7 @@ crates/nodeimg-processing/src/
 ```
 crates/nodeimg-engine/src/
 ├── lib.rs
-├── registry.rs         # NodeRegistry（节点注册和查询）
+├── registry.rs         # NodeRegistry, NodeInstance, ProcessFn, GpuProcessFn
 ├── eval.rs             # EvalEngine（拓扑排序、执行图、调度 GPU/CPU/AI）
 ├── cache.rs            # Cache（结果缓存和 invalidation）
 ├── backend.rs          # BackendClient（AI 后端 HTTP 通信）
@@ -169,7 +170,7 @@ crates/nodeimg-engine/src/
 **来源映射**：
 | 新文件 | 原文件 |
 |--------|--------|
-| registry.rs | src/node/registry.rs（去掉 NodeDef 定义，保留 NodeRegistry） |
+| registry.rs | src/node/registry.rs（NodeRegistry, NodeInstance, ProcessFn, GpuProcessFn） |
 | eval.rs | src/node/eval.rs |
 | cache.rs | src/node/cache.rs |
 | backend.rs | src/node/backend.rs |
@@ -278,13 +279,22 @@ executor.spawn(Box::new(move || ctx.request_repaint()), ...);
 
 ### 2. registry.rs：拆分定义和容器
 
-**现状**：NodeDef、PinDef、ParamDef、NodeRegistry、NodeInstance 全在一个文件。
+**现状**：NodeDef、PinDef、ParamDef、NodeRegistry、NodeInstance、ProcessFn、GpuProcessFn 全在一个文件。
 
 **改为**：
-- 定义（NodeDef、PinDef、ParamDef、ProcessFn、GpuProcessFn）→ nodeimg-types/node_def.rs
-- 容器（NodeRegistry、NodeInstance）→ nodeimg-engine/registry.rs
+- 纯数据定义（NodeDef、PinDef、ParamDef）→ nodeimg-types/node_def.rs
+- 函数类型（ProcessFn、GpuProcessFn）+ 容器（NodeRegistry、NodeInstance）→ nodeimg-engine/registry.rs
+- ProcessFn/GpuProcessFn 放 engine 是因为 GpuProcessFn 签名含 &GpuContext（第 3 层），放 types（第 2 层）会循环依赖
 
-### 3. widget 模块：拆分定义和渲染
+### 3. serial.rs：拆分数据和操作
+
+**现状**：SerializedGraph 等纯数据结构和 snapshot()/restore() 操作函数（依赖 egui_snarl）混在一起。
+
+**改为**：
+- 纯数据结构（SerializedGraph, SerializedNode, SerializedValue…）→ nodeimg-types/serial_data.rs
+- 操作函数（snapshot, restore，依赖 Snarl/egui）→ nodeimg-app/serial.rs
+
+### 4. widget 模块：拆分定义和渲染
 
 **现状**：WidgetId、Widget trait（含 egui 渲染）、具体控件实现，全在 src/node/widget/。
 
@@ -292,7 +302,7 @@ executor.spawn(Box::new(move || ctx.request_repaint()), ...);
 - WidgetId + WidgetRegistry 定义 → nodeimg-engine/widget_def.rs
 - Widget trait + 具体渲染实现 → nodeimg-app/widget/
 
-### 4. types.rs：拆分为多文件
+### 5. types.rs：拆分为多文件
 
 **现状**：Value 枚举、DataTypeId、DataTypeInfo、DataTypeRegistry 全在一个文件。
 
@@ -300,7 +310,7 @@ executor.spawn(Box::new(move || ctx.request_repaint()), ...);
 - Value 枚举 → nodeimg-types/value.rs
 - DataType 相关 → nodeimg-types/data_type.rs
 
-### 5. Cargo.toml：workspace 配置
+### 6. Cargo.toml：workspace 配置
 
 **根 Cargo.toml**：
 ```toml
