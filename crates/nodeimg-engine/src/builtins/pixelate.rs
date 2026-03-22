@@ -35,7 +35,7 @@ pub fn register(registry: &mut NodeRegistry) {
             widget_override: None,
         }],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -92,18 +92,3 @@ fn gpu_process(
     outputs
 }
 
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let block_size = match params.get("block_size") {
-            Some(Value::Int(v)) => *v as u32,
-            _ => 8,
-        };
-        let result = nodeimg_processing::filter::pixelate(img, block_size);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
-}

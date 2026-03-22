@@ -96,7 +96,7 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -106,33 +106,6 @@ fn get_float(params: &HashMap<String, Value>, key: &str) -> f32 {
         Some(Value::Float(v)) => *v,
         _ => 0.0,
     }
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let shadows = [
-            get_float(params, "shadows_r"),
-            get_float(params, "shadows_g"),
-            get_float(params, "shadows_b"),
-        ];
-        let midtones = [
-            get_float(params, "midtones_r"),
-            get_float(params, "midtones_g"),
-            get_float(params, "midtones_b"),
-        ];
-        let highlights = [
-            get_float(params, "highlights_r"),
-            get_float(params, "highlights_g"),
-            get_float(params, "highlights_b"),
-        ];
-        let result = nodeimg_processing::color::color_balance(img, shadows, midtones, highlights);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
 }
 
 fn gpu_process(

@@ -59,38 +59,9 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let base = match inputs.get("base") {
-        Some(Value::Image(img)) => img,
-        _ => return outputs,
-    };
-    let layer = match inputs.get("layer") {
-        Some(Value::Image(img)) => img,
-        _ => return outputs,
-    };
-
-    let mode = match params.get("mode") {
-        Some(Value::String(s)) => s.as_str(),
-        _ => "normal",
-    };
-    let opacity = match params.get("opacity") {
-        Some(Value::Float(v)) => *v,
-        _ => 1.0,
-    };
-
-    let result = nodeimg_processing::composite::blend(base, layer, mode, opacity);
-    outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    outputs
 }
 
 fn gpu_process(

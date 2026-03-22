@@ -43,45 +43,9 @@ pub fn register(registry: &mut NodeRegistry) {
         }],
         params: vec![],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
-}
-
-fn get_image<'a>(
-    inputs: &'a HashMap<String, Value>,
-    key: &str,
-) -> Option<&'a Arc<image::DynamicImage>> {
-    match inputs.get(key) {
-        Some(Value::Image(img)) => Some(img),
-        Some(Value::Mask(img)) => Some(img),
-        _ => None,
-    }
-}
-
-fn process(
-    inputs: &HashMap<String, Value>,
-    _params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-
-    let red = get_image(inputs, "red");
-    let green = get_image(inputs, "green");
-    let blue = get_image(inputs, "blue");
-    let alpha = get_image(inputs, "alpha");
-
-    let red_ref = red.map(|a| a.as_ref());
-    let green_ref = green.map(|a| a.as_ref());
-    let blue_ref = blue.map(|a| a.as_ref());
-    let alpha_ref = alpha.map(|a| a.as_ref());
-
-    if let Some(result) =
-        nodeimg_processing::composite::channel_merge(red_ref, green_ref, blue_ref, alpha_ref)
-    {
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-
-    outputs
 }
 
 fn get_gpu_texture(

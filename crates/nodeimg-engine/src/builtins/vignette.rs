@@ -41,7 +41,7 @@ pub fn register(registry: &mut NodeRegistry) {
             },
         ],
         has_preview: false,
-        process: Some(Box::new(process)),
+        process: None,
         gpu_process: Some(Box::new(gpu_process)),
     });
 }
@@ -102,22 +102,3 @@ fn gpu_process(
     outputs
 }
 
-fn process(
-    inputs: &HashMap<String, Value>,
-    params: &HashMap<String, Value>,
-) -> HashMap<String, Value> {
-    let mut outputs = HashMap::new();
-    if let Some(Value::Image(img)) = inputs.get("image") {
-        let strength = match params.get("strength") {
-            Some(Value::Float(v)) => *v,
-            _ => 0.5,
-        };
-        let radius = match params.get("radius") {
-            Some(Value::Float(v)) => *v,
-            _ => 1.0,
-        };
-        let result = nodeimg_processing::filter::vignette(img, strength, radius);
-        outputs.insert("image".into(), Value::Image(Arc::new(result)));
-    }
-    outputs
-}
