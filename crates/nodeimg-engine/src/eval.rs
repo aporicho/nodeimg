@@ -110,7 +110,7 @@ impl EvalEngine {
                 Some(d) => d,
                 None => continue,
             };
-            if def.process.is_none() {
+            if def.process.is_none() && def.gpu_process.is_none() {
                 last_ai = Some(node_id);
             }
         }
@@ -211,6 +211,11 @@ impl EvalEngine {
                     cache.insert(node_id, outputs);
                     continue;
                 }
+            }
+
+            // GPU-only nodes without GPU context: return an error
+            if def.gpu_process.is_some() && gpu_ctx.is_none() && def.process.is_none() {
+                return Err(format!("Node '{}' requires GPU but no GPU context available", def.title));
             }
 
             // CPU path — auto-convert GpuImage inputs to CPU Image via readback
