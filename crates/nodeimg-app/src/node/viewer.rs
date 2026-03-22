@@ -321,12 +321,13 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                                 node_id.0, ai_node_id
                             );
                             self.ai_errors.remove(&node_id);
+                            let ctx = ui.ctx().clone();
                             self.ai_executor.spawn(
                                 node_id.0,
                                 ai_node_id,
                                 graph_json,
                                 client.clone(),
-                                ui.ctx().clone(),
+                                Box::new(move || ctx.request_repaint()),
                             );
                         }
                     }

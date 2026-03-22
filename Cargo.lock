@@ -2480,10 +2480,28 @@ dependencies = [
  "egui-snarl",
  "egui_extras",
  "image",
+ "nodeimg-engine",
  "nodeimg-gpu",
+ "nodeimg-processing",
  "nodeimg-types",
  "reqwest",
  "rfd",
+ "serde",
+ "serde_json",
+ "wgpu",
+]
+
+[[package]]
+name = "nodeimg-engine"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bytemuck",
+ "image",
+ "nodeimg-gpu",
+ "nodeimg-processing",
+ "nodeimg-types",
+ "reqwest",
  "serde",
  "serde_json",
  "wgpu",
@@ -2497,6 +2515,14 @@ dependencies = [
  "image",
  "nodeimg-types",
  "wgpu",
+]
+
+[[package]]
+name = "nodeimg-processing"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "nodeimg-types",
 ]
 
 [[package]]

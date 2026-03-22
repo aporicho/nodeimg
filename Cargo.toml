@@ -4,6 +4,7 @@ members = [
     "crates/nodeimg-types",
     "crates/nodeimg-gpu",
     "crates/nodeimg-processing",
+    "crates/nodeimg-engine",
 ]
 resolver = "2"
 
