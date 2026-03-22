@@ -571,4 +571,53 @@ mod tests {
             err_msg
         );
     }
+
+    #[test]
+    fn test_topo_sort_single_node() {
+        let order = EvalEngine::topo_sort(0, &[]).unwrap();
+        assert_eq!(order, vec![0]);
+    }
+
+    #[test]
+    fn test_evaluate_disconnected_node() {
+        use nodeimg_types::category::CategoryId;
+        use nodeimg_types::data_type::DataTypeId;
+        use crate::registry::{NodeDef, PinDef};
+
+        let mut node_reg = NodeRegistry::new();
+        let type_reg = DataTypeRegistry::with_builtins();
+
+        node_reg.register(NodeDef {
+            type_id: "passthrough".into(),
+            title: "Passthrough".into(),
+            category: CategoryId::new("tool"),
+            inputs: vec![],
+            outputs: vec![PinDef {
+                name: "out".into(),
+                data_type: DataTypeId::new("float"),
+                required: false,
+            }],
+            params: vec![],
+            has_preview: false,
+            process: Some(Box::new(|_inputs, _params| {
+                HashMap::from([("out".into(), Value::Float(42.0))])
+            })),
+            gpu_process: None,
+        });
+
+        let mut nodes = HashMap::new();
+        nodes.insert(0, NodeInstance {
+            type_id: "passthrough".into(),
+            params: HashMap::new(),
+        });
+
+        let mut cache = Cache::new();
+        EvalEngine::evaluate(0, &nodes, &[], &node_reg, &type_reg, &mut cache, None, None).unwrap();
+
+        let result = cache.get(0).unwrap();
+        match result.get("out") {
+            Some(Value::Float(v)) => assert_eq!(*v, 42.0),
+            other => panic!("expected Float(42.0), got {:?}", other),
+        }
+    }
 }
