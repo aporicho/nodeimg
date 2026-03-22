@@ -7,8 +7,9 @@ pub mod radio_group;
 pub mod slider;
 pub mod text_input;
 
-use crate::node::constraint::{Constraint, ConstraintType};
-use crate::node::types::{DataTypeId, Value};
+use nodeimg_types::constraint::{Constraint, ConstraintType};
+use nodeimg_types::data_type::DataTypeId;
+use nodeimg_types::value::Value;
 use eframe::egui;
 use std::collections::HashMap;
 

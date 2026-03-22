@@ -1,13 +1,14 @@
 use crate::gpu::GpuContext;
-use crate::node::ai_task::AiExecutor;
-use crate::node::backend::BackendClient;
-use crate::node::cache::Cache;
-use crate::node::category::CategoryRegistry;
-use crate::node::eval::{Connection, EvalEngine};
-use crate::node::menu::Menu;
-use crate::node::registry::{NodeInstance, NodeRegistry};
-use crate::node::types::{DataTypeId, DataTypeRegistry, Value};
 use crate::node::widget::WidgetRegistry;
+use nodeimg_engine::ai_task::AiExecutor;
+use nodeimg_engine::backend::BackendClient;
+use nodeimg_engine::cache::Cache;
+use nodeimg_engine::eval::{Connection, EvalEngine};
+use nodeimg_engine::menu::Menu;
+use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
+use nodeimg_types::category::CategoryRegistry;
+use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
+use nodeimg_types::value::Value;
 use crate::theme::Theme;
 use eframe::egui;
 use egui::{Color32, Frame, Ui};
@@ -47,7 +48,7 @@ pub struct NodeViewer {
 impl NodeViewer {
     pub fn new(theme: Arc<dyn Theme>, gpu_ctx: Option<Arc<GpuContext>>) -> Self {
         let mut node_registry = NodeRegistry::new();
-        crate::node::builtins::register_all(&mut node_registry);
+        nodeimg_engine::builtins::register_all(&mut node_registry);
 
         Self {
             type_registry: DataTypeRegistry::with_builtins(),

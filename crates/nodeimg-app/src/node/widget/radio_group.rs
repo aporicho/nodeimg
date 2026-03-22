@@ -1,5 +1,5 @@
-use crate::node::constraint::Constraint;
-use crate::node::types::Value;
+use nodeimg_types::constraint::Constraint;
+use nodeimg_types::value::Value;
 use eframe::egui;
 
 pub fn render_radio_group(

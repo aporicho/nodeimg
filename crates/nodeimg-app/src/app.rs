@@ -5,10 +5,10 @@ use std::process::{Child, Command};
 use std::sync::Arc;
 
 use crate::gpu::gpu_context_from_eframe;
-use crate::node::backend::BackendClient;
-use crate::node::registry::NodeInstance;
 use crate::node::serial::Serializer;
 use crate::node::viewer::NodeViewer;
+use nodeimg_engine::backend::BackendClient;
+use nodeimg_engine::registry::NodeInstance;
 use crate::theme::dark::DarkTheme;
 use crate::theme::light::LightTheme;
 use crate::theme::Theme;
@@ -245,7 +245,7 @@ impl App {
     }
 
     /// Try to load the autosave file on startup.
-    fn try_auto_load(registry: &crate::node::registry::NodeRegistry) -> Snarl<NodeInstance> {
+    fn try_auto_load(registry: &nodeimg_engine::registry::NodeRegistry) -> Snarl<NodeInstance> {
         let path = Self::autosave_path();
         if path.exists() {
             if let Ok(json) = std::fs::read_to_string(&path) {

@@ -11,15 +11,9 @@ path = "src/main.rs"
 eframe = { version = "0.33", features = ["wgpu"] }
 egui_extras = { version = "0.33", features = ["image", "file"] }
 egui-snarl = { version = "0.9", features = ["serde"] }
-image = "0.25"
 wgpu = "27"
-bytemuck = { version = "1", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-base64 = "0.22"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
 rfd = "0.17"
 nodeimg-types = { path = "../nodeimg-types" }
 nodeimg-gpu = { path = "../nodeimg-gpu" }
-nodeimg-processing = { path = "../nodeimg-processing" }
 nodeimg-engine = { path = "../nodeimg-engine" }

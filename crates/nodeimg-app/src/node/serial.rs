@@ -1,4 +1,4 @@
-use crate::node::registry::{NodeInstance, NodeRegistry};
+use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
 use egui_snarl::{InPinId, NodeId, OutPinId, Snarl};
 use std::collections::HashMap;
 
@@ -160,7 +160,7 @@ impl Serializer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::types::Value;
+    use nodeimg_types::value::Value;
 
     #[test]
     fn test_serialize_roundtrip() {
