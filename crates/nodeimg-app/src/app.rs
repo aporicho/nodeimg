@@ -1,8 +1,10 @@
 use eframe::egui;
 use egui_snarl::Snarl;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::gpu::gpu_context_from_eframe;
 use crate::node::serial::Serializer;
@@ -39,6 +41,10 @@ pub struct App {
     /// Dirty flag — set when graph changes, cleared after save.
     /// Prevents auto_save from serializing the entire graph every frame.
     dirty: bool,
+    /// Whether the FPS overlay is visible (toggle with F12).
+    show_fps: bool,
+    /// Recent frame timestamps for FPS calculation.
+    frame_times: VecDeque<Instant>,
 }
 
 impl App {
@@ -123,6 +129,8 @@ impl App {
             current_file: None,
             last_saved_json: None,
             dirty: true, // save once on first frame
+            show_fps: false,
+            frame_times: VecDeque::with_capacity(120),
         }
     }
 
@@ -376,6 +384,25 @@ impl App {
         }
     }
 
+    /// Record the current frame timestamp and return the smoothed FPS.
+    fn update_fps(&mut self) -> f64 {
+        let now = Instant::now();
+        self.frame_times.push_back(now);
+        // Keep at most 60 samples for a ~1 second rolling window
+        while self.frame_times.len() > 60 {
+            self.frame_times.pop_front();
+        }
+        if self.frame_times.len() < 2 {
+            return 0.0;
+        }
+        let elapsed = now.duration_since(self.frame_times[0]).as_secs_f64();
+        if elapsed > 0.0 {
+            (self.frame_times.len() - 1) as f64 / elapsed
+        } else {
+            0.0
+        }
+    }
+
     fn toggle_theme(&mut self) {
         self.use_dark = !self.use_dark;
         self.theme = if self.use_dark {
@@ -411,6 +438,7 @@ impl eframe::App for App {
                 i.key_pressed(egui::Key::S) && i.modifiers.command && i.modifiers.shift, // save as
                 i.key_pressed(egui::Key::S) && i.modifiers.command && !i.modifiers.shift, // quick save
                 i.key_pressed(egui::Key::O) && i.modifiers.command,                      // open
+                i.key_pressed(egui::Key::F12),                                           // toggle FPS
             )
         });
         if shortcuts.0 {
@@ -424,8 +452,35 @@ impl eframe::App for App {
         if shortcuts.3 {
             self.open_file();
         }
+        if shortcuts.4 {
+            self.show_fps = !self.show_fps;
+        }
 
         self.theme.apply(ctx);
+
+        // FPS overlay (toggle with F12)
+        let fps = self.update_fps();
+        if self.show_fps {
+            egui::Area::new(egui::Id::new("fps_overlay"))
+                .fixed_pos(egui::pos2(8.0, 8.0))
+                .order(egui::Order::Foreground)
+                .interactable(false)
+                .show(ctx, |ui| {
+                    egui::Frame::NONE
+                        .fill(egui::Color32::from_black_alpha(160))
+                        .corner_radius(4.0)
+                        .inner_margin(egui::Margin::symmetric(8, 4))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("FPS: {:.0}", fps))
+                                    .color(egui::Color32::from_rgb(0, 255, 128))
+                                    .monospace()
+                                    .size(13.0),
+                            );
+                        });
+                });
+            ctx.request_repaint();
+        }
 
         self.preview_panel
             .show(ctx, &*self.theme, self.viewer.preview_texture.as_ref());
