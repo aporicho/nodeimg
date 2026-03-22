@@ -2480,11 +2480,22 @@ dependencies = [
  "egui-snarl",
  "egui_extras",
  "image",
+ "nodeimg-gpu",
  "nodeimg-types",
  "reqwest",
  "rfd",
  "serde",
  "serde_json",
+ "wgpu",
+]
+
+[[package]]
+name = "nodeimg-gpu"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "image",
+ "nodeimg-types",
  "wgpu",
 ]
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Arc;
 
-use crate::gpu::GpuContext;
+use crate::gpu::gpu_context_from_eframe;
 use crate::node::backend::BackendClient;
 use crate::node::registry::NodeInstance;
 use crate::node::serial::Serializer;
@@ -43,7 +43,7 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let gpu_ctx = GpuContext::from_eframe(cc);
+        let gpu_ctx = gpu_context_from_eframe(cc);
         if gpu_ctx.is_some() {
             eprintln!("[gpu] GPU context initialized successfully");
         } else {
