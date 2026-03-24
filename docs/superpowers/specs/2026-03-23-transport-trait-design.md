@@ -112,7 +112,8 @@ struct ParamDefInfo {
 #[derive(Clone, Serialize, Deserialize)]
 enum ConstraintInfo {
     Range { min: f64, max: f64 },
-    Options(Vec<String>),
+    Options(Vec<(String, String)>),  // (label, value) pairs，匹配 Constraint::Enum
+    FilePath { filters: Vec<String> },
 }
 ```
 
