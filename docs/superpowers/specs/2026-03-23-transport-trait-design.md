@@ -57,6 +57,9 @@ trait ProcessingTransport: Send + Sync + 'static {
     /// 清除所有缓存
     fn invalidate_all(&self);
 
+    /// 检查两个数据类型是否可以连接
+    fn is_compatible(&self, from_type: &str, to_type: &str) -> bool;
+
     /// 健康检查（启动时调一次）
     fn health_check(&self) -> Result<HealthResponse>;
 
@@ -76,22 +79,46 @@ struct HealthResponse {
 }
 ```
 
-### NodeTypeDef（节点元数据，不含函数指针）
+### NodeTypeDef（节点元数据，完全可序列化）
+
+`NodeDef` 包含函数指针（`ProcessFn`、`GpuProcessFn`）和不可序列化的类型（`Value`、`Constraint`），不能直接用于 Transport 接口。`NodeTypeDef` 是纯元数据版本，所有字段均可序列化：
 
 ```rust
 #[derive(Clone, Serialize, Deserialize)]
 struct NodeTypeDef {
     pub type_id: String,
     pub title: String,
-    pub category: CategoryId,
-    pub inputs: Vec<PinDef>,
-    pub outputs: Vec<PinDef>,
-    pub params: Vec<ParamDef>,
+    pub category: String,              // CategoryId 序列化为 String
+    pub inputs: Vec<PinDefInfo>,
+    pub outputs: Vec<PinDefInfo>,
+    pub params: Vec<ParamDefInfo>,
     pub has_preview: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct PinDefInfo {
+    pub name: String,
+    pub data_type: String,             // DataTypeId 序列化为 String
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ParamDefInfo {
+    pub name: String,
+    pub data_type: String,             // DataTypeId 序列化为 String
+    pub default: ParamValue,           // 用 ParamValue 替代 Value
+    pub constraint: Option<ConstraintInfo>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+enum ConstraintInfo {
+    Range { min: f64, max: f64 },
+    Options(Vec<String>),
 }
 ```
 
-App 启动时通过 `node_types()` 获取一次，保存本地副本，用于构建节点菜单、实例化节点、检查引脚兼容性等 UI 操作。`NodeTypeDef` 是 `NodeDef` 的元数据子集，不含 `process` / `gpu_process` 函数指针，可安全序列化。
+`LocalTransport::node_types()` 负责将内部的 `NodeDef` 转换为 `NodeTypeDef`。
+
+App 启动时通过 `node_types()` 获取一次，保存本地副本，用于构建节点菜单、实例化节点、渲染引脚名称和颜色。
 
 ### ExecuteProgress（逐节点推送）
 
@@ -148,13 +175,15 @@ struct ConnectionRequest {
 ```rust
 #[derive(Clone, Serialize, Deserialize)]
 enum ParamValue {
-    Float(f64),
-    Int(i64),
+    Float(f32),
+    Int(i32),
     String(String),
     Boolean(bool),
     Color([f32; 4]),
 }
 ```
+
+类型宽度与 `Value` 的 `Float(f32)` / `Int(i32)` 保持一致，避免转换时精度丢失或溢出。
 
 `LocalTransport` 内部负责将 `ParamValue` 转换为 `Value` 再传给 `EvalEngine`。图像等大数据通过连接传递，不出现在参数中。
 
@@ -283,7 +312,7 @@ App 不再直接访问 `NodeRegistry`，而是：
 
 分阶段推进，确保每一步后项目可编译运行：
 
-1. **定义 transport types**：新增 `transport/mod.rs`，定义 trait + 所有关联类型（GraphRequest、ExecuteProgress、ParamValue、NodeTypeDef、HealthResponse），不改现有代码
+1. **定义 transport types**：新增 `transport/mod.rs`，定义 trait + 所有关联类型（GraphRequest、ExecuteProgress、ParamValue、NodeTypeDef、HealthResponse），不改现有代码。同时将 `ConversionFn` 改为 `Box<dyn Fn(Value) -> Value + Send + Sync>` 以满足 `ProcessingTransport: Send + Sync` 的要求
 2. **重组 engine 文件结构**：将 eval/cache/registry/backend/menu 移入 `internal/`，调整 `lib.rs` 导出
 3. **实现 LocalTransport**：在 `transport/local.rs` 中包装现有执行逻辑
 4. **新增 ExecutionManager**：在 app 中实现，与旧的 AiExecutor 并行存在
