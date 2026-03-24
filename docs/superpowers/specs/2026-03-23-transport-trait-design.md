@@ -51,6 +51,12 @@ trait ProcessingTransport: Send + Sync + 'static {
     /// 执行节点图，逐节点推送结果
     fn execute(&self, request: GraphRequest, progress: Sender<ExecuteProgress>) -> Result<()>;
 
+    /// 缓存失效：通知 transport 某节点参数变了，需要清除该节点及下游缓存
+    fn invalidate(&self, node_id: NodeId);
+
+    /// 清除所有缓存
+    fn invalidate_all(&self);
+
     /// 健康检查（启动时调一次）
     fn health_check(&self) -> Result<HealthResponse>;
 
@@ -58,6 +64,34 @@ trait ProcessingTransport: Send + Sync + 'static {
     fn node_types(&self) -> Result<Vec<NodeTypeDef>>;
 }
 ```
+
+### HealthResponse
+
+```rust
+#[derive(Serialize, Deserialize)]
+struct HealthResponse {
+    pub status: String,           // "ok" / "error"
+    pub gpu: Option<String>,      // GPU 名称
+    pub vram_free_gb: Option<f32>,
+}
+```
+
+### NodeTypeDef（节点元数据，不含函数指针）
+
+```rust
+#[derive(Clone, Serialize, Deserialize)]
+struct NodeTypeDef {
+    pub type_id: String,
+    pub title: String,
+    pub category: CategoryId,
+    pub inputs: Vec<PinDef>,
+    pub outputs: Vec<PinDef>,
+    pub params: Vec<ParamDef>,
+    pub has_preview: bool,
+}
+```
+
+App 启动时通过 `node_types()` 获取一次，保存本地副本，用于构建节点菜单、实例化节点、检查引脚兼容性等 UI 操作。`NodeTypeDef` 是 `NodeDef` 的元数据子集，不含 `process` / `gpu_process` 函数指针，可安全序列化。
 
 ### ExecuteProgress（逐节点推送）
 
@@ -93,7 +127,7 @@ struct GraphRequest {
 #[derive(Serialize, Deserialize)]
 struct NodeRequest {
     type_id: String,
-    params: HashMap<String, Value>,
+    params: HashMap<String, ParamValue>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -105,22 +139,44 @@ struct ConnectionRequest {
 }
 ```
 
-**设计决策：使用 Rust 结构��而非 serde_json::Value。** 编译时类型检查，LocalTransport 直接用结构体零开销，RemoteTransport 通过 Serialize 自动转 JSON。
+**设计决策：使用 Rust 结构体而非 serde_json::Value。** 编译时类型检查，LocalTransport 直接用结构体零开销，RemoteTransport 通过 Serialize 自动转 JSON。
+
+### ParamValue（可序列化的参数值）
+
+`Value` 枚举包含 `Arc<DynamicImage>` 等不可序列化的 variant，不能直接放在 `GraphRequest` 中。`ParamValue` 只包含参数用到的标量类型：
+
+```rust
+#[derive(Clone, Serialize, Deserialize)]
+enum ParamValue {
+    Float(f64),
+    Int(i64),
+    String(String),
+    Boolean(bool),
+    Color([f32; 4]),
+}
+```
+
+`LocalTransport` 内部负责将 `ParamValue` 转换为 `Value` 再传给 `EvalEngine`。图像等大数据通过连接传递，不出现在参数中。
 
 ### LocalTransport
 
 ```rust
 struct LocalTransport {
-    registry: NodeRegistry,
-    eval_engine: EvalEngine,
-    cache: Cache,
+    registry: Mutex<NodeRegistry>,
+    type_registry: DataTypeRegistry,
+    cache: Mutex<Cache>,
     gpu_context: Arc<GpuContext>,
     backend: Option<BackendClient>,
 }
 ```
 
+注意事项：
+- `registry` 和 `cache` 用 `Mutex` 包裹以提供内部可变性（trait 方法是 `&self`）
+- `type_registry`：EvalEngine 执行时需要，用于引脚间的自动类型转换
+- 不持有 `EvalEngine` 字段——`EvalEngine` 是无状态的 unit struct，所有方法都是关联函数，直接以 `EvalEngine::evaluate(...)` 方式调用
+
 执行流程：
-1. 接收 `GraphRequest`
+1. 接收 `GraphRequest`，将 `ParamValue` 转换为 `Value`
 2. `EvalEngine::topo_sort()` 得出执行顺序
 3. 按顺序执行每个节点：
    - 本地节点 → 调用 `process` / `gpu_process`
@@ -136,12 +192,17 @@ struct ExecutionManager {
     progress_tx: Sender<(u64, ExecuteProgress)>,
     progress_rx: Receiver<(u64, ExecuteProgress)>,
     generation: u64,
+    repaint_ctx: Option<egui::Context>,
 }
 ```
 
-- `submit(graph)`: generation +1，spawn 后台线程调用 `transport.execute()`
+核心方法：
+- `submit(graph)`: generation +1，spawn 后台线程调用 `transport.execute()`，线程完成时通过 `repaint_ctx.request_repaint()` 唤醒 egui 刷新
 - `poll()`: 每帧非阻塞检查，generation 不匹配的结果丢弃
-- 替代现有的 `AiExecutor`
+- `cancel()`: generation +1 使当前执行的结果失效（工人线程继续跑完但结果被丢弃）
+- `is_running()`: 检查是否有正在执行的任务
+
+替代现有的 `AiExecutor`。
 
 ## 命名
 
@@ -175,7 +236,7 @@ nodeimg-engine/src/
 
 ```
 nodeimg-app/src/
-├── app.rs                ← 改用 Transport 初始化
+├── app.rs                ← 改用 Transport 初���化
 ├── execution.rs          ← ExecutionManager（新，替代 ai_task.rs 的职责）
 ├── node/                 ← 不动
 ├── gpu/                  ← 不动
@@ -183,12 +244,20 @@ nodeimg-app/src/
 └── ui/                   ← 不动
 ```
 
+## App 侧的节点元数据
+
+App 不再直接访问 `NodeRegistry`，而是：
+
+1. 启动时调 `transport.node_types()` 获取 `Vec<NodeTypeDef>`
+2. 本地保存这份元数据副本
+3. 用它来：构建添加节点菜单、实例化节点模板、检查引脚兼容性、渲染引脚名称和颜色
+
 ## 对现有代码的影响
 
 ### 要改的
 - `nodeimg-engine/lib.rs`：重组导出，只暴露 Transport 相关公开 API
 - `nodeimg-engine` 文件结构：按上述方案重组
-- `nodeimg-app/node/viewer.rs`：NodeViewer 不再直接持有 EvalEngine/Cache，改为持有 `Arc<dyn ProcessingTransport>`
+- `nodeimg-app/node/viewer.rs`：NodeViewer 不再直接持有 EvalEngine/Cache，改为持有 `Arc<dyn ProcessingTransport>` + `Vec<NodeTypeDef>` 元数据副本
 - `nodeimg-app/app.rs`：初始化 LocalTransport，创建 ExecutionManager
 
 ### 不动的
@@ -208,6 +277,18 @@ nodeimg-app/src/
 - **不引入 async runtime**：不需要 tokio，保持轻量
 - `health_check()` / `node_types()`：启动时同步调用
 - `execute()`：通过 ExecutionManager 异步调用
+- `invalidate()` / `invalidate_all()`：app 参数变更时同步调用
+
+## 迁移步骤
+
+分阶段推进，确保每一步后项目可编译运行：
+
+1. **定义 transport types**：新增 `transport/mod.rs`，定义 trait + 所有关联类型（GraphRequest、ExecuteProgress、ParamValue、NodeTypeDef、HealthResponse），不改现有代码
+2. **重组 engine 文件结构**：将 eval/cache/registry/backend/menu 移入 `internal/`，调整 `lib.rs` 导出
+3. **实现 LocalTransport**：在 `transport/local.rs` 中包装现有执行逻辑
+4. **新增 ExecutionManager**：在 app 中实现，与旧的 AiExecutor 并行存在
+5. **切换 app 到 Transport**：NodeViewer 改用 Transport + ExecutionManager，替换直接调用
+6. **删除旧代码**：移除 AiExecutor、app 中直接调用 engine 内部的代码
 
 ## 未来扩展
 
