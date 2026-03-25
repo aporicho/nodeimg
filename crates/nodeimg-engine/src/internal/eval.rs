@@ -1,7 +1,7 @@
 use nodeimg_gpu::GpuContext;
-use crate::backend::BackendClient;
-use crate::cache::{Cache, NodeId};
-use crate::registry::{NodeInstance, NodeRegistry};
+use crate::internal::backend::BackendClient;
+use crate::internal::cache::{Cache, NodeId};
+use crate::internal::registry::{NodeInstance, NodeRegistry};
 use nodeimg_types::data_type::DataTypeRegistry;
 use nodeimg_types::value::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -411,7 +411,7 @@ mod tests {
         use nodeimg_types::category::CategoryId;
         use nodeimg_types::constraint::Constraint;
         use nodeimg_types::data_type::DataTypeId;
-        use crate::registry::{NodeDef, ParamDef, PinDef};
+        use crate::internal::registry::{NodeDef, ParamDef, PinDef};
 
         let mut node_reg = NodeRegistry::new();
         let type_reg = DataTypeRegistry::with_builtins();
@@ -517,7 +517,7 @@ mod tests {
     fn test_evaluate_gpu_only_node_without_gpu_context_returns_error() {
         use nodeimg_types::category::CategoryId;
         use nodeimg_types::data_type::DataTypeId;
-        use crate::registry::{NodeDef, PinDef};
+        use crate::internal::registry::{NodeDef, PinDef};
 
         let mut node_reg = NodeRegistry::new();
         let type_reg = DataTypeRegistry::with_builtins();
@@ -582,7 +582,7 @@ mod tests {
     fn test_evaluate_disconnected_node() {
         use nodeimg_types::category::CategoryId;
         use nodeimg_types::data_type::DataTypeId;
-        use crate::registry::{NodeDef, PinDef};
+        use crate::internal::registry::{NodeDef, PinDef};
 
         let mut node_reg = NodeRegistry::new();
         let type_reg = DataTypeRegistry::with_builtins();

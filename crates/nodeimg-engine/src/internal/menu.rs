@@ -1,5 +1,5 @@
 use nodeimg_types::category::{CategoryId, CategoryRegistry};
-use crate::registry::NodeRegistry;
+use crate::internal::registry::NodeRegistry;
 
 pub struct MenuItem {
     pub type_id: String,
@@ -65,7 +65,7 @@ impl Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::{NodeDef, PinDef};
+    use crate::internal::registry::{NodeDef, PinDef};
     use nodeimg_types::data_type::DataTypeId;
 
     fn test_registries() -> (NodeRegistry, CategoryRegistry) {

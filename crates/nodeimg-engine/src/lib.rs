@@ -1,10 +1,14 @@
-pub mod ai_task;
-pub mod backend;
 pub mod builtins;
-pub mod cache;
-pub mod eval;
-pub mod menu;
-pub mod registry;
+pub(crate) mod internal;
+pub mod transport;
 
-pub use cache::NodeId;
-pub use registry::{GpuProcessFn, NodeDef, NodeInstance, NodeRegistry, ProcessFn};
+// Re-export for backwards compatibility (app and other crates still use these paths)
+pub use internal::ai_task;
+pub use internal::backend;
+pub use internal::cache;
+pub use internal::eval;
+pub use internal::menu;
+pub use internal::registry;
+
+pub use internal::cache::NodeId;
+pub use internal::registry::{GpuProcessFn, NodeDef, NodeInstance, NodeRegistry, ProcessFn};
