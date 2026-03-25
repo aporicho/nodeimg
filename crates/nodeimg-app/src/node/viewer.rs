@@ -1,7 +1,7 @@
 use crate::execution::ExecutionManager;
 use crate::gpu::GpuContext;
 use crate::node::widget::WidgetRegistry;
-use nodeimg_engine::registry::NodeInstance;
+use nodeimg_engine::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
 use nodeimg_engine::transport::{
     ConnectionRequest, ConstraintInfo, ExecuteProgress, GraphRequest, NodeRequest, NodeTypeDef,

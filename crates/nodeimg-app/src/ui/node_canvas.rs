@@ -4,7 +4,7 @@ use egui_snarl::ui::{NodeLayout, SnarlStyle, SnarlWidget};
 use egui_snarl::Snarl;
 
 use crate::node::viewer::NodeViewer;
-use nodeimg_engine::registry::NodeInstance;
+use nodeimg_engine::NodeInstance;
 use crate::theme::Theme;
 use crate::ui::preview_panel::PreviewPanel;
 

@@ -1,5 +1,7 @@
 pub mod local;
 
+pub use crate::internal::backend::BackendClient;
+
 use crate::cache::NodeId;
 use nodeimg_types::value::Value;
 use serde::{Deserialize, Serialize};
