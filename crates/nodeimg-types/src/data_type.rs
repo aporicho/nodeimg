@@ -18,7 +18,7 @@ pub struct DataTypeInfo {
 }
 
 /// Conversion function type alias.
-type ConversionFn = Box<dyn Fn(Value) -> Value>;
+type ConversionFn = Box<dyn Fn(Value) -> Value + Send + Sync>;
 
 /// Manages all data types, compatibility rules, and conversion functions.
 pub struct DataTypeRegistry {
@@ -52,7 +52,7 @@ impl DataTypeRegistry {
         &mut self,
         from: DataTypeId,
         to: DataTypeId,
-        f: impl Fn(Value) -> Value + 'static,
+        f: impl Fn(Value) -> Value + Send + Sync + 'static,
     ) {
         self.conversions.insert((from, to), Box::new(f));
     }
