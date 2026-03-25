@@ -1,13 +1,14 @@
 use eframe::egui;
 use nodeimg_engine::transport::{ExecuteProgress, GraphRequest, ProcessingTransport};
+use nodeimg_engine::NodeId;
 use std::sync::mpsc;
 use std::sync::Arc;
+use std::collections::HashMap;
 
-/// Wraps a Sender to tag each ExecuteProgress with a generation number.
-/// Uses a forwarding thread so progress is delivered in real-time.
 struct TaggedSender {
     gen: u64,
-    tx: mpsc::Sender<(u64, ExecuteProgress)>,
+    trigger: NodeId,
+    tx: mpsc::Sender<(NodeId, u64, ExecuteProgress)>,
 }
 
 impl TaggedSender {
@@ -15,9 +16,10 @@ impl TaggedSender {
         let (inner_tx, inner_rx) = mpsc::channel();
         let tagged_tx = self.tx;
         let gen = self.gen;
+        let trigger = self.trigger;
         std::thread::spawn(move || {
             while let Ok(progress) = inner_rx.recv() {
-                if tagged_tx.send((gen, progress)).is_err() {
+                if tagged_tx.send((trigger, gen, progress)).is_err() {
                     break;
                 }
             }
@@ -26,22 +28,26 @@ impl TaggedSender {
     }
 }
 
-/// App-side execution dispatcher. Spawns background threads and polls results each frame.
+struct TaskState {
+    generation: u64,
+}
+
 pub struct ExecutionManager {
     transport: Arc<dyn ProcessingTransport>,
-    progress_rx: Option<mpsc::Receiver<(u64, ExecuteProgress)>>,
-    generation: u64,
-    running: bool,
+    progress_tx: mpsc::Sender<(NodeId, u64, ExecuteProgress)>,
+    progress_rx: mpsc::Receiver<(NodeId, u64, ExecuteProgress)>,
+    tasks: HashMap<NodeId, TaskState>,
     repaint: Option<egui::Context>,
 }
 
 impl ExecutionManager {
     pub fn new(transport: Arc<dyn ProcessingTransport>) -> Self {
+        let (tx, rx) = mpsc::channel();
         Self {
             transport,
-            progress_rx: None,
-            generation: 0,
-            running: false,
+            progress_tx: tx,
+            progress_rx: rx,
+            tasks: HashMap::new(),
             repaint: None,
         }
     }
@@ -50,55 +56,64 @@ impl ExecutionManager {
         self.repaint = Some(ctx);
     }
 
-    pub fn submit(&mut self, request: GraphRequest) {
-        self.generation += 1;
-        let gen = self.generation;
+    pub fn submit(&mut self, trigger_node: NodeId, request: GraphRequest) {
+        let gen = self.tasks
+            .get(&trigger_node)
+            .map(|s| s.generation + 1)
+            .unwrap_or(1);
+        self.tasks.insert(trigger_node, TaskState { generation: gen });
+
         let transport = Arc::clone(&self.transport);
-        let (tx, rx) = mpsc::channel();
-        self.progress_rx = Some(rx);
-        self.running = true;
+        let tagged_tx = TaggedSender {
+            gen,
+            trigger: trigger_node,
+            tx: self.progress_tx.clone(),
+        };
 
         let repaint = self.repaint.clone();
         std::thread::spawn(move || {
-            let tagged_tx = TaggedSender { gen, tx: tx.clone() };
             let result = transport.execute(request, tagged_tx.into_sender());
-
             if let Err(e) = result {
-                let _ = tx.send((gen, ExecuteProgress::Error {
-                    node_id: None,
-                    message: e,
-                }));
+                eprintln!("[execution] Task error for trigger {}: {}", trigger_node, e);
             }
-
             if let Some(ctx) = repaint {
                 ctx.request_repaint();
             }
         });
     }
 
-    pub fn poll(&mut self) -> Vec<ExecuteProgress> {
+    pub fn poll(&mut self) -> Vec<(NodeId, ExecuteProgress)> {
         let mut results = Vec::new();
-        if let Some(ref rx) = self.progress_rx {
-            while let Ok((gen, progress)) = rx.try_recv() {
-                if gen != self.generation {
-                    continue;
-                }
-                if matches!(progress, ExecuteProgress::Finished | ExecuteProgress::Error { .. }) {
-                    self.running = false;
-                }
-                results.push(progress);
+        while let Ok((trigger, gen, progress)) = self.progress_rx.try_recv() {
+            let current_gen = self.tasks.get(&trigger).map(|s| s.generation);
+            if current_gen != Some(gen) {
+                continue;
+            }
+            let is_terminal = matches!(
+                progress,
+                ExecuteProgress::Finished | ExecuteProgress::Error { .. }
+            );
+            results.push((trigger, progress));
+            if is_terminal {
+                self.tasks.remove(&trigger);
             }
         }
         results
     }
 
-    pub fn cancel(&mut self) {
-        self.generation += 1;
-        self.running = false;
+    pub fn cancel(&mut self, trigger_node: NodeId) {
+        if let Some(state) = self.tasks.get_mut(&trigger_node) {
+            state.generation += 1;
+        }
+        self.tasks.remove(&trigger_node);
     }
 
-    pub fn is_running(&self) -> bool {
-        self.running
+    pub fn cancel_all(&mut self) {
+        self.tasks.clear();
+    }
+
+    pub fn is_running(&self, trigger_node: NodeId) -> bool {
+        self.tasks.contains_key(&trigger_node)
     }
 
     pub fn transport(&self) -> &Arc<dyn ProcessingTransport> {
