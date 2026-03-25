@@ -108,11 +108,7 @@ impl App {
         // Register AI nodes if connected
         if connected {
             // Register on transport's internal registries
-            let transport_result = transport.with_registry(|reg| {
-                transport.with_type_registry(|type_reg| {
-                    backend.register_remote_nodes(reg, type_reg)
-                })
-            });
+            let transport_result = transport.register_remote_nodes(&backend);
             match transport_result {
                 Ok(count) => eprintln!("[backend] Registered {} AI node types (transport)", count),
                 Err(e) => eprintln!("[backend] Failed to register AI nodes on transport: {}", e),

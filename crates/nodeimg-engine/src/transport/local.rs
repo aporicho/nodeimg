@@ -51,17 +51,35 @@ impl LocalTransport {
         }
     }
 
-    /// Access the node registry (locked). Useful for registering additional
-    /// nodes (e.g. AI nodes from backend) or for app-layer queries.
-    pub fn with_registry<R>(&self, f: impl FnOnce(&mut NodeRegistry) -> R) -> R {
+    /// Read-only access to the node registry. Use for serialization, queries, etc.
+    pub fn with_registry<R>(&self, f: impl FnOnce(&NodeRegistry) -> R) -> R {
+        let reg = self.registry.lock().unwrap();
+        f(&reg)
+    }
+
+    /// Mutable access to the node registry. Use for registering AI nodes.
+    pub fn with_registry_mut<R>(&self, f: impl FnOnce(&mut NodeRegistry) -> R) -> R {
         let mut reg = self.registry.lock().unwrap();
         f(&mut reg)
     }
 
-    /// Access the data type registry (locked).
-    pub fn with_type_registry<R>(&self, f: impl FnOnce(&mut DataTypeRegistry) -> R) -> R {
+    /// Read-only access to the data type registry.
+    pub fn with_type_registry<R>(&self, f: impl FnOnce(&DataTypeRegistry) -> R) -> R {
+        let reg = self.type_registry.lock().unwrap();
+        f(&reg)
+    }
+
+    /// Mutable access to the data type registry. Use for registering AI types.
+    pub fn with_type_registry_mut<R>(&self, f: impl FnOnce(&mut DataTypeRegistry) -> R) -> R {
         let mut reg = self.type_registry.lock().unwrap();
         f(&mut reg)
+    }
+
+    /// Register AI nodes from the backend. Locks both registries internally.
+    pub fn register_remote_nodes(&self, client: &BackendClient) -> Result<usize, String> {
+        let mut reg = self.registry.lock().unwrap();
+        let mut type_reg = self.type_registry.lock().unwrap();
+        client.register_remote_nodes(&mut reg, &mut type_reg)
     }
 
     /// Generate a categorised menu for the node picker UI.
@@ -140,60 +158,73 @@ impl ProcessingTransport for LocalTransport {
         request: GraphRequest,
         progress: Sender<ExecuteProgress>,
     ) -> Result<(), String> {
-        // 1. Convert GraphRequest to internal types
+        // Phase 1: Preparation — lock registry + type_registry, build internal types, then release
+        let (nodes, connections, order) = {
+            let registry = self.registry.lock().unwrap();
+
+            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
+            for (&node_id, req) in &request.nodes {
+                let mut params: HashMap<String, Value> = HashMap::new();
+
+                // Start with defaults from the NodeDef
+                if let Some(def) = registry.get(&req.type_id) {
+                    for p in &def.params {
+                        params.insert(p.name.clone(), p.default.clone());
+                    }
+                }
+
+                // Override with request params
+                for (key, pv) in &req.params {
+                    params.insert(key.clone(), pv.to_value());
+                }
+
+                nodes.insert(
+                    node_id,
+                    NodeInstance {
+                        type_id: req.type_id.clone(),
+                        params,
+                    },
+                );
+            }
+
+            let connections: Vec<Connection> = request
+                .connections
+                .iter()
+                .map(|c| Connection {
+                    from_node: c.from_node,
+                    from_pin: c.from_pin.clone(),
+                    to_node: c.to_node,
+                    to_pin: c.to_pin.clone(),
+                })
+                .collect();
+
+            let order = EvalEngine::topo_sort(request.target_node, &connections)?;
+
+            (nodes, connections, order)
+            // registry lock released here
+        };
+
+        // Phase 2: Set up cache downstream relationships
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.clear_downstream();
+            for conn in &connections {
+                cache.set_downstream(conn.from_node, conn.to_node);
+            }
+        }
+
+        // Phase 3: Evaluate each node — lock registry (read) for node defs,
+        // lock cache briefly per node for reads/inserts
         let registry = self.registry.lock().unwrap();
         let type_registry = self.type_registry.lock().unwrap();
-        let mut cache = self.cache.lock().unwrap();
 
-        let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
-        for (&node_id, req) in &request.nodes {
-            let mut params: HashMap<String, Value> = HashMap::new();
-
-            // Start with defaults from the NodeDef
-            if let Some(def) = registry.get(&req.type_id) {
-                for p in &def.params {
-                    params.insert(p.name.clone(), p.default.clone());
-                }
-            }
-
-            // Override with request params
-            for (key, pv) in &req.params {
-                params.insert(key.clone(), pv.to_value());
-            }
-
-            nodes.insert(
-                node_id,
-                NodeInstance {
-                    type_id: req.type_id.clone(),
-                    params,
-                },
-            );
-        }
-
-        let connections: Vec<Connection> = request
-            .connections
-            .iter()
-            .map(|c| Connection {
-                from_node: c.from_node,
-                from_pin: c.from_pin.clone(),
-                to_node: c.to_node,
-                to_pin: c.to_pin.clone(),
-            })
-            .collect();
-
-        // 2. Topological sort
-        let order = EvalEngine::topo_sort(request.target_node, &connections)?;
-
-        // 3. Set up downstream relationships in cache
-        cache.clear_downstream();
-        for conn in &connections {
-            cache.set_downstream(conn.from_node, conn.to_node);
-        }
-
-        // 4. Evaluate each node in order
         for node_id in order {
-            if cache.get(node_id).is_some() {
-                continue;
+            // Check cache (brief lock)
+            {
+                let cache = self.cache.lock().unwrap();
+                if cache.get(node_id).is_some() {
+                    continue;
+                }
             }
 
             let instance = match nodes.get(&node_id) {
@@ -205,44 +236,46 @@ impl ProcessingTransport for LocalTransport {
                 None => continue,
             };
 
-            // Gather inputs from upstream cached outputs
+            // Gather inputs from upstream cached outputs (brief lock)
             let mut inputs: HashMap<String, Value> = HashMap::new();
-            for conn in &connections {
-                if conn.to_node == node_id {
-                    if let Some(upstream_outputs) = cache.get(conn.from_node) {
-                        if let Some(val) = upstream_outputs.get(&conn.from_pin) {
-                            // Type conversion if needed
-                            let expected_type = def
-                                .inputs
-                                .iter()
-                                .find(|pin| pin.name == conn.to_pin)
-                                .map(|pin| &pin.data_type);
+            {
+                let cache = self.cache.lock().unwrap();
+                for conn in &connections {
+                    if conn.to_node == node_id {
+                        if let Some(upstream_outputs) = cache.get(conn.from_node) {
+                            if let Some(val) = upstream_outputs.get(&conn.from_pin) {
+                                let expected_type = def
+                                    .inputs
+                                    .iter()
+                                    .find(|pin| pin.name == conn.to_pin)
+                                    .map(|pin| &pin.data_type);
 
-                            let upstream_type = nodes
-                                .get(&conn.from_node)
-                                .and_then(|inst| registry.get(&inst.type_id))
-                                .and_then(|upstream_def| {
-                                    upstream_def
-                                        .outputs
-                                        .iter()
-                                        .find(|pin| pin.name == conn.from_pin)
-                                        .map(|pin| &pin.data_type)
-                                });
+                                let upstream_type = nodes
+                                    .get(&conn.from_node)
+                                    .and_then(|inst| registry.get(&inst.type_id))
+                                    .and_then(|upstream_def| {
+                                        upstream_def
+                                            .outputs
+                                            .iter()
+                                            .find(|pin| pin.name == conn.from_pin)
+                                            .map(|pin| &pin.data_type)
+                                    });
 
-                            let converted = match (upstream_type, expected_type) {
-                                (Some(from_type), Some(to_type)) if from_type != to_type => {
-                                    type_registry
-                                        .convert(val.clone(), from_type, to_type)
-                                        .unwrap_or_else(|| val.clone())
-                                }
-                                _ => val.clone(),
-                            };
+                                let converted = match (upstream_type, expected_type) {
+                                    (Some(from_type), Some(to_type)) if from_type != to_type => {
+                                        type_registry
+                                            .convert(val.clone(), from_type, to_type)
+                                            .unwrap_or_else(|| val.clone())
+                                    }
+                                    _ => val.clone(),
+                                };
 
-                            inputs.insert(conn.to_pin.clone(), converted);
+                                inputs.insert(conn.to_pin.clone(), converted);
+                            }
                         }
                     }
                 }
-            }
+            } // cache lock released — node execution below does NOT hold cache lock
 
             // GPU path (highest priority)
             if let Some(ref gpu_process) = def.gpu_process {
@@ -253,7 +286,7 @@ impl ProcessingTransport for LocalTransport {
                         node_id,
                         outputs: outputs.clone(),
                     });
-                    cache.insert(node_id, outputs);
+                    self.cache.lock().unwrap().insert(node_id, outputs);
                     continue;
                 }
             }
@@ -289,7 +322,7 @@ impl ProcessingTransport for LocalTransport {
                     node_id,
                     outputs: outputs.clone(),
                 });
-                cache.insert(node_id, outputs);
+                self.cache.lock().unwrap().insert(node_id, outputs);
             } else if def.gpu_process.is_none() {
                 // AI node: skip with log (full AI integration is future work)
                 eprintln!(
@@ -353,7 +386,7 @@ mod tests {
 
     /// Register a simple CPU-only "source" node that outputs a float from params.
     fn register_test_source(transport: &LocalTransport) {
-        transport.with_registry(|reg| {
+        transport.with_registry_mut(|reg| {
             reg.register(NodeDef {
                 type_id: "test_source".into(),
                 title: "Test Source".into(),
@@ -386,7 +419,7 @@ mod tests {
 
     /// Register a CPU-only "add_one" node: takes float input, outputs float + 1.
     fn register_test_add_one(transport: &LocalTransport) {
-        transport.with_registry(|reg| {
+        transport.with_registry_mut(|reg| {
             reg.register(NodeDef {
                 type_id: "test_add_one".into(),
                 title: "Test Add One".into(),
