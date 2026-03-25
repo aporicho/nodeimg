@@ -1,8 +1,8 @@
 //! HTTP client for communicating with the Python backend.
 
-use crate::cache::NodeId;
-use crate::eval::Connection;
-use crate::registry::{NodeDef, NodeInstance, NodeRegistry, ParamDef, PinDef};
+use crate::internal::cache::NodeId;
+use crate::internal::eval::Connection;
+use crate::internal::registry::{NodeDef, NodeInstance, NodeRegistry, ParamDef, PinDef};
 use nodeimg_types::category::CategoryId;
 use nodeimg_types::constraint::Constraint;
 use nodeimg_types::data_type::{DataTypeId, DataTypeInfo, DataTypeRegistry};
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_serialize_ai_subgraph() {
-        use crate::registry::{NodeDef, NodeInstance, PinDef};
+        use crate::internal::registry::{NodeDef, NodeInstance, PinDef};
 
         let mut node_reg = NodeRegistry::new();
 
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_serialize_ai_subgraph_skips_local_nodes() {
-        use crate::registry::{NodeDef, NodeInstance, PinDef};
+        use crate::internal::registry::{NodeDef, NodeInstance, PinDef};
 
         let mut node_reg = NodeRegistry::new();
 
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn test_collect_ai_node_ids() {
-        use crate::registry::{NodeDef, NodeInstance, PinDef};
+        use crate::internal::registry::{NodeDef, NodeInstance, PinDef};
 
         let mut node_reg = NodeRegistry::new();
 

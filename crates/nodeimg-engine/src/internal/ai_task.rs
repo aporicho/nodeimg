@@ -4,8 +4,8 @@
 //! results back to the UI thread through an `mpsc` channel, keeping the
 //! GUI responsive during long-running AI operations (2+ minutes).
 
-use crate::backend::BackendClient;
-use crate::cache::{Cache, NodeId};
+use crate::internal::backend::BackendClient;
+use crate::internal::cache::{Cache, NodeId};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 
