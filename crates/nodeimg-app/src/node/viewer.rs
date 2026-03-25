@@ -4,10 +4,11 @@ use nodeimg_engine::ai_task::AiExecutor;
 use nodeimg_engine::backend::BackendClient;
 use nodeimg_engine::cache::Cache;
 use nodeimg_engine::eval::{Connection, EvalEngine};
-use nodeimg_engine::menu::Menu;
 use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
+use nodeimg_engine::transport::local::LocalTransport;
+use nodeimg_engine::transport::{NodeTypeDef, ProcessingTransport};
 use nodeimg_types::category::CategoryRegistry;
-use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
+use nodeimg_types::data_type::DataTypeRegistry;
 use nodeimg_types::value::Value;
 use crate::theme::Theme;
 use eframe::egui;
@@ -20,6 +21,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct NodeViewer {
+    // Transport abstraction (new)
+    pub transport: Arc<LocalTransport>,
+    pub node_type_defs: Vec<NodeTypeDef>,
+
+    // Kept for show_body compatibility (direct engine access)
     pub type_registry: DataTypeRegistry,
     pub category_registry: CategoryRegistry,
     pub node_registry: NodeRegistry,
@@ -46,11 +52,16 @@ pub struct NodeViewer {
 }
 
 impl NodeViewer {
-    pub fn new(theme: Arc<dyn Theme>, gpu_ctx: Option<Arc<GpuContext>>) -> Self {
+    pub fn new(theme: Arc<dyn Theme>, gpu_ctx: Option<Arc<GpuContext>>, transport: Arc<LocalTransport>) -> Self {
+        let node_type_defs = transport.node_types().unwrap_or_default();
+
+        // Still init local copies for show_body compatibility
         let mut node_registry = NodeRegistry::new();
         nodeimg_engine::builtins::register_all(&mut node_registry);
 
         Self {
+            transport,
+            node_type_defs,
             type_registry: DataTypeRegistry::with_builtins(),
             category_registry: CategoryRegistry::with_builtins(),
             node_registry,
@@ -68,25 +79,28 @@ impl NodeViewer {
         }
     }
 
+    /// Find a NodeTypeDef by type_id from the cached list.
+    fn find_type_def(&self, type_id: &str) -> Option<&NodeTypeDef> {
+        self.node_type_defs.iter().find(|d| d.type_id == type_id)
+    }
+
     pub fn invalidate(&mut self, node_id: NodeId) {
         self.cache.invalidate(node_id.0);
+        self.transport.invalidate(node_id.0);
         self.textures.remove(&node_id);
     }
 
     pub fn invalidate_all(&mut self) {
         self.cache.invalidate_all();
+        self.transport.invalidate_all();
         self.textures.clear();
-    }
-
-    fn pin_color(&self, data_type: &DataTypeId) -> Color32 {
-        self.theme.pin_color(&data_type.0)
     }
 
     /// Build Connection list from the Snarl graph (used by EvalEngine).
     pub fn build_connections(&self, snarl: &Snarl<NodeInstance>) -> Vec<Connection> {
         let mut connections = Vec::new();
         for (node_id, instance) in snarl.node_ids() {
-            let def = match self.node_registry.get(&instance.type_id) {
+            let def = match self.find_type_def(&instance.type_id) {
                 Some(d) => d,
                 None => continue,
             };
@@ -97,7 +111,7 @@ impl NodeViewer {
                 });
                 for remote in &in_pin.remotes {
                     let upstream_instance = &snarl[remote.node];
-                    if let Some(upstream_def) = self.node_registry.get(&upstream_instance.type_id) {
+                    if let Some(upstream_def) = self.find_type_def(&upstream_instance.type_id) {
                         if let Some(out_pin) = upstream_def.outputs.get(remote.output) {
                             connections.push(Connection {
                                 from_node: remote.node.0,
@@ -117,23 +131,20 @@ impl NodeViewer {
 #[allow(refining_impl_trait)]
 impl SnarlViewer<NodeInstance> for NodeViewer {
     fn title(&mut self, node: &NodeInstance) -> String {
-        self.node_registry
-            .get(&node.type_id)
+        self.find_type_def(&node.type_id)
             .map(|def| def.title.clone())
             .unwrap_or_else(|| format!("[Unknown: {}]", node.type_id))
     }
 
     fn inputs(&mut self, node: &NodeInstance) -> usize {
         // V1: only data input pins. TODO: add parameter pins for V2.
-        self.node_registry
-            .get(&node.type_id)
+        self.find_type_def(&node.type_id)
             .map(|def| def.inputs.len())
             .unwrap_or(0)
     }
 
     fn outputs(&mut self, node: &NodeInstance) -> usize {
-        self.node_registry
-            .get(&node.type_id)
+        self.find_type_def(&node.type_id)
             .map(|def| def.outputs.len())
             .unwrap_or(0)
     }
@@ -154,10 +165,10 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
 
     fn show_input(&mut self, pin: &InPin, ui: &mut Ui, snarl: &mut Snarl<NodeInstance>) -> PinInfo {
         let instance = &snarl[pin.id.node];
-        if let Some(def) = self.node_registry.get(&instance.type_id) {
+        if let Some(def) = self.find_type_def(&instance.type_id) {
             if let Some(pin_def) = def.inputs.get(pin.id.input) {
                 ui.colored_label(self.theme.text_secondary(), &pin_def.name);
-                let color = self.pin_color(&pin_def.data_type);
+                let color = self.theme.pin_color(&pin_def.data_type);
                 return PinInfo::circle().with_fill(color);
             }
         }
@@ -172,9 +183,9 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
         snarl: &mut Snarl<NodeInstance>,
     ) -> PinInfo {
         let instance = &snarl[pin.id.node];
-        if let Some(def) = self.node_registry.get(&instance.type_id) {
+        if let Some(def) = self.find_type_def(&instance.type_id) {
             if let Some(pin_def) = def.outputs.get(pin.id.output) {
-                let color = self.pin_color(&pin_def.data_type);
+                let color = self.theme.pin_color(&pin_def.data_type);
                 // Use egui's built-in right-aligned label instead of layout wrapper
                 // to avoid vertical misalignment with the pin circle
                 let label = egui::Label::new(
@@ -190,8 +201,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
     }
 
     fn has_body(&mut self, node: &NodeInstance) -> bool {
-        self.node_registry
-            .get(&node.type_id)
+        self.find_type_def(&node.type_id)
             .map(|def| !def.params.is_empty() || def.has_preview)
             .unwrap_or(false)
     }
@@ -395,9 +405,8 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
     ) -> Frame {
         // Use category color for header accent
         let cat_id = self
-            .node_registry
-            .get(&snarl[node_id].type_id)
-            .map(|def| def.category.0.clone())
+            .find_type_def(&snarl[node_id].type_id)
+            .map(|def| def.category.clone())
             .unwrap_or_else(|| "tool".to_string());
         self.theme.node_header_frame(&cat_id)
     }
@@ -418,14 +427,14 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
     }
 
     fn show_graph_menu(&mut self, pos: egui::Pos2, ui: &mut Ui, snarl: &mut Snarl<NodeInstance>) {
-        let categories = Menu::generate(&self.node_registry, &self.category_registry);
+        let categories = self.transport.generate_menu();
         ui.label("Add Node");
         ui.separator();
         for cat in &categories {
             ui.menu_button(&cat.name, |ui: &mut Ui| {
                 for item in &cat.items {
                     if ui.button(&item.title).clicked() {
-                        if let Some(instance) = self.node_registry.instantiate(&item.type_id) {
+                        if let Some(instance) = self.transport.instantiate(&item.type_id) {
                             snarl.insert_node(pos, instance);
                             self.graph_dirty = true;
                         }
@@ -457,15 +466,15 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
     }
 
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<NodeInstance>) {
-        // Type compatibility check
+        // Type compatibility check using transport
         let from_type_id = snarl[from.id.node].type_id.clone();
         let to_type_id = snarl[to.id.node].type_id.clone();
         let compatible = (|| {
-            let from_def = self.node_registry.get(&from_type_id)?;
-            let to_def = self.node_registry.get(&to_type_id)?;
+            let from_def = self.find_type_def(&from_type_id)?;
+            let to_def = self.find_type_def(&to_type_id)?;
             let from_type = &from_def.outputs.get(from.id.output)?.data_type;
             let to_type = &to_def.inputs.get(to.id.input)?.data_type;
-            Some(self.type_registry.is_compatible(from_type, to_type))
+            Some(self.transport.is_compatible(from_type, to_type))
         })();
 
         if compatible != Some(true) {
@@ -476,13 +485,11 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
         let would_create_cycle = {
             let mut connections = self.build_connections(snarl);
             let from_pin_name = self
-                .node_registry
-                .get(&from_type_id)
+                .find_type_def(&from_type_id)
                 .and_then(|def| def.outputs.get(from.id.output).map(|p| p.name.clone()))
                 .unwrap_or_default();
             let to_pin_name = self
-                .node_registry
-                .get(&to_type_id)
+                .find_type_def(&to_type_id)
                 .and_then(|def| def.inputs.get(to.id.input).map(|p| p.name.clone()))
                 .unwrap_or_default();
             connections.push(Connection {

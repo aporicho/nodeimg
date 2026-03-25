@@ -11,6 +11,8 @@ use crate::node::serial::Serializer;
 use crate::node::viewer::NodeViewer;
 use nodeimg_engine::backend::BackendClient;
 use nodeimg_engine::registry::NodeInstance;
+use nodeimg_engine::transport::local::LocalTransport;
+use nodeimg_engine::transport::ProcessingTransport;
 use crate::theme::dark::DarkTheme;
 use crate::theme::light::LightTheme;
 use crate::theme::Theme;
@@ -56,8 +58,11 @@ impl App {
             eprintln!("[gpu] GPU not available, using CPU fallback");
         }
 
+        // Create transport before viewer — transport owns the canonical registries
+        let transport = Arc::new(LocalTransport::new(gpu_ctx.clone(), None));
+
         let theme: Arc<dyn Theme> = Arc::new(LightTheme);
-        let mut viewer = NodeViewer::new(Arc::clone(&theme), gpu_ctx);
+        let mut viewer = NodeViewer::new(Arc::clone(&theme), gpu_ctx, Arc::clone(&transport));
 
         // NIS_BACKEND_URL overrides the default local backend address.
         // Use this to point at a remote/cloud GPU server, e.g.:
@@ -102,21 +107,36 @@ impl App {
 
         // Register AI nodes if connected
         if connected {
+            // Register on transport's internal registries
+            let transport_result = transport.with_registry(|reg| {
+                transport.with_type_registry(|type_reg| {
+                    backend.register_remote_nodes(reg, type_reg)
+                })
+            });
+            match transport_result {
+                Ok(count) => eprintln!("[backend] Registered {} AI node types (transport)", count),
+                Err(e) => eprintln!("[backend] Failed to register AI nodes on transport: {}", e),
+            }
+
+            // Also register on viewer's local registries (for show_body compatibility)
             match backend
                 .register_remote_nodes(&mut viewer.node_registry, &mut viewer.type_registry)
             {
                 Ok(count) => {
-                    eprintln!("[backend] Registered {} AI node types", count);
+                    eprintln!("[backend] Registered {} AI node types (viewer)", count);
                 }
                 Err(e) => {
-                    eprintln!("[backend] Failed to register AI nodes: {}", e);
+                    eprintln!("[backend] Failed to register AI nodes on viewer: {}", e);
                 }
             }
+
+            // Refresh node_type_defs after AI node registration
+            viewer.node_type_defs = transport.node_types().unwrap_or_default();
         }
         viewer.backend = Some(backend);
 
         // Auto-load: try to restore from autosave file
-        let snarl = Self::try_auto_load(&viewer.node_registry);
+        let snarl = Self::try_auto_load(&transport);
 
         Self {
             snarl,
@@ -253,13 +273,18 @@ impl App {
     }
 
     /// Try to load the autosave file on startup.
-    fn try_auto_load(registry: &nodeimg_engine::registry::NodeRegistry) -> Snarl<NodeInstance> {
+    fn try_auto_load(transport: &LocalTransport) -> Snarl<NodeInstance> {
         let path = Self::autosave_path();
         if path.exists() {
             if let Ok(json) = std::fs::read_to_string(&path) {
-                match Serializer::load(&json, registry) {
+                let result = transport.with_registry(|registry| {
+                    Serializer::load(&json, registry)
+                });
+                match result {
                     Ok(graph) => {
-                        let snarl = Serializer::restore(&graph, registry);
+                        let snarl = transport.with_registry(|registry| {
+                            Serializer::restore(&graph, registry)
+                        });
                         eprintln!("[project] Restored autosave ({} nodes)", graph.nodes.len());
                         return snarl;
                     }
@@ -278,7 +303,9 @@ impl App {
             return;
         }
 
-        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_registry);
+        let graph = self.viewer.transport.with_registry(|reg| {
+            Serializer::snapshot(&self.snarl, reg)
+        });
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
@@ -310,7 +337,9 @@ impl App {
 
     /// Save As: pick a file and write the graph.
     fn save_as(&mut self) {
-        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_registry);
+        let graph = self.viewer.transport.with_registry(|reg| {
+            Serializer::snapshot(&self.snarl, reg)
+        });
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
@@ -342,17 +371,23 @@ impl App {
             .pick_file()
         {
             match std::fs::read_to_string(&path) {
-                Ok(json) => match Serializer::load(&json, &self.viewer.node_registry) {
-                    Ok(graph) => {
-                        self.snarl =
-                            Serializer::restore(&graph, &self.viewer.node_registry);
-                        self.viewer.invalidate_all();
-                        self.current_file = Some(path.clone());
-                        self.last_saved_json = Some(json);
-                        eprintln!("[project] Opened {}", path.display());
-                    }
-                    Err(e) => {
-                        eprintln!("[project] Failed to load {}: {}", path.display(), e);
+                Ok(json) => {
+                    let load_result = self.viewer.transport.with_registry(|reg| {
+                        Serializer::load(&json, reg)
+                    });
+                    match load_result {
+                        Ok(graph) => {
+                            self.snarl = self.viewer.transport.with_registry(|reg| {
+                                Serializer::restore(&graph, reg)
+                            });
+                            self.viewer.invalidate_all();
+                            self.current_file = Some(path.clone());
+                            self.last_saved_json = Some(json);
+                            eprintln!("[project] Opened {}", path.display());
+                        }
+                        Err(e) => {
+                            eprintln!("[project] Failed to load {}: {}", path.display(), e);
+                        }
                     }
                 },
                 Err(e) => {
@@ -364,7 +399,9 @@ impl App {
 
     /// Quick save: write to current_file or autosave path.
     fn quick_save(&mut self) {
-        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_registry);
+        let graph = self.viewer.transport.with_registry(|reg| {
+            Serializer::snapshot(&self.snarl, reg)
+        });
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
