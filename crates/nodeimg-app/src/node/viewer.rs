@@ -269,8 +269,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
             }
 
             if any_changed {
-                self.cache.invalidate(node_id.0);
-                self.textures.remove(&node_id);
+                self.invalidate(node_id);
                 // Cancel ALL in-flight AI tasks — any param change may invalidate
                 // upstream results, and we don't track which trigger depends on
                 // which AI node.
@@ -511,15 +510,13 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
         }
 
         snarl.connect(from.id, to.id);
-        self.cache.invalidate(to.id.node.0);
-        self.textures.remove(&to.id.node);
+        self.invalidate(to.id.node);
         self.graph_dirty = true;
     }
 
     fn disconnect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<NodeInstance>) {
         snarl.disconnect(from.id, to.id);
-        self.cache.invalidate(to.id.node.0);
-        self.textures.remove(&to.id.node);
+        self.invalidate(to.id.node);
         self.graph_dirty = true;
     }
 }
