@@ -257,7 +257,7 @@ impl EvalEngine {
     /// Serializes all connected AI nodes upstream of `ai_node_id`, sends them
     /// to the backend, and caches the result. All nodes in the subgraph are
     /// added to `sent_to_backend` so they won't be processed again.
-    fn execute_ai_subgraph(
+    pub(crate) fn execute_ai_subgraph(
         ai_node_id: NodeId,
         nodes: &HashMap<NodeId, NodeInstance>,
         connections: &[Connection],

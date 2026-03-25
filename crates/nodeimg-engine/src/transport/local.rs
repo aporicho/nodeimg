@@ -13,7 +13,7 @@ use nodeimg_types::category::CategoryRegistry;
 use nodeimg_types::constraint::Constraint;
 use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
 use nodeimg_types::value::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -27,7 +27,6 @@ pub struct LocalTransport {
     cache: Mutex<Cache>,
     category_registry: CategoryRegistry,
     gpu_ctx: Option<Arc<GpuContext>>,
-    #[allow(dead_code)] // Will be used when AI backend integration is added
     backend: Option<BackendClient>,
 }
 
@@ -217,12 +216,13 @@ impl ProcessingTransport for LocalTransport {
         // lock cache briefly per node for reads/inserts
         let registry = self.registry.lock().unwrap();
         let type_registry = self.type_registry.lock().unwrap();
+        let mut sent_to_backend: HashSet<NodeId> = HashSet::new();
 
         for node_id in order {
-            // Check cache (brief lock)
+            // Check cache or already sent to backend (brief lock)
             {
                 let cache = self.cache.lock().unwrap();
-                if cache.get(node_id).is_some() {
+                if cache.get(node_id).is_some() || sent_to_backend.contains(&node_id) {
                     continue;
                 }
             }
@@ -324,11 +324,32 @@ impl ProcessingTransport for LocalTransport {
                 });
                 self.cache.lock().unwrap().insert(node_id, outputs);
             } else if def.gpu_process.is_none() {
-                // AI node: skip with log (full AI integration is future work)
-                eprintln!(
-                    "[local] node {} ({}) is an AI node — skipped",
-                    node_id, def.title
-                );
+                // AI node: delegate to backend via execute_ai_subgraph
+                if let Some(ref client) = self.backend {
+                    eprintln!("[local] node {} ({}) -> AI backend", node_id, def.title);
+                    let mut cache = self.cache.lock().unwrap();
+                    EvalEngine::execute_ai_subgraph(
+                        node_id,
+                        &nodes,
+                        &connections,
+                        &registry,
+                        &mut cache,
+                        client,
+                        &mut sent_to_backend,
+                    )?;
+                    // Send progress for the AI node if outputs were cached
+                    if let Some(outputs) = cache.get(node_id) {
+                        let _ = progress.send(ExecuteProgress::NodeCompleted {
+                            node_id,
+                            outputs: outputs.clone(),
+                        });
+                    }
+                } else {
+                    eprintln!(
+                        "[local] node {} ({}) is an AI node but no backend configured — skipped",
+                        node_id, def.title
+                    );
+                }
             }
         }
 
