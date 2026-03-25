@@ -1,4 +1,4 @@
-// pub mod local; // TODO: uncomment when local.rs is implemented (Task 3)
+pub mod local;
 
 use crate::cache::NodeId;
 use nodeimg_types::value::Value;
