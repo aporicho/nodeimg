@@ -1,19 +1,14 @@
 use crate::execution::ExecutionManager;
 use crate::gpu::GpuContext;
 use crate::node::widget::WidgetRegistry;
-use nodeimg_engine::ai_task::AiExecutor;
-use nodeimg_engine::backend::BackendClient;
-use nodeimg_engine::cache::Cache;
-use nodeimg_engine::eval::{Connection, EvalEngine};
-use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
+use nodeimg_engine::registry::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
 use nodeimg_engine::transport::{
     ConnectionRequest, ConstraintInfo, ExecuteProgress, GraphRequest, NodeRequest, NodeTypeDef,
     ParamValue, ProcessingTransport,
 };
-use nodeimg_types::category::CategoryRegistry;
 use nodeimg_types::constraint::Constraint;
-use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
+use nodeimg_types::data_type::DataTypeId;
 use nodeimg_types::value::Value;
 use nodeimg_types::widget_id::WidgetId;
 use crate::theme::Theme;
@@ -32,12 +27,7 @@ pub struct NodeViewer {
     pub node_type_defs: Vec<NodeTypeDef>,
     pub execution_manager: ExecutionManager,
 
-    // Kept for show_body compatibility (direct engine access)
-    pub type_registry: DataTypeRegistry,
-    pub category_registry: CategoryRegistry,
-    pub node_registry: NodeRegistry,
     pub widget_registry: WidgetRegistry,
-    pub cache: Cache,
     /// GPU textures per node. Managed here (not in Cache) because TextureHandle
     /// requires egui::Context which is only available during rendering.
     pub textures: HashMap<NodeId, egui::TextureHandle>,
@@ -45,12 +35,8 @@ pub struct NodeViewer {
     pub theme: Arc<dyn Theme>,
     /// GPU context for hardware-accelerated processing. None if GPU is unavailable.
     pub gpu_ctx: Option<Arc<GpuContext>>,
-    /// Backend client for executing AI nodes. None if backend is unavailable.
-    pub backend: Option<BackendClient>,
     /// Status message shown during AI execution (e.g. "Generating..." or error).
     pub backend_status: Option<String>,
-    /// Async executor for background AI operations.
-    pub ai_executor: AiExecutor,
     /// Per-node error messages from AI execution.
     ai_errors: HashMap<NodeId, String>,
     /// Set when the graph is mutated (param change, connect, disconnect, node add/remove).
@@ -63,26 +49,16 @@ impl NodeViewer {
         let node_type_defs = transport.node_types().unwrap_or_default();
         let execution_manager = ExecutionManager::new(Arc::clone(&transport) as Arc<dyn ProcessingTransport>);
 
-        // Still init local copies for show_body compatibility
-        let mut node_registry = NodeRegistry::new();
-        nodeimg_engine::builtins::register_all(&mut node_registry);
-
         Self {
             transport,
             node_type_defs,
             execution_manager,
-            type_registry: DataTypeRegistry::with_builtins(),
-            category_registry: CategoryRegistry::with_builtins(),
-            node_registry,
             widget_registry: WidgetRegistry::with_builtins(),
-            cache: Cache::new(),
             textures: HashMap::new(),
             preview_texture: None,
             theme,
             gpu_ctx,
-            backend: None,
             backend_status: None,
-            ai_executor: AiExecutor::new(),
             ai_errors: HashMap::new(),
             graph_dirty: false,
         }
@@ -101,37 +77,6 @@ impl NodeViewer {
     pub fn invalidate_all(&mut self) {
         self.transport.invalidate_all();
         self.textures.clear();
-    }
-
-    /// Build Connection list from the Snarl graph (used by EvalEngine).
-    pub fn build_connections(&self, snarl: &Snarl<NodeInstance>) -> Vec<Connection> {
-        let mut connections = Vec::new();
-        for (node_id, instance) in snarl.node_ids() {
-            let def = match self.find_type_def(&instance.type_id) {
-                Some(d) => d,
-                None => continue,
-            };
-            for (i, input_pin) in def.inputs.iter().enumerate() {
-                let in_pin = snarl.in_pin(InPinId {
-                    node: node_id,
-                    input: i,
-                });
-                for remote in &in_pin.remotes {
-                    let upstream_instance = &snarl[remote.node];
-                    if let Some(upstream_def) = self.find_type_def(&upstream_instance.type_id) {
-                        if let Some(out_pin) = upstream_def.outputs.get(remote.output) {
-                            connections.push(Connection {
-                                from_node: remote.node.0,
-                                from_pin: out_pin.name.clone(),
-                                to_node: node_id.0,
-                                to_pin: input_pin.name.clone(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        connections
     }
 
     fn build_graph_request(&self, target: NodeId, snarl: &Snarl<NodeInstance>) -> GraphRequest {
@@ -539,7 +484,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
 
         // Cycle detection
         let would_create_cycle = {
-            let mut connections = self.build_connections(snarl);
+            let mut connections = self.build_connection_requests(snarl);
             let from_pin_name = self
                 .find_type_def(&from_type_id)
                 .and_then(|def| def.outputs.get(from.id.output).map(|p| p.name.clone()))
@@ -548,13 +493,13 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 .find_type_def(&to_type_id)
                 .and_then(|def| def.inputs.get(to.id.input).map(|p| p.name.clone()))
                 .unwrap_or_default();
-            connections.push(Connection {
+            connections.push(ConnectionRequest {
                 from_node: from.id.node.0,
                 from_pin: from_pin_name,
                 to_node: to.id.node.0,
                 to_pin: to_pin_name,
             });
-            EvalEngine::topo_sort(to.id.node.0, &connections).is_err()
+            self.transport.would_create_cycle(to.id.node.0, &connections)
         };
 
         if would_create_cycle {
