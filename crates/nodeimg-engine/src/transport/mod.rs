@@ -32,6 +32,26 @@ pub trait ProcessingTransport: Send + Sync + 'static {
 
     /// List all available node type definitions.
     fn node_types(&self) -> Result<Vec<NodeTypeDef>, String>;
+
+    /// Synchronous local evaluation (skips AI nodes). Results written to internal cache.
+    fn evaluate_local_sync(&self, request: GraphRequest) -> Result<(), String>;
+
+    /// Query cached output for a node (does not trigger execution).
+    fn get_cached(&self, node_id: NodeId) -> Option<HashMap<String, Value>>;
+
+    /// Check for pending AI execution in the graph.
+    /// Returns (ai_node_id, serialized_subgraph_json) if found.
+    fn pending_ai_execution(
+        &self,
+        request: GraphRequest,
+    ) -> Option<(NodeId, serde_json::Value)>;
+
+    /// Check if adding connections would create a cycle.
+    fn would_create_cycle(
+        &self,
+        target: NodeId,
+        connections: &[ConnectionRequest],
+    ) -> bool;
 }
 
 // === Execution Progress ===
