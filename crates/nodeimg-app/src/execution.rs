@@ -72,7 +72,7 @@ impl ExecutionManager {
 
         let repaint = self.repaint.clone();
         std::thread::spawn(move || {
-            let result = transport.execute(request, tagged_tx.into_sender());
+            let result = transport.execute(&request, tagged_tx.into_sender());
             if let Err(e) = result {
                 eprintln!("[execution] Task error for trigger {}: {}", trigger_node, e);
             }
