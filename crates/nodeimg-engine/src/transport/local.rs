@@ -204,11 +204,11 @@ impl LocalTransport {
 impl ProcessingTransport for LocalTransport {
     fn execute(
         &self,
-        request: GraphRequest,
+        request: &GraphRequest,
         progress: Sender<ExecuteProgress>,
     ) -> Result<(), String> {
         // Phase 1: Preparation — build internal types from request, then topo-sort
-        let (nodes, connections) = self.prepare_from_request(&request);
+        let (nodes, connections) = self.prepare_from_request(request);
         let order = EvalEngine::topo_sort(request.target_node, &connections)?;
 
         // Phase 2: Set up cache downstream relationships
@@ -398,9 +398,9 @@ impl ProcessingTransport for LocalTransport {
         Ok(defs)
     }
 
-    fn evaluate_local_sync(&self, request: GraphRequest) -> Result<(), String> {
+    fn evaluate_local_sync(&self, request: &GraphRequest) -> Result<(), String> {
         // Phase 1: Preparation — build internal types from request
-        let (nodes, connections) = self.prepare_from_request(&request);
+        let (nodes, connections) = self.prepare_from_request(request);
 
         // Phase 2: Evaluate (backend=None skips AI nodes)
         let registry = self.registry.lock().unwrap();
@@ -426,10 +426,10 @@ impl ProcessingTransport for LocalTransport {
 
     fn pending_ai_execution(
         &self,
-        request: GraphRequest,
+        request: &GraphRequest,
     ) -> Option<(NodeId, serde_json::Value)> {
         // Build internal types from GraphRequest
-        let (nodes, connections) = self.prepare_from_request(&request);
+        let (nodes, connections) = self.prepare_from_request(request);
 
         let registry = self.registry.lock().unwrap();
         let cache = self.cache.lock().unwrap();
@@ -582,7 +582,7 @@ mod tests {
             target_node: 0,
         };
 
-        transport.execute(request, tx).unwrap();
+        transport.execute(&request, tx).unwrap();
 
         let mut got_completed = false;
         let mut got_finished = false;
@@ -638,7 +638,7 @@ mod tests {
             target_node: 1,
         };
 
-        transport.execute(request, tx).unwrap();
+        transport.execute(&request, tx).unwrap();
 
         let mut completed_nodes = Vec::new();
         let mut got_finished = false;
@@ -680,13 +680,13 @@ mod tests {
         };
 
         let (tx, _) = mpsc::channel();
-        transport.execute(request.clone(), tx).unwrap();
+        transport.execute(&request, tx).unwrap();
 
         // Invalidate and re-execute — should succeed without error
         transport.invalidate(0);
 
         let (tx2, rx2) = mpsc::channel();
-        transport.execute(request, tx2).unwrap();
+        transport.execute(&request, tx2).unwrap();
 
         let mut got_completed = false;
         while let Ok(progress) = rx2.try_recv() {
@@ -720,12 +720,12 @@ mod tests {
         };
 
         let (tx, _) = mpsc::channel();
-        transport.execute(request.clone(), tx).unwrap();
+        transport.execute(&request, tx).unwrap();
 
         transport.invalidate_all();
 
         let (tx2, rx2) = mpsc::channel();
-        transport.execute(request, tx2).unwrap();
+        transport.execute(&request, tx2).unwrap();
 
         let mut got_completed = false;
         while let Ok(progress) = rx2.try_recv() {
@@ -803,7 +803,7 @@ mod tests {
             target_node: 0,
         };
 
-        let result = transport.execute(request, tx);
+        let result = transport.execute(&request, tx);
         assert!(result.is_err());
         let err_msg = result.unwrap_err();
         assert!(
@@ -855,7 +855,7 @@ mod tests {
             target_node: 1,
         };
 
-        transport.evaluate_local_sync(request).unwrap();
+        transport.evaluate_local_sync(&request).unwrap();
 
         let cached = transport.get_cached(1);
         assert!(cached.is_some(), "node 1 should be cached after evaluate_local_sync");

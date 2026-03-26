@@ -324,7 +324,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 // Step 2: Evaluate local nodes only (skips AI nodes, never blocks).
                 let request = self.build_graph_request(node_id, snarl);
 
-                if let Err(e) = self.transport.evaluate_local_sync(request.clone()) {
+                if let Err(e) = self.transport.evaluate_local_sync(&request) {
                     self.backend_status = Some(e);
                 } else {
                     self.backend_status = None;
@@ -333,7 +333,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 // Step 3: Check for pending AI work.
                 if !self.execution_manager.is_running(node_id.0) {
                     if let Some((ai_node_id, _graph_json)) =
-                        self.transport.pending_ai_execution(request.clone())
+                        self.transport.pending_ai_execution(&request)
                     {
                         eprintln!(
                             "[backend] Spawning async AI execution: trigger={} ai_node={}",

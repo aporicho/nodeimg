@@ -16,7 +16,7 @@ pub trait ProcessingTransport: Send + Sync + 'static {
     /// Execute a node graph, pushing per-node results via `progress`.
     fn execute(
         &self,
-        request: GraphRequest,
+        request: &GraphRequest,
         progress: Sender<ExecuteProgress>,
     ) -> Result<(), String>;
 
@@ -36,7 +36,7 @@ pub trait ProcessingTransport: Send + Sync + 'static {
     fn node_types(&self) -> Result<Vec<NodeTypeDef>, String>;
 
     /// Synchronous local evaluation (skips AI nodes). Results written to internal cache.
-    fn evaluate_local_sync(&self, request: GraphRequest) -> Result<(), String>;
+    fn evaluate_local_sync(&self, request: &GraphRequest) -> Result<(), String>;
 
     /// Query cached output for a node (does not trigger execution).
     fn get_cached(&self, node_id: NodeId) -> Option<HashMap<String, Value>>;
@@ -45,7 +45,7 @@ pub trait ProcessingTransport: Send + Sync + 'static {
     /// Returns (ai_node_id, serialized_subgraph_json) if found.
     fn pending_ai_execution(
         &self,
-        request: GraphRequest,
+        request: &GraphRequest,
     ) -> Option<(NodeId, serde_json::Value)>;
 
     /// Check if adding connections would create a cycle.
