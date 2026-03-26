@@ -39,6 +39,7 @@ impl Menu {
     }
 
     /// Filter nodes by search keyword (matches title or category name).
+    #[allow(dead_code)] // Used in tests; will be exposed via transport when search UI is added
     pub fn search(
         keyword: &str,
         node_reg: &NodeRegistry,
