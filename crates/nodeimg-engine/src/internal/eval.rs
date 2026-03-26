@@ -130,6 +130,7 @@ impl EvalEngine {
     /// When `backend` is provided, AI nodes (those with `process: None`) will be
     /// serialized and sent to the Python backend for execution. Without a backend,
     /// AI nodes are silently skipped.
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate(
         target: NodeId,
         nodes: &HashMap<NodeId, NodeInstance>,
