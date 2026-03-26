@@ -1,7 +1,8 @@
 use nodeimg_gpu::GpuContext;
 use crate::internal::backend::BackendClient;
 use crate::internal::cache::{Cache, NodeId};
-use crate::internal::registry::{NodeInstance, NodeRegistry};
+use crate::internal::registry::NodeRegistry;
+use nodeimg_types::node_instance::NodeInstance;
 use nodeimg_types::data_type::DataTypeRegistry;
 use nodeimg_types::value::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
