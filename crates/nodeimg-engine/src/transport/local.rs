@@ -5,15 +5,15 @@ use crate::internal::eval::{Connection, EvalEngine};
 use crate::internal::menu::{Menu, MenuCategory};
 use crate::internal::registry::{NodeDef, NodeInstance, NodeRegistry};
 use crate::transport::{
-    ConstraintInfo, ExecuteProgress, GraphRequest, HealthResponse, NodeTypeDef, ParamDefInfo,
-    ParamValue, PinDefInfo, ProcessingTransport,
+    ConnectionRequest, ConstraintInfo, ExecuteProgress, GraphRequest, HealthResponse, NodeTypeDef,
+    ParamDefInfo, ParamValue, PinDefInfo, ProcessingTransport,
 };
 use nodeimg_gpu::GpuContext;
 use nodeimg_types::category::CategoryRegistry;
 use nodeimg_types::constraint::Constraint;
 use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
 use nodeimg_types::value::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -27,7 +27,6 @@ pub struct LocalTransport {
     cache: Mutex<Cache>,
     category_registry: CategoryRegistry,
     gpu_ctx: Option<Arc<GpuContext>>,
-    #[allow(dead_code)] // Will be used when AI backend integration is added
     backend: Option<BackendClient>,
 }
 
@@ -217,12 +216,13 @@ impl ProcessingTransport for LocalTransport {
         // lock cache briefly per node for reads/inserts
         let registry = self.registry.lock().unwrap();
         let type_registry = self.type_registry.lock().unwrap();
+        let mut sent_to_backend: HashSet<NodeId> = HashSet::new();
 
         for node_id in order {
-            // Check cache (brief lock)
+            // Check cache or already sent to backend (brief lock)
             {
                 let cache = self.cache.lock().unwrap();
-                if cache.get(node_id).is_some() {
+                if cache.get(node_id).is_some() || sent_to_backend.contains(&node_id) {
                     continue;
                 }
             }
@@ -324,11 +324,32 @@ impl ProcessingTransport for LocalTransport {
                 });
                 self.cache.lock().unwrap().insert(node_id, outputs);
             } else if def.gpu_process.is_none() {
-                // AI node: skip with log (full AI integration is future work)
-                eprintln!(
-                    "[local] node {} ({}) is an AI node — skipped",
-                    node_id, def.title
-                );
+                // AI node: delegate to backend via execute_ai_subgraph
+                if let Some(ref client) = self.backend {
+                    eprintln!("[local] node {} ({}) -> AI backend", node_id, def.title);
+                    let mut cache = self.cache.lock().unwrap();
+                    EvalEngine::execute_ai_subgraph(
+                        node_id,
+                        &nodes,
+                        &connections,
+                        &registry,
+                        &mut cache,
+                        client,
+                        &mut sent_to_backend,
+                    )?;
+                    // Send progress for the AI node if outputs were cached
+                    if let Some(outputs) = cache.get(node_id) {
+                        let _ = progress.send(ExecuteProgress::NodeCompleted {
+                            node_id,
+                            outputs: outputs.clone(),
+                        });
+                    }
+                } else {
+                    eprintln!(
+                        "[local] node {} ({}) is an AI node but no backend configured — skipped",
+                        node_id, def.title
+                    );
+                }
             }
         }
 
@@ -367,6 +388,147 @@ impl ProcessingTransport for LocalTransport {
             .map(|def| Self::node_def_to_type_def(def))
             .collect();
         Ok(defs)
+    }
+
+    fn evaluate_local_sync(&self, request: GraphRequest) -> Result<(), String> {
+        // Phase 1: Preparation — lock registry + type_registry, build internal types
+        let (nodes, connections) = {
+            let registry = self.registry.lock().unwrap();
+
+            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
+            for (&node_id, req) in &request.nodes {
+                let mut params: HashMap<String, Value> = HashMap::new();
+
+                // Start with defaults from the NodeDef
+                if let Some(def) = registry.get(&req.type_id) {
+                    for p in &def.params {
+                        params.insert(p.name.clone(), p.default.clone());
+                    }
+                }
+
+                // Override with request params
+                for (key, pv) in &req.params {
+                    params.insert(key.clone(), pv.to_value());
+                }
+
+                nodes.insert(
+                    node_id,
+                    NodeInstance {
+                        type_id: req.type_id.clone(),
+                        params,
+                    },
+                );
+            }
+
+            let connections: Vec<Connection> = request
+                .connections
+                .iter()
+                .map(|c| Connection {
+                    from_node: c.from_node,
+                    from_pin: c.from_pin.clone(),
+                    to_node: c.to_node,
+                    to_pin: c.to_pin.clone(),
+                })
+                .collect();
+
+            (nodes, connections)
+        };
+
+        // Phase 2: Evaluate (backend=None skips AI nodes)
+        let registry = self.registry.lock().unwrap();
+        let type_registry = self.type_registry.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap();
+
+        EvalEngine::evaluate(
+            request.target_node,
+            &nodes,
+            &connections,
+            &registry,
+            &type_registry,
+            &mut cache,
+            None, // no backend — skips AI nodes
+            self.gpu_ctx.as_ref(),
+        )
+    }
+
+    fn get_cached(&self, node_id: NodeId) -> Option<HashMap<String, Value>> {
+        let cache = self.cache.lock().unwrap();
+        cache.get(node_id).cloned()
+    }
+
+    fn pending_ai_execution(
+        &self,
+        request: GraphRequest,
+    ) -> Option<(NodeId, serde_json::Value)> {
+        // Build internal types from GraphRequest
+        let (nodes, connections) = {
+            let registry = self.registry.lock().unwrap();
+
+            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
+            for (&node_id, req) in &request.nodes {
+                let mut params: HashMap<String, Value> = HashMap::new();
+
+                if let Some(def) = registry.get(&req.type_id) {
+                    for p in &def.params {
+                        params.insert(p.name.clone(), p.default.clone());
+                    }
+                }
+
+                for (key, pv) in &req.params {
+                    params.insert(key.clone(), pv.to_value());
+                }
+
+                nodes.insert(
+                    node_id,
+                    NodeInstance {
+                        type_id: req.type_id.clone(),
+                        params,
+                    },
+                );
+            }
+
+            let connections: Vec<Connection> = request
+                .connections
+                .iter()
+                .map(|c| Connection {
+                    from_node: c.from_node,
+                    from_pin: c.from_pin.clone(),
+                    to_node: c.to_node,
+                    to_pin: c.to_pin.clone(),
+                })
+                .collect();
+
+            (nodes, connections)
+        };
+
+        let registry = self.registry.lock().unwrap();
+        let cache = self.cache.lock().unwrap();
+
+        EvalEngine::pending_ai_execution(
+            request.target_node,
+            &nodes,
+            &connections,
+            &registry,
+            &cache,
+        )
+    }
+
+    fn would_create_cycle(
+        &self,
+        target: NodeId,
+        connections: &[ConnectionRequest],
+    ) -> bool {
+        let connections: Vec<Connection> = connections
+            .iter()
+            .map(|c| Connection {
+                from_node: c.from_node,
+                from_pin: c.from_pin.clone(),
+                to_node: c.to_node,
+                to_pin: c.to_pin.clone(),
+            })
+            .collect();
+
+        EvalEngine::topo_sort(target, &connections).is_err()
     }
 }
 
@@ -729,5 +891,94 @@ mod tests {
             }
         }
         assert!(got_error);
+    }
+
+    #[test]
+    fn test_evaluate_local_sync() {
+        let transport = create_test_transport();
+        register_test_source(&transport);
+        register_test_add_one(&transport);
+
+        let request = GraphRequest {
+            nodes: HashMap::from([
+                (
+                    0,
+                    NodeRequest {
+                        type_id: "test_source".into(),
+                        params: HashMap::from([("value".into(), ParamValue::Float(10.0))]),
+                    },
+                ),
+                (
+                    1,
+                    NodeRequest {
+                        type_id: "test_add_one".into(),
+                        params: HashMap::new(),
+                    },
+                ),
+            ]),
+            connections: vec![ConnectionRequest {
+                from_node: 0,
+                from_pin: "value".into(),
+                to_node: 1,
+                to_pin: "value".into(),
+            }],
+            target_node: 1,
+        };
+
+        transport.evaluate_local_sync(request).unwrap();
+
+        let cached = transport.get_cached(1);
+        assert!(cached.is_some(), "node 1 should be cached after evaluate_local_sync");
+        let outputs = cached.unwrap();
+        match outputs.get("result") {
+            Some(Value::Float(v)) => assert_eq!(*v, 11.0),
+            other => panic!("expected Float(11.0), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_get_cached_empty() {
+        let transport = create_test_transport();
+        assert!(transport.get_cached(999).is_none(), "uncached node should return None");
+    }
+
+    #[test]
+    fn test_would_create_cycle_no_cycle() {
+        let transport = create_test_transport();
+        let connections = vec![
+            ConnectionRequest {
+                from_node: 0,
+                from_pin: "out".into(),
+                to_node: 1,
+                to_pin: "in".into(),
+            },
+            ConnectionRequest {
+                from_node: 1,
+                from_pin: "out".into(),
+                to_node: 2,
+                to_pin: "in".into(),
+            },
+        ];
+        assert!(!transport.would_create_cycle(2, &connections));
+    }
+
+    #[test]
+    fn test_would_create_cycle_with_cycle() {
+        let transport = create_test_transport();
+        let connections = vec![
+            ConnectionRequest {
+                from_node: 0,
+                from_pin: "out".into(),
+                to_node: 1,
+                to_pin: "in".into(),
+            },
+            ConnectionRequest {
+                from_node: 1,
+                from_pin: "out".into(),
+                to_node: 0,
+                to_pin: "in".into(),
+            },
+        ];
+        assert!(transport.would_create_cycle(0, &connections));
     }
 }

@@ -9,8 +9,8 @@ use std::time::Instant;
 use crate::gpu::gpu_context_from_eframe;
 use crate::node::serial::Serializer;
 use crate::node::viewer::NodeViewer;
-use nodeimg_engine::backend::BackendClient;
-use nodeimg_engine::registry::NodeInstance;
+use nodeimg_engine::transport::BackendClient;
+use nodeimg_engine::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
 use nodeimg_engine::transport::ProcessingTransport;
 use crate::theme::dark::DarkTheme;
@@ -107,29 +107,13 @@ impl App {
 
         // Register AI nodes if connected
         if connected {
-            // Register on transport's internal registries
-            let transport_result = transport.register_remote_nodes(&backend);
-            match transport_result {
-                Ok(count) => eprintln!("[backend] Registered {} AI node types (transport)", count),
-                Err(e) => eprintln!("[backend] Failed to register AI nodes on transport: {}", e),
+            match transport.register_remote_nodes(&backend) {
+                Ok(count) => eprintln!("[backend] Registered {} AI node types", count),
+                Err(e) => eprintln!("[backend] Failed to register AI nodes: {}", e),
             }
-
-            // Also register on viewer's local registries (for show_body compatibility)
-            match backend
-                .register_remote_nodes(&mut viewer.node_registry, &mut viewer.type_registry)
-            {
-                Ok(count) => {
-                    eprintln!("[backend] Registered {} AI node types (viewer)", count);
-                }
-                Err(e) => {
-                    eprintln!("[backend] Failed to register AI nodes on viewer: {}", e);
-                }
-            }
-
-            // Refresh node_type_defs after AI node registration
             viewer.node_type_defs = transport.node_types().unwrap_or_default();
         }
-        viewer.backend = Some(backend);
+        // Don't set viewer.backend — backend is inside transport now
 
         // Auto-load: try to restore from autosave file
         let snarl = Self::try_auto_load(&transport);

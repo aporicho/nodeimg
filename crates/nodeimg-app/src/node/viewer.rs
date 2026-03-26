@@ -1,15 +1,16 @@
+use crate::execution::ExecutionManager;
 use crate::gpu::GpuContext;
 use crate::node::widget::WidgetRegistry;
-use nodeimg_engine::ai_task::AiExecutor;
-use nodeimg_engine::backend::BackendClient;
-use nodeimg_engine::cache::Cache;
-use nodeimg_engine::eval::{Connection, EvalEngine};
-use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
+use nodeimg_engine::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
-use nodeimg_engine::transport::{NodeTypeDef, ProcessingTransport};
-use nodeimg_types::category::CategoryRegistry;
-use nodeimg_types::data_type::DataTypeRegistry;
+use nodeimg_engine::transport::{
+    ConnectionRequest, ConstraintInfo, ExecuteProgress, GraphRequest, NodeRequest, NodeTypeDef,
+    ParamValue, ProcessingTransport,
+};
+use nodeimg_types::constraint::Constraint;
+use nodeimg_types::data_type::DataTypeId;
 use nodeimg_types::value::Value;
+use nodeimg_types::widget_id::WidgetId;
 use crate::theme::Theme;
 use eframe::egui;
 use egui::{Color32, Frame, Ui};
@@ -24,13 +25,9 @@ pub struct NodeViewer {
     // Transport abstraction (new)
     pub transport: Arc<LocalTransport>,
     pub node_type_defs: Vec<NodeTypeDef>,
+    pub execution_manager: ExecutionManager,
 
-    // Kept for show_body compatibility (direct engine access)
-    pub type_registry: DataTypeRegistry,
-    pub category_registry: CategoryRegistry,
-    pub node_registry: NodeRegistry,
     pub widget_registry: WidgetRegistry,
-    pub cache: Cache,
     /// GPU textures per node. Managed here (not in Cache) because TextureHandle
     /// requires egui::Context which is only available during rendering.
     pub textures: HashMap<NodeId, egui::TextureHandle>,
@@ -38,12 +35,8 @@ pub struct NodeViewer {
     pub theme: Arc<dyn Theme>,
     /// GPU context for hardware-accelerated processing. None if GPU is unavailable.
     pub gpu_ctx: Option<Arc<GpuContext>>,
-    /// Backend client for executing AI nodes. None if backend is unavailable.
-    pub backend: Option<BackendClient>,
     /// Status message shown during AI execution (e.g. "Generating..." or error).
     pub backend_status: Option<String>,
-    /// Async executor for background AI operations.
-    pub ai_executor: AiExecutor,
     /// Per-node error messages from AI execution.
     ai_errors: HashMap<NodeId, String>,
     /// Set when the graph is mutated (param change, connect, disconnect, node add/remove).
@@ -54,26 +47,18 @@ pub struct NodeViewer {
 impl NodeViewer {
     pub fn new(theme: Arc<dyn Theme>, gpu_ctx: Option<Arc<GpuContext>>, transport: Arc<LocalTransport>) -> Self {
         let node_type_defs = transport.node_types().unwrap_or_default();
-
-        // Still init local copies for show_body compatibility
-        let mut node_registry = NodeRegistry::new();
-        nodeimg_engine::builtins::register_all(&mut node_registry);
+        let execution_manager = ExecutionManager::new(Arc::clone(&transport) as Arc<dyn ProcessingTransport>);
 
         Self {
             transport,
             node_type_defs,
-            type_registry: DataTypeRegistry::with_builtins(),
-            category_registry: CategoryRegistry::with_builtins(),
-            node_registry,
+            execution_manager,
             widget_registry: WidgetRegistry::with_builtins(),
-            cache: Cache::new(),
             textures: HashMap::new(),
             preview_texture: None,
             theme,
             gpu_ctx,
-            backend: None,
             backend_status: None,
-            ai_executor: AiExecutor::new(),
             ai_errors: HashMap::new(),
             graph_dirty: false,
         }
@@ -85,19 +70,40 @@ impl NodeViewer {
     }
 
     pub fn invalidate(&mut self, node_id: NodeId) {
-        self.cache.invalidate(node_id.0);
         self.transport.invalidate(node_id.0);
         self.textures.remove(&node_id);
     }
 
     pub fn invalidate_all(&mut self) {
-        self.cache.invalidate_all();
         self.transport.invalidate_all();
         self.textures.clear();
     }
 
-    /// Build Connection list from the Snarl graph (used by EvalEngine).
-    pub fn build_connections(&self, snarl: &Snarl<NodeInstance>) -> Vec<Connection> {
+    fn build_graph_request(&self, target: NodeId, snarl: &Snarl<NodeInstance>) -> GraphRequest {
+        let mut nodes = HashMap::new();
+        for (nid, instance) in snarl.node_ids() {
+            let params: HashMap<String, ParamValue> = instance
+                .params
+                .iter()
+                .filter_map(|(k, v)| ParamValue::from_value(v).map(|pv| (k.clone(), pv)))
+                .collect();
+            nodes.insert(
+                nid.0,
+                NodeRequest {
+                    type_id: instance.type_id.clone(),
+                    params,
+                },
+            );
+        }
+        let connections = self.build_connection_requests(snarl);
+        GraphRequest {
+            nodes,
+            connections,
+            target_node: target.0,
+        }
+    }
+
+    fn build_connection_requests(&self, snarl: &Snarl<NodeInstance>) -> Vec<ConnectionRequest> {
         let mut connections = Vec::new();
         for (node_id, instance) in snarl.node_ids() {
             let def = match self.find_type_def(&instance.type_id) {
@@ -113,7 +119,7 @@ impl NodeViewer {
                     let upstream_instance = &snarl[remote.node];
                     if let Some(upstream_def) = self.find_type_def(&upstream_instance.type_id) {
                         if let Some(out_pin) = upstream_def.outputs.get(remote.output) {
-                            connections.push(Connection {
+                            connections.push(ConnectionRequest {
                                 from_node: remote.node.0,
                                 from_pin: out_pin.name.clone(),
                                 to_node: node_id.0,
@@ -125,6 +131,22 @@ impl NodeViewer {
             }
         }
         connections
+    }
+
+    fn constraint_info_to_engine(info: &Option<ConstraintInfo>) -> Constraint {
+        match info {
+            None => Constraint::None,
+            Some(ConstraintInfo::Range { min, max }) => Constraint::Range {
+                min: *min,
+                max: *max,
+            },
+            Some(ConstraintInfo::Options(opts)) => Constraint::Enum {
+                options: opts.clone(),
+            },
+            Some(ConstraintInfo::FilePath { filters }) => Constraint::FilePath {
+                filters: filters.clone(),
+            },
+        }
     }
 }
 
@@ -215,15 +237,15 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
         snarl: &mut Snarl<NodeInstance>,
     ) {
         let instance = snarl[node_id].clone();
-        let def = match self.node_registry.get(&instance.type_id) {
-            Some(d) => d,
+        let type_def = match self.find_type_def(&instance.type_id) {
+            Some(d) => d.clone(),
             None => {
                 ui.label("Unknown node type");
                 return;
             }
         };
-        let params_def: Vec<_> = def.params.clone();
-        let has_preview = def.has_preview;
+        let params_def = type_def.params.clone();
+        let has_preview = type_def.has_preview;
 
         ui.vertical(|ui: &mut Ui| {
             ui.set_max_width(crate::theme::tokens::NODE_MAX_WIDTH);
@@ -245,18 +267,21 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                     );
 
                     let disabled = false; // TODO V2: check param pin connection
-                    let constraint_type = param_def.constraint.constraint_type();
+                    let constraint = Self::constraint_info_to_engine(&param_def.constraint);
+                    let constraint_type = constraint.constraint_type();
+                    let data_type = DataTypeId::new(&param_def.data_type);
+                    let widget_override = param_def.widget_override.as_ref().map(|w| WidgetId::new(w));
 
                     // Clone value out, modify in place, write back if changed
                     let old_value = snarl[node_id].params.get(&param_def.name).cloned();
                     if let Some(mut value) = old_value {
                         let changed = self.widget_registry.render(
-                            param_def.widget_override.as_ref(),
-                            &param_def.data_type,
+                            widget_override.as_ref(),
+                            &data_type,
                             &constraint_type,
                             ui,
                             &mut value,
-                            &param_def.constraint,
+                            &constraint,
                             &param_def.name,
                             disabled,
                         );
@@ -273,78 +298,55 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 // Cancel ALL in-flight AI tasks — any param change may invalidate
                 // upstream results, and we don't track which trigger depends on
                 // which AI node.
-                self.ai_executor.cancel_all();
+                self.execution_manager.cancel_all();
                 self.ai_errors.remove(&node_id);
                 self.graph_dirty = true;
             }
 
             // Render preview area
             if has_preview {
-                // Step 1: Poll background AI results (non-blocking).
-                // Successful results invalidate downstream caches (including this
-                // Preview node) so they re-evaluate with fresh AI output below.
-                let (completed, errors) = self.ai_executor.poll_results(&mut self.cache);
-                for trigger in &completed {
-                    self.textures.remove(&NodeId(*trigger));
-                }
-                for (trigger, err) in errors {
-                    self.ai_errors.insert(NodeId(trigger), err);
+                // Step 1: Poll background execution results (non-blocking).
+                let poll_results = self.execution_manager.poll();
+                for (trigger, progress) in poll_results {
+                    match progress {
+                        ExecuteProgress::NodeCompleted { node_id: nid, .. } => {
+                            self.textures.remove(&NodeId(nid));
+                        }
+                        ExecuteProgress::Error { message, .. } => {
+                            self.ai_errors.insert(NodeId(trigger), message);
+                        }
+                        ExecuteProgress::Finished => {
+                            self.textures.remove(&NodeId(trigger));
+                        }
+                    }
                 }
 
-                // Step 2: Evaluate local nodes only (backend=None, never blocks).
-                // AI nodes are silently skipped — their results come from Step 1.
-                let nodes_map: HashMap<usize, NodeInstance> = snarl
-                    .node_ids()
-                    .map(|(id, inst)| (id.0, inst.clone()))
-                    .collect();
-                let connections = self.build_connections(snarl);
+                // Step 2: Evaluate local nodes only (skips AI nodes, never blocks).
+                let request = self.build_graph_request(node_id, snarl);
 
-                if let Err(e) = EvalEngine::evaluate(
-                    node_id.0,
-                    &nodes_map,
-                    &connections,
-                    &self.node_registry,
-                    &self.type_registry,
-                    &mut self.cache,
-                    None, // no backend → skips AI nodes
-                    self.gpu_ctx.as_ref(),
-                ) {
+                if let Err(e) = self.transport.evaluate_local_sync(request.clone()) {
                     self.backend_status = Some(e);
                 } else {
                     self.backend_status = None;
                 }
 
                 // Step 3: Check for pending AI work.
-                if !self.ai_executor.is_running(node_id.0) {
-                    if let Some(client) = &self.backend {
-                        if let Some((ai_node_id, graph_json)) =
-                            EvalEngine::pending_ai_execution(
-                                node_id.0,
-                                &nodes_map,
-                                &connections,
-                                &self.node_registry,
-                                &self.cache,
-                            )
-                        {
-                            eprintln!(
-                                "[backend] Spawning async AI execution: trigger={} ai_node={}",
-                                node_id.0, ai_node_id
-                            );
-                            self.ai_errors.remove(&node_id);
-                            let ctx = ui.ctx().clone();
-                            self.ai_executor.spawn(
-                                node_id.0,
-                                ai_node_id,
-                                graph_json,
-                                client.clone(),
-                                Box::new(move || ctx.request_repaint()),
-                            );
-                        }
+                if !self.execution_manager.is_running(node_id.0) {
+                    if let Some((ai_node_id, _graph_json)) =
+                        self.transport.pending_ai_execution(request.clone())
+                    {
+                        eprintln!(
+                            "[backend] Spawning async AI execution: trigger={} ai_node={}",
+                            node_id.0, ai_node_id
+                        );
+                        self.ai_errors.remove(&node_id);
+                        self.execution_manager.set_repaint_ctx(ui.ctx().clone());
+                        self.execution_manager.submit(node_id.0, request);
                     }
                 }
 
                 // Step 4: UI status display
-                if self.ai_executor.is_running(node_id.0) {
+                if self.execution_manager.is_running(node_id.0) {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.label("Generating...");
@@ -360,7 +362,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 }
 
                 // Step 5: Render preview if cached image exists
-                if let Some(cached) = self.cache.get(node_id.0) {
+                if let Some(cached) = self.transport.get_cached(node_id.0) {
                     if let Some(Value::Image(img)) = cached.get("image") {
                         let rgba = img.to_rgba8();
                         let size = [rgba.width() as usize, rgba.height() as usize];
@@ -385,7 +387,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                             ui.image(egui::load::SizedTexture::new(tex.id(), tex_size * scale));
                         }
                     }
-                } else if !self.ai_executor.is_running(node_id.0)
+                } else if !self.execution_manager.is_running(node_id.0)
                     && !self.ai_errors.contains_key(&node_id)
                 {
                     ui.label("No input connected");
@@ -482,7 +484,7 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
 
         // Cycle detection
         let would_create_cycle = {
-            let mut connections = self.build_connections(snarl);
+            let mut connections = self.build_connection_requests(snarl);
             let from_pin_name = self
                 .find_type_def(&from_type_id)
                 .and_then(|def| def.outputs.get(from.id.output).map(|p| p.name.clone()))
@@ -491,13 +493,13 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
                 .find_type_def(&to_type_id)
                 .and_then(|def| def.inputs.get(to.id.input).map(|p| p.name.clone()))
                 .unwrap_or_default();
-            connections.push(Connection {
+            connections.push(ConnectionRequest {
                 from_node: from.id.node.0,
                 from_pin: from_pin_name,
                 to_node: to.id.node.0,
                 to_pin: to_pin_name,
             });
-            EvalEngine::topo_sort(to.id.node.0, &connections).is_err()
+            self.transport.would_create_cycle(to.id.node.0, &connections)
         };
 
         if would_create_cycle {

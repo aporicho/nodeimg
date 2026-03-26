@@ -3,11 +3,8 @@ mod helpers;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use nodeimg_engine::builtins::register_all;
-use nodeimg_engine::cache::Cache;
-use nodeimg_engine::eval::{Connection, EvalEngine};
-use nodeimg_engine::registry::{NodeInstance, NodeRegistry};
-use nodeimg_engine::NodeId;
+use nodeimg_engine::_test_support::{register_all, Cache, Connection, EvalEngine};
+use nodeimg_engine::{NodeId, NodeInstance, NodeRegistry};
 use nodeimg_gpu::test_utils::try_create_headless_context;
 use nodeimg_gpu::GpuContext;
 use nodeimg_types::data_type::DataTypeRegistry;

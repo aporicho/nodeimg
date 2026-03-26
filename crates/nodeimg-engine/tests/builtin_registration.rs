@@ -1,5 +1,5 @@
-use nodeimg_engine::builtins::register_all;
-use nodeimg_engine::registry::NodeRegistry;
+use nodeimg_engine::_test_support::register_all;
+use nodeimg_engine::NodeRegistry;
 
 fn setup_registry() -> NodeRegistry {
     let mut reg = NodeRegistry::new();
