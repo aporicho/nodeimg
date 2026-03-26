@@ -10,7 +10,7 @@ use crate::gpu::gpu_context_from_eframe;
 use crate::node::serial::Serializer;
 use crate::node::viewer::NodeViewer;
 use nodeimg_engine::transport::BackendClient;
-use nodeimg_engine::NodeInstance;
+use nodeimg_types::node_instance::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
 use nodeimg_engine::transport::ProcessingTransport;
 use crate::theme::dark::DarkTheme;

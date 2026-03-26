@@ -1,4 +1,5 @@
-use nodeimg_engine::{NodeInstance, NodeRegistry};
+use nodeimg_engine::NodeRegistry;
+use nodeimg_types::node_instance::NodeInstance;
 use egui_snarl::{InPinId, NodeId, OutPinId, Snarl};
 use std::collections::HashMap;
 
