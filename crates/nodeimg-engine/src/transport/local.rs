@@ -13,6 +13,7 @@ use nodeimg_gpu::GpuContext;
 use nodeimg_types::category::CategoryRegistry;
 use nodeimg_types::constraint::Constraint;
 use nodeimg_types::data_type::{DataTypeId, DataTypeRegistry};
+use nodeimg_types::serial_data::{SerializedGraph, SerializedValue};
 use nodeimg_types::value::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::Sender;
@@ -460,6 +461,26 @@ impl ProcessingTransport for LocalTransport {
             .collect();
 
         EvalEngine::topo_sort(target, &connections).is_err()
+    }
+
+    fn load_graph(&self, json: &str) -> Result<SerializedGraph, String> {
+        let mut graph: SerializedGraph =
+            serde_json::from_str(json).map_err(|e| format!("JSON parse error: {}", e))?;
+
+        let registry = self.registry.lock().unwrap();
+        for node in &mut graph.nodes {
+            if let Some(def) = registry.get(&node.type_id) {
+                for param in &def.params {
+                    if !node.params.contains_key(&param.name) {
+                        if let Some(sv) = SerializedValue::from_value(&param.default) {
+                            node.params.insert(param.name.clone(), sv);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(graph)
     }
 }
 
@@ -911,5 +932,56 @@ mod tests {
             },
         ];
         assert!(transport.would_create_cycle(0, &connections));
+    }
+
+    #[test]
+    fn test_load_graph_fills_defaults() {
+        let transport = create_test_transport();
+        register_test_source(&transport);
+
+        // JSON with test_source node but missing "value" param
+        let json = r#"{
+            "version": 1,
+            "nodes": [{
+                "id": 0,
+                "type_id": "test_source",
+                "position": [0.0, 0.0],
+                "params": {}
+            }],
+            "connections": []
+        }"#;
+
+        let graph = transport.load_graph(json).unwrap();
+        assert_eq!(graph.nodes.len(), 1);
+        // "value" param should be filled with default (Float 0.0)
+        assert!(graph.nodes[0].params.contains_key("value"));
+    }
+
+    #[test]
+    fn test_load_graph_preserves_unknown_nodes() {
+        let transport = create_test_transport();
+
+        let json = r#"{
+            "version": 1,
+            "nodes": [{
+                "id": 0,
+                "type_id": "nonexistent_node",
+                "position": [100.0, 200.0],
+                "params": {"foo": {"type": "Float", "value": 1.0}}
+            }],
+            "connections": []
+        }"#;
+
+        let graph = transport.load_graph(json).unwrap();
+        assert_eq!(graph.nodes.len(), 1);
+        assert_eq!(graph.nodes[0].type_id, "nonexistent_node");
+        assert!(graph.nodes[0].params.contains_key("foo"));
+    }
+
+    #[test]
+    fn test_load_graph_invalid_json() {
+        let transport = create_test_transport();
+        let result = transport.load_graph("not json");
+        assert!(result.is_err());
     }
 }
