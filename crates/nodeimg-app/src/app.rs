@@ -1,5 +1,6 @@
 use eframe::egui;
 use egui_snarl::Snarl;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -10,6 +11,7 @@ use crate::gpu::gpu_context_from_eframe;
 use crate::node::serial::Serializer;
 use crate::node::viewer::NodeViewer;
 use nodeimg_engine::transport::BackendClient;
+use nodeimg_engine::transport::NodeTypeDef;
 use nodeimg_types::node_instance::NodeInstance;
 use nodeimg_engine::transport::local::LocalTransport;
 use nodeimg_engine::transport::ProcessingTransport;
@@ -121,7 +123,7 @@ impl App {
         // Don't set viewer.backend — backend is inside transport now
 
         // Auto-load: try to restore from autosave file
-        let snarl = Self::try_auto_load(&transport);
+        let snarl = Self::try_auto_load(&transport, &viewer.node_type_defs);
 
         Self {
             snarl,
@@ -258,18 +260,13 @@ impl App {
     }
 
     /// Try to load the autosave file on startup.
-    fn try_auto_load(transport: &LocalTransport) -> Snarl<NodeInstance> {
+    fn try_auto_load(transport: &LocalTransport, type_defs: &HashMap<String, NodeTypeDef>) -> Snarl<NodeInstance> {
         let path = Self::autosave_path();
         if path.exists() {
             if let Ok(json) = std::fs::read_to_string(&path) {
-                let result = transport.with_registry(|registry| {
-                    Serializer::load(&json, registry)
-                });
-                match result {
+                match transport.load_graph(&json) {
                     Ok(graph) => {
-                        let snarl = transport.with_registry(|registry| {
-                            Serializer::restore(&graph, registry)
-                        });
+                        let snarl = Serializer::restore(&graph, type_defs);
                         eprintln!("[project] Restored autosave ({} nodes)", graph.nodes.len());
                         return snarl;
                     }
@@ -288,9 +285,7 @@ impl App {
             return;
         }
 
-        let graph = self.viewer.transport.with_registry(|reg| {
-            Serializer::snapshot(&self.snarl, reg)
-        });
+        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_type_defs);
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
@@ -322,9 +317,7 @@ impl App {
 
     /// Save As: pick a file and write the graph.
     fn save_as(&mut self) {
-        let graph = self.viewer.transport.with_registry(|reg| {
-            Serializer::snapshot(&self.snarl, reg)
-        });
+        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_type_defs);
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
@@ -357,14 +350,10 @@ impl App {
         {
             match std::fs::read_to_string(&path) {
                 Ok(json) => {
-                    let load_result = self.viewer.transport.with_registry(|reg| {
-                        Serializer::load(&json, reg)
-                    });
+                    let load_result = self.viewer.transport.load_graph(&json);
                     match load_result {
                         Ok(graph) => {
-                            self.snarl = self.viewer.transport.with_registry(|reg| {
-                                Serializer::restore(&graph, reg)
-                            });
+                            self.snarl = Serializer::restore(&graph, &self.viewer.node_type_defs);
                             self.viewer.invalidate_all();
                             self.current_file = Some(path.clone());
                             self.last_saved_json = Some(json);
@@ -384,9 +373,7 @@ impl App {
 
     /// Quick save: write to current_file or autosave path.
     fn quick_save(&mut self) {
-        let graph = self.viewer.transport.with_registry(|reg| {
-            Serializer::snapshot(&self.snarl, reg)
-        });
+        let graph = Serializer::snapshot(&self.snarl, &self.viewer.node_type_defs);
         let json = match Serializer::save(&graph) {
             Ok(j) => j,
             Err(e) => {
