@@ -58,6 +58,7 @@ pub struct NodeInstance {
 | `crates/nodeimg-engine/src/internal/backend.rs` | 改导入路径 |
 | `crates/nodeimg-engine/src/transport/local.rs` | 改导入路径 |
 | `crates/nodeimg-engine/tests/pipelines.rs` | 改导入路径 |
+| `crates/nodeimg-engine/tests/helpers/mod.rs` | 改导入路径 |
 | `crates/nodeimg-app/src/app.rs` | 改导入路径 |
 | `crates/nodeimg-app/src/node/serial.rs` | 改导入路径 |
 | `crates/nodeimg-app/src/node/viewer.rs` | 改导入路径 |
