@@ -95,6 +95,56 @@ impl LocalTransport {
 
     // -- internal helpers --
 
+    /// Build `(nodes, connections)` from a `GraphRequest`.
+    ///
+    /// Locks the registry to fill default param values, then releases the lock
+    /// before returning.
+    fn prepare_from_request(
+        &self,
+        request: &GraphRequest,
+    ) -> (HashMap<NodeId, NodeInstance>, Vec<Connection>) {
+        let registry = self.registry.lock().unwrap();
+
+        let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
+        for (&node_id, req) in &request.nodes {
+            let mut params: HashMap<String, Value> = HashMap::new();
+
+            // Start with defaults from the NodeDef
+            if let Some(def) = registry.get(&req.type_id) {
+                for p in &def.params {
+                    params.insert(p.name.clone(), p.default.clone());
+                }
+            }
+
+            // Override with request params
+            for (key, pv) in &req.params {
+                params.insert(key.clone(), pv.to_value());
+            }
+
+            nodes.insert(
+                node_id,
+                NodeInstance {
+                    type_id: req.type_id.clone(),
+                    params,
+                },
+            );
+        }
+
+        let connections: Vec<Connection> = request
+            .connections
+            .iter()
+            .map(|c| Connection {
+                from_node: c.from_node,
+                from_pin: c.from_pin.clone(),
+                to_node: c.to_node,
+                to_pin: c.to_pin.clone(),
+            })
+            .collect();
+
+        (nodes, connections)
+        // registry lock released here
+    }
+
     /// Convert a `NodeDef` to the serialisable `NodeTypeDef`.
     fn node_def_to_type_def(def: &NodeDef) -> NodeTypeDef {
         NodeTypeDef {
@@ -157,51 +207,9 @@ impl ProcessingTransport for LocalTransport {
         request: GraphRequest,
         progress: Sender<ExecuteProgress>,
     ) -> Result<(), String> {
-        // Phase 1: Preparation — lock registry + type_registry, build internal types, then release
-        let (nodes, connections, order) = {
-            let registry = self.registry.lock().unwrap();
-
-            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
-            for (&node_id, req) in &request.nodes {
-                let mut params: HashMap<String, Value> = HashMap::new();
-
-                // Start with defaults from the NodeDef
-                if let Some(def) = registry.get(&req.type_id) {
-                    for p in &def.params {
-                        params.insert(p.name.clone(), p.default.clone());
-                    }
-                }
-
-                // Override with request params
-                for (key, pv) in &req.params {
-                    params.insert(key.clone(), pv.to_value());
-                }
-
-                nodes.insert(
-                    node_id,
-                    NodeInstance {
-                        type_id: req.type_id.clone(),
-                        params,
-                    },
-                );
-            }
-
-            let connections: Vec<Connection> = request
-                .connections
-                .iter()
-                .map(|c| Connection {
-                    from_node: c.from_node,
-                    from_pin: c.from_pin.clone(),
-                    to_node: c.to_node,
-                    to_pin: c.to_pin.clone(),
-                })
-                .collect();
-
-            let order = EvalEngine::topo_sort(request.target_node, &connections)?;
-
-            (nodes, connections, order)
-            // registry lock released here
-        };
+        // Phase 1: Preparation — build internal types from request, then topo-sort
+        let (nodes, connections) = self.prepare_from_request(&request);
+        let order = EvalEngine::topo_sort(request.target_node, &connections)?;
 
         // Phase 2: Set up cache downstream relationships
         {
@@ -391,48 +399,8 @@ impl ProcessingTransport for LocalTransport {
     }
 
     fn evaluate_local_sync(&self, request: GraphRequest) -> Result<(), String> {
-        // Phase 1: Preparation — lock registry + type_registry, build internal types
-        let (nodes, connections) = {
-            let registry = self.registry.lock().unwrap();
-
-            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
-            for (&node_id, req) in &request.nodes {
-                let mut params: HashMap<String, Value> = HashMap::new();
-
-                // Start with defaults from the NodeDef
-                if let Some(def) = registry.get(&req.type_id) {
-                    for p in &def.params {
-                        params.insert(p.name.clone(), p.default.clone());
-                    }
-                }
-
-                // Override with request params
-                for (key, pv) in &req.params {
-                    params.insert(key.clone(), pv.to_value());
-                }
-
-                nodes.insert(
-                    node_id,
-                    NodeInstance {
-                        type_id: req.type_id.clone(),
-                        params,
-                    },
-                );
-            }
-
-            let connections: Vec<Connection> = request
-                .connections
-                .iter()
-                .map(|c| Connection {
-                    from_node: c.from_node,
-                    from_pin: c.from_pin.clone(),
-                    to_node: c.to_node,
-                    to_pin: c.to_pin.clone(),
-                })
-                .collect();
-
-            (nodes, connections)
-        };
+        // Phase 1: Preparation — build internal types from request
+        let (nodes, connections) = self.prepare_from_request(&request);
 
         // Phase 2: Evaluate (backend=None skips AI nodes)
         let registry = self.registry.lock().unwrap();
@@ -461,45 +429,7 @@ impl ProcessingTransport for LocalTransport {
         request: GraphRequest,
     ) -> Option<(NodeId, serde_json::Value)> {
         // Build internal types from GraphRequest
-        let (nodes, connections) = {
-            let registry = self.registry.lock().unwrap();
-
-            let mut nodes: HashMap<NodeId, NodeInstance> = HashMap::new();
-            for (&node_id, req) in &request.nodes {
-                let mut params: HashMap<String, Value> = HashMap::new();
-
-                if let Some(def) = registry.get(&req.type_id) {
-                    for p in &def.params {
-                        params.insert(p.name.clone(), p.default.clone());
-                    }
-                }
-
-                for (key, pv) in &req.params {
-                    params.insert(key.clone(), pv.to_value());
-                }
-
-                nodes.insert(
-                    node_id,
-                    NodeInstance {
-                        type_id: req.type_id.clone(),
-                        params,
-                    },
-                );
-            }
-
-            let connections: Vec<Connection> = request
-                .connections
-                .iter()
-                .map(|c| Connection {
-                    from_node: c.from_node,
-                    from_pin: c.from_pin.clone(),
-                    to_node: c.to_node,
-                    to_pin: c.to_pin.clone(),
-                })
-                .collect();
-
-            (nodes, connections)
-        };
+        let (nodes, connections) = self.prepare_from_request(&request);
 
         let registry = self.registry.lock().unwrap();
         let cache = self.cache.lock().unwrap();
