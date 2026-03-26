@@ -102,9 +102,6 @@ impl ExecutionManager {
     }
 
     pub fn cancel(&mut self, trigger_node: NodeId) {
-        if let Some(state) = self.tasks.get_mut(&trigger_node) {
-            state.generation += 1;
-        }
         self.tasks.remove(&trigger_node);
     }
 

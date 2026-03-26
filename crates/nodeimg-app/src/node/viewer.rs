@@ -332,12 +332,12 @@ impl SnarlViewer<NodeInstance> for NodeViewer {
 
                 // Step 3: Check for pending AI work.
                 if !self.execution_manager.is_running(node_id.0) {
-                    if let Some((_ai_node_id, _graph_json)) =
+                    if let Some((ai_node_id, _graph_json)) =
                         self.transport.pending_ai_execution(request.clone())
                     {
                         eprintln!(
                             "[backend] Spawning async AI execution: trigger={} ai_node={}",
-                            node_id.0, _ai_node_id
+                            node_id.0, ai_node_id
                         );
                         self.ai_errors.remove(&node_id);
                         self.execution_manager.set_repaint_ctx(ui.ctx().clone());
