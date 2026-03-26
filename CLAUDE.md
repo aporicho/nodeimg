@@ -44,6 +44,8 @@ python/                  — AI 后端（FastAPI + SDXL）
 - PR 描述中用 `Closes #N` / `Fixes #N` 关联 Issue
 - 新功能/架构变更需要先走 brainstorming 设计流程，再写实现计划，再开发
 - Code Review 分级：简单 PR 快速扫描，复杂 PR 使用 superpowers:requesting-code-review
+- 所有 commit 必须在功能分支上，绝不在 main 上直接 commit
+- 用 `git pull --rebase` 同步 main，避免产生 merge commit
 
 ## 开发约定
 
