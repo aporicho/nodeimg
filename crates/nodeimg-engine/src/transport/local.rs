@@ -3,7 +3,8 @@ use crate::internal::backend::BackendClient;
 use crate::internal::cache::{Cache, NodeId};
 use crate::internal::eval::{Connection, EvalEngine};
 use crate::internal::menu::{Menu, MenuCategory};
-use crate::internal::registry::{NodeDef, NodeInstance, NodeRegistry};
+use crate::internal::registry::{NodeDef, NodeRegistry};
+use nodeimg_types::node_instance::NodeInstance;
 use crate::transport::{
     ConnectionRequest, ConstraintInfo, ExecuteProgress, GraphRequest, HealthResponse, NodeTypeDef,
     ParamDefInfo, ParamValue, PinDefInfo, ProcessingTransport,

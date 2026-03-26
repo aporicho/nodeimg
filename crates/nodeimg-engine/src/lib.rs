@@ -8,7 +8,7 @@ pub(crate) use internal::registry;
 
 // Only export types that app layer still needs directly
 pub use internal::cache::NodeId;
-pub use internal::registry::{NodeInstance, NodeRegistry};
+pub use internal::registry::NodeRegistry;
 
 // Hidden re-exports for integration tests (tests/ dir is outside the crate)
 #[doc(hidden)]
