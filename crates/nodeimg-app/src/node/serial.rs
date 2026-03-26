@@ -1,9 +1,8 @@
-use nodeimg_engine::NodeRegistry;
+use nodeimg_engine::transport::NodeTypeDef;
 use nodeimg_types::node_instance::NodeInstance;
+use nodeimg_types::serial_data::*;
 use egui_snarl::{InPinId, NodeId, OutPinId, Snarl};
 use std::collections::HashMap;
-
-pub use nodeimg_types::serial_data::*;
 
 pub struct Serializer;
 
@@ -12,31 +11,10 @@ impl Serializer {
         serde_json::to_string_pretty(graph)
     }
 
-    pub fn load(json: &str, registry: &NodeRegistry) -> Result<SerializedGraph, String> {
-        let mut graph: SerializedGraph =
-            serde_json::from_str(json).map_err(|e| format!("JSON parse error: {}", e))?;
-
-        for node in &mut graph.nodes {
-            if let Some(def) = registry.get(&node.type_id) {
-                for param in &def.params {
-                    if !node.params.contains_key(&param.name) {
-                        if let Some(sv) = SerializedValue::from_value(&param.default) {
-                            node.params.insert(param.name.clone(), sv);
-                        }
-                    }
-                }
-            }
-            // Unknown node types are intentionally kept in the graph
-            // so they survive save/load. EvalEngine skips them.
-        }
-
-        Ok(graph)
-    }
-
     /// Take a snapshot of the current Snarl graph into a SerializedGraph.
     pub fn snapshot(
         snarl: &Snarl<NodeInstance>,
-        registry: &NodeRegistry,
+        type_defs: &HashMap<String, NodeTypeDef>,
     ) -> SerializedGraph {
         let mut nodes = Vec::new();
         for (node_id, pos, instance) in snarl.nodes_pos_ids() {
@@ -58,13 +36,13 @@ impl Serializer {
         for (out_pin, in_pin) in snarl.wires() {
             let from_name = snarl
                 .get_node(out_pin.node)
-                .and_then(|inst| registry.get(&inst.type_id))
+                .and_then(|inst| type_defs.get(&inst.type_id))
                 .and_then(|def| def.outputs.get(out_pin.output))
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
             let to_name = snarl
                 .get_node(in_pin.node)
-                .and_then(|inst| registry.get(&inst.type_id))
+                .and_then(|inst| type_defs.get(&inst.type_id))
                 .and_then(|def| def.inputs.get(in_pin.input))
                 .map(|p| p.name.clone())
                 .unwrap_or_default();
@@ -86,25 +64,30 @@ impl Serializer {
     /// Restore a SerializedGraph into a fresh Snarl, returning it.
     pub fn restore(
         graph: &SerializedGraph,
-        registry: &NodeRegistry,
+        type_defs: &HashMap<String, NodeTypeDef>,
     ) -> Snarl<NodeInstance> {
         let mut snarl = Snarl::new();
-        // Map old serialized IDs -> new Snarl NodeIds
         let mut id_map: HashMap<usize, NodeId> = HashMap::new();
 
         for sn in &graph.nodes {
-            let instance = match registry.instantiate(&sn.type_id) {
-                Some(mut inst) => {
-                    // Apply saved param values
+            let instance = match type_defs.get(&sn.type_id) {
+                Some(def) => {
+                    let mut params: HashMap<String, nodeimg_types::value::Value> = def
+                        .params
+                        .iter()
+                        .map(|p| (p.name.clone(), p.default.to_value()))
+                        .collect();
                     for (k, sv) in &sn.params {
-                        inst.params.insert(k.clone(), sv.to_value());
+                        params.insert(k.clone(), sv.to_value());
                     }
-                    inst
+                    NodeInstance {
+                        type_id: sn.type_id.clone(),
+                        params,
+                    }
                 }
                 None => {
-                    // Unknown node type -- create a placeholder instance so the
-                    // graph structure is preserved across save/load even when
-                    // the backend is not connected.
+                    // Unknown node type — create placeholder so the graph
+                    // structure is preserved across save/load.
                     let mut params = HashMap::new();
                     for (k, sv) in &sn.params {
                         params.insert(k.clone(), sv.to_value());
@@ -130,14 +113,13 @@ impl Serializer {
                 None => continue,
             };
 
-            // Resolve pin names -> indices
             let out_idx = snarl
                 .get_node(from_id)
-                .and_then(|inst| registry.get(&inst.type_id))
+                .and_then(|inst| type_defs.get(&inst.type_id))
                 .and_then(|def| def.outputs.iter().position(|p| p.name == sc.from_pin));
             let in_idx = snarl
                 .get_node(to_id)
-                .and_then(|inst| registry.get(&inst.type_id))
+                .and_then(|inst| type_defs.get(&inst.type_id))
                 .and_then(|def| def.inputs.iter().position(|p| p.name == sc.to_pin));
 
             if let (Some(out_idx), Some(in_idx)) = (out_idx, in_idx) {

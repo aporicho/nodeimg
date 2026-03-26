@@ -3,6 +3,7 @@ pub mod local;
 pub use crate::internal::backend::BackendClient;
 
 use crate::cache::NodeId;
+use nodeimg_types::serial_data::SerializedGraph;
 use nodeimg_types::value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -54,6 +55,9 @@ pub trait ProcessingTransport: Send + Sync + 'static {
         target: NodeId,
         connections: &[ConnectionRequest],
     ) -> bool;
+
+    /// Parse project file JSON and fill missing params with defaults.
+    fn load_graph(&self, json: &str) -> Result<SerializedGraph, String>;
 }
 
 // === Execution Progress ===

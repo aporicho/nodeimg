@@ -24,7 +24,7 @@ use std::sync::Arc;
 pub struct NodeViewer {
     // Transport abstraction (new)
     pub transport: Arc<LocalTransport>,
-    pub node_type_defs: Vec<NodeTypeDef>,
+    pub node_type_defs: HashMap<String, NodeTypeDef>,
     pub execution_manager: ExecutionManager,
 
     pub widget_registry: WidgetRegistry,
@@ -46,7 +46,12 @@ pub struct NodeViewer {
 
 impl NodeViewer {
     pub fn new(theme: Arc<dyn Theme>, gpu_ctx: Option<Arc<GpuContext>>, transport: Arc<LocalTransport>) -> Self {
-        let node_type_defs = transport.node_types().unwrap_or_default();
+        let node_type_defs: HashMap<String, NodeTypeDef> = transport
+            .node_types()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.type_id.clone(), d))
+            .collect();
         let execution_manager = ExecutionManager::new(Arc::clone(&transport) as Arc<dyn ProcessingTransport>);
 
         Self {
@@ -66,7 +71,7 @@ impl NodeViewer {
 
     /// Find a NodeTypeDef by type_id from the cached list.
     fn find_type_def(&self, type_id: &str) -> Option<&NodeTypeDef> {
-        self.node_type_defs.iter().find(|d| d.type_id == type_id)
+        self.node_type_defs.get(type_id)
     }
 
     pub fn invalidate(&mut self, node_id: NodeId) {
