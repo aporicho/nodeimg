@@ -111,7 +111,12 @@ impl App {
                 Ok(count) => eprintln!("[backend] Registered {} AI node types", count),
                 Err(e) => eprintln!("[backend] Failed to register AI nodes: {}", e),
             }
-            viewer.node_type_defs = transport.node_types().unwrap_or_default();
+            viewer.node_type_defs = transport
+                .node_types()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|d| (d.type_id.clone(), d))
+                .collect();
         }
         // Don't set viewer.backend — backend is inside transport now
 
