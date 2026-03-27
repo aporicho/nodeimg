@@ -195,13 +195,19 @@ engine/
   - 淘汰策略：LRU + VRAM 上限
   - 丢失可重新从 Image 上传，代价低
 
+  **并发访问：** ResultCache 被后台执行线程（写入）和 UI 主线程（读取预览）并发访问，使用 `RwLock` 保护——执行线程写锁、UI 线程读锁，读操作不阻塞。TextureCache 仅在 UI 主线程上访问（上传纹理和渲染都在主线程），无需额外同步。
+
 - **新增：** ResultEnvelope
 
   ```rust
   enum ResultEnvelope {
       Local(Value),            // 直接引用，含 GpuImage，零拷贝
-      Remote(SerializedValue), // 序列化后的 bytes
+      Remote(SerializedValue), // 序列化后的字节流
   }
+
+  /// 序列化后的执行结果，用于远端传输
+  /// 编码格式为 bincode（紧凑二进制），包含图像像素数据和尺寸等元信息
+  pub struct SerializedValue(pub Vec<u8>);
   ```
 
   Transport 层决定路径——LocalTransport 返回 `Local(...)`，HttpTransport 返回 `Remote(...)`。前端 ExecutionManager 统一处理：Local 直接用，Remote 先反序列化再用。前端不感知模式差异。
@@ -260,11 +266,30 @@ engine/
   - `deserialize(data) → Result<Graph>`
 
   **计算服务接口：**
-  - `execute(graph_request) → TaskHandle`
-  - `poll(task_id) → Stream<Progress | Result>`
+  - `execute(graph_request) → TaskId`
+  - `poll(task_id) → Stream<ProgressEvent>`
   - `cancel(task_id)`
   - `upload(file) → FileId`
   - `download(file_id) → Bytes`
+
+  **核心数据类型：**
+
+  ```rust
+  /// 执行任务的唯一标识符
+  pub struct TaskId(pub u64);
+
+  /// 进度事件流中的事件类型
+  pub enum ProgressEvent {
+      NodeStarted { node_id: NodeId },
+      NodeCompleted { node_id: NodeId, duration_ms: u64 },
+      NodeFailed { node_id: NodeId, error: String },
+      Progress { node_id: NodeId, step: u32, total: u32 },  // AI 节点采样进度
+      Completed { results: ResultEnvelope },
+  }
+
+  /// 上传文件的标识符（远端模式下 LoadImage 使用）
+  pub struct FileId(pub String);
+  ```
 
   nodeimg-server 是这套接口的一个具体实现。当前实现可用 HTTP（axum），但接口定义不依赖 HTTP。未来可换成 gRPC、WebSocket 或其他协议。
 
@@ -343,6 +368,8 @@ pub struct Connection {
 
 - **补充：** ExecutionManager 工作机制
 
+  ExecutionManager 使用与 Transport/server 相同的 `TaskId` 标识执行任务。
+
   **提交执行：**
   - `submit(graph_request) → TaskId` — 通过 channel 发给后台执行线程，立即返回
 
@@ -392,7 +419,37 @@ pub struct Connection {
   - `shader.wgsl` 存在 → 自动绑定为 gpu_process
   - `cpu.rs` 存在 → 自动绑定为 process
   - 都有 → GPU 优先 CPU 回退
-  - 都没有 → 按 `executor: AI` 或 `executor: API` 字段路由
+  - 都没有 → 按 `executor` 字段路由到 AI 或 API 执行器
+
+  **AI 节点的 node! 宏示例：**
+
+  ```rust
+  // builtins/ksampler/mod.rs
+  node! {
+      name: "ksampler",
+      title: "KSampler",
+      category: "ai",
+      executor: AI,
+      inputs: [
+          model: Model (required),
+          positive: Conditioning (required),
+          negative: Conditioning (required),
+          latent: Latent (required),
+      ],
+      outputs: [
+          latent: Latent,
+      ],
+      params: [
+          seed: Int, range(0, 2147483647), default(0),
+          steps: Int, range(1, 150), default(20),
+          cfg: Float, range(1.0, 30.0), default(7.0),
+          sampler_name: String, enum(["euler","euler_ancestral","dpm_2","heun","ddim","uni_pc"]), default("euler"),
+          scheduler: String, enum(["normal","karras","exponential","sgm_uniform"]), default("normal"),
+      ],
+  }
+  ```
+
+  AI/API 节点文件夹中没有 `shader.wgsl` 和 `cpu.rs`，通过 `executor: AI` 或 `executor: API` 声明执行路径。
 
 - **补充：** 控件覆写机制
 
@@ -411,7 +468,7 @@ pub struct Connection {
   }
   ```
 
-  不指定 widget 则用 WidgetRegistry 默认映射。新增控件在控件库中实现，新增节点选用已有控件，两边独立扩展。
+  不指定 widget 则用 WidgetRegistry 默认映射。新增控件在控件库中实现，新增节点选用已有控件，两边独立扩展。不再使用旧设计中的 widget.rs 文件覆写方式，所有控件统一在预置控件库中实现。
 
 - **修改：** Shader 位置更新
 
@@ -440,8 +497,8 @@ pub struct Connection {
   ```
 
 - **各类节点的并行行为：**
-  - GPU 节点：多线程并行录制 CommandBuffer，GPU 硬件可能重叠执行无资源冲突的 dispatch
-  - CPU 节点：rayon 线程池直接并行
+  - GPU 节点：GpuContext（持有 device/queue）通过 `Arc<Mutex>` 共享。多个 GPU 节点并行时，各自构建 CommandBuffer 后串行提交到 queue（acquire lock → submit → release）。GPU 硬件对无资源冲突的 dispatch 可能流水线重叠执行。
+  - CPU 节点：rayon 线程池直接并行，无共享状态约束
   - AI/API 节点：在 rayon 线程中用 `reqwest::blocking` 阻塞调用
 
 - **前端不阻塞策略：**
@@ -649,7 +706,17 @@ AI 节点不设性能目标（取决于模型和硬件）。
 
 来源：arc42 模板 §11。
 
-内容：列出当前已知的风险（如 wgpu 跨平台兼容性、Python 后端稳定性、大图性能瓶颈）和技术债（待具体实现时补充）。
+**已识别风险：**
+
+| 风险 | 影响 | 缓解措施 |
+|------|------|---------|
+| wgpu 跨平台兼容性 | 部分 GPU/驱动不支持 compute shader，CI 环境无 GPU | 提供 CPU 回退路径，CI 使用 wgpu 软件渲染后端 |
+| Python 后端进程稳定性 | Python 进程崩溃或 OOM 导致 AI 节点全部失败 | AI 执行器做超时检测和自动重连，提示用户重启后端 |
+| 大图性能瓶颈 | 节点数量 >100 时拓扑排序、Cache 失效递归、UI 渲染可能变慢 | 设性能目标，定期 profiling，考虑增量执行 |
+| 远端模式网络不稳定 | 执行中断、结果丢失 | Transport 层做重试，执行结果持久化到 ResultCache |
+| VRAM 耗尽 | 多个高分辨率纹理同时驻留 GPU | TextureCache LRU 淘汰 + VRAM 上限配置 |
+
+**已知技术债：**（待具体实现时补充条目）
 
 ---
 
@@ -659,7 +726,28 @@ AI 节点不设性能目标（取决于模型和硬件）。
 
 来源：arc42 模板 §12 + 现有 domain.md。
 
-内容：统一定义术语（Node、Pin、Connection、Handle、Transport、Graph、Value、Constraint、ExecutionManager 等），消除歧义。
+**核心术语清单：**
+
+| 术语 | 定义 |
+|------|------|
+| Node | 节点图中的一个处理单元，有输入引脚、输出引脚和参数 |
+| Pin | 节点的输入或输出端口，有名称和数据类型 |
+| Connection | 两个节点的引脚之间的数据连接 |
+| Graph | 由 Node 和 Connection 组成的有向无环图 |
+| Value | 在引脚之间传递的数据值（Image、Float、Int、String、Handle…） |
+| Handle | AI 执行器中 Python 端 GPU 对象的引用标识符，不含实际数据 |
+| DataType | 引脚或参数的数据类型标识 |
+| Constraint | 参数的约束条件（Range、Enum、FilePath…） |
+| Transport | 前端与服务层之间的通信抽象层 |
+| EvalEngine | 负责拓扑排序和节点执行分发的核心调度器 |
+| ExecutionManager | App 逻辑层中管理异步执行任务的组件 |
+| ResultCache | 缓存节点执行结果的存储 |
+| TextureCache | 缓存预览用 GPU 纹理的存储 |
+| ResultEnvelope | 包装执行结果的类型��区分本地引用和远端序列化 |
+| NodeDef | 节点类型的元信息定义（引脚、参数、分类） |
+| WidgetRegistry | 将 DataType + Constraint 映射为 UI 控件类型的注册表 |
+
+详细定义基于现有 domain.md 扩充，补充目标架构新增概念。
 
 ---
 
