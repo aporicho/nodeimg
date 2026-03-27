@@ -28,11 +28,16 @@ python/                  — AI 后端（FastAPI + SDXL）
 ## 设计文档
 
 设计文档在 `docs/` 目录，是项目的规范参考。文档可以先行于代码实现：
-- `domain.md` — 领域概念（节点、数据类型、引脚、约束）
-- `architecture.md` — 系统架构（组件、接口、依赖）
-- `catalog.md` — 节点目录（所有节点的完整规格）
-- `gpu.md` — GPU 子系统设计
-- `protocol.md` / `backend-*.md` — AI 后端协议和架构
+
+**当前架构（描述代码实际状态）：**
+- `docs/current/domain.md` — 领域概念（节点、数据类型、引脚、约束）
+- `docs/current/architecture.md` — 当前系统架构（组件、接口、依赖）
+- `docs/current/catalog.md` — 节点目录（所有节点的完整规格）
+- `docs/current/gpu.md` — GPU 子系统设计
+- `docs/current/protocol.md` / `docs/current/backend-*.md` — AI 后端协议和架构
+
+**目标架构（描述理想状态）：**
+- `docs/target/README.md` — 目标架构索引（含所有子文档链接）
 
 ## 开发工作流程
 
