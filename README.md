@@ -55,13 +55,19 @@ docs/                # 设计文档
 
 ## 设计文档
 
-- [领域概念](docs/domain.md) — 节点、数据类型、引脚、约束等核心概念
-- [系统架构](docs/architecture.md) — 组件划分、接口约定、依赖关系
-- [节点目录](docs/catalog.md) — 所有节点的完整规格
-- [GPU 子系统](docs/gpu.md) — GPU 加速架构和着色器规范
-- [后端协议](docs/protocol.md) — 前后端通信协议
-- [后端领域](docs/backend-domain.md) — AI 后端领域概念
-- [后端架构](docs/backend-architecture.md) — AI 后端系统结构
+**当前架构：**
+- [领域概念](docs/current/domain.md) — 节点、数据类型、引脚、约束等核心概念
+- [系统架构](docs/current/architecture.md) — 组件划分、接口约定、依赖关系
+- [节点目录](docs/current/catalog.md) — 所有节点的完整规格
+- [GPU 子系统](docs/current/gpu.md) — GPU 加速架构和着色器规范
+- [后端协议](docs/current/protocol.md) — 前后端通信协议
+- [后端领域](docs/current/backend-domain.md) — AI 后端领域概念
+- [后端架构](docs/current/backend-architecture.md) — AI 后端系统结构
+
+**目标架构：**
+- [目标架构索引](docs/target/README.md) — 完整目标架构文档体系
+
+**其他：**
 - [开发工作流程](docs/开发工作流程.md) — 项目开发规范
 
 ## 许可
