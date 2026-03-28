@@ -30,3 +30,7 @@
 | D22 | Node 结构体归属 | 放 nodeimg-graph | types 保持轻量原子类型，Node 和 Graph 内聚在一起 |
 | D23 | ExecutionManager | channel 通信 + 进度事件 + AtomicBool 取消 | 简单有效，不引入复杂异步机制 |
 | D24 | 控件覆写 | node! 宏中 widget(...) 选择预置控件 | 新增控件和新增节点独立扩展 |
+| D25 | Python 后端协议 | 单节点执行 + SSE 流式 + Handle 机制 | 细粒度缓存、Handle 跨步骤复用、实时进度反馈 |
+| D26 | Python 进程管理 | App 自动启动（可配置关闭） | 开箱即用体验，python_auto_launch 配置项控制 |
+| D27 | Python 并发 | Rust 并发发送，Python 队列调度 | 轻量节点可并行利用 GPU，重型节点独占 GPU 避免争抢 |
+| D28 | VRAM 释放策略 | 缓存失效驱动 + VRAM 不足被动恢复 | 两条互补路径，Rust 端统一决策保证状态一致 |
