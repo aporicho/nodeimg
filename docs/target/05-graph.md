@@ -44,7 +44,79 @@ flowchart TD
 
 ---
 
-## 2. 核心数据结构
+## 2. 数据类型体系
+
+nodeimg-types 定义两组核心类型枚举：`Value`（运行时数据值）和 `DataType`（编译期类型标识）。
+
+### Value 枚举
+
+`Value` 是节点引脚之间传递的运行时数据，分为三类：
+
+```rust
+pub enum Value {
+    // ── Rust 可理解类型（可序列化、可缓存、可直接操作）──
+    Image(DynamicImage),        // 像素图像（RGBA）
+    GpuImage(Arc<GpuTexture>),  // GPU 纹理（仅本地模式，不可序列化）
+    Mask(DynamicImage),         // 单通道蒙版
+    Float(f64),
+    Int(i64),
+    String(String),
+    Bool(bool),
+    Color([f32; 4]),            // RGBA 浮点色值
+
+    // ── Python 专属类型（通过 Handle 引用，不含实际数据）──
+    Handle { id: String, data_type: DataTypeId },
+}
+```
+
+**Handle 说明：** AI 节点的输出（Model、Conditioning、Latent 等）驻留在 Python 进程的 GPU 内存中，Rust 端只持有不透明的 string ID。Handle 的创建、引用、释放遵循 `15-python-backend-protocol.md` 定义的协议。
+
+### DataTypeId 与 Python 专属类型
+
+`DataTypeId` 是类型的字符串标识符，用于引脚定义和连接兼容性检查：
+
+| DataTypeId | 说明 | Value 表示 | 存在位置 |
+|------------|------|-----------|---------|
+| `image` | 像素图像 | `Value::Image` / `Value::GpuImage` | Rust 内存 / GPU |
+| `mask` | 单通道蒙版 | `Value::Mask` | Rust 内存 / GPU |
+| `float` | 浮点数 | `Value::Float` | Rust |
+| `int` | 整数 | `Value::Int` | Rust |
+| `string` | 字符串 | `Value::String` | Rust |
+| `bool` | 布尔值 | `Value::Bool` | Rust |
+| `color` | RGBA 颜色 | `Value::Color` | Rust |
+| `model` | Diffusion 模型（UNet/DiT） | `Value::Handle` | Python VRAM |
+| `clip` | 文本编码器模型 | `Value::Handle` | Python VRAM |
+| `vae` | VAE 编解码模型 | `Value::Handle` | Python VRAM |
+| `conditioning` | 条件化信息（embedding + metadata） | `Value::Handle` | Python VRAM |
+| `latent` | 潜空间张量 | `Value::Handle` | Python VRAM |
+| `control_net` | ControlNet 模型 | `Value::Handle` | Python VRAM |
+| `clip_vision` | CLIP Vision 模型 | `Value::Handle` | Python VRAM |
+| `clip_vision_output` | CLIP Vision 编码输出 | `Value::Handle` | Python VRAM |
+| `style_model` | Style/IP-Adapter 模型 | `Value::Handle` | Python VRAM |
+| `upscale_model` | 超分辨率模型 | `Value::Handle` | Python VRAM |
+| `sampler` | 采样算法对象 | `Value::Handle` | Python |
+| `sigmas` | Sigma 调度序列 | `Value::Handle` | Python |
+| `noise` | 噪声对象 | `Value::Handle` | Python |
+| `guider` | 引导器对象 | `Value::Handle` | Python |
+
+**类型兼容性规则：** 连接两个引脚时，`DataTypeId` 必须完全匹配。特殊例外：`image` 类型的输出可以连接到 `mask` 类型的输入（自动提取亮度通道），反之亦然。兼容性判断由 engine 层的 `DataTypeRegistry` 负责，graph 层不做类型检查（见本文档第 4 节）。
+
+### Constraint 枚举
+
+参��约束，用于校验和控件映射：
+
+```rust
+pub enum Constraint {
+    Range { min: f64, max: f64 },            // 数值范围
+    Enum(Vec<String>),                       // 枚举选项
+    FilePath(Vec<String>),                   // 文件选择器，限定扩展名
+    Multiline,                               // 多行文本输入
+}
+```
+
+---
+
+## 3. 核心数据结构
 
 ```rust
 /// 整张节点图
@@ -77,7 +149,7 @@ pub struct Connection {
 
 ---
 
-## 3. 图操作 API
+## 4. 图操作 API
 
 ```rust
 impl Graph {
@@ -126,7 +198,7 @@ pub enum GraphError {
 
 ---
 
-## 4. 图查询 API
+## 5. 图查询 API
 
 ```rust
 impl Graph {
@@ -157,7 +229,7 @@ pub enum ValidationError {
 
 ---
 
-## 5. 序列化
+## 6. 序列化
 
 graph crate 提供 `to_json` / `from_json`，项目文件格式包含 `version` 字段用于向后兼容迁移。
 
