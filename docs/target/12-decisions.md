@@ -37,3 +37,6 @@
 | D29 | 节点自适应 | 一个节点适配所有模型架构，不做模型专属节点 | 减少节点数量，用户无需关心模型架构差异 |
 | D30 | 节点粒度 | 与 ComfyUI 对齐 | 用户可无缝迁移 ComfyUI 工作流 |
 | D31 | 节点命名 | 重新设计，不照搬 ComfyUI | 更清晰的分类体系，不受历史包袱影响 |
+| D32 | Undo/Redo | 不可变状态 + 结构共享（Arc\<Node\>） | 兼顾内存效率和实现可靠性，新增操作零 undo 代码 |
+| D33 | 快捷键 | 逻辑层 KeybindingMap，config.toml 可覆盖 | 渲染层不硬编码快捷键，用户可自定义 |
+| D34 | 多项目 Tab | 每 tab 独立 GraphController/UndoManager，Cache 共享 | tab 间互不干扰，VRAM 不重复占用 |
