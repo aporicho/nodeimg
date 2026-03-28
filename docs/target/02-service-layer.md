@@ -127,6 +127,7 @@ flowchart LR
 
 - Handle 的生命周期等于对应 `ResultCache` 条目的生命周期。
 - 当 Cache 条目因参数变化或连接断开而失效时，若 entry 类型为 Handle，系统调用 `POST /handles/release` 通知 Python 释放对应的 GPU 对象（Tensor / 模型权重）。
+- 当 VRAM 不足导致节点执行失败时，Rust 根据 Python 报告的 Handle 列表和 VRAM 占用信息，主动选择释放目标后重试执行。此路径与缓存失效驱动的常规释放互补。详见 `15-python-backend-protocol.md`。
 - Rust 侧不直接管理 Python 对象的内存，Handle 只是一个不透明的字符串 ID。
 
 ---

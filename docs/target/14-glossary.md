@@ -14,10 +14,11 @@
 | Pin | 节点的输入或输出端口，有名称和数据类型 |
 | Connection | 两个节点的引脚之间的数据连接 |
 | Graph | 由 Node 和 Connection 组成的有向无环图 |
-| Value | 在引脚之间传递的数据值（Image、Float、Int、String、Handle…） |
-| Handle | AI 执行器中 Python 端 GPU 对象的引用标识符，不含实际数据 |
-| DataType | 引脚或参数的数据类型标识 |
-| Constraint | 参数的约束条件（Range、Enum、FilePath…） |
+| Value | 在引脚之间传递的运行时数据值，分为 Rust 可理解类型（Image、Float 等）和 Handle 引用（Python 专属类型） |
+| Handle | AI 执行器中 Python 端 GPU 对象的不透明引用（string ID），Rust 端不持有实际数据。生命周期绑定 ResultCache 条目 |
+| DataTypeId | 引脚和参数的类型字符串标识符（如 "image"、"model"、"conditioning"），用于连接兼容性检查 |
+| Constraint | 参数的约束条件（Range、Enum、FilePath、Multiline） |
+| GpuImage | GPU 纹理引用（`Arc<GpuTexture>`），仅在本地模式的 Value 中使用，不可序列化 |
 | Transport | 前端与服务层之间的通信抽象层 |
 | EvalEngine | 负责拓扑排序和节点执行分发的核心调度器 |
 | ExecutionManager | App 逻辑层中管理异步执行任务的组件 |

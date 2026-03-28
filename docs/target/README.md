@@ -23,6 +23,8 @@
 | [12-decisions.md](./12-decisions.md) | 设计决策表 | 所有架构决策的索引 |
 | [13-risks.md](./13-risks.md) | 风险与技术债 | 已识别的风险和已知的技术债务 |
 | [14-glossary.md](./14-glossary.md) | 术语表 | 项目中使用的领域术语定义 |
+| [15-python-backend-protocol.md](./15-python-backend-protocol.md) | Python 后端协议 | AI 执行器与 Python 推理后端的通信协议、数据格式、生命周期管理 |
+| [16-node-catalog.md](./16-node-catalog.md) | 节点目录 | v1 全量节点规格（AI 推理 + 图像处理 + 工具，约 85 个节点） |
 
 ---
 
