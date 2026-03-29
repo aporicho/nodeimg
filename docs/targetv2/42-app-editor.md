@@ -146,7 +146,7 @@ struct GraphState {
 **操作流程：**
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
 
     OP["用户操作\n修改 Node B 参数"]:::service
@@ -178,7 +178,7 @@ flowchart LR
 - 渲染层：只接收 `WidgetType`，不做类型判断，直接调用对应的 egui 绘制函数。
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef service  fill:#6DBFA0,stroke:#5BAD8E,color:#fff
 
@@ -213,7 +213,7 @@ flowchart LR
 **参数类型到控件的映射流程：**
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef service  fill:#6DBFA0,stroke:#5BAD8E,color:#fff
 
@@ -277,7 +277,7 @@ node! {
 双击画布空白处或按 Space 唤出搜索浮窗，输入关键词实时过滤节点列表，回车将选中节点添加到画布。
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef service  fill:#6DBFA0,stroke:#5BAD8E,color:#fff
 

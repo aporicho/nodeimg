@@ -132,7 +132,7 @@ pub enum Constraint {
 ## Rust / Python 类型边界
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Rust["Rust 进程"]
         RustImg["Image · GpuImage"]:::service
         RustPrim["Float · Int · String\nBool · Color"]:::service

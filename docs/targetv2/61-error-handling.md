@@ -104,7 +104,7 @@ flowchart TB
 ## 总览（简化版）
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend  fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef transport fill:#A78BCA,stroke:#9579B8,color:#fff
     classDef service   fill:#6DBFA0,stroke:#5BAD8E,color:#fff

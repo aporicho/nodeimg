@@ -9,7 +9,7 @@
 主题通过 `Theme` trait 定义语义化颜色接口，具体配色由 `DarkTheme` / `LightTheme` 实现。逻辑层持有 `Arc<dyn Theme>`，渲染层每帧调用 trait 方法取色，不硬编码任何颜色值。
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend    fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef transport   fill:#A78BCA,stroke:#9579B8,color:#fff
     classDef service     fill:#6DBFA0,stroke:#5BAD8E,color:#fff

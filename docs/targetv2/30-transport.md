@@ -116,7 +116,7 @@ pub struct LocalTransport {
 **执行路径：**
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef transport fill:#A78BCA,stroke:#9579B8,color:#fff
     classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
     classDef compute fill:#6DB8AD,stroke:#5BA69B,color:#fff
@@ -242,7 +242,7 @@ pub struct FileId(pub String);
 `nodeimg-server` 的服务接口定义为 Rust trait，axum 是当前的一个实现选项，未来可替换为 gRPC、WebSocket 或其他协议，而无需修改前端代码。
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef transport fill:#A78BCA,stroke:#9579B8,color:#fff
     classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
     classDef future fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5

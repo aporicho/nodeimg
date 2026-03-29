@@ -9,7 +9,7 @@
 `nodeimg-cli` 是与 GUI 并列的另一个前端，面向无界面场景。它复用 `ProcessingTransport` trait 与服务层交互，不依赖任何 UI 框架。Transport 层详见 [30-transport.md](./30-transport.md)。
 
 ```mermaid
-flowchart LR
+flowchart TB
     classDef frontend    fill:#6C9BCF,stroke:#5A89BD,color:#fff
     classDef transport   fill:#A78BCA,stroke:#9579B8,color:#fff
     classDef service     fill:#6DBFA0,stroke:#5BAD8E,color:#fff

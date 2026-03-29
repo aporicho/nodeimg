@@ -108,7 +108,7 @@ flowchart TD
 交互服务始终在同一进程内完成，无网络往返。
 
 ```mermaid
-flowchart LR
+flowchart TB
     FE["前端\n(GUI / CLI)"]:::frontend
 
     NT["Transport.node_types()"]:::transport
