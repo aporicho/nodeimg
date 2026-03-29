@@ -108,7 +108,7 @@ nodeimg batch ./projects/*.nodeimg [选项]
 
 | 维度 | GUI (nodeimg-app) | CLI (nodeimg-cli) |
 |------|-------------------|-------------------|
-| Transport | `LocalTransport`（默认）或 `HttpTransport` | ���左 |
+| Transport | `LocalTransport`（默认）或 `HttpTransport` | 同左 |
 | 进度反馈 | UI 渲染进度条 + 节点高亮 | stderr 文本进度 |
 | 多项目 | Tab 并行编辑 | `batch --jobs` 并行执行 |
 | 交互 | 实时编辑、预览、Undo | 无交互，一次性执行 |

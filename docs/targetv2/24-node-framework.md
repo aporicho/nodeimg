@@ -198,7 +198,7 @@ graph LR
 
 ## 4. 控件覆写（决策 D24）
 
-框架根据参数��型和约��自动映射到预置控件，99% 的节点无需额外代码。
+框架根据参数类型和约束自动映射到预置控件，99% 的节点无需额外代码。
 
 **预置控件库：**
 
@@ -327,7 +327,7 @@ python/
   各节点文件夹独立编译，顺序无关
 
 启动期：
-  inventory::iter::<NodeDef>() → 遍历所有收集到��� NodeDef
+  inventory::iter::<NodeDef>() → 遍历所有收集到的 NodeDef
   → NodeRegistry::register(def)
   → Registry 就绪，Engine 可执行
 ```

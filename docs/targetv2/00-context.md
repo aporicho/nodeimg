@@ -16,7 +16,7 @@ flowchart TB
 
     User      -->|"节点编辑 / 图执行"| NodeImg
     NodeImg   -->|"处理结果 / 状态反馈"| User
-    NodeImg  <-->|"读写图像文件 / 加载保存��目"| FS
+    NodeImg  <-->|"读写图像文件 / 加载保存项目"| FS
     NodeImg   -->|"HTTP + SSE 逐节点调用"| Python
     Python    -->|"推理结果（逐步流式）"| NodeImg
     NodeImg   -->|"REST API 调用"| CloudAPI

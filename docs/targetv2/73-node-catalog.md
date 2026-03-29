@@ -594,7 +594,7 @@
 | 输入引脚 | conditioning(Conditioning) |
 | 输出引脚 | conditioning(Conditioning) |
 | 参数 | 无 |
-| 行为 | 将 conditioning 张量清零（用于无条件引��等场景） |
+| 行为 | 将 conditioning 张量清零（用于无条件引导等场景） |
 
 ### StyleModelApply
 

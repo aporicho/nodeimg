@@ -78,7 +78,7 @@ pub enum Value {
 }
 ```
 
-**Handle 说明：** AI 节点的输出（Model、Conditioning、Latent 等）驻留在 Python 进程的 GPU 内存中，Rust 端只持��不透明的 string ID。Handle 的创建、引用、释放遵循 [50-python-protocol.md](./50-python-protocol.md) 定义的协议。
+**Handle 说明：** AI 节点的输出（Model、Conditioning、Latent 等）驻留在 Python 进程的 GPU 内存中，Rust 端只持有不透明的 string ID。Handle 的创建、引用、释放遵循 [50-python-protocol.md](./50-python-protocol.md) 定义的协议。
 
 ---
 

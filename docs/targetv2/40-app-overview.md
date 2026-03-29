@@ -25,7 +25,7 @@ flowchart TD
     subgraph 渲染层["渲染层（frontend）"]
         UIRenderer["UI Renderer\n(eframe / egui)"]:::frontend
         Canvas["节点画布\n节点位置 / 连线绘制"]:::frontend
-        Preview["预览面板\n纹理展��� / 缩放平移"]:::frontend
+        Preview["预览面板\n纹理展示 / 缩放平移"]:::frontend
         WidgetRender["控件渲染\n按 WidgetType 画 UI"]:::frontend
         MenuRender["菜单渲染\n节点选择器 / 右键菜单"]:::frontend
         ThemeApply["主题应用\n颜色 Token 注入"]:::frontend
@@ -152,7 +152,7 @@ App 退出
   │     ├─ 等待 5 秒
   │     └─ 未退出 → SIGKILL
   ├─ ④ 释放 GPU 资源（GpuContext drop）
-  └─ ⑤ ��出进程
+  └─ ⑤ 退出进程
 ```
 
 未保存的项目在渲染层关闭窗口时拦截（`eframe` 的 `on_close_event`），弹出保存确认对话框，不在关闭序列中处理。

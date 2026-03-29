@@ -76,7 +76,7 @@ pub enum ExecutorType {
 }
 ```
 
-**兼容性校验**（启动时）：`Image` 类型的节点必须提供 `process` 或 `gpu_process` 至少一个，���则注册���败。`AI` 和 `API` 类型的节点 `process` 和 `gpu_process` 均为 `None`。
+**兼容性校验**（启动时）：`Image` 类型的节点必须提供 `process` 或 `gpu_process` 至少一个，否则注册失败。`AI` 和 `API` 类型的节点 `process` 和 `gpu_process` 均为 `None`。
 
 图像处理执行器内部按节点职责分派：像素级运算走 `gpu_process`（GPU shader），文件 I/O 和数据分析走 `process`（CPU）。两者协作而非对立，大多数节点只提供其中一条路径。这一分派对 `EvalEngine` 不可见。
 

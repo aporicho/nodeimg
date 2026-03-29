@@ -76,7 +76,7 @@ flowchart TB
 
         LC_S1 --> LC_S2 --> LC_S3 --> LC_S4
         LC_S4 -->|"进程退出 / liveness 失败"| LC_S5
-        LC_S5 -->|"重试次��未超限"| LC_S1
+        LC_S5 -->|"重试次数未超限"| LC_S1
         LC_S5 -->|"超过最大重试"| LC_S6
         LC_S4 -->|"App 退出"| LC_S6
     end

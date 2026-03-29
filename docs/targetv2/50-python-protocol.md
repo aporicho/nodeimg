@@ -156,7 +156,7 @@ data: {"error_type": "execution_error", "message": "CUDA out of memory"}
 | `handle_error` | Handle ID 不存在或已释放 | 失效对应缓存条目，重新执行上游 |
 | `system_error` | Python 内部异常 | 全局通知，提示用户检查后端 |
 
-三类错误与 `61-error-handling.md` 的分��� Error 体系对齐：`execution_error` 和 `handle_error` 映射为 `NodeError`，`system_error` 映射为 `TransportError`。
+三类错误与 `61-error-handling.md` 的分层 Error 体系对齐：`execution_error` 和 `handle_error` 映射为 `NodeError`，`system_error` 映射为 `TransportError`。
 
 ---
 

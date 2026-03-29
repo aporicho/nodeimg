@@ -13,7 +13,7 @@
 | D05 | TextureCache 淘汰 | LRU + VRAM 上限 | 预览纹理丢了可重新上传，代价低 | [20-engine.md](./20-engine.md) |
 | D06 | 并发模型 | 后台执行线程 + rayon 同层并行 | CPU/GPU 密集型任务用线程池最自然，不引入 async 复杂度 | [60-concurrency.md](./60-concurrency.md) |
 | D07 | AI HTTP 调用 | reqwest::blocking 在 rayon 线程中阻塞 | AI 节点通常串行依赖，同层并行 AI 节点场景少 | [60-concurrency.md](./60-concurrency.md) |
-| D08 | 配置格式 | TOML，CLI > ��境变量 > 文件 > 默认值 | Rust 生态标准做法 | [62-config.md](./62-config.md) |
+| D08 | 配置格式 | TOML，CLI > 环境变量 > 文件 > 默认值 | Rust 生态标准做法 | [62-config.md](./62-config.md) |
 | D09 | 配置加载 | 启动时加载，不热更新 | 简单，配置变更频率极低 | [62-config.md](./62-config.md) |
 | D10 | server 接口 | 抽象服务接口与 Transport trait 对齐 | 不绑定具体传输协议，允许后期自由切换 | [30-transport.md](./30-transport.md) |
 | D11 | API 执行器 | 统一 ApiProvider trait | 认证/速率限制/重试逻辑每个 provider 都需要，统一避免重复 | [23-executor-api.md](./23-executor-api.md) |

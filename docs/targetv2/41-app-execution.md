@@ -39,7 +39,7 @@ flowchart LR
 
 ## 提交流程
 
-1. `GraphController` 将当前图���建为 `GraphRequest`。
+1. `GraphController` 将当前图构建为 `GraphRequest`。
 2. `ExecutionManager` 创建 channel（`Sender` + `Receiver`）和 `CancelToken`。
 3. 调用 `Transport.execute(request, sender)`，Transport 在内部启动执行，通过 `Sender` 逐节点推送进度。
 4. `AppState.executing = true`，UI 展示执行中状态。
