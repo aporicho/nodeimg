@@ -1,3 +1,99 @@
 # 产物管理器
 
-> AI/API 节点产出 Image 时额外持久化的历史归档。
+> AI/API 节点产出 Image 时额外持久化的历史归档，支持浏览和版本选用。
+
+## 总览
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    引擎["引擎"]:::external -->|"查询/选用"| 产物管理器["产物管理器"]:::internal
+    AI执行器["AI 执行器"]:::external -->|"写入 Image"| 产物管理器
+    API执行器["API 执行器"]:::external -->|"写入 Image"| 产物管理器
+    运行时["执行运行时"]:::external -->|"回源加载"| 产物管理器
+
+    产物管理器 --> 存储["产物存储"]:::internal
+    产物管理器 --> 索引["产物索引"]:::internal
+    产物管理器 --> 选用["版本选用"]:::internal
+
+    存储 -->|"读写文件"| 磁盘["项目目录/artifacts"]:::external
+    索引 -->|"读写"| 索引文件["索引文件"]:::external
+    选用 -->|"同步"| 缓存["缓存管理器"]:::external
+```
+
+---
+
+## 写入流程
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    执行器["AI/API 执行器"]:::external -->|"Image 结果"| 接收["接收 Image + 元数据"]:::internal
+    接收 --> 写磁盘["写入 PNG 文件"]:::internal
+    写磁盘 --> 磁盘["项目目录/artifacts/节点ID/"]:::external
+    接收 --> 更新索引["新增索引记录"]:::internal
+    更新索引 --> 索引["产物索引"]:::internal
+    更新索引 --> 设为当前["设为当前选用"]:::internal
+```
+
+---
+
+## 选用流程
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    用户["用户选择历史版本"]:::external --> 引擎["引擎"]:::external
+    引擎 --> 切换["更新当前选用指针"]:::internal
+    切换 --> 加载["从磁盘加载 Image"]:::internal
+    加载 --> 写缓存["写入缓存管理器"]:::internal
+    写缓存 --> 缓存["缓存管理器"]:::external
+    切换 --> 标脏["强制标脏该节点下游"]:::internal
+    标脏 --> 调度器["执行调度器"]:::external
+```
+
+---
+
+## 回源流程
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    运行时["执行运行时"]:::external -->|"收集节点输入"| 查缓存["查缓存管理器"]:::external
+    查缓存 --> 命中{"命中?"}:::internal
+    命中 -->|"是"| 返回["返回缓存结果"]:::internal
+    命中 -->|"否"| 查产物["查产物管理器当前选用"]:::internal
+    查产物 --> 有选用{"有选用?"}:::internal
+    有选用 -->|"是"| 加载["从磁盘加载 Image"]:::internal
+    加载 --> 回填["写入缓存管理器"]:::internal
+    回填 --> 返回
+    有选用 -->|"否"| 需执行["需要重新执行该节点"]:::internal
+```
+
+---
+
+## 组件
+
+- **产物存储**：文件 I/O，将 Image 写为 PNG 存入项目目录下的 artifacts 文件夹，按节点 ID 分目录。
+- **产物索引**：维护每条产物记录的元数据（节点 ID、版本号、时间戳、种子、参数快照、文件路径），持久化为索引文件，支持按节点查询所有版本。
+- **版本选用**：每个节点维护一个"当前选用"指针，默认指向最新版本。切换选用时同步写入缓存管理器，并通知调度器强制标脏下游。
+
+## 边界情况
+
+- **首次执行**：节点无产物记录，回源查询返回空，节点需要执行。
+- **项目加载**：产物文件和索引已在磁盘上，产物管理器扫描项目目录重建内存索引。
+- **删除节点**：产物记录保留（支持 undo 恢复），标记为孤立。
+- **磁盘空间**：产物可能积累很多，需要支持手动清理或自动淘汰旧版本。
+- **产物写入失败**：磁盘满等情况不影响执行流（缓存里有结果），仅影响历史记录，通过事件系统通知前端。
