@@ -13,7 +13,7 @@
 5. **保留所有设计决策 D01-D36 的内联说明**
 6. **统一文档模板**：定位 → 架构总览图 → 按主题展开 → 设计决策
 
-## 文件列表（24 个）
+## 文件列表（26 个）
 
 ```
 docs/targetv2/
@@ -25,9 +25,11 @@ docs/targetv2/
 ├── 10-types.md                  — 数据类型体系 + Handle 边界           (~170)
 ├── 11-graph.md                  — 节点图数据模型 + 操作/查询 API       (~210)
 │
-├── 20-engine.md                 — EvalEngine 调度 + Cache + 模块图     (~180)
-├── 21-executors.md              — 三路执行器 + AI 架构图(精简版)       (~363)
-├── 22-node-framework.md         — node! 宏 + 文件夹约定 + inventory    (~313)
+├── 20-engine.md                 — EvalEngine 调度 + Cache + 混合图示例 (~230)
+├── 21-executor-image.md         — 图像处理执行器（GPU + CPU 协作）     (~130)
+├── 22-executor-ai.md            — AI 执行器（HTTP → Python）           (~260)
+├── 23-executor-api.md           — 模型 API 执行器（云端 API）          (~110)
+├── 24-node-framework.md         — node! 宏 + 文件夹约定 + inventory    (~313)
 │
 ├── 30-transport.md              — Transport trait + Local/Http/Server  (~283)
 │
@@ -51,7 +53,7 @@ docs/targetv2/
 └── 73-node-catalog.md           — 节点目录 ~86 节点                    (~950)
 ```
 
-编号区间含义：0x=全局、1x=基础层、2x=引擎层、3x=传输层、4x=前端层、5x=AI层、6x=横切、7x=附录。
+编号区间含义：0x=全局、1x=基础层、2x=引擎层（20 调度、21-23 执行器、24 节点框架）、3x=传输层、4x=前端层、5x=AI层、6x=横切、7x=附录。
 
 ## 内容迁移矩阵
 
@@ -109,18 +111,26 @@ docs/targetv2/
 | §11 并发模型 | 51-python-lifecycle.md | |
 | §12 Python 端内部架构 | 51-python-lifecycle.md | |
 
-**mermaid.md → 拆分合并到 21/50/51 三个文件**
+**03-executors.md → 拆分为 20(部分) + 21 + 22 + 23**
 
-mermaid.md 的完整 AI 执行器架构图拆分为三部分：
+| 03 中的章节 | 目标文件 | 说明 |
+|------------|---------|------|
+| 总览（三路路由图） | 20-engine.md | 归入 EvalEngine 分发策略章节 |
+| 图像处理执行器 | 21-executor-image.md | GPU/CPU 协作分派 |
+| AI 执行器 | 22-executor-ai.md | 含 mermaid.md 精简图 |
+| 混合图执行示例 + D31 | 20-engine.md | 展示分发策略的具体例子 |
+| 模型 API 执行器 | 23-executor-api.md | ApiProvider trait + 对比表 |
+
+**mermaid.md → 拆分合并到 22/50/51 三个文件**
 
 | mermaid.md 中的子图 | 目标文件 | 说明 |
 |-------------------|---------|------|
-| Rust 侧 5 阶段 + Python 侧简化 + 取消/超时机制 | 21-executors.md | 替换 03 中的简化版，以 Rust 侧视角为主 |
+| Rust 侧 5 阶段 + Python 侧简化 + 取消/超时机制 | 22-executor-ai.md | 替换 03 中的简化版 |
 | VRAM_RECOVERY 子图 | 50-python-protocol.md | 配合 VRAM 管理章节 |
 | LIFECYCLE 子图 | 51-python-lifecycle.md | 配合进程生命周期章节 |
-| SSE 事件流格式 + Handle ID 格式（文本） | 50-python-protocol.md | 协议契约，不在 21 中重复 |
+| SSE 事件流格式 + Handle ID 格式（文本） | 50-python-protocol.md | 协议契约，不在 22 中重复 |
 
-21-executors.md 中 AI 执行器章节通过链接引用 50 的 SSE 格式和 Handle ID 格式定义。
+22-executor-ai.md 通过链接引用 50 的 SSE 格式和 Handle ID 格式定义。
 
 ### 不变的文件（改编号 + 补架构图）
 
@@ -128,9 +138,9 @@ mermaid.md 的完整 AI 执行器架构图拆分为三部分：
 |--------|---------|------|
 | 00-context.md | 00-context.md | 不变 |
 | 01-overview.md | 01-overview.md | 不变 |
-| 03-executors.md | 21-executors.md | 合并 mermaid.md 精简图 |
+| 03-executors.md | 20 + 21 + 22 + 23 | 拆分为独立执行器文档 |
 | 04-transport.md | 30-transport.md | 不变 |
-| 07-node-framework.md | 22-node-framework.md | 补架构图 |
+| 07-node-framework.md | 24-node-framework.md | 补架构图 |
 | 08-concurrency.md | 60-concurrency.md | 补架构图 |
 | 09-error-handling.md | 61-error-handling.md | 补架构图 |
 | 10-config.md | 62-config.md | 补架构图 |
@@ -157,9 +167,11 @@ Handle 是跨层概念，在 3 个文件中各讲一个层面：
 | 文件 | 承载的决策 |
 |------|-----------|
 | 10-types.md | D22 |
-| 20-engine.md | D03, D04, D05, D12, D19 |
-| 21-executors.md | D11, D25, D29, D31 |
-| 22-node-framework.md | D18, D21, D24 |
+| 20-engine.md | D03, D04, D05, D12, D19, D31 |
+| 21-executor-image.md | D29 |
+| 22-executor-ai.md | D25 |
+| 23-executor-api.md | D11 |
+| 24-node-framework.md | D18, D21, D24 |
 | 30-transport.md | D10 |
 | 41-app-execution.md | D23, D35 |
 | 42-app-editor.md | D20, D32, D33, D34 |
@@ -220,9 +232,9 @@ Mermaid 图要求：
 
 ```
 10-types ←── 11-graph, 20-engine
-20-engine ←── 21-executors, 41-app-execution
+20-engine ←── 21/22/23-executor-*, 41-app-execution
 30-transport ←── 20-engine, 40-app-overview, 41-app-execution
-50-python-protocol ←── 21-executors, 20-engine
+50-python-protocol ←── 22-executor-ai, 20-engine
 ```
 
 ## 关键设计决策回顾
@@ -239,9 +251,15 @@ Mermaid 图要求：
 
 Handle 机制只有 70 行，独立成文太薄。而进程生命周期（6 状态 + 超时 + 并发 + 架构）有 238 行，是一个完整的运行时管理主题。拆分边界是：一个讲"怎么通信"，一个讲"怎么管理进程"。
 
-### 为什么 21-executors.md 约 363 行
+### 为什么三路执行器各一个文档
 
-mermaid.md 的完整图拆分后，21 只保留 Rust 侧 + Python 侧简化的精简版图（~150 行 mermaid 代码），加上 03 主体文字（~163 行）和总览图（~50 行），总计约 363 行。VRAM 恢复和生命周期子图分别去了 50 和 51。
+三路执行器是三个完全不同的系统——本地 GPU/CPU、HTTP→Python、外部 REST API。除了被 EvalEngine 统一分发之外没有共享逻辑。一个执行器一个文档更清晰：
+
+- **21-executor-image.md (~130 行)**：虽然偏薄，但加上用户要求的细粒度架构图（GPU pipeline、shader 加载、CPU 回退等）后内容充实
+- **22-executor-ai.md (~260 行)**：最复杂的执行器，含 mermaid.md 精简版架构图
+- **23-executor-api.md (~110 行)**：ApiProvider trait + 与 AI 执行器对比
+
+混合图执行示例（sequence diagram）和 D31（逐节点分发 vs 子图委托）归入 20-engine.md，因为这是 EvalEngine 分发策略的论证。
 
 ## README.md 设计
 
@@ -255,9 +273,9 @@ README 是文档体系的入口，精简到 ~150 行：
 |-------|--------|---------|
 | nodeimg-types | 10-types.md | — |
 | nodeimg-graph | 11-graph.md | 10-types.md |
-| nodeimg-engine | 20-engine.md | 21-executors.md, 22-node-framework.md |
-| nodeimg-gpu | — | 21-executors.md（GPU 执行路径）, 22-node-framework.md（shader 位置） |
-| nodeimg-processing | — | 21-executors.md（CPU 执行路径） |
+| nodeimg-engine | 20-engine.md | 21/22/23-executor-*, 24-node-framework.md |
+| nodeimg-gpu | — | 21-executor-image.md（GPU 执行路径）, 24-node-framework.md（shader 位置） |
+| nodeimg-processing | — | 21-executor-image.md（CPU 执行路径） |
 | nodeimg-server | 30-transport.md | — |
 | nodeimg-app | 40-app-overview.md | 41/42/43 |
 | nodeimg-cli | 44-cli.md | — |
@@ -275,7 +293,15 @@ nodeimg-gpu 和 nodeimg-processing 没有独立文档（内容太少，散布在
 | 修正 | 原因 |
 |------|------|
 | README ~250→~150 行，新增 crate→文档映射表 | nodeimg-gpu/processing 无独立文档，读者需要按 crate 导航 |
-| mermaid.md 从整体合并改为拆分到 21/50/51 | VRAM 恢复和生命周期子图属于 50/51 主题，避免 21 过大 |
-| 21-executors.md ~527→~363 行 | 精简图 + SSE/Handle 格式不重复 |
+| mermaid.md 从整体合并改为拆分到 22/50/51 | VRAM 恢复和生命周期子图属于 50/51 主题 |
 | 02§3 从整体搬 types 改为拆开 | Handle 生命周期规则（与 Cache 联动）属于 engine，类型边界图属于 types |
-| SSE 格式/Handle ID 格式只在 50 中描述 | 避免 21 和 50 之间内容重复 |
+| SSE 格式/Handle ID 格式只在 50 中描述 | 避免 22 和 50 之间内容重复 |
+
+### v3 修正（用户反馈：一个执行器一个文档）
+
+| 修正 | 原因 |
+|------|------|
+| 21-executors.md 拆为 21/22/23 三个执行器文档 | 三路执行器是完���不同的系统，无共享逻辑 |
+| 混合图示例 + D31 归入 20-engine.md | 属于 EvalEngine 分发策略的论证 |
+| node-framework 编号从 22 改为 24 | 为执行器腾出编号空间 |
+| 文件总数 24→26 | 更细粒度的拆分 |
