@@ -199,6 +199,16 @@ Handle 协议的完整定义（ID 格式、release 接口规范）见 [50-python
 
 SSE 事件流的完整格式规范见 [50-python-protocol.md](./50-python-protocol.md)。
 
+## 取消机制
+
+`ExecutionManager` 持有 `CancelToken`（内部为 `Arc<AtomicBool>`）。用户触发取消后，Rust 侧调用 `POST /node/cancel/{execution_id}` 通知 Python 端，同时设置 `CancelToken` 标志位。Python 端收到取消请求后设置内部标志位，迭代节点（如 KSampler）在每步采样前检查该标志，命中则中断循环，SSE 流推送 `cancelled` 事件后关闭。非迭代节点执行时间短且不可中断，取消请求可能在执行完成后才到达。
+
+## 超时机制
+
+Rust 端为每个 `/node/execute` 请求设定超时，按节点类型差异化：LoadCheckpoint 120s、CLIPTextEncode 30s、EmptyLatentImage 10s、KSampler 600s、VAEDecode 60s。**收到 `progress` 事件会重置超时计时器**——KSampler 跑 100 步可能很久，但只要每步都有 progress 推送就不会触发超时。超时只在 Python 端完全无响应时才生效。超时触发后，Rust 调用 `POST /node/cancel/{execution_id}` 尝试取消，并向 UI 报告超时错误。
+
+完整超时配置表见 [51-python-lifecycle.md](./51-python-lifecycle.md)。
+
 ## 设计决策
 
 - **D25**：AI 节点通过 HTTP + SSE 与 Python 推理后端通信
