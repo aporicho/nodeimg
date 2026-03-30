@@ -20,13 +20,13 @@ flowchart TB
     产物管理器 --> 选用["版本选用"]:::internal
 
     存储 -->|"读写文件"| 磁盘["项目目录/artifacts"]:::external
-    索引 -->|"读写"| 索引文件["索引文件"]:::external
+    索引 -->|"读写"| 索引文件["artifacts.json"]:::external
     选用 -->|"同步"| 缓存["缓存管理器"]:::external
 ```
 
 ---
 
-## 写入流程
+## 创建流程
 
 ```mermaid
 %%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
@@ -40,6 +40,22 @@ flowchart TB
     接收 --> 更新索引["新增索引记录"]:::internal
     更新索引 --> 索引["产物索引"]:::internal
     更新索引 --> 设为当前["设为当前选用"]:::internal
+```
+
+---
+
+## 查询流程
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    前端["前端"]:::external -->|"查询节点产物"| 引擎["引擎"]:::external
+    引擎 --> 查索引["按节点 ID 查询产物索引"]:::internal
+    查索引 --> 返回["返回版本列表 + 元数据 + 缩略图路径"]:::internal
+    返回 --> 前端
 ```
 
 ---
@@ -84,10 +100,40 @@ flowchart TB
 
 ---
 
+## 删除流程
+
+```mermaid
+%%{ init: { 'flowchart': { 'curve': 'basis' } } }%%
+flowchart TB
+    classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
+
+    前端["前端"]:::external -->|"删除某版本"| 引擎["引擎"]:::external
+    引擎 --> 检查{"是当前选用?"}:::internal
+    检查 -->|"是"| 拒绝["拒绝删除"]:::internal
+    检查 -->|"否"| 删文件["删除 PNG 文件"]:::internal
+    删文件 --> 磁盘["项目目录/artifacts"]:::external
+    删文件 --> 删索引["移除索引记录"]:::internal
+    删索引 --> 索引["产物索引"]:::internal
+```
+
+---
+
+## 操作
+
+| 操作 | 说明 |
+|------|------|
+| 创建 | AI/API 执行器产出 Image 时写入新版本，自动设为当前选用 |
+| 查询 | 按节点 ID 返回历史产物列表（缩略图 + 元数据） |
+| 选用 | 切换当前选用版本，同步缓存管理器，标脏下游节点 |
+| 删除 | 删除某个历史版本，释放磁盘空间。当前选用版本不可删除 |
+
+---
+
 ## 组件
 
 - **产物存储**：文件 I/O，将 Image 写为 PNG 存入项目目录下的 artifacts 文件夹，按节点 ID 分目录。
-- **产物索引**：维护每条产物记录的元数据（节点 ID、版本号、时间戳、种子、参数快照、文件路径），持久化为索引文件，支持按节点查询所有版本。
+- **产物索引**：维护每条产物记录的元数据（节点 ID、版本号、时间戳、种子、参数快照、文件路径），持久化为 artifacts.json，支持按节点查询所有版本。产物管理器拥有索引的读写权，项目管理器通过委派产物管理器实现持久化。
 - **版本选用**：每个节点维护一个"当前选用"指针，默认指向最新版本。切换选用时同步写入缓存管理器，并通知调度器强制标脏下游。
 
 ## 边界情况

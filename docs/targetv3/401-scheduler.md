@@ -172,4 +172,4 @@ flowchart TB
 
 - **D06**：独立后台线程 + rayon 并行，不引入 async/await。图求值是 CPU/GPU 密集型，线程池模型天然匹配。
 - **D07**：AI/API 节点使用 reqwest::blocking 阻塞等待，保持同步执行模型。同层无依赖的 AI 节点通过 rayon 并发发起请求。
-- **D23**：前端不阻塞。channel 通信 + ExecuteProgress 事件 + AtomicBool 取消���志。
+- **D23**：前端不阻塞。channel 通信 + ExecuteProgress 事件 + AtomicBool 取消标志。
