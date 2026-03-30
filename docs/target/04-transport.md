@@ -17,27 +17,45 @@ flowchart TD
     classDef compute fill:#6DB8AD,stroke:#5BA69B,color:#fff
     classDef future fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5
 
-    GUI["GUI\nnodeimg-app"]:::frontend
-    CLI["CLI\nnodeimg-cli"]:::frontend
+    subgraph FE["前端层"]
+        GUI["GUI · nodeimg-app"]:::frontend
+        CLI["CLI · nodeimg-cli"]:::frontend
+    end
 
-    TRAIT["ProcessingTransport trait\n统一接口"]:::transport
+    subgraph TRAIT_LAYER["Transport 接口"]
+        TRAIT["ProcessingTransport trait"]:::transport
+        TRAIT_DESC["统一接口 · &self 同步方法"]:::transport
+    end
 
     GUI --> TRAIT
     CLI --> TRAIT
+    TRAIT --- TRAIT_DESC
 
-    LOCAL["LocalTransport\nin-process 直调"]:::transport
-    HTTP["HttpTransport\nREST + JSON"]:::transport
-    GRPC["gRPC / WebSocket\n未来扩展"]:::future
+    subgraph IMPL["协议实现层"]
+        LOCAL["LocalTransport"]:::transport
+        LOCAL_DESC["in-process 直调"]:::transport
+        HTTP["HttpTransport"]:::transport
+        HTTP_DESC["REST + JSON"]:::transport
+        GRPC["gRPC / WebSocket"]:::future
+        GRPC_DESC["未来扩展"]:::future
+        SERVER["nodeimg-server"]:::transport
+        SERVER_DESC["HTTP 包装层"]:::transport
+    end
 
     TRAIT --> LOCAL
     TRAIT --> HTTP
     TRAIT -.-> GRPC
 
-    SERVER["nodeimg-server\nHTTP 包装层"]:::transport
-
+    LOCAL --- LOCAL_DESC
+    HTTP --- HTTP_DESC
+    GRPC --- GRPC_DESC
     HTTP --> SERVER
+    SERVER --- SERVER_DESC
 
-    SERVICE["服务层\nnodeimg-engine"]:::service
+    subgraph SVC["服务层"]
+        SERVICE["nodeimg-engine"]:::service
+        SERVICE_DESC["NodeRegistry · EvalEngine · Cache"]:::service
+    end
 
     LOCAL --> SERVICE
     SERVER --> SERVICE
@@ -104,25 +122,47 @@ flowchart LR
     classDef compute fill:#6DB8AD,stroke:#5BA69B,color:#fff
     classDef ai fill:#E88B8B,stroke:#D67979,color:#fff
 
-    REQ["GraphRequest"]:::transport
-    TOPO["EvalEngine\n拓扑排序"]:::service
-    CACHE["Cache\n命中跳过"]:::service
+    subgraph REQ_PHASE["请求"]
+        REQ["GraphRequest"]:::transport
+    end
+
+    subgraph DISPATCH["调度"]
+        TOPO["EvalEngine"]:::service
+        TOPO_DESC["拓扑排序"]:::service
+        CACHE["Cache"]:::service
+        CACHE_DESC["命中则跳过"]:::service
+    end
 
     REQ --> TOPO --> CACHE
+    TOPO --- TOPO_DESC
+    CACHE --- CACHE_DESC
 
-    GPU["GPU 执行器\ngpu_process: Some"]:::compute
-    CPU["CPU 执行器\nprocess: Some"]:::compute
-    AI["AI 执行器\nBackendClient → Python"]:::ai
+    subgraph EXEC["执行路径"]
+        GPU["GPU 执行器"]:::compute
+        GPU_DESC["gpu_process: Some"]:::compute
+        CPU["CPU 执行器"]:::compute
+        CPU_DESC["process: Some"]:::compute
+        AI["AI 执行器"]:::ai
+        AI_DESC["BackendClient → Python"]:::ai
+    end
 
-    CACHE -->|"gpu_process 优先"| GPU
-    CACHE -->|"CPU 回退"| CPU
+    CACHE -->|"像素运算"| GPU
+    CACHE -->|"I/O · 分析"| CPU
     CACHE -->|"AI 节点"| AI
 
-    RESULT["ExecuteProgress::NodeCompleted\n零拷贝 Value/GpuImage"]:::transport
+    GPU --- GPU_DESC
+    CPU --- CPU_DESC
+    AI --- AI_DESC
+
+    subgraph RES["结果"]
+        RESULT["NodeCompleted"]:::transport
+        RESULT_DESC["零拷贝 Value / GpuImage"]:::transport
+    end
 
     GPU --> RESULT
     CPU --> RESULT
     AI --> RESULT
+    RESULT --- RESULT_DESC
 ```
 
 **关键特性：**
@@ -155,12 +195,12 @@ flowchart LR
 | 端点 | 方法 | 请求 | 响应 |
 |------|------|------|------|
 | `/execute` | POST | `GraphRequest` | `TaskId` |
-| `/poll/{task_id}` | GET | — | `Stream<ProgressEvent>` (SSE) |
+| `/poll/{task_id}` | GET | — | `Stream<ExecuteProgress>` (SSE) |
 | `/cancel/{task_id}` | DELETE | — | `()` |
 | `/upload` | POST | 文件字节 | `FileId` |
 | `/download/{file_id}` | GET | — | `Bytes` |
 
-`HttpTransport` 调用 `/execute` 后得到 `TaskId`，随即通过 `/poll` SSE 流接收 `ProgressEvent`，逐节点推送给 app 侧 `ExecutionManager`，行为与 `LocalTransport` 对齐。
+`HttpTransport` 调用 `/execute` 后得到 `TaskId`，随即通过 `/poll` SSE 流接收 `ExecuteProgress` 事件，内部转换为 channel 推送给 app 侧 `ExecutionManager`，行为与 `LocalTransport` 对齐。
 
 ### 核心数据类型（Rust 结构体）
 
@@ -168,15 +208,22 @@ flowchart LR
 /// 异步任务句柄，由 /execute 返回
 pub struct TaskId(pub u64);
 
-/// 进度事件，通过 /poll SSE 流推送
-pub enum ProgressEvent {
-    /// 单个节点完成
+/// 进度事件，trait 层和 HTTP 层共用名称
+/// HTTP SSE 流比 trait channel 多一个 Heartbeat（保持连接用）
+pub enum ExecuteProgress {
+    /// 某节点开始执行
+    NodeStarted { node_id: u64 },
+    /// 单个节点完成（HTTP 层携带 FileId，trait 层携带 Value）
     NodeCompleted { node_id: u64, outputs_file_id: FileId },
+    /// 某节点执行失败
+    NodeFailed { node_id: u64, message: String },
+    /// AI 节点迭代进度
+    Progress { node_id: u64, step: u32, total: u32 },
     /// 全图执行完成
     Finished,
-    /// 执行出错
-    Error { node_id: Option<u64>, message: String },
-    /// 心跳（保持连接）
+    /// 执行出错（非节点级）
+    Error { message: String },
+    /// 心跳（仅 HTTP SSE，保持连接）
     Heartbeat,
     /// 取消确认
     Cancelled,
@@ -186,7 +233,7 @@ pub enum ProgressEvent {
 pub struct FileId(pub String);
 ```
 
-`ProgressEvent::NodeCompleted` 不直接携带图像数据，而是携带 `FileId`，前端按需调用 `/download/{file_id}` 获取字节。本地模式无需此步骤。
+`ExecuteProgress::NodeCompleted` 在 HTTP 层不直接携带图像数据，而是携带 `FileId`，前端按需调用 `/download/{file_id}` 获取字节。`HttpTransport` 内部将 `FileId` 下载后转为 `Value`，再通过 channel 推送给 `ExecutionManager`，对上层透明。
 
 ---
 
@@ -200,17 +247,26 @@ flowchart LR
     classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
     classDef future fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5
 
-    IFACE["ProcessingTransport trait\n协议无关接口"]:::transport
+    IFACE["ProcessingTransport trait"]:::transport
 
-    HTTP["HttpTransport\n当前实现\naxum + REST + JSON"]:::transport
-    GRPC["gRPC Transport\n未来可选\ntonic + protobuf"]:::future
-    WS["WebSocket Transport\n未来可选\n实时双向流"]:::future
+    subgraph IMPLS["协议实现"]
+        HTTP["HttpTransport"]:::transport
+        HTTP_TECH["axum · REST · JSON"]:::transport
+        GRPC["gRPC Transport"]:::future
+        GRPC_TECH["tonic · protobuf"]:::future
+        WS["WebSocket Transport"]:::future
+        WS_TECH["实时双向流"]:::future
+    end
 
     IFACE --> HTTP
     IFACE -.-> GRPC
     IFACE -.-> WS
 
-    ENGINE["nodeimg-engine\n服务层"]:::service
+    HTTP --- HTTP_TECH
+    GRPC --- GRPC_TECH
+    WS --- WS_TECH
+
+    ENGINE["nodeimg-engine · 服务层"]:::service
 
     HTTP --> ENGINE
     GRPC -.-> ENGINE

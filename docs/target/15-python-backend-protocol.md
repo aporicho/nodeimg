@@ -285,53 +285,138 @@ Rust 端处理流程：
 
 ## 8. 进程生命周期
 
-### 启动
+Python 后端作为独立进程，生命周期分为 6 个状态，参考 Kubernetes Pod / systemd 的行业标准模型：
 
 ```
-App 启动
-  │
-  ├─ 读取配置（10-config.md）
-  │    ├─ python_backend_url: 后端地址（默认 http://localhost:8188）
-  │    └─ python_auto_launch: 是否自动启动（默认 true）
-  │
-  ├─ 若 python_auto_launch = true
-  │    ├─ spawn 子进程：python server.py --port {port} --models-dir {models_dir}
-  │    ├─ stdout/stderr 重定向到 App 日志
-  │    └─ 端口冲突时自动递增（最多尝试 3 次）
-  │
-  ├─ 若 python_auto_launch = false
-  │    └─ 假设用户已手动启动后端
-  │
-  ├─ 轮询 GET /health（间隔 500ms，最多 30 秒）
-  │    ├─ 成功 → 校验 protocol_version → AI 节点可用
-  │    ├─ 版本不匹配 → UI 提示用户更新 Python 端
-  │    └─ 超时 → UI 提示，AI 节点灰显不可用，图像处理节点正常工作
-  │
-  └─ Python 后端是可选依赖，不可用时 App 正常运行
+创建 → 初始化 → 就绪 → 运行 → 异常恢复 → 终止
 ```
 
-### 崩溃恢复
+```mermaid
+stateDiagram-v2
+    [*] --> 创建: App 启动
+    创建 --> 初始化: spawn 成功
+    创建 --> [*]: spawn 失败（AI 节点灰显）
+    初始化 --> 就绪: /health 返回 200 + 版本校验通过
+    初始化 --> [*]: 超时 30s（AI 节点灰显）
+    就绪 --> 运行: 首次接受 /node/execute
+    运行 --> 异常恢复: 进程退出 / liveness 失败
+    运行 --> 终止: App 退出
+    异常恢复 --> 创建: 自动重启
+    异常恢复 --> 终止: 超过最大重试次数
+    终止 --> [*]
+```
+
+### ① 创建
+
+Rust 侧 spawn Python 子进程，进程尚未可用。
 
 ```
-检测到 Python 进程退出（非正常）
-  │
-  ├─ 清除 ResultCache 中所有 Handle 类型的条目
-  │    └─ 同时递归失效这些条目的下游缓存
-  │
-  ├─ 自动重启 Python 进程（同启动流程）
-  │
-  └─ UI 提示 "AI 后端已重启，需重新执行"
+读取配置（10-config.md）
+  ├─ python_backend_url: 后端地址（默认 http://localhost:8188）
+  └─ python_auto_launch: 是否自动启动（默认 true）
+
+若 python_auto_launch = true
+  ├─ spawn 子进程：python server.py --port {port} --models-dir {models_dir}
+  ├─ stdout/stderr 重定向到 App 日志（tracing）
+  └─ 端口冲突时自动递增（最多尝试 3 次）
+
+若 python_auto_launch = false
+  └─ 跳过 spawn，假设用户已手动启动后端，直接进入初始化阶段
 ```
 
-### 关闭
+**失败处理：** spawn 失败（Python 未安装、路径错误等）→ AI 节点灰显不可用，图像处理节点正常工作。Python 后端是可选依赖。
+
+### ② 初始化
+
+Python 进程已启动，正在加载 FastAPI 应用、检测 GPU 设备、初始化 Handle 存储。Rust 侧等待其完成。
+
+```
+轮询 GET /health（间隔 500ms，最多 30 秒）
+  ├─ 尚未响应 → 继续轮询
+  ├─ 返回 200 → 进入就绪判定
+  └─ 超时 30s → UI 提示，AI 节点灰显不可用
+```
+
+### ③ 就绪
+
+`/health` 返回 200，Rust 校验 `protocol_version` 兼容性，通过后 AI 节点变为可用状态。
+
+```
+校验 protocol_version
+  ├─ 主版本号一致 → AI 节点可用，进入运行状态
+  ├─ 次版本号差异 → 日志警告，仍可运行
+  └─ 主版本号不匹配 → UI 提示用户更新 Python 端，AI 节点不可用
+```
+
+**就绪 ≠ 运行：** 就绪表示"可以接活"，但尚未处理过任何请求。此时模型尚未加载到 VRAM（模型按需加载，由 LoadCheckpoint 节点触发）。
+
+### ④ 运行
+
+正常服务中，持续接受 Rust 侧的 `/node/execute` 调用。Rust 定期通过 liveness 检查确认进程健康。
+
+```
+运行期间：
+  ├─ 接收并处理 /node/execute 请求
+  ├─ 管理 Handle 存储（创建 / 还原 / 释放）
+  ├─ 响应 /handles/release（缓存失效驱动）
+  │
+  └─ Liveness 检查（定期）
+       ├─ 方式：GET /health（间隔 30s）
+       ├─ 成功 → 继续运行
+       ├─ 连续 3 次失败 → 判定为异常，进入异常恢复
+       └─ 检测到进程退出 → 立即进入异常恢复
+```
+
+**Liveness vs Readiness：**
+- Readiness（就绪探针）：启动阶段使用，确认进程可以接受请求
+- Liveness（存���探针）：运行阶段使用，确认进程没有卡死或崩溃
+
+### ⑤ 异常恢复
+
+检测到 Python 进程异常（崩溃退出或 liveness 失败），执行状态清理后自动重启。
+
+```
+检测到异常
+  │
+  ├─ ① 状态清理
+  │    ├─ 清除 ResultCache 中所有 Handle 类型的条目
+  │    ├─ 递归失效这些条目的下游缓存
+  │    └─ 重置 BackendClient 连接状态
+  │
+  ├─ ② 判断是否重启
+  │    ├─ 重启次数 < 最大重试次数（默认 3）→ 自动重启（回到创建阶段）
+  │    ├─ 两次崩溃间隔 < 10s → 指数退避等待（1s, 2s, 4s）后重启
+  │    └─ 超过最大重试次数 → 放弃重启，AI 节点灰显，进入终止状态
+  │
+  └─ ③ UI 通知
+       └─ "AI 后端已重启，需重新执行" 或 "AI 后端多次崩溃，已停止重启"
+```
+
+**Python 崩溃后 Rust 无需调用 `/handles/release`：** Python 进程的 VRAM 随进程退出已被操作系统回收，Rust 端只需清除本地 Handle 缓存条目。
+
+### ⑥ 终止
+
+App 退出时优雅关闭 Python 进程。
 
 ```
 App 退出
   │
-  ├─ 发送 SIGTERM
-  ├─ 等待 5 秒
-  └─ 未退出 → SIGKILL
+  ├─ ① 取消所有正在执行的 AI 节点（POST /node/cancel）
+  ├─ ② 发送 SIGTERM
+  ├─ ③ 等待 5 秒（Python 清理资源、释放 VRAM）
+  └─ ④ 未退出 → SIGKILL 强制终止
 ```
+
+### 状态总结
+
+| 状态 | Rust 侧行为 | Python 侧状态 | AI 节点可用性 |
+|------|------------|--------------|-------------|
+| 创建 | spawn 进程 | 进程启动中 | 不可用 |
+| 初始化 | 轮询 /health | 加载 FastAPI、检测设备 | 不可用 |
+| 就绪 | 校验版本 | 空闲，等待请求 | 可用 |
+| 运行 | 发送请求 + liveness 检查 | 处理推理请求 | 可用 |
+| 异常恢复 | 清理状态 + 自动重启 | 已退出 | 不可用 |
+| 终止 | SIGTERM → SIGKILL | 清理退出 | 不可用 |
 
 ---
 

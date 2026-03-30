@@ -4,23 +4,23 @@
 
 ## 总览
 
-`EvalEngine` 在拿到一个节点后，根据节点定义的三个字段判断走哪条执行路径：
+`EvalEngine` 在拿到一个节点后，根据 `NodeDef.executor` 字段判断走哪条执行路径：
 
-- `process: Some` 或 `gpu_process: Some` → **图像处理执行器**（本地 CPU/GPU）
-- `process: None && gpu_process: None`，节点来自 Python 推理后端 → **AI 执行器**（HTTP + Python）
-- `process: None && gpu_process: None`，节点来自云端 API → **模型 API 执行器**（外部 REST API）
+- `ExecutorType::Image`（缺省）→ **图像处理执行器**（本地 GPU + CPU 协作，按节点职责分派）
+- `ExecutorType::AI` → **AI 执行器**（HTTP → Python 推理后端）
+- `ExecutorType::API` → **模型 API 执行器**（外部 REST API）
 
 ```mermaid
 flowchart TD
     EE["EvalEngine\n(nodeimg-engine)"]:::service
 
-    EE -->|"process: Some\ngpu_process: Some"| IE["图像处理执行器"]:::compute
-    EE -->|"is_ai_node()\n→ Python 推理后端"| AE["AI 执行器"]:::ai
-    EE -->|"is_api_node()\n→ 云端模型 API"| ME["模型 API 执行器"]:::api
+    EE -->|"executor: Image"| IE["图像处理执行器"]:::compute
+    EE -->|"executor: AI"| AE["AI 执行器"]:::ai
+    EE -->|"executor: API"| ME["模型 API 执行器"]:::api
 
-    subgraph 图像处理["图像处理（本地）"]
-        IE --> CPU["CPU 路径\nnodeimg-processing"]:::compute
-        IE --> GPU["GPU 路径\nnodeimg-gpu + WGSL shader"]:::compute
+    subgraph 图像处理["图像处理（本地 GPU + CPU 协作）"]
+        IE --> GPU["GPU 路径\n像素级运算\nnodeimg-gpu + WGSL shader"]:::compute
+        IE --> CPU["CPU 路径\n文件 I/O · 数据分析\nnodeimg-processing"]:::compute
     end
 
     subgraph AI推理["AI 推理（本地/远端 Python）"]
@@ -37,17 +37,17 @@ flowchart TD
 
 ## 图像处理执行器
 
-图像处理执行器在**同一进程内**运行，不产生任何网���调用。执行器收到节点后，按优先级检查两个字段：
+图像处理执行器在**同一进程内**运行，不产生任何网络调用。GPU 和 CPU 是协作关系，各有专长，按节点职责分派：
 
-**CPU 路径（`process: Some`）**
+**GPU 路径（`gpu_process: Some`）— 像素级运算**
 
-节点函数直接以 `&[u8]`（或 `image::DynamicImage`）为输入输出，调用 `nodeimg-processing` 中的算法，适用于 GPU 无法高效完成的操作：文件 I/O（`load_image`、`save_image`）、直方图计算、LUT 文件解析。
+执行器从节点定义中取出 shader 源码（通过 `include_str!` 在编译期嵌入，跟随节点文件夹存放），提交给 `nodeimg-gpu` 运行时，按 `16×16` workgroup size 分发计算。所有像素级运算（亮度、对比度、模糊、混合等）走此路径。
 
-**GPU 路径（`gpu_process: Some`）**
+**CPU 路径（`process: Some`）— 文件 I/O 与数据分析**
 
-执行器从节点定义中取出 shader 源码（通过 `include_str!` 在编译期嵌入，跟随节点文件夹存放），提交给 `nodeimg-gpu` 运行时，按 `16×16` workgroup size 分发计算。GPU 路径是像素级运算的默认选择，不提供 CPU 备用实现。
+节点函数直接以 `&[u8]`（或 `image::DynamicImage`）为输入输出，调用 `nodeimg-processing` 中的算法。适用于 GPU 无法完成的操作：文件 I/O（`load_image`、`save_image`）、直方图计算、LUT 文件解析。
 
-**约束**：若节点同时提供了 `process` 和 `gpu_process`，执行器优先选择 `gpu_process`，CPU 路径仅在 GPU 上下文不可用时作为降级选项。
+**分派规则：** 大多数节点只提供一条路径——像素运算只写 `gpu_process`，I/O 和分析只写 `process`。少数节点（如 `gaussian_blur`）同时提供两条路径，此时 GPU 优先，CPU 仅在 GPU 上下文不可用时（无兼容 GPU 或驱动问题）作为降级选项。
 
 ---
 
@@ -58,30 +58,63 @@ AI 执行器是 Rust 与 Python 后端之间的协议桥。两侧职责明确分
 ```mermaid
 flowchart TD
     subgraph Rust侧["Rust 侧（AI 执行器）"]
-        R1["接收节点\n(node_type / inputs / params)"]:::service
-        R2["输入序列化\nImage→bytes\nHandle→id 字符串\nFloat/Int/String→原样"]:::service
-        R3["HTTP 请求\nPOST /node/execute\nSSE 流式响应"]:::transport
-        R4["读取 SSE 流\nprogress 事件→转发进度回调\nresult 事件→解析最终结果"]:::transport
-        R5["响应解析\nhandle_id→Value::Handle\nimage_bytes→Value::Image"]:::service
+        direction TB
+        subgraph R_INPUT["接收与序列化"]
+            R1["接收节点\nnode_type / inputs / params"]:::service
+            R2["输入序列化\nImage→bytes\nHandle→id"]:::service
+            R1 --> R2
+        end
+        subgraph R_HTTP["HTTP 请求"]
+            R3["POST /node/execute\nmultipart/form-data"]:::transport
+        end
+        subgraph R_SSE["读取 SSE 流"]
+            R4["progress 事件\n→ 转发进度回调"]:::transport
+            R5["result 事件\n→ 解析结果"]:::transport
+        end
+        subgraph R_PARSE["响应解析"]
+            R6["handle_id\n→ Value::Handle"]:::service
+            R7["image_bytes\n→ Value::Image"]:::service
+        end
 
-        R1 --> R2 --> R3 --> R4 --> R5
+        R_INPUT --> R_HTTP --> R_SSE --> R_PARSE
     end
 
     subgraph Python侧["Python 侧（FastAPI 推理后端）"]
-        P1["路由\n/node/execute\n/handles/release"]:::ai
-        P2["节点查找\nnode_type → 执行函数"]:::ai
-        P3["Handle 还原\nid → 真实 GPU 对象"]:::ai
-        P4["执行节点函数\n操作 PyTorch 对象"]:::ai
-        P5["输出类型判断\nPython 专属类型→存入 Handle 存储，生成新 handle_id\nImage→编码为 bytes"]:::ai
-        P6["SSE progress 事件\n迭代节点每步推送\nstep / total"]:::ai
+        direction TB
+        subgraph P_ROUTE["路由层"]
+            P1["/node/execute"]:::ai
+            P2["/handles/release"]:::ai
+        end
+        subgraph P_RESOLVE["Handle 还原"]
+            P3["id → 真实 GPU 对象"]:::ai
+        end
+        subgraph P_EXEC["执行节点函数"]
+            P4["操作 PyTorch 对象"]:::ai
+        end
+        subgraph P_OUTPUT["输出判断"]
+            P5["Python 专属类型\n→ 存入 Handle 存储"]:::ai
+            P6["Image\n→ 编码为 bytes"]:::ai
+        end
+        subgraph P_PROGRESS["进度推送"]
+            P7["SSE progress 事件\nstep / total"]:::ai
+        end
 
-        P1 --> P2 --> P3 --> P4 --> P5
-        P4 --> P6
+        P_ROUTE --> P_RESOLVE --> P_EXEC --> P_OUTPUT
+        P_EXEC --> P_PROGRESS
     end
 
-    R3 -. "HTTP POST" .-> P1
-    P5 -. "SSE result 事件" .-> R4
-    P6 -. "SSE progress 事件" .-> R4
+    R_HTTP -. "HTTP POST" .-> P_ROUTE
+    P_OUTPUT -. "SSE result" .-> R_SSE
+    P_PROGRESS -. "SSE progress" .-> R_SSE
+
+    classDef frontend    fill:#6C9BCF,stroke:#5A89BD,color:#fff
+    classDef transport   fill:#A78BCA,stroke:#9579B8,color:#fff
+    classDef service     fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef ai          fill:#E88B8B,stroke:#D67979,color:#fff
+    classDef api         fill:#E8A87C,stroke:#D6966A,color:#fff
+    classDef foundation  fill:#E8CC6E,stroke:#D6BA5C,color:#333
+    classDef compute     fill:#6DB8AD,stroke:#5BA69B,color:#fff
+    classDef future      fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5
 ```
 
 **Handle 存储**

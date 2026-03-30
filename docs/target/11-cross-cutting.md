@@ -96,28 +96,44 @@ flowchart TD
     classDef compute    fill:#6DB8AD,stroke:#5BA69B,color:#fff
     classDef foundation fill:#E8CC6E,stroke:#D6BA5C,color:#333
 
-    GUI["nodeimg-app\n(GUI)"]:::frontend
+    GUI["nodeimg-app\nGUI"]:::frontend
 
-    subgraph 全本地["模式 A：全本地"]
-        LocalEngine["nodeimg-engine"]:::service
-        LocalPython["Python 后端"]:::ai
-        GUI -->|LocalTransport| LocalEngine
-        LocalEngine -->|HTTP localhost| LocalPython
+    subgraph MODE_A["模式 A：全本地"]
+        direction TB
+        subgraph A_ENGINE["Engine"]
+            A_ENG["nodeimg-engine"]:::service
+        end
+        subgraph A_PYTHON["Python"]
+            A_PY["Python 后端"]:::ai
+        end
+        A_ENG -->|"HTTP localhost"| A_PY
     end
 
-    subgraph 半本地["模式 B：半本地（AI 远端）"]
-        LocalEngine2["nodeimg-engine"]:::service
-        RemotePython["Python 后端\n(远端 GPU 服务器)"]:::ai
-        GUI -->|LocalTransport| LocalEngine2
-        LocalEngine2 -->|HTTP 远端| RemotePython
+    subgraph MODE_B["模式 B：半本地（AI 远端）"]
+        direction TB
+        subgraph B_ENGINE["Engine"]
+            B_ENG["nodeimg-engine"]:::service
+        end
+        subgraph B_PYTHON["Python（远端 GPU）"]
+            B_PY["Python 后端"]:::ai
+        end
+        B_ENG -->|"HTTP 远端"| B_PY
     end
 
-    subgraph 远端计算["模式 C：远端计算"]
-        RemoteServer["nodeimg-server\n(远端)"]:::service
-        RemotePython2["Python 后端\n(远端)"]:::ai
-        GUI -->|HttpTransport| RemoteServer
-        RemoteServer -->|HTTP localhost| RemotePython2
+    subgraph MODE_C["模式 C：远端计算"]
+        direction TB
+        subgraph C_SERVER["Server（远端）"]
+            C_SRV["nodeimg-server"]:::service
+        end
+        subgraph C_PYTHON["Python（远端）"]
+            C_PY["Python 后端"]:::ai
+        end
+        C_SRV -->|"HTTP localhost"| C_PY
     end
+
+    GUI -->|"LocalTransport"| A_ENGINE
+    GUI -->|"LocalTransport"| B_ENGINE
+    GUI -->|"HttpTransport"| C_SERVER
 ```
 
 **半本地模式的意义：** SDXL 等大型扩散模型需要 16–24 GB VRAM，本地消费级显卡难以承载，但图像处理节点（亮度、曲线、锐化等）可以在本地 GPU 高效执行。半本地模式允许两者分离，图像处理保持低延迟，AI 推理转移至专用 GPU 服务器。
@@ -137,6 +153,49 @@ flowchart TD
 | 节点类型不存在（插件缺失） | 跳过该节点，保留其余图结构，提示用户 |
 | 节点参数缺失（新增字段） | 填充该参数的默认值，不报错 |
 | 文件版本 > 当前版本 | 拒绝加载，提示用户升级应用 |
+
+**迁移函数组织（migration chain）：**
+
+迁移逻辑集中在 app 层的 `ProjectManager` 中（`05-graph.md` 约定 graph crate 不含迁移逻辑）。每个版本升级对应一个迁移函数，按版本号链式执行。
+
+```rust
+/// 迁移函数签名：接收旧版本 JSON，返回新版本 JSON
+type MigrationFn = fn(serde_json::Value) -> Result<serde_json::Value, MigrationError>;
+
+/// 迁移注册表，启动时构建
+struct MigrationRegistry {
+    /// key = 源版本号，value = 迁移到下一版本的函数
+    migrations: BTreeMap<u32, MigrationFn>,
+}
+```
+
+**链式执行流程：**
+
+```
+文件 version=1，当前版本=3
+  │
+  ├─ migrations[1] → version 1→2（如：重命名 "exposure" → "brightness"）
+  ├─ migrations[2] → version 2→3（如：新增 "color_space" 字段，填默认值）
+  └─ 最终 JSON version=3，交给 Graph::from_json() 解析
+```
+
+**迁移函数编写规则：**
+
+- 每个函数只负责 N→N+1 的单步迁移，不跳版本
+- 操作的是原始 JSON（`serde_json::Value`），不依赖当前版本的 Rust 结构体——避免结构体变更导致旧迁移编译失败
+- 迁移函数必须是纯函数（无副作用），便于测试
+- 新增迁移时在 `MigrationRegistry` 中追加一行注册，不修改已有迁移函数
+
+**典型迁移场景：**
+
+| 变更类型 | 迁移操作 |
+|---------|---------|
+| 节点类型改名 | 遍历 nodes，替换 `type_id` |
+| 参数改名 | 遍历 nodes.params，重命名 key |
+| 参数类型变更 | 遍历 nodes.params，转换 value（如 int→float） |
+| 新增必填参数 | 遍历 nodes，插入默认值 |
+| 删除节点类型 | 不需要迁移——加载时由"节点类型不存在"规则处理 |
+| 连接结构变更 | 遍历 connections，调整引脚名 |
 
 ### Transport 接口版本协商
 

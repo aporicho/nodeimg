@@ -159,7 +159,8 @@ impl Graph {
     /// 删除节点，同时删除所有以该节点为端点的连接
     pub fn remove_node(&mut self, id: NodeId) -> Result<(), GraphError>;
 
-    /// 建立连接；若目标引脚已有连接则先断开旧连接
+    /// 建立连接；若目标引脚已有连接则先断开旧连接；
+    /// 内部执行环检测，若新连接会导致环则返回 WouldCreateCycle
     pub fn connect(
         &mut self,
         from_node: NodeId, from_pin: impl Into<String>,
@@ -196,6 +197,8 @@ pub enum GraphError {
 
 `remove_node` 的级联删除是有意为之：保持图始终处于一致状态，调用方无需手动清理孤立连接。
 
+**环检测归属：** `connect()` 在插入新连接前执行从 `to_node` 到 `from_node` 的可达性检查（DFS），若可达则拒绝连接并返回 `WouldCreateCycle`。这属于 graph 层的结构正确性保障，与 engine 层的类型兼容性检查无关。`Transport.would_create_cycle()` 是供前端在连线拖拽时做预检查的快捷方法，底层调用同一逻辑。
+
 ---
 
 ## 5. 图查询 API
@@ -225,7 +228,7 @@ pub enum ValidationError {
 }
 ```
 
-类型兼容性（DataType 匹配、Constraint 检查）不在 graph 层验证，由 engine 层的 `GraphController` 在 `connect` 前调用 `NodeRegistry` 完成。graph 层只做结构检查。
+类型兼容性（DataType 匹配、Constraint 检查）不在 graph 层验证，由 engine 层的 `GraphController` 在 `connect` 前调用 `NodeRegistry` 完成。graph 层只做结构检查（环检测、单输入、自环、节点/引脚存在性）。
 
 ---
 

@@ -40,3 +40,5 @@
 | D32 | Undo/Redo | 不可变状态 + 结构共享（Arc\<Node\>） | 兼顾内存效率和实现可靠性，新增操作零 undo 代码 |
 | D33 | 快捷键 | 逻辑层 KeybindingMap，config.toml 可覆盖 | 渲染层不硬编码快捷键，用户可自定义 |
 | D34 | 多项目 Tab | 每 tab 独立 GraphController/UndoManager，Cache 共享 | tab 间互不干扰，VRAM 不重复占用 |
+| D35 | 自动执行策略 | GPU/CPU 节点 200ms 防抖自动执行，AI/API 节点 Ctrl+Enter 手动触发 | 图像处理实时预览，AI 生成用户可控；过期结果保留旧预览不提示（ComfyUI 风格） |
+| D36 | 主题系统 | Theme trait 语义化颜色接口 + DarkTheme/LightTheme 实现 + tokens 布局常量 | 渲染层不硬编码颜色，新增主题只需实现 trait；颜色按分类（节点头部）和数据类型（引脚）语义映射 |

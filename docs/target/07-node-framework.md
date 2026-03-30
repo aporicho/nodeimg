@@ -134,10 +134,10 @@ graph LR
 |---|---|
 | 仅 `shader.wgsl` | `gpu_process` — 纯 GPU 路径 |
 | 仅 `cpu.rs` | `process` — 纯 CPU 路径 |
-| `shader.wgsl` + `cpu.rs` 都有 | GPU 优先，CPU 作为回退 |
+| `shader.wgsl` + `cpu.rs` 都有 | GPU 为主，CPU 仅在 GPU 不可用时降级 |
 | 两者都没有 | 按 `executor` 字段路由（`AI` 或 `API`） |
 
-`shader.wgsl` 通过 `include_str!` 在编译时嵌入二进制，不依赖运行时文件系统。CPU 回退仅在 GPU 不可用时（设备无 wgpu 支持）启用。
+`shader.wgsl` 通过 `include_str!` 在编译时嵌入二进制，不依赖运行时文件系统。大多数节点只走一条路径（GPU 做像素运算，CPU 做 I/O 和分析），两者协作而非对立。仅当节点同时提供两条路径时，GPU 不可用才会降级到 CPU。
 
 ---
 

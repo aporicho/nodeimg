@@ -26,4 +26,6 @@
 | TextureCache | 缓存预览用 GPU 纹理的存储 |
 | ResultEnvelope | 包装执行结果的类型，区分本地引用和远端序列化 |
 | NodeDef | 节点类型的元信息定义（引脚、参数、分类） |
+| ExecutorType | 节点的执行器类型枚举（Image / AI / API），决定 EvalEngine 的路由目标 |
+| ApiProvider | 云端模型 API 厂商的统一 trait，隔离认证、请求格式和速率限制差异 |
 | WidgetRegistry | 将 DataType + Constraint 映射为 UI 控件类型的注册表 |

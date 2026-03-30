@@ -4,7 +4,7 @@
 
 ## 总览
 
-约 85 个节点，覆盖从模型加载到最终输出的完整 AI 图像创作工作流。参考 ComfyUI 核心节点的功能粒度，但重新设计命名和分类体系。
+约 86 个节点，覆盖从模型加载到最终输出的完整 AI 图像创作工作流，含云端模型 API 节点。参考 ComfyUI 核心节点的功能粒度，但重新设计命名和分类体系。
 
 **设计原则：**
 
@@ -24,7 +24,7 @@
 | 采样组件 | Sampler / Scheduler / Guider / Noise 构建块 | AI |
 | 潜空间 | Latent 空间操作（创建、缩放、裁剪、合成） | AI |
 | VAE | 图像 ↔ Latent 编解码 | AI |
-| ControlNet | 结构控制条件 | AI |
+| ControlNet | 结构控制条件 + 预处理 | AI / GPU |
 | Conditioning 操作 | Conditioning 的组合、区域、时间步控制 | AI |
 | 蒙版 | Mask 创建和操作 | GPU/CPU |
 | 模型高级 | 模型合并、采样配置、加速技巧 | AI |
@@ -33,6 +33,7 @@
 | 图像变换 | 缩放、裁剪、旋转、翻转 | GPU |
 | 图像滤镜 | 模糊、锐化、降噪、特效 | GPU |
 | 图像合成 | 混合、蒙版合成、通道操作 | GPU |
+| 模型 API | 云端大厂 API 一键生图/编辑（OpenAI、Stability AI、通义万象） | API |
 | 数据 | 文件 I/O（加载/保存图像） | CPU |
 | 工具 | 预览、分析 | CPU |
 
@@ -522,10 +523,11 @@
 
 | 项目 | 内容 |
 |------|------|
+| 执行器 | **GPU**（图像处理执行器，非 AI 执行器） |
 | 输入引脚 | image(Image) |
 | 输出引脚 | image(Image) |
 | 参数 | low_threshold: Float(0.01~0.99, 默认0.4), high_threshold: Float(0.01~0.99, 默认0.8) |
-| 行为 | Canny 边缘检测（ControlNet 常用预处理） |
+| 行为 | Canny 边缘检测（ControlNet 常用预处理）。分类在 ControlNet 下，但本质是 Image→Image 的图像算法，走 GPU shader 执行 |
 
 ---
 
@@ -856,6 +858,75 @@
 | ImageCompositeMasked | destination, source, mask? | image | x, y, resize_source | 带蒙版的图像合成 |
 
 （前 3 个与现有 `catalog.md` 一致，ImageCompositeMasked 为新增。）
+
+---
+
+## 模型 API
+
+云端大厂推理 API 节点。每个节点封装一次完整的 API 调用（无 Handle、无中间状态），通过模型 API 执行器路由到对应的 `ApiProvider` 实现。所有节点 `executor: API`。
+
+**与 AI 节点的核心区别：** AI 节点拆分为 LoadCheckpoint → KSampler → VAEDecode 等多步，Handle 跨节点复用；API 节点单节点完成整个生成，输入文本/图像，输出图像，无需用户理解模型内部流程。
+
+**框架设计：**
+
+节点通过 `provider` 参数选择厂商，执行时由 `ApiProvider` trait 分发（见 `03-executors.md` D11）。新增厂商只需实现 `ApiProvider`，再在节点的 `provider` 枚举中加一项，节点本身不变。
+
+```
+节点定义（node! 宏, executor: API）
+  │
+  ├─ provider 参数 → 选择 ApiProvider 实现
+  │    ├─ OpenAiProvider     （API Key 来自配置）
+  │    ├─ StabilityProvider
+  │    └─ TongyiProvider
+  │
+  └─ ApiProvider trait
+       ├─ authenticate()     → 从 ProviderConfig 构建认证 Client
+       ├─ execute()          → 发起 HTTP 请求，返回 Value::Image
+       └─ rate_limit_status() → 速率限制状态，供 EvalEngine 退避
+```
+
+**配置扩展（`10-config.md`）：** 各 provider 的 API Key 和 endpoint 在配置文件中按厂商分段：
+
+```toml
+[api.openai]
+api_key = "sk-..."
+# endpoint 可选覆盖，默认为官方地址
+
+[api.stability]
+api_key = "sk-..."
+
+[api.tongyi]
+api_key = "sk-..."
+```
+
+**v1 仅实现一个节点**，验证完整的 API 执行器框架（认证、速率限制、重试、超时）。后续按需扩展 img2img、inpaint、upscale 等变体。
+
+### APIGenerate
+
+| 项目 | 内容 |
+|------|------|
+| 输入引脚 | image(Image, 可选) |
+| 输出引脚 | image(Image) |
+| 参数 | provider: Enum(openai/stability/tongyi), prompt: String(multiline), negative_prompt: String(multiline, 可选), size: Enum(1024x1024/1024x1792/1792x1024, 默认 1024x1024), seed: Int(可选), strength: Float(0.0~1.0, 默认 0.7) |
+| 行为 | 云端文生图 / 图生图。无 image 输入时为文生图，有 image 输入时为图生图（strength 控制重绘强度）。参数由 `ApiProvider` 映射为各厂商 API 的对应字段，厂商不支持的参数静默忽略 |
+
+**参数映射示例：**
+
+| 参数 | OpenAI | Stability AI | 通义万象 |
+|------|--------|-------------|---------|
+| prompt | prompt | text_prompts[0].text | prompt |
+| negative_prompt | — (不支持) | text_prompts[1].text (weight: -1) | negative_prompt |
+| size | size | aspect_ratio (换算) | size |
+| seed | — (不支持) | seed | seed |
+| strength | — (不支持, 仅 edit 接口) | image_strength | strength |
+
+**扩展路线（v2+）：**
+
+| 节点 | 功能 | 说明 |
+|------|------|------|
+| APIInpaint | 局部重绘 | 增加 mask 输入引脚 |
+| APIUpscale | 超分辨率 | 仅接受 image 输入，provider 限 Stability |
+| APIRemoveBg | 背景移除 | 输出 image + mask |
 
 ---
 

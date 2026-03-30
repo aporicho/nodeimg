@@ -14,20 +14,35 @@ flowchart LR
     classDef foundation fill:#E8CC6E,stroke:#D6BA5C,color:#333
     classDef compute   fill:#6DB8AD,stroke:#5BA69B,color:#fff
 
-    执行器["执行器\n(图像/AI/API/Cache)"]:::foundation
-    NodeError["NodeError\n(含 node_id)"]:::foundation
-    EvalEngine["EvalEngine"]:::service
-    ExecutionError["ExecutionError\n(执行上下文)"]:::service
-    Transport["Transport"]:::transport
-    TransportError["TransportError\n(协议信息)"]:::transport
-    前端["前端\n(节点红框 / 进度区 / 全局通知)"]:::frontend
+    subgraph NODE_LAYER["节点层"]
+        direction TB
+        执行器["执行器\n图像/AI/API/Cache"]:::foundation
+        NodeError["NodeError\n含 node_id"]:::foundation
+        执行器 --> NodeError
+    end
 
-    执行器 --> NodeError
-    NodeError --> EvalEngine
-    EvalEngine --> ExecutionError
-    ExecutionError --> Transport
-    Transport --> TransportError
-    TransportError --> 前端
+    subgraph ENGINE_LAYER["引擎层"]
+        direction TB
+        EvalEngine["EvalEngine"]:::service
+        ExecutionError["ExecutionError\n执行上下文"]:::service
+        EvalEngine --> ExecutionError
+    end
+
+    subgraph TRANSPORT_LAYER["传输层"]
+        direction TB
+        Transport["Transport"]:::transport
+        TransportError["TransportError\n协议信息"]:::transport
+        Transport --> TransportError
+    end
+
+    subgraph DISPLAY_LAYER["前端展示"]
+        direction TB
+        D_NODE["节点红框\n悬停显示详情"]:::frontend
+        D_PROGRESS["进度区\n错误摘要"]:::frontend
+        D_GLOBAL["全局通知\n系统级错误"]:::frontend
+    end
+
+    NODE_LAYER --> ENGINE_LAYER --> TRANSPORT_LAYER --> DISPLAY_LAYER
 ```
 
 ## 1. 分层 Error enum（决策 D01）

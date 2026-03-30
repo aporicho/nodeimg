@@ -51,6 +51,16 @@ python_auto_launch = true
 [cache]
 result_limit_mb = 2048
 texture_limit_mb = 512
+
+[api.openai]
+api_key = ""
+# endpoint = "https://api.openai.com/v1"  # 可选覆盖
+
+[api.stability]
+api_key = ""
+
+[api.tongyi]
+api_key = ""
 ```
 
 ## 配置项清单
@@ -63,6 +73,8 @@ texture_limit_mb = 512
 | `python_auto_launch` | `NODEIMG_PYTHON_AUTO_LAUNCH` | `true` | 启动时是否自动拉起 Python 后端进程 |
 | `cache.result_limit_mb` | `NODEIMG_CACHE_RESULT_LIMIT_MB` | `2048` | 节点计算结果缓存上限（MB） |
 | `cache.texture_limit_mb` | `NODEIMG_CACHE_TEXTURE_LIMIT_MB` | `512` | GPU 纹理缓存上限（MB） |
+| `api.<provider>.api_key` | `NODEIMG_API_<PROVIDER>_API_KEY` | `""` | 云端 API 厂商密钥（openai / stability / tongyi） |
+| `api.<provider>.endpoint` | `NODEIMG_API_<PROVIDER>_ENDPOINT` | 各厂商官方地址 | 可选覆盖 API 端点（用于代理或私有部署） |
 
 ## 加载时机（决策 D09）
 
