@@ -1,4 +1,3 @@
-use eframe::egui;
 use nodeimg_engine::transport::{ExecuteProgress, GraphRequest, ProcessingTransport};
 use nodeimg_engine::NodeId;
 use std::sync::mpsc;
@@ -37,7 +36,7 @@ pub struct ExecutionManager {
     progress_tx: mpsc::Sender<(NodeId, u64, ExecuteProgress)>,
     progress_rx: mpsc::Receiver<(NodeId, u64, ExecuteProgress)>,
     tasks: HashMap<NodeId, TaskState>,
-    repaint: Option<egui::Context>,
+    repaint: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl ExecutionManager {
@@ -52,8 +51,8 @@ impl ExecutionManager {
         }
     }
 
-    pub fn set_repaint_ctx(&mut self, ctx: egui::Context) {
-        self.repaint = Some(ctx);
+    pub fn set_repaint_callback(&mut self, cb: impl Fn() + Send + Sync + 'static) {
+        self.repaint = Some(Arc::new(cb));
     }
 
     pub fn submit(&mut self, trigger_node: NodeId, request: GraphRequest) {
@@ -76,8 +75,8 @@ impl ExecutionManager {
             if let Err(e) = result {
                 eprintln!("[execution] Task error for trigger {}: {}", trigger_node, e);
             }
-            if let Some(ctx) = repaint {
-                ctx.request_repaint();
+            if let Some(cb) = repaint {
+                cb();
             }
         });
     }

@@ -1,3 +1,4 @@
+use eframe::egui;
 use nodeimg_engine::transport::NodeTypeDef;
 use nodeimg_types::node_instance::NodeInstance;
 use nodeimg_types::serial_data::*;
@@ -98,7 +99,7 @@ impl Serializer {
                     }
                 }
             };
-            let pos = eframe::egui::pos2(sn.position[0], sn.position[1]);
+            let pos = egui::Pos2::new(sn.position[0], sn.position[1]);
             let new_id = snarl.insert_node(pos, instance);
             id_map.insert(sn.id, new_id);
         }
