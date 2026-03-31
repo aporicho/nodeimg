@@ -108,7 +108,7 @@ flowchart TD
 交互服务始终在同一进程内完成，无网络往返。
 
 ```mermaid
-flowchart LR
+flowchart TB
     FE["前端\n(GUI / CLI)"]:::frontend
 
     NT["Transport.node_types()"]:::transport
@@ -134,7 +134,7 @@ flowchart LR
 
 计算服务通过配置在启动时绑定协议，运行期不切换。三种协议的适用场景：
 
-| 协议 | 适用场景 | ��注 |
+| 协议 | 适用场景 | 备注 |
 |------|---------|------|
 | `LocalTransport` | 单机嵌入，GUI 直接调用引擎 | 默认，零开销 |
 | `HttpTransport` | 前端与服务端分离部署，REST API | 通过 nodeimg-server 暴露 |

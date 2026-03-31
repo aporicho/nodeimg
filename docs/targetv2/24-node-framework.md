@@ -1,31 +1,84 @@
 # 节点架构
 
-定位：节点开发者体验——如何用最少的代码定义一个新节点。
+> 定位：节点开发者体验——如何用最少的代码定义一个新节点。
 
 ## 总览
 
 ```mermaid
 flowchart TD
-    MACRO["node! 宏"]:::transport
-    DISCOVER["文件自动发现"]:::transport
-    PARAM["参数构建器"]:::transport
-    GPU_RT["GPU 运行时"]:::compute
-    INV["inventory 自动注册"]:::transport
-    REG["NodeRegistry"]:::service
+    classDef frontend    fill:#6C9BCF,stroke:#5A89BD,color:#fff
+    classDef transport   fill:#A78BCA,stroke:#9579B8,color:#fff
+    classDef service     fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef ai          fill:#E88B8B,stroke:#D67979,color:#fff
+    classDef api         fill:#E8A87C,stroke:#D6966A,color:#fff
+    classDef foundation  fill:#E8CC6E,stroke:#D6BA5C,color:#333
+    classDef compute     fill:#6DB8AD,stroke:#5BA69B,color:#fff
+    classDef future      fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5
 
-    MACRO --> DISCOVER
-    MACRO --> PARAM
-    PARAM --> GPU_RT
-    DISCOVER --> GPU_RT
-    DISCOVER --> INV
-    INV --> REG
+    subgraph AUTHORING["开发者编写（节点文件夹）"]
+        direction TB
 
-    classDef frontend fill:#6C9BCF,stroke:#5A89BD,color:#fff
-    classDef transport fill:#A78BCA,stroke:#9579B8,color:#fff
-    classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
-    classDef ai fill:#E88B8B,stroke:#D67979,color:#fff
-    classDef api fill:#E8A87C,stroke:#D6966A,color:#fff
-    classDef compute fill:#6DB8AD,stroke:#5BA69B,color:#fff
+        subgraph A_MACRO["node! 宏（mod.rs）"]
+            direction LR
+            AM_META["元信息\nname / title / category"]:::service
+            AM_PINS["引脚声明\ninputs / outputs"]:::service
+            AM_PARAMS["参数声明\nparams + 约束"]:::service
+            AM_EXEC["executor 字段\n缺省 / AI / API"]:::service
+        end
+
+        subgraph A_FILES["可选文件"]
+            direction LR
+            AF_SHADER["shader.wgsl\nGPU 路径\n编译期 include_str!"]:::compute
+            AF_CPU["cpu.rs\nCPU 路径\n文件 I/O / LUT"]:::service
+            AF_WIDGET["widget.rs\n自定义控件\n覆写默认映射"]:::frontend
+        end
+    end
+
+    subgraph COMPILE["编译期（inventory 自动注册）"]
+        direction TB
+        C_EXPAND["node! 宏展开\n→ NodeDef { ... }\n+ inventory::submit!"]:::transport
+        C_COLLECT["inventory 收集\n所有节点 NodeDef\n顺序无关"]:::transport
+        C_EMBED["include_str!\n嵌入 shader.wgsl\n到二进制"]:::compute
+        C_EXPAND --> C_COLLECT
+        C_EXPAND --> C_EMBED
+    end
+
+    subgraph RUNTIME["启动期（注册 + 绑定）"]
+        direction TB
+
+        subgraph RT_DISCOVER["自动发现规则"]
+            direction TB
+            RD_GPU["仅 shader.wgsl\n→ gpu_process"]:::compute
+            RD_CPU["仅 cpu.rs\n→ process"]:::service
+            RD_BOTH["两者都有\nGPU 优先 / CPU 降级"]:::compute
+            RD_NONE["两者都没有\n→ executor 字段路由"]:::service
+        end
+
+        subgraph RT_REGISTRY["NodeRegistry"]
+            direction LR
+            RR_REG["register(NodeDef)\ninventory::iter 批量注入"]:::service
+            RR_LOOKUP["lookup(node_type)\n→ NodeDef"]:::service
+        end
+
+        subgraph RT_WIDGET["WidgetRegistry"]
+            direction LR
+            RW_RESOLVE["resolve(param_meta)\n→ 控件实例"]:::frontend
+            RW_OVERRIDE["widget.rs 存在\n→ 跳过默认映射"]:::frontend
+        end
+
+        RT_DISCOVER --> RT_REGISTRY
+        RT_REGISTRY --> RT_WIDGET
+    end
+
+    subgraph EXEC["执行期（EvalEngine 分发）"]
+        direction TB
+        EX_GPU["GPU 执行器\nwgpu pipeline"]:::compute
+        EX_CPU["CPU 执行器\nRust fn"]:::service
+        EX_AI["AI 执行器\nreqwest → Python"]:::ai
+        EX_API["API 执行器\nreqwest → 云端"]:::api
+    end
+
+    AUTHORING --> COMPILE --> RUNTIME --> EXEC
 ```
 
 > 开发者只需写 `mod.rs`（node! 宏）+ 可选的 `shader.wgsl` / `cpu.rs`，框架自动完成发现、注册、运行时绑定。
@@ -92,6 +145,15 @@ node! {
 
 ```mermaid
 graph LR
+    classDef frontend    fill:#6C9BCF,stroke:#5A89BD,color:#fff
+    classDef transport   fill:#A78BCA,stroke:#9579B8,color:#fff
+    classDef service     fill:#6DBFA0,stroke:#5BAD8E,color:#fff
+    classDef ai          fill:#E88B8B,stroke:#D67979,color:#fff
+    classDef api         fill:#E8A87C,stroke:#D6966A,color:#fff
+    classDef foundation  fill:#E8CC6E,stroke:#D6BA5C,color:#333
+    classDef compute     fill:#6DB8AD,stroke:#5BA69B,color:#fff
+    classDef future      fill:#B0B8C1,stroke:#9EA6AF,color:#fff,stroke-dasharray:5 5
+
     subgraph GPU_ONLY["brightness/ — 纯 GPU"]
         G1["mod.rs"]:::service
         G2["shader.wgsl"]:::compute
@@ -115,13 +177,6 @@ graph LR
     subgraph API_NODE["sd_generate/ — 模型 API"]
         P1["mod.rs<br/>executor: API"]:::api
     end
-
-    classDef frontend fill:#6C9BCF,stroke:#5A89BD,color:#fff
-    classDef transport fill:#A78BCA,stroke:#9579B8,color:#fff
-    classDef service fill:#6DBFA0,stroke:#5BAD8E,color:#fff
-    classDef ai fill:#E88B8B,stroke:#D67979,color:#fff
-    classDef api fill:#E8A87C,stroke:#D6966A,color:#fff
-    classDef compute fill:#6DB8AD,stroke:#5BA69B,color:#fff
 ```
 
 ---
@@ -280,3 +335,11 @@ python/
 不需要在任何聚合文件中手动列举节点——添加新节点文件夹即自动生效，删除文件夹即自动移除。
 
 插件系统（`.dylib` 动态加载）已从路线图中移除，当前架构不支持运行时加载外部插件。所有节点必须在编译期存在。
+
+---
+
+**相关文档：**
+- [`20-engine.md`](20-engine.md) — EvalEngine 执行调度与 NodeRegistry 使用
+- [`42-app-editor.md`](42-app-editor.md) — WidgetRegistry 在编辑器中的集成
+- [`40-app-overview.md`](40-app-overview.md) — App 总览与节点框架初始化
+- [`50-python-protocol.md`](50-python-protocol.md) — AI 执行器与 Python 后端协议

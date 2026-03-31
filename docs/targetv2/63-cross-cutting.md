@@ -156,7 +156,7 @@ flowchart TD
 
 **迁移函数组织（migration chain）：**
 
-迁移逻辑集中在 app 层的 `ProjectManager` 中（`05-graph.md` 约定 graph crate 不含迁移逻辑）。每个版本升级对应一个迁移函数，按版本号链式执行。
+迁移逻辑集中在 app 层的 `ProjectManager` 中（`11-graph.md` 约定 graph crate 不含迁移逻辑）。每个版本升级对应一个迁移函数，按版本号链式执行。
 
 ```rust
 /// 迁移函数签名：接收旧版本 JSON，返回新版本 JSON

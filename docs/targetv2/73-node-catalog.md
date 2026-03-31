@@ -594,7 +594,7 @@
 | 输入引脚 | conditioning(Conditioning) |
 | 输出引脚 | conditioning(Conditioning) |
 | 参数 | 无 |
-| 行为 | 将 conditioning 张量清零（用于无条件引��等场景） |
+| 行为 | 将 conditioning 张量清零（用于无条件引导等场景） |
 
 ### StyleModelApply
 
@@ -869,7 +869,7 @@
 
 **框架设计：**
 
-节点通过 `provider` 参数选择厂商，执行时由 `ApiProvider` trait 分发（见 `03-executors.md` D11）。新增厂商只需实现 `ApiProvider`，再在节点的 `provider` 枚举中加一项，节点本身不变。
+节点通过 `provider` 参数选择厂商，执行时由 `ApiProvider` trait 分发（见 `23-executor-api.md` D11）。新增厂商只需实现 `ApiProvider`，再在节点的 `provider` 枚举中加一项，节点本身不变。
 
 ```
 节点定义（node! 宏, executor: API）
@@ -885,7 +885,7 @@
        └─ rate_limit_status() → 速率限制状态，供 EvalEngine 退避
 ```
 
-**配置扩展（`10-config.md`）：** 各 provider 的 API Key 和 endpoint 在配置文件中按厂商分段：
+**配置扩展（`62-config.md`）：** 各 provider 的 API Key 和 endpoint 在配置文件中按厂商分段：
 
 ```toml
 [api.openai]
