@@ -74,3 +74,4 @@ flowchart TB
 - **VRAM 不足**：Python 返回 CUDA OOM 时，Rust 根据 vram_info 选择释放目标，调用 `/handles/release` 后重试。
 - **Python 崩溃**：连接失败时不重试当前节点，等待引擎层的 Python 进程恢复机制。
 - **取消**：用户取消执行时，AI 执行器发送 `/node/cancel`，Python 在迭代节点的步间检查取消标志。非迭代节点不可中断，取消请求可能在执行完成后才到达。
+- **仅手动触发**：AI 执行器只在手动执行（mode=manual）时被调用。参数拖动触发的自动执行（mode=auto）中，AI 节点被执行规划器标脏但跳过，AI 执行器不参与。

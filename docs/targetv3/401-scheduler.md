@@ -43,8 +43,10 @@ flowchart TB
     classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
     classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
 
-    触发["引擎触发执行"]:::external
-    触发 --> 启动取消["启动取消控制监听"]:::internal
+    自动触发["自动触发（set_param）"]:::external
+    手动触发["手动触发（用户点运行）"]:::external
+    自动触发 -->|"mode=auto"| 启动取消["启动取消控制监听"]:::internal
+    手动触发 -->|"mode=manual"| 启动取消
     启动取消 --> 调规划["调用执行规划器"]:::internal
     调规划 --> 有计划{"执行计划为空?"}:::internal
     有计划 -->|"空"| 无需执行["无脏节点，跳过"]:::internal
@@ -101,7 +103,9 @@ flowchart TB
     检查取消 -->|"继续"| 并行["rayon 同层并行"]:::internal
 
     并行 --> 收集输入["收集节点输入"]:::internal
-    收集输入 --> 分发{"按 executor 分发"}:::internal
+    收集输入 --> 是否AI{"AI 节点?"}:::internal
+    是否AI -->|"是 + auto 模式"| 跳过["跳过，保持脏标记"]:::internal
+    是否AI -->|"否 / manual 模式"| 分发{"按 executor 分发"}:::internal
 
     分发 -->|"Image"| 图像执行器["图像执行器"]:::external
     分发 -->|"AI"| AI执行器["AI 执行器"]:::external
@@ -157,7 +161,7 @@ flowchart TB
 
 ## 组件
 
-- **执行规划器**：对比当前图版本和上次执行时的图版本，找出变化节点，沿拓扑向下游传播脏标记，按层分组输出执行计划。
+- **执行规划器**：对比当前图版本和上次执行时的图版本，找出变化节点，沿拓扑向下游传播脏标记，按层分组输出执行计划。auto 模式下，AI 节点标脏但不加入执行计划（等待手动触发）。
 - **执行运行时**：按执行计划逐层执行，同层节点 rayon 并行。维护执行上下文（中间结果暂存，供下游节点读取输入）。结果写入缓存管理器，AI/API 的 Image 产物额外写入产物管理器。
 - **取消控制**：CancelToken（AtomicBool）+ 按节点类型差异化的超时计时器。运行时在节点边界检查标志；AI 节点在 Python 执行时额外发送 POST /node/cancel 远程中断。收到 progress 事件重置超时计时器。
 
@@ -167,6 +171,7 @@ flowchart TB
 - **强制重新执行**（抽卡）：引擎 API 支持 force_execute(node_id)，将指定节点及其下游强制标脏。
 - **执行中修改图**：节点图控制器基于不可变状态，调度器持有执行开始时的版本快照，用户修改产生新版本不影响当前执行。
 - **断开的子图**：拓扑排序覆盖全图，脏标记只传播到受影响的子图，未变化的子图零开销跳过。
+- **自动执行跳过 AI 节点**：set_param 触发的自动执行中，规划器遇到 AI 节点时标脏但不加入执行计划，等待用户手动触发。GPU/Image 节点链实时刷新，AI 节点输出保持上次结果直到手动运行。
 
 ## 设计决策
 
