@@ -37,7 +37,13 @@ python/                  — AI 后端（FastAPI + SDXL）
 - `docs/current/protocol.md` / `docs/current/backend-*.md` — AI 后端协议和架构
 
 **目标架构（描述理想状态）：**
-- `docs/target/README.md` — 目标架构索引（含所有子文档链接）
+- `docs/target/roadmap.md` — 实现路线图（7 个里程碑）
+- `docs/target/spec.md` — 文档规范
+- `docs/target/0.x.x` — 全局文档（架构总览、数据模型）
+- `docs/target/2.x.x` — GUI 文档
+- `docs/target/4.x.x` — 引擎文档
+- `docs/target/5.x.x` — 项目文件
+- `docs/target/6.x.x` — Python 后端
 
 ## 开发工作流程
 
@@ -55,8 +61,8 @@ python/                  — AI 后端（FastAPI + SDXL）
 ## 开发约定
 
 - 新增节点：在 `crates/nodeimg-engine/src/builtins/` 创建文件，实现 `register()` 注册 NodeDef，在 `builtins/mod.rs` 中调用
-- GPU 优先：像素级运算只写 WGSL shader（`process: None, gpu_process: Some(...)`），不写 CPU 重复实现
+- GPU 优先：像素级运算只写 WGSL shader，通过统一的 `execute(ctx)` 函数调用 `ctx.gpu()`
 - GPU shader：在 `crates/nodeimg-gpu/src/shaders/` 添加 WGSL shader，在 `shaders.rs` 中导出常量，在节点中通过 `nodeimg_gpu::shaders::XXX` 引用
-- CPU 仅用于 GPU 做不到的事：文件 I/O（load_image、save_image）、数据分析（histogram）、文件解析（LUT）
-- AI 节点判据：`process.is_none() && gpu_process.is_none()`（通过 `NodeDef::is_ai_node()` 方法）
+- CPU 仅用于 GPU 做不到的事：文件 I/O（load_image、save_image）、文件解析（LUT）
+- AI 节点判据：executor 类型为 AI（通过 `NodeDef::is_ai_node()` 方法）
 - 所有 compute shader 使用 16x16 workgroup size
