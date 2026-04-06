@@ -9,3 +9,6 @@ path = "src/main.rs"
 
 [dependencies]
 iced = { version = "0.13", features = ["canvas", "wgpu", "tokio"] }
+engine = { path = "../engine" }
+types = { path = "../types" }
+wgpu = { workspace = true }
