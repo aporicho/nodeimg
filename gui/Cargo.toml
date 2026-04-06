@@ -8,7 +8,7 @@ name = "nodeimg"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.13", features = ["canvas", "wgpu", "tokio"] }
+iced = { version = "0.13", features = ["canvas", "wgpu", "tokio", "image"] }
 engine = { path = "../engine" }
 types = { path = "../types" }
 wgpu = { workspace = true }
