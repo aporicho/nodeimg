@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use iced::widget::image::Handle;
 use types::NodeId;
 
 #[derive(Debug, Clone)]
@@ -19,7 +20,7 @@ pub enum PanelId {
 #[derive(Debug, Clone)]
 pub struct UIState {
     pub selection: HashSet<NodeId>,
-    pub preview_image: Option<types::Image>,
+    pub preview_handle: Option<Handle>,
     pub is_running: bool,
 }
 
@@ -27,7 +28,7 @@ impl Default for UIState {
     fn default() -> Self {
         Self {
             selection: HashSet::new(),
-            preview_image: None,
+            preview_handle: None,
             is_running: false,
         }
     }

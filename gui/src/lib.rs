@@ -7,7 +7,7 @@ pub mod panels;
 use std::collections::HashSet;
 
 use iced::widget::{canvas as iced_canvas, container, stack};
-use iced::{Element, Length, Task, Theme};
+use iced::{Alignment, Element, Length, Task, Theme};
 
 use engine::executors::image::GpuExecutor;
 use engine::Engine;
@@ -16,12 +16,14 @@ use types::{NodeId, Vec2};
 use canvas::{CanvasState, NodeCanvas, NodeCanvasData};
 use canvas::controller::CanvasController;
 use panels::toolbar::toolbar_view;
+use panels::preview::preview_view;
 
 pub struct App {
     engine: Engine,
     canvas_state: CanvasState,
     selection: HashSet<NodeId>,
     is_running: bool,
+    preview_handle: Option<iced::widget::image::Handle>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +46,7 @@ impl App {
                 canvas_state: CanvasState::default(),
                 selection: HashSet::new(),
                 is_running: false,
+                preview_handle: None,
             },
             Task::none(),
         )
@@ -108,8 +111,33 @@ impl App {
                 }
             }
             Message::RunGraph => {
-                // 占位 — Task 11 实现异步执行
-                eprintln!("RunGraph: async execution not yet implemented");
+                self.is_running = true;
+                let result = pollster::block_on(self.engine.evaluate_all());
+                self.is_running = false;
+
+                match result {
+                    Ok(results) => {
+                        // 找到最后一个产出 Image 的节点，转为 CPU 并生成 iced Handle
+                        if let Some(gpu) = self.engine.executor.gpu_executor() {
+                            'outer: for (_node_id, outputs) in &results {
+                                for (_pin, value) in outputs {
+                                    if let types::Value::Image(img) = value {
+                                        let cpu = img.as_cpu(&gpu.device, &gpu.queue);
+                                        let rgba = cpu.to_rgba8();
+                                        let (w, h) = rgba.dimensions();
+                                        self.preview_handle = Some(
+                                            iced::widget::image::Handle::from_rgba(w, h, rgba.into_raw())
+                                        );
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Execution error: {}", e);
+                    }
+                }
             }
         }
         Task::none()
@@ -147,8 +175,16 @@ impl App {
             .padding(8)
             .into();
 
-        // stack：画布在底层，工具栏浮动在上层
-        stack![canvas_widget, toolbar_layer].into()
+        // 预览面板浮动在左侧
+        let preview = preview_view(self.preview_handle.as_ref());
+        let preview_layer: Element<'_, Message> = container(preview)
+            .width(Length::Shrink)
+            .height(Length::Fill)
+            .align_x(Alignment::Start)
+            .into();
+
+        // stack：画布在底层，预览面板和工具栏浮动在上层
+        stack![canvas_widget, preview_layer, toolbar_layer].into()
     }
 
     pub fn theme(&self) -> Theme {
