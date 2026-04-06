@@ -1,3 +1,6 @@
+pub mod canvas;
+pub mod render;
+
 use iced::{Element, Task, Theme};
 
 pub struct App;
