@@ -6,6 +6,7 @@ pub enum ConnectionError {
     NodeNotFound(NodeId),
     CycleDetected,
     SelfConnection,
+    TypeIncompatible { from: String, to: String },
 }
 
 impl std::fmt::Display for ConnectionError {
@@ -14,6 +15,9 @@ impl std::fmt::Display for ConnectionError {
             Self::NodeNotFound(id) => write!(f, "Node {:?} not found", id),
             Self::CycleDetected => write!(f, "Connection would create a cycle"),
             Self::SelfConnection => write!(f, "Cannot connect a node to itself"),
+            Self::TypeIncompatible { from, to } => {
+                write!(f, "Type mismatch: '{}' is not compatible with '{}'", from, to)
+            }
         }
     }
 }

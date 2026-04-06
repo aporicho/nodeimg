@@ -11,6 +11,7 @@ impl std::fmt::Display for NoGpuError {
 }
 impl std::error::Error for NoGpuError {}
 
+#[derive(Clone, Copy)]
 pub struct ExecContext<'a> {
     gpu: Option<&'a GpuExecutor>,
     cpu: &'a CpuExecutor,
