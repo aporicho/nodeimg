@@ -1559,9 +1559,7 @@ dependencies = [
 name = "types"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "image",
- "serde",
  "serde_json",
  "wgpu",
 ]

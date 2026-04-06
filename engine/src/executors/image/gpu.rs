@@ -99,7 +99,7 @@ impl GpuExecutor {
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
-            pass.dispatch_workgroups((width + 15) / 16, (height + 15) / 16, 1);
+            pass.dispatch_workgroups(width.div_ceil(16), height.div_ceil(16), 1);
         }
         self.queue.submit(std::iter::once(encoder.finish()));
     }

@@ -1,7 +1,9 @@
 use engine::Engine;
 use engine::graph::Connection;
-use engine::registry::NodeManager;
-use types::{Value, Vec2};
+use engine::graph_controller::GraphController;
+use engine::registry::{NodeDef, NodeManager, PinDef};
+use types::{DataType, Value, Vec2};
+use std::sync::Arc;
 
 // === 图操作测试 ===
 
@@ -140,4 +142,64 @@ async fn test_evaluate_load_image_empty_path() {
     let outputs = result.unwrap();
     let node_output = outputs.get(&id).unwrap();
     assert!(node_output.is_empty(), "Empty path should produce empty output");
+}
+
+// === 类型兼容性测试 ===
+
+#[test]
+fn test_type_incompatible_connection_rejected() {
+    let mut nm = NodeManager::new();
+    nm.register(NodeDef {
+        type_id: "float_source".into(),
+        name: "Float Source".into(),
+        category: "test".into(),
+        inputs: vec![],
+        outputs: vec![PinDef {
+            name: "value".into(),
+            data_type: DataType::float(),
+            optional: false,
+        }],
+        params: vec![],
+        execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+    });
+    nm.register(NodeDef {
+        type_id: "image_sink".into(),
+        name: "Image Sink".into(),
+        category: "test".into(),
+        inputs: vec![PinDef {
+            name: "image".into(),
+            data_type: DataType::image(),
+            optional: false,
+        }],
+        outputs: vec![],
+        params: vec![],
+        execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+    });
+
+    let mut gc = GraphController::new(Arc::new(nm), 50);
+    let a = gc.add_node("float_source", Vec2::default()).unwrap();
+    let b = gc.add_node("image_sink", Vec2::default()).unwrap();
+
+    let result = gc.connect(Connection {
+        from_node: a, from_pin: "value".into(),
+        to_node: b, to_pin: "image".into(),
+    });
+    assert!(result.is_err(), "Float -> Image connection should be rejected");
+}
+
+// === 断开连接测试 ===
+
+#[test]
+fn test_disconnect() {
+    let mut engine = Engine::new(None);
+    let a = engine.graph.add_node("load_image", Vec2::default()).unwrap();
+    let b = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    engine.graph.connect(Connection {
+        from_node: a, from_pin: "image".into(),
+        to_node: b, to_pin: "image".into(),
+    }).unwrap();
+    assert_eq!(engine.graph.current().connections.len(), 1);
+
+    engine.graph.disconnect(a, "image", b, "image");
+    assert_eq!(engine.graph.current().connections.len(), 0);
 }

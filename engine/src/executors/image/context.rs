@@ -33,6 +33,12 @@ impl<'a> ExecContext<'a> {
         f(self.cpu)
     }
 
+    /// Get GPU device and queue handles (for Image format conversion).
+    /// Returns None if no GPU is available.
+    pub fn device_queue(&self) -> Option<(&wgpu::Device, &wgpu::Queue)> {
+        self.gpu.map(|g| (&g.device, &g.queue))
+    }
+
     pub fn has_gpu(&self) -> bool {
         self.gpu.is_some()
     }

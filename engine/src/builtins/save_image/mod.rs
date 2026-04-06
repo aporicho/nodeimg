@@ -7,15 +7,27 @@ node! {
     inputs: [image: Image required],
     outputs: [],
     params: [path: String default("")],
-    execute: |_ctx, inputs| {
-        // SaveImage: For M1, just validate inputs exist.
-        // Full implementation needs device/queue for GPU readback,
-        // which requires changes to CpuExecutor API (deferred).
-        let _path = match inputs.get("path") {
-            Some(types::Value::String(p)) if !p.is_empty() => p.clone(),
-            _ => String::new(),
-        };
-        // TODO: ctx.cpu(|cpu| cpu.save_image(&image, &path, device, queue))
-        Ok(std::collections::HashMap::new())
+    execute: |ctx, inputs| {
+        (|| -> Result<std::collections::HashMap<String, types::Value>, Box<dyn std::error::Error + Send + Sync>> {
+            let path = match inputs.get("path") {
+                Some(types::Value::String(p)) if !p.is_empty() => p.clone(),
+                _ => return Ok(std::collections::HashMap::new()),
+            };
+            let image = match inputs.get("image") {
+                Some(types::Value::Image(img)) => img,
+                _ => return Ok(std::collections::HashMap::new()),
+            };
+            // Try cpu_data() first (no GPU needed)
+            if let Some(cpu_img) = image.cpu_data() {
+                cpu_img.save(&path)?;
+            } else if let Some((device, queue)) = ctx.device_queue() {
+                // GPU readback via ensure_cpu
+                let cpu_img = image.as_cpu(device, queue);
+                cpu_img.save(&path)?;
+            } else {
+                return Err("No CPU data and no GPU available for readback".into());
+            }
+            Ok(std::collections::HashMap::new())
+        })()
     },
 }

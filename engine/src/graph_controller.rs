@@ -43,8 +43,10 @@ impl GraphController {
         validate::validate_connection_basic(self.state.current(), &conn)?;
 
         // Type compatibility check via NodeManager
-        let from_node = self.state.current().nodes.get(&conn.from_node).unwrap();
-        let to_node = self.state.current().nodes.get(&conn.to_node).unwrap();
+        let from_node = self.state.current().nodes.get(&conn.from_node)
+            .ok_or(validate::ConnectionError::NodeNotFound(conn.from_node))?;
+        let to_node = self.state.current().nodes.get(&conn.to_node)
+            .ok_or(validate::ConnectionError::NodeNotFound(conn.to_node))?;
 
         if let (Some(from_type), Some(to_type)) = (
             self.node_manager.pin_type(&from_node.type_id, &conn.from_pin),

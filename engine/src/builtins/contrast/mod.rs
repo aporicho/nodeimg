@@ -28,7 +28,7 @@ node! {
 
                 let params = Params { contrast };
                 let pipeline = gpu.pipeline("contrast", include_str!("shader.wgsl"));
-                let bind_group = gpu.create_io_params_bind_group(&pipeline, &gpu_tex, &output, bytemuck::bytes_of(&params));
+                let bind_group = gpu.create_io_params_bind_group(&pipeline, gpu_tex, &output, bytemuck::bytes_of(&params));
                 gpu.dispatch_compute(&pipeline, &bind_group, output.width, output.height);
 
                 let result_image = types::value::Image::from_gpu(output);

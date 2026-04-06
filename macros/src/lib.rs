@@ -39,7 +39,7 @@ struct ParamInput {
 
 /// 约束定义。
 enum ConstraintInput {
-    Range(Expr, Expr),
+    Range(Expr, Box<Expr>),
     FilePath(Vec<LitStr>),
 }
 
@@ -178,7 +178,7 @@ fn parse_param_list(input: ParseStream) -> syn::Result<Vec<ParamInput>> {
                     let min: Expr = inner.parse()?;
                     inner.parse::<Token![,]>()?;
                     let max: Expr = inner.parse()?;
-                    constraint = Some(ConstraintInput::Range(min, max));
+                    constraint = Some(ConstraintInput::Range(min, Box::new(max)));
                 }
                 "file_path" => {
                     let _: Ident = content.parse()?;

@@ -65,6 +65,16 @@ impl Image {
         })
     }
 
+    /// Get CPU data if available (no GPU needed).
+    pub fn cpu_data(&self) -> Option<&Arc<DynamicImage>> {
+        self.cpu.get()
+    }
+
+    /// Get GPU data if available (no conversion needed).
+    pub fn gpu_data(&self) -> Option<&Arc<GpuTexture>> {
+        self.gpu.get()
+    }
+
     pub fn has_cpu(&self) -> bool { self.cpu.get().is_some() }
     pub fn has_gpu(&self) -> bool { self.gpu.get().is_some() }
 }
