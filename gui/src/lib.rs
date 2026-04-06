@@ -1,12 +1,19 @@
 pub mod canvas;
 pub mod render;
+pub mod state;
+pub mod widgets;
+pub mod panels;
 
 use iced::{Element, Task, Theme};
 
 pub struct App;
 
 #[derive(Debug, Clone)]
-pub enum Message {}
+pub enum Message {
+    CanvasEvent(iced::widget::canvas::Event, f32, f32),
+    AddNode(String),
+    RunGraph,
+}
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
