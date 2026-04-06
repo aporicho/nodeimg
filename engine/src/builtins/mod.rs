@@ -1,3 +1,8 @@
+mod load_image;
+mod save_image;
+mod brightness;
+mod contrast;
+
 #[cfg(test)]
 mod test_macro {
     use macros::node;
@@ -109,5 +114,14 @@ mod test_inventory {
         assert!(def.inputs.is_empty());
         assert!(def.outputs.is_empty());
         assert!(def.params.is_empty());
+    }
+
+    #[test]
+    fn test_builtin_nodes_collected() {
+        let nm = crate::registry::NodeManager::from_inventory();
+        assert!(nm.get("load_image").is_some(), "load_image not found");
+        assert!(nm.get("save_image").is_some(), "save_image not found");
+        assert!(nm.get("brightness").is_some(), "brightness not found");
+        assert!(nm.get("contrast").is_some(), "contrast not found");
     }
 }
