@@ -1,5 +1,5 @@
 [workspace]
-members = ["types", "engine", "macros"]
+members = ["types", "engine", "macros", "gui"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -14,3 +14,6 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
 pollster = "0.4"
+
+[patch.crates-io]
+iced_winit = { path = "patches/iced_winit" }
