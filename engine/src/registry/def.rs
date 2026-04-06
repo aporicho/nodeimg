@@ -1,3 +1,4 @@
+use crate::executors::image::context::ExecContext;
 use types::{Constraint, DataType, Value};
 use std::collections::HashMap;
 use std::future::Future;
@@ -19,11 +20,10 @@ pub struct ParamDef {
 }
 
 /// 节点执行函数类型。
-/// 注意：ExecContext 在 Task 10 才实现，这里先用泛型占位。
-/// 实际签名是 Fn(ExecContext, HashMap) -> Future<Result<HashMap>>。
-/// 暂时定义为接收 HashMap 参数返回 HashMap 结果的 async 函数。
+/// 接收 ExecContext（GPU/CPU 执行上下文）和输入参数，返回输出结果。
 pub type ExecuteFn = Box<
     dyn Fn(
+            ExecContext<'_>,
             HashMap<String, Value>,
         ) -> Pin<
             Box<

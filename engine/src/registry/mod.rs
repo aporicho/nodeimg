@@ -112,7 +112,7 @@ mod tests {
                 constraint: None,
                 default_value: Value::Float(0.0),
             }],
-            execute: Box::new(|inputs| Box::pin(async move { Ok(inputs) })),
+            execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
         }
     }
 
