@@ -71,4 +71,15 @@ impl Engine {
 
         Ok(results)
     }
+
+    pub async fn evaluate_all(&self) -> Result<HashMap<NodeId, HashMap<String, Value>>, Box<dyn std::error::Error + Send + Sync>> {
+        let graph = self.graph.snapshot();
+        let leaves = graph.leaf_nodes();
+        let mut all_results = HashMap::new();
+        for leaf in leaves {
+            let results = self.evaluate(leaf).await?;
+            all_results.extend(results);
+        }
+        Ok(all_results)
+    }
 }
