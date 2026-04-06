@@ -18,18 +18,10 @@ pub enum PanelId {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct UIState {
     pub selection: HashSet<NodeId>,
     pub preview_handle: Option<Handle>,
     pub is_running: bool,
 }
 
-impl Default for UIState {
-    fn default() -> Self {
-        Self {
-            selection: HashSet::new(),
-            preview_handle: None,
-            is_running: false,
-        }
-    }
-}

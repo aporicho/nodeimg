@@ -50,14 +50,10 @@ pub enum HoverTarget {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct CanvasState {
     pub viewport: Viewport,
     pub interaction: Option<ActiveInteraction>,
     pub hover: Option<HoverTarget>,
 }
 
-impl Default for CanvasState {
-    fn default() -> Self {
-        Self { viewport: Viewport::default(), interaction: None, hover: None }
-    }
-}

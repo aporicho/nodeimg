@@ -119,8 +119,8 @@ impl App {
                     Ok(results) => {
                         // 找到最后一个产出 Image 的节点，转为 CPU 并生成 iced Handle
                         if let Some(gpu) = self.engine.executor.gpu_executor() {
-                            'outer: for (_node_id, outputs) in &results {
-                                for (_pin, value) in outputs {
+                            'outer: for outputs in results.values() {
+                                for value in outputs.values() {
                                     if let types::Value::Image(img) = value {
                                         let cpu = img.as_cpu(&gpu.device, &gpu.queue);
                                         let rgba = cpu.to_rgba8();
