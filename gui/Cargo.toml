@@ -12,3 +12,4 @@ iced = { version = "0.13", features = ["canvas", "wgpu", "tokio"] }
 engine = { path = "../engine" }
 types = { path = "../types" }
 wgpu = { workspace = true }
+pollster = { workspace = true }
