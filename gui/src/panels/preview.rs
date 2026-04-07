@@ -38,7 +38,7 @@ impl PreviewPanel {
         };
 
         Self {
-            panel: FloatingPanel::new(Size::new(300.0, 250.0)),
+            panel: FloatingPanel::new(Size::new(400.0, 350.0)),
             image,
             offset: Vector::ZERO,
             scale: 1.0,

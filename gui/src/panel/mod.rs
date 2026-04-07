@@ -2,10 +2,10 @@
 //! 所有面板浮在画布上方，可拖拽移动、可 resize。
 //! 提供统一的面板框架：标题栏 + 内容区 + resize handle。
 
-use iced::widget::{button, column, container, mouse_area, row, svg, text};
+use crate::controls::composites::title_bar;
+use iced::widget::{column, container, mouse_area, text};
 use iced::{Border, Color, Element, Fill, Point, Shadow, Size, Theme, Vector};
 
-const TITLE_BAR_HEIGHT: f32 = 28.0;
 const RESIZE_HANDLE_SIZE: f32 = 16.0;
 
 #[derive(Debug)]
@@ -116,33 +116,9 @@ impl FloatingPanel {
         content: Element<'a, M>,
         map: impl Fn(Event) -> M + 'a,
     ) -> Element<'a, M> {
-        // 标题栏：标题 + 关闭按钮
-        let close_icon = svg(svg::Handle::from_path("assets/icons/xmark.svg"))
-            .width(14)
-            .height(14)
-            .style(|_theme, _status| svg::Style {
-                color: Some(Color::from_rgb8(0xa1, 0xa1, 0xaa)),
-            });
-        let close_btn = button(close_icon)
-            .on_press((map)(Event::Close))
-            .padding(2)
-            .style(Self::close_btn_style);
-
-        let title_content = row![
-            text(title.to_owned()).size(12).color(Color::from_rgb8(0x71, 0x71, 0x7a)),
-            iced::widget::Space::new().width(Fill),
-            close_btn,
-        ]
-        .align_y(iced::Alignment::Center);
-
-        let title_bar = mouse_area(
-            container(title_content)
-                .width(Fill)
-                .height(TITLE_BAR_HEIGHT)
-                .padding(iced::Padding::from([4, 10]))
-                .style(Self::title_bar_style),
-        )
-        .on_press((map)(Event::DragStart));
+        // 标题栏：使用 TitleBar 组合控件
+        let tb = mouse_area(title_bar(title, (map)(Event::Close)))
+            .on_press((map)(Event::DragStart));
 
         // resize handle
         let resize_handle = mouse_area(
@@ -154,7 +130,7 @@ impl FloatingPanel {
         )
         .on_press((map)(Event::ResizeStart));
 
-        let body = column![title_bar, content]
+        let body = column![tb, content]
             .width(self.size.width)
             .height(self.size.height);
 
@@ -187,27 +163,4 @@ impl FloatingPanel {
         }
     }
 
-    fn close_btn_style(_theme: &Theme, _status: button::Status) -> button::Style {
-        button::Style {
-            background: None,
-            text_color: Color::from_rgb8(0xa1, 0xa1, 0xaa),
-            border: Border {
-                radius: 4.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    fn title_bar_style(_theme: &Theme) -> container::Style {
-        container::Style {
-            background: Some(Color::from_rgb8(0xfa, 0xfa, 0xfa).into()),
-            border: Border {
-                color: Color::from_rgb8(0xe4, 0xe4, 0xe7),
-                width: 0.0,
-                radius: 8.0.into(),
-            },
-            ..Default::default()
-        }
-    }
 }

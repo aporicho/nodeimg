@@ -1,8 +1,9 @@
 //! 工具栏 (2.5.0)
 //! 悬浮 pill 形状，可拖动。
 
+use crate::controls::atoms::{icon_button, separator, ButtonVariant};
 use crate::panel::{self, FloatingPanel};
-use iced::widget::{button, container, mouse_area, row, text};
+use iced::widget::{container, mouse_area, row};
 use iced::{Border, Color, Element, Shadow, Size, Theme, Vector};
 
 pub struct Toolbar {
@@ -12,6 +13,15 @@ pub struct Toolbar {
 #[derive(Debug, Clone)]
 pub enum Message {
     Panel(panel::Event),
+    Action(ToolbarAction),
+}
+
+#[derive(Debug, Clone)]
+pub enum ToolbarAction {
+    New,
+    Open,
+    Save,
+    Run,
 }
 
 impl Toolbar {
@@ -24,41 +34,29 @@ impl Toolbar {
     pub fn update(&mut self, message: Message) {
         match message {
             Message::Panel(event) => self.panel.handle_event(event),
+            Message::Action(_action) => {
+                // TODO: 转发给交互控制器
+            }
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         let content = row![
-            text("nodeimg").size(13).color(Color::from_rgb8(0xa1, 0xa1, 0xaa)),
-            Self::separator(),
-            button(text("New").size(12)).on_press(Message::Panel(panel::Event::DragEnd)).style(Self::btn_style),
-            button(text("Open").size(12)).on_press(Message::Panel(panel::Event::DragEnd)).style(Self::btn_style),
-            button(text("Save").size(12)).on_press(Message::Panel(panel::Event::DragEnd)).style(Self::btn_style),
-            Self::separator(),
-            button(text("▶ Run").size(12)).on_press(Message::Panel(panel::Event::DragEnd)).style(Self::run_btn_style),
+            icon_button("New", "plus.svg", ButtonVariant::Default, Message::Action(ToolbarAction::New)),
+            icon_button("Open", "folder.svg", ButtonVariant::Default, Message::Action(ToolbarAction::Open)),
+            icon_button("Save", "floppy-disk.svg", ButtonVariant::Default, Message::Action(ToolbarAction::Save)),
+            separator().map(|_: panel::Event| Message::Panel(panel::Event::DragEnd)),
+            icon_button("Run", "play.svg", ButtonVariant::Primary, Message::Action(ToolbarAction::Run)),
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
         let pill = container(content)
-            .padding(iced::Padding::from([6, 16]))
+            .padding(iced::Padding::from([8, 16]))
             .style(Self::pill_style);
 
-        // 工具栏只负责触发 DragStart，不捕获 move 坐标
-        // （move/release 由 lib.rs 的全屏拖拽层统一捕获，坐标系一致）
         mouse_area(pill)
             .on_press(Message::Panel(panel::Event::DragStart))
-            .into()
-    }
-
-    fn separator<'a>() -> Element<'a, Message> {
-        container(text(""))
-            .width(1)
-            .height(16)
-            .style(|_: &Theme| container::Style {
-                background: Some(Color::from_rgb8(0xe4, 0xe4, 0xe7).into()),
-                ..Default::default()
-            })
             .into()
     }
 
@@ -74,30 +72,6 @@ impl Toolbar {
                 color: Color::from_rgba(0.0, 0.0, 0.0, 0.06),
                 offset: Vector::new(0.0, 2.0),
                 blur_radius: 8.0,
-            },
-            ..Default::default()
-        }
-    }
-
-    fn btn_style(_theme: &Theme, _status: button::Status) -> button::Style {
-        button::Style {
-            background: None,
-            text_color: Color::from_rgb8(0x71, 0x71, 0x7a),
-            border: Border {
-                radius: 6.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    fn run_btn_style(_theme: &Theme, _status: button::Status) -> button::Style {
-        button::Style {
-            background: Some(Color::from_rgb8(0x18, 0x18, 0x1b).into()),
-            text_color: Color::WHITE,
-            border: Border {
-                radius: 6.0.into(),
-                ..Default::default()
             },
             ..Default::default()
         }
