@@ -69,27 +69,34 @@ impl App {
         )
         .translate(move |_bounds, _viewport| tb_offset);
 
-        // 预览面板：右上角
+        // 预览面板：右上角（仅可见时显示）
+        let pv_visible = self.preview.panel.visible;
         let pv_offset = self.preview.panel.offset;
-        let preview = float(
-            container(self.preview.view().map(Message::Preview))
-                .width(Fill)
-                .height(Length::Shrink)
-                .align_x(iced::alignment::Horizontal::Right)
-                .padding(iced::Padding {
-                    top: 60.0,
-                    right: 16.0,
-                    bottom: 0.0,
-                    left: 0.0,
-                }),
-        )
-        .translate(move |_bounds, _viewport| pv_offset);
 
         // 统一交互覆盖层
         let tb_dragging = self.toolbar.panel.is_dragging();
-        let pv_dragging = self.preview.panel.is_dragging();
-        let pv_resizing = self.preview.panel.is_resizing();
+        let pv_dragging = pv_visible && self.preview.panel.is_dragging();
+        let pv_resizing = pv_visible && self.preview.panel.is_resizing();
         let any_interacting = tb_dragging || pv_dragging || pv_resizing;
+
+        let mut layers: Vec<Element<'_, Message>> = vec![canvas.into(), toolbar.into()];
+
+        if pv_visible {
+            let preview = float(
+                container(self.preview.view().map(Message::Preview))
+                    .width(Fill)
+                    .height(Length::Shrink)
+                    .align_x(iced::alignment::Horizontal::Right)
+                    .padding(iced::Padding {
+                        top: 60.0,
+                        right: 16.0,
+                        bottom: 0.0,
+                        left: 0.0,
+                    }),
+            )
+            .translate(move |_bounds, _viewport| pv_offset);
+            layers.push(preview.into());
+        }
 
         if any_interacting {
             let drag_layer = mouse_area(container("").width(Fill).height(Fill))
@@ -109,11 +116,10 @@ impl App {
                 } else {
                     Message::Preview(preview::Message::Panel(panel::Event::ResizeEnd))
                 });
-
-            stack![canvas, preview, toolbar, drag_layer].into()
-        } else {
-            stack![canvas, preview, toolbar].into()
+            layers.push(drag_layer.into());
         }
+
+        stack(layers).into()
     }
 
     pub fn theme(&self) -> Theme {
