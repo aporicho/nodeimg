@@ -3,7 +3,7 @@
 
 use crate::panel::{self, FloatingPanel};
 use iced::widget::{button, container, mouse_area, row, text};
-use iced::{Border, Color, Element, Point, Shadow, Theme, Vector};
+use iced::{Border, Color, Element, Shadow, Size, Theme, Vector};
 
 pub struct Toolbar {
     pub panel: FloatingPanel,
@@ -17,7 +17,7 @@ pub enum Message {
 impl Toolbar {
     pub fn new() -> Self {
         Self {
-            panel: FloatingPanel::new(),
+            panel: FloatingPanel::new(Size::ZERO),
         }
     }
 
@@ -44,10 +44,10 @@ impl Toolbar {
             .padding(iced::Padding::from([6, 16]))
             .style(Self::pill_style);
 
+        // 工具栏只负责触发 DragStart，不捕获 move 坐标
+        // （move/release 由 lib.rs 的全屏拖拽层统一捕获，坐标系一致）
         mouse_area(pill)
             .on_press(Message::Panel(panel::Event::DragStart))
-            .on_release(Message::Panel(panel::Event::DragEnd))
-            .on_move(|point| Message::Panel(panel::Event::DragMove(point)))
             .into()
     }
 

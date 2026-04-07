@@ -163,23 +163,13 @@ impl CanvasState {
                         self.zoom_at(cursor_position, bounds, *y * 20.0);
                         Some(canvas::Action::request_redraw().and_capture())
                     }
-                    // Cmd+滚轮 → 缩放
-                    _ if self.modifiers.command() => {
+                    // 滚轮 → 缩放
+                    _ => {
                         let dy = match delta {
                             mouse::ScrollDelta::Lines { y, .. } => *y * 20.0,
                             mouse::ScrollDelta::Pixels { y, .. } => *y,
                         };
                         self.zoom_at(cursor_position, bounds, dy);
-                        Some(canvas::Action::request_redraw().and_capture())
-                    }
-                    // 普通滚动 → 平移
-                    _ => {
-                        let (dx, dy) = match delta {
-                            mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
-                            mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-                        };
-                        self.offset = self.offset + Vector::new(dx, dy);
-                        self.grid_cache.clear();
                         Some(canvas::Action::request_redraw().and_capture())
                     }
                 }

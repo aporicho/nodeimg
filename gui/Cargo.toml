@@ -8,4 +8,4 @@ name = "nodeimg"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.14", features = ["canvas", "wgpu", "tokio"] }
+iced = { version = "0.14", features = ["canvas", "image", "svg", "wgpu", "tokio"] }
