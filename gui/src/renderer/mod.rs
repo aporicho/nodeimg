@@ -1,7 +1,9 @@
+mod buffer;
 mod command;
 mod curve;
 mod dispatch;
 mod image;
+mod prepare;
 mod quad;
 pub(crate) mod shadow;
 pub(crate) mod stencil;

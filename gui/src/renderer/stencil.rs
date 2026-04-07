@@ -1,10 +1,7 @@
 use bytemuck::{Pod, Zeroable};
-use lyon::tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
-use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 
-use super::quad::{build_rounded_rect_path, DEFAULT_CORNER_SMOOTHING};
-use super::types::Rect;
+use super::buffer::DynamicBuffer;
 
 pub const DEPTH_STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
@@ -36,8 +33,8 @@ pub fn content_depth_stencil_state() -> wgpu::DepthStencilState {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct StencilVertex {
-    position: [f32; 2],
+pub struct StencilVertex {
+    pub position: [f32; 2],
 }
 
 #[repr(C)]
@@ -55,6 +52,9 @@ pub struct StencilState {
     clip_depth: u32,
     #[allow(dead_code)]
     size: PhysicalSize<u32>,
+    uniform_buf: DynamicBuffer,
+    vertex_buf: DynamicBuffer,
+    index_buf: DynamicBuffer,
 }
 
 impl StencilState {
@@ -117,6 +117,9 @@ impl StencilState {
             bind_group_layout,
             clip_depth: 0,
             size,
+            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "stencil_uniform", 256),
+            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "stencil_vertex", 4096),
+            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "stencil_index", 4096),
         }
     }
 
@@ -131,6 +134,7 @@ impl StencilState {
         &self.depth_stencil_view
     }
 
+    #[allow(dead_code)]
     pub fn clip_depth(&self) -> u32 {
         self.clip_depth
     }
@@ -139,117 +143,51 @@ impl StencilState {
         self.clip_depth = 0;
     }
 
-    pub fn write_clip(
+    pub fn upload(
         &mut self,
-        pass: &mut wgpu::RenderPass<'_>,
         device: &wgpu::Device,
-        rect: Rect,
-        radius: f32,
+        queue: &wgpu::Queue,
+        vertices: &[StencilVertex],
+        indices: &[u32],
         viewport_size: [f32; 2],
     ) {
-        let (vertex_buffer, index_buffer, index_count) =
-            tessellate_clip_shape(device, rect, radius);
-
-        let (_uniform_buffer, bind_group) =
-            self.create_bind_group(device, viewport_size);
-
-        pass.set_pipeline(&self.increment_pipeline);
-        pass.set_stencil_reference(self.clip_depth);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..index_count, 0, 0..1);
-
-        self.clip_depth += 1;
-    }
-
-    pub fn clear_clip(
-        &mut self,
-        pass: &mut wgpu::RenderPass<'_>,
-        device: &wgpu::Device,
-        rect: Rect,
-        radius: f32,
-        viewport_size: [f32; 2],
-    ) {
-        if self.clip_depth == 0 {
+        if vertices.is_empty() {
             return;
         }
-
-        let (vertex_buffer, index_buffer, index_count) =
-            tessellate_clip_shape(device, rect, radius);
-
-        let (_uniform_buffer, bind_group) =
-            self.create_bind_group(device, viewport_size);
-
-        pass.set_pipeline(&self.decrement_pipeline);
-        pass.set_stencil_reference(self.clip_depth);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..index_count, 0, 0..1);
-
-        self.clip_depth -= 1;
-    }
-
-    fn create_bind_group(
-        &self,
-        device: &wgpu::Device,
-        viewport_size: [f32; 2],
-    ) -> (wgpu::Buffer, wgpu::BindGroup) {
         let uniform = ViewportUniform {
             size: viewport_size,
             _padding: [0.0; 2],
         };
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("stencil_uniform"),
-            contents: bytemuck::bytes_of(&uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
+        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+    }
+
+    pub fn bind_stencil<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("stencil_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: self.uniform_buf.buffer().as_entire_binding(),
             }],
         });
-        (uniform_buffer, bind_group)
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));
+        pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
     }
-}
 
-fn tessellate_clip_shape(
-    device: &wgpu::Device,
-    rect: Rect,
-    radius: f32,
-) -> (wgpu::Buffer, wgpu::Buffer, u32) {
-    let path = build_rounded_rect_path(rect, [radius; 4], DEFAULT_CORNER_SMOOTHING);
+    pub fn draw_write(&self, pass: &mut wgpu::RenderPass<'_>, clip_depth: u32, index_start: u32, index_count: u32) {
+        pass.set_pipeline(&self.increment_pipeline);
+        pass.set_stencil_reference(clip_depth);
+        pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
+    }
 
-    let mut geometry: VertexBuffers<StencilVertex, u32> = VertexBuffers::new();
-    let mut tessellator = FillTessellator::new();
-
-    tessellator
-        .tessellate_path(
-            &path,
-            &FillOptions::default(),
-            &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| StencilVertex {
-                position: vertex.position().to_array(),
-            }),
-        )
-        .expect("failed to tessellate stencil shape");
-
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("stencil_vertex"),
-        contents: bytemuck::cast_slice(&geometry.vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("stencil_index"),
-        contents: bytemuck::cast_slice(&geometry.indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
-
-    (vertex_buffer, index_buffer, geometry.indices.len() as u32)
+    pub fn draw_clear(&self, pass: &mut wgpu::RenderPass<'_>, clip_depth: u32, index_start: u32, index_count: u32) {
+        pass.set_pipeline(&self.decrement_pipeline);
+        pass.set_stencil_reference(clip_depth);
+        pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
+    }
 }
 
 fn create_depth_stencil_view(device: &wgpu::Device, size: PhysicalSize<u32>, sample_count: u32) -> wgpu::TextureView {

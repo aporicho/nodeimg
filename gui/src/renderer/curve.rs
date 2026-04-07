@@ -1,18 +1,13 @@
 use bytemuck::{Pod, Zeroable};
-use lyon::math::point;
-use lyon::path::Path;
-use lyon::tessellation::{
-    BuffersBuilder, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
-};
-use wgpu::util::DeviceExt;
 
+use super::buffer::DynamicBuffer;
 use super::types::{Color, Point};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CurveVertex {
-    position: [f32; 2],
-    color: [f32; 4],
+    pub position: [f32; 2],
+    pub color: [f32; 4],
 }
 
 pub struct CurveRequest {
@@ -31,6 +26,9 @@ struct ViewportUniform {
 pub struct CurvePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
+    uniform_buf: DynamicBuffer,
+    vertex_buf: DynamicBuffer,
+    index_buf: DynamicBuffer,
 }
 
 impl CurvePipeline {
@@ -109,90 +107,48 @@ impl CurvePipeline {
         Self {
             pipeline,
             bind_group_layout,
+            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "curve_viewport_uniform", 256),
+            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "curve_vertex_buffer", 4096),
+            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "curve_index_buffer", 4096),
         }
     }
 
-    pub fn draw<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
+    pub fn upload(
+        &mut self,
         device: &wgpu::Device,
-        curves: &[CurveRequest],
+        queue: &wgpu::Queue,
+        vertices: &[CurveVertex],
+        indices: &[u32],
         viewport_size: [f32; 2],
     ) {
-        if curves.is_empty() {
+        if vertices.is_empty() {
             return;
         }
-
-        let mut geometry: VertexBuffers<CurveVertex, u32> = VertexBuffers::new();
-        let mut tessellator = StrokeTessellator::new();
-
-        for curve in curves {
-            let color = curve.color.to_array();
-
-            let mut builder = Path::builder();
-            builder.begin(point(curve.points[0].x, curve.points[0].y));
-            builder.cubic_bezier_to(
-                point(curve.points[1].x, curve.points[1].y),
-                point(curve.points[2].x, curve.points[2].y),
-                point(curve.points[3].x, curve.points[3].y),
-            );
-            builder.end(false);
-            let path = builder.build();
-
-            tessellator
-                .tessellate_path(
-                    &path,
-                    &StrokeOptions::default().with_line_width(curve.width),
-                    &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
-                        CurveVertex {
-                            position: vertex.position().to_array(),
-                            color,
-                        }
-                    }),
-                )
-                .expect("failed to tessellate curve");
-        }
-
-        if geometry.indices.is_empty() {
-            return;
-        }
-
         let uniform = ViewportUniform {
             size: viewport_size,
             _padding: [0.0; 2],
         };
+        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
+        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+    }
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("curve_viewport_uniform"),
-            contents: bytemuck::bytes_of(&uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
+    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("curve_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: self.uniform_buf.buffer().as_entire_binding(),
             }],
         });
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("curve_vertex_buffer"),
-            contents: bytemuck::cast_slice(&geometry.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("curve_index_buffer"),
-            contents: bytemuck::cast_slice(&geometry.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..geometry.indices.len() as u32, 0, 0..1);
+        pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));
+        pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
+    }
+
+    pub fn draw_batch(pass: &mut wgpu::RenderPass<'_>, index_start: u32, index_count: u32) {
+        pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
     }
 }

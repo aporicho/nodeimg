@@ -2,12 +2,8 @@ use bytemuck::{Pod, Zeroable};
 use lyon::math::{point, vector, Angle};
 use lyon::path::traits::SvgPathBuilder;
 use lyon::path::{ArcFlags, Path};
-use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillTessellator, FillVertex, StrokeOptions, StrokeTessellator,
-    StrokeVertex, VertexBuffers,
-};
-use wgpu::util::DeviceExt;
 
+use super::buffer::DynamicBuffer;
 use super::style::RectStyle;
 use super::types::Rect;
 
@@ -183,6 +179,9 @@ struct ViewportUniform {
 pub struct QuadPipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
+    uniform_buf: DynamicBuffer,
+    vertex_buf: DynamicBuffer,
+    index_buf: DynamicBuffer,
 }
 
 impl QuadPipeline {
@@ -261,99 +260,51 @@ impl QuadPipeline {
         Self {
             pipeline,
             bind_group_layout,
+            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "quad_viewport_uniform", 256),
+            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "quad_vertex_buffer", 4096),
+            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "quad_index_buffer", 4096),
         }
     }
 
-    pub fn draw<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
+    /// render pass 之前调用：上传所有顶点/索引/uniform 数据
+    pub fn upload(
+        &mut self,
         device: &wgpu::Device,
-        requests: &[QuadRequest],
+        queue: &wgpu::Queue,
+        vertices: &[QuadVertex],
+        indices: &[u32],
         viewport_size: [f32; 2],
     ) {
-        if requests.is_empty() {
+        if vertices.is_empty() {
             return;
         }
-
-        let mut geometry: VertexBuffers<QuadVertex, u32> = VertexBuffers::new();
-        let mut fill_tessellator = FillTessellator::new();
-        let mut stroke_tessellator = StrokeTessellator::new();
-
-        for req in requests {
-            let path = build_rounded_rect_path(req.rect, req.radius, req.smoothing);
-            let color = req.style_color;
-
-            // 填充
-            fill_tessellator
-                .tessellate_path(
-                    &path,
-                    &FillOptions::default(),
-                    &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| QuadVertex {
-                        position: vertex.position().to_array(),
-                        color,
-                    }),
-                )
-                .expect("failed to tessellate quad fill");
-
-            // 描边
-            if req.border_width > 0.0 {
-                if let Some(border_color) = req.border_color {
-                    stroke_tessellator
-                        .tessellate_path(
-                            &path,
-                            &StrokeOptions::default().with_line_width(req.border_width),
-                            &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
-                                QuadVertex {
-                                    position: vertex.position().to_array(),
-                                    color: border_color,
-                                }
-                            }),
-                        )
-                        .expect("failed to tessellate quad stroke");
-                }
-            }
-        }
-
-        if geometry.indices.is_empty() {
-            return;
-        }
-
         let uniform = ViewportUniform {
             size: viewport_size,
             _padding: [0.0; 2],
         };
+        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
+        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+    }
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("quad_viewport_uniform"),
-            contents: bytemuck::bytes_of(&uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
+    /// render pass 内调用：绑定管线 + buffer（每帧调用一次）
+    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("quad_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: self.uniform_buf.buffer().as_entire_binding(),
             }],
         });
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("quad_vertex_buffer"),
-            contents: bytemuck::cast_slice(&geometry.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("quad_index_buffer"),
-            contents: bytemuck::cast_slice(&geometry.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..geometry.indices.len() as u32, 0, 0..1);
+        pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));
+        pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
+    }
+
+    /// render pass 内调用：绘制指定索引范围
+    pub fn draw_batch(pass: &mut wgpu::RenderPass<'_>, index_start: u32, index_count: u32) {
+        pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
     }
 }

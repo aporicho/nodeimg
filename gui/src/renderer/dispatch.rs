@@ -1,9 +1,10 @@
 use winit::dpi::PhysicalSize;
 
 use super::command::DrawCommand;
-use super::curve::{CurvePipeline, CurveRequest};
+use super::curve::CurvePipeline;
 use super::image::ImagePipeline;
-use super::quad::{QuadPipeline, QuadRequest};
+use super::prepare::{prepare_frame, DrawOp};
+use super::quad::QuadPipeline;
 use super::shadow::ShadowPipeline;
 use super::stencil::StencilState;
 use super::text::{TextPipeline, TextRequest};
@@ -16,10 +17,10 @@ pub fn dispatch(
     scale_factor: f64,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    quad_pipeline: &QuadPipeline,
+    quad_pipeline: &mut QuadPipeline,
     text_pipeline: &mut TextPipeline,
-    image_pipeline: &ImagePipeline,
-    curve_pipeline: &CurvePipeline,
+    image_pipeline: &mut ImagePipeline,
+    curve_pipeline: &mut CurvePipeline,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
 ) {
@@ -27,7 +28,8 @@ pub fn dispatch(
     let logical_h = size.height as f64 / scale_factor;
     let viewport_size = [logical_w as f32, logical_h as f32];
 
-    // 收集文字请求用于 prepare（必须在 render pass 之前）
+    // ── 阶段 1：文字 prepare ──
+
     let text_requests: Vec<&TextRequest> = commands
         .iter()
         .filter_map(|cmd| match cmd {
@@ -55,16 +57,30 @@ pub fn dispatch(
         label: Some("renderer"),
     });
 
-    // 阶段一：在主 render pass 之前，prepare 所有阴影（形状绘制 + compute blur）
+    // ── 阶段 2：阴影 prepare ──
+
     for cmd in commands {
         if let DrawCommand::Shadow(req) = cmd {
             shadow_pipeline.prepare(&mut encoder, device, req);
         }
     }
 
-    // 阶段二：主 render pass
-    // 收集 clip 信息用于 PopClip
-    let mut clip_stack: Vec<(super::types::Rect, f32)> = Vec::new();
+    // ── 阶段 3：预处理 command list → PreparedFrame ──
+
+    let prepared = prepare_frame(commands);
+
+    // ── 阶段 4：上传 buffer（&mut pipeline）──
+
+    quad_pipeline.upload(device, queue, &prepared.quad_vertices, &prepared.quad_indices, viewport_size);
+    curve_pipeline.upload(device, queue, &prepared.curve_vertices, &prepared.curve_indices, viewport_size);
+    stencil.upload(device, queue, &prepared.stencil_vertices, &prepared.stencil_indices, viewport_size);
+    image_pipeline.upload(device, queue, viewport_size);
+
+    // ── 阶段 5：render pass（&self pipeline）──
+
+    let has_quads = !prepared.quad_vertices.is_empty();
+    let has_stencils = !prepared.stencil_vertices.is_empty();
+    let has_text = !text_requests.is_empty();
 
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -94,63 +110,67 @@ pub fn dispatch(
             ..Default::default()
         });
 
-        let mut quad_batch: Vec<QuadRequest> = Vec::new();
-        let mut curve_batch: Vec<CurveRequest> = Vec::new();
-        let mut text_rendered = false;
+        // 绑定各管线 buffer（每帧一次）
+        if has_quads {
+            quad_pipeline.bind(&mut pass, device);
+        }
 
-        for cmd in commands {
-            match cmd {
-                DrawCommand::Shadow(req) => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    shadow_pipeline.draw(&mut pass, device, req, viewport_size, stencil.clip_depth());
-                }
-                DrawCommand::Rect(instance) => {
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    quad_batch.push(instance.clone());
-                }
-                DrawCommand::Text(_) => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    if !text_rendered {
-                        text_rendered = true;
+        let mut last_bound = PipelineKind::None;
+        let mut clip_depth: u32 = 0;
+
+        for op in &prepared.ops {
+            match op {
+                DrawOp::Quad { index_start, index_count } => {
+                    if last_bound != PipelineKind::Quad {
+                        quad_pipeline.bind(&mut pass, device);
+                        last_bound = PipelineKind::Quad;
                     }
+                    pass.set_stencil_reference(clip_depth);
+                    QuadPipeline::draw_batch(&mut pass, *index_start, *index_count);
                 }
-                DrawCommand::Image { rect, view } => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    pass.set_stencil_reference(stencil.clip_depth());
-                    image_pipeline.draw(&mut pass, device, view, *rect, viewport_size);
+                DrawOp::Curve { index_start, index_count } => {
+                    if last_bound != PipelineKind::Curve {
+                        curve_pipeline.bind(&mut pass, device);
+                        last_bound = PipelineKind::Curve;
+                    }
+                    pass.set_stencil_reference(clip_depth);
+                    CurvePipeline::draw_batch(&mut pass, *index_start, *index_count);
                 }
-                DrawCommand::Curve(req) => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    curve_batch.push(CurveRequest {
-                        points: req.points,
-                        width: req.width,
-                        color: req.color,
-                    });
+                DrawOp::Shadow(req) => {
+                    last_bound = PipelineKind::Other;
+                    shadow_pipeline.draw(&mut pass, device, req, viewport_size, clip_depth);
                 }
-                DrawCommand::PushClip { rect, radius } => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    clip_stack.push((*rect, *radius));
-                    stencil.write_clip(&mut pass, device, *rect, *radius, viewport_size);
+                DrawOp::Image { rect, view } => {
+                    last_bound = PipelineKind::Other;
+                    pass.set_stencil_reference(clip_depth);
+                    image_pipeline.draw(&mut pass, device, view, *rect);
                 }
-                DrawCommand::PopClip => {
-                    flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-                    flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-                    if let Some((rect, radius)) = clip_stack.pop() {
-                        stencil.clear_clip(&mut pass, device, rect, radius, viewport_size);
+                DrawOp::Text => {
+                    // text 在最后统一渲染
+                }
+                DrawOp::StencilWrite { index_start, index_count } => {
+                    if has_stencils && last_bound != PipelineKind::Stencil {
+                        stencil.bind_stencil(&mut pass, device);
+                        last_bound = PipelineKind::Stencil;
+                    }
+                    stencil.draw_write(&mut pass, clip_depth, *index_start, *index_count);
+                    clip_depth += 1;
+                }
+                DrawOp::StencilClear { index_start, index_count } => {
+                    if has_stencils && last_bound != PipelineKind::Stencil {
+                        stencil.bind_stencil(&mut pass, device);
+                        last_bound = PipelineKind::Stencil;
+                    }
+                    stencil.draw_clear(&mut pass, clip_depth, *index_start, *index_count);
+                    if clip_depth > 0 {
+                        clip_depth -= 1;
                     }
                 }
             }
         }
 
-        flush_quads(&mut quad_batch, &mut pass, quad_pipeline, device, viewport_size, stencil.clip_depth());
-        flush_curves(&mut curve_batch, &mut pass, curve_pipeline, device, viewport_size, stencil.clip_depth());
-
-        if text_rendered {
-            pass.set_stencil_reference(stencil.clip_depth());
+        if has_text {
+            pass.set_stencil_reference(clip_depth);
             text_pipeline.render(&mut pass);
         }
     }
@@ -158,34 +178,11 @@ pub fn dispatch(
     queue.submit(std::iter::once(encoder.finish()));
 }
 
-fn flush_quads<'a>(
-    batch: &mut Vec<QuadRequest>,
-    pass: &mut wgpu::RenderPass<'a>,
-    pipeline: &'a QuadPipeline,
-    device: &wgpu::Device,
-    viewport_size: [f32; 2],
-    stencil_ref: u32,
-) {
-    if batch.is_empty() {
-        return;
-    }
-    pass.set_stencil_reference(stencil_ref);
-    pipeline.draw(pass, device, batch, viewport_size);
-    batch.clear();
-}
-
-fn flush_curves<'a>(
-    batch: &mut Vec<CurveRequest>,
-    pass: &mut wgpu::RenderPass<'a>,
-    pipeline: &'a CurvePipeline,
-    device: &wgpu::Device,
-    viewport_size: [f32; 2],
-    stencil_ref: u32,
-) {
-    if batch.is_empty() {
-        return;
-    }
-    pass.set_stencil_reference(stencil_ref);
-    pipeline.draw(pass, device, batch, viewport_size);
-    batch.clear();
+#[derive(PartialEq)]
+enum PipelineKind {
+    None,
+    Quad,
+    Curve,
+    Stencil,
+    Other,
 }

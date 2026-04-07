@@ -152,10 +152,10 @@ impl Renderer {
             frame.scale_factor,
             device,
             queue,
-            &self.quad_pipeline,
+            &mut self.quad_pipeline,
             &mut self.text_pipeline,
-            &self.image_pipeline,
-            &self.curve_pipeline,
+            &mut self.image_pipeline,
+            &mut self.curve_pipeline,
             &mut self.shadow_pipeline,
             &mut self.stencil,
         );

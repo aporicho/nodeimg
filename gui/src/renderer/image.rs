@@ -3,6 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
+use super::buffer::DynamicBuffer;
 use super::types::Rect;
 
 #[repr(C)]
@@ -27,6 +28,7 @@ pub struct ImagePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    uniform_buf: DynamicBuffer,
 }
 
 impl ImagePipeline {
@@ -127,7 +129,16 @@ impl ImagePipeline {
             pipeline,
             bind_group_layout,
             sampler,
+            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "image_viewport_uniform", 256),
         }
+    }
+
+    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, viewport_size: [f32; 2]) {
+        let uniform = ViewportUniform {
+            size: viewport_size,
+            _padding: [0.0; 2],
+        };
+        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
     }
 
     pub fn draw<'a>(
@@ -136,26 +147,14 @@ impl ImagePipeline {
         device: &wgpu::Device,
         texture_view: &'a wgpu::TextureView,
         rect: Rect,
-        viewport_size: [f32; 2],
     ) {
-        let uniform = ViewportUniform {
-            size: viewport_size,
-            _padding: [0.0; 2],
-        };
-
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("image_viewport_uniform"),
-            contents: bytemuck::bytes_of(&uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
+                    resource: self.uniform_buf.buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -171,7 +170,6 @@ impl ImagePipeline {
         let instance = ImageInstance {
             rect: [rect.x, rect.y, rect.w, rect.h],
         };
-
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("image_instance_buffer"),
             contents: bytemuck::cast_slice(&[instance]),
