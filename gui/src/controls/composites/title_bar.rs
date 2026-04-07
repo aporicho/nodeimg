@@ -65,7 +65,7 @@ fn title_bar_style(_theme: &iced::Theme) -> container::Style {
         border: iced::Border {
             color: Color::from_rgb8(0xe4, 0xe4, 0xe7),
             width: 0.0,
-            radius: 8.0.into(),
+            radius: 0.0.into(),
         },
         ..Default::default()
     }

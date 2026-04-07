@@ -142,6 +142,7 @@ impl FloatingPanel {
                 .align_x(iced::alignment::Horizontal::Right)
                 .align_y(iced::alignment::Vertical::Bottom),
         ])
+        .clip(true)
         .style(Self::panel_style)
         .into()
     }
@@ -152,12 +153,12 @@ impl FloatingPanel {
             border: Border {
                 color: Color::from_rgb8(0xe4, 0xe4, 0xe7),
                 width: 1.0,
-                radius: 8.0.into(),
+                radius: 20.0.into(),
             },
             shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.08),
-                offset: Vector::new(0.0, 4.0),
-                blur_radius: 12.0,
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.06),
+                offset: Vector::new(0.0, 2.0),
+                blur_radius: 8.0,
             },
             ..Default::default()
         }
