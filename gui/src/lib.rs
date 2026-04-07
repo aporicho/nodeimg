@@ -1,19 +1,16 @@
 mod canvas;
-mod controller;
+mod controls;
 mod mock;
 mod panel;
-mod preview;
-mod state;
-mod statusbar;
+mod panels;
 mod theme;
-mod toolbar;
 
 use iced::widget::{canvas as iced_canvas, center, container, float, mouse_area, stack};
 use iced::{Element, Fill, Length, Task, Theme};
 
 use canvas::NodeCanvas;
-use preview::PreviewPanel;
-use toolbar::Toolbar;
+use panels::preview::PreviewPanel;
+use panels::toolbar::Toolbar;
 
 pub struct App {
     canvas: NodeCanvas,
@@ -24,8 +21,8 @@ pub struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     Canvas(canvas::Message),
-    Toolbar(toolbar::Message),
-    Preview(preview::Message),
+    Toolbar(panels::toolbar::Message),
+    Preview(panels::preview::Message),
 }
 
 impl App {
@@ -102,19 +99,25 @@ impl App {
             let drag_layer = mouse_area(container("").width(Fill).height(Fill))
                 .on_move(move |p| {
                     if tb_dragging {
-                        Message::Toolbar(toolbar::Message::Panel(panel::Event::DragMove(p)))
+                        Message::Toolbar(panels::toolbar::Message::Panel(
+                            panel::Event::DragMove(p),
+                        ))
                     } else if pv_dragging {
-                        Message::Preview(preview::Message::Panel(panel::Event::DragMove(p)))
+                        Message::Preview(panels::preview::Message::Panel(
+                            panel::Event::DragMove(p),
+                        ))
                     } else {
-                        Message::Preview(preview::Message::Panel(panel::Event::ResizeMove(p)))
+                        Message::Preview(panels::preview::Message::Panel(
+                            panel::Event::ResizeMove(p),
+                        ))
                     }
                 })
                 .on_release(if tb_dragging {
-                    Message::Toolbar(toolbar::Message::Panel(panel::Event::DragEnd))
+                    Message::Toolbar(panels::toolbar::Message::Panel(panel::Event::DragEnd))
                 } else if pv_dragging {
-                    Message::Preview(preview::Message::Panel(panel::Event::DragEnd))
+                    Message::Preview(panels::preview::Message::Panel(panel::Event::DragEnd))
                 } else {
-                    Message::Preview(preview::Message::Panel(panel::Event::ResizeEnd))
+                    Message::Preview(panels::preview::Message::Panel(panel::Event::ResizeEnd))
                 });
             layers.push(drag_layer.into());
         }
