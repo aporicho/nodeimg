@@ -1,5 +1,5 @@
 [workspace]
-members = ["types", "engine", "macros"]
+members = ["types", "engine", "macros", "gui"]
 resolver = "2"
 
 [workspace.dependencies]

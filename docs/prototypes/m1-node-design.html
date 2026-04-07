@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>nodeimg — Dual Mode Nodes</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #fafafa;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+    user-select: none;
+  }
+  .canvas {
+    width: 100%; height: 100%;
+    position: relative;
+    background-image: radial-gradient(circle, #e4e4e7 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* ====== CONTENT CARD ====== */
+  .content-card {
+    position: absolute;
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #e4e4e7;
+    overflow: visible;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    cursor: grab;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .content-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+  .content-card.selected {
+    border-color: #18181b;
+    box-shadow: 0 0 0 2px rgba(24,24,27,0.08);
+  }
+  .content-card.dragging { cursor: grabbing; opacity: 0.92; z-index: 100; }
+  .cc-label {
+    position: absolute; top: -20px; left: 2px;
+    font-size: 11px; color: #a1a1aa; letter-spacing: 0.02em;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .cc-label .icon { font-size: 10px; }
+  .cc-body { overflow: hidden; border-radius: 9px; }
+
+  /* Content card: text */
+  .cc-text {
+    padding: 12px 14px;
+    font-size: 13px; color: #18181b; line-height: 1.55;
+    min-height: 80px; min-width: 180px; max-width: 240px;
+    outline: none;
+    cursor: grab;
+  }
+  .cc-text.editing {
+    cursor: text;
+    background: #fafafa;
+  }
+  .cc-text:empty::before {
+    content: attr(data-placeholder);
+    color: #d4d4d8;
+  }
+
+  /* Content card: image */
+  .cc-image {
+    width: 180px; height: 135px;
+    background: #f4f4f5;
+    display: flex; align-items: center; justify-content: center;
+    color: #d4d4d8; font-size: 24px;
+  }
+  .cc-image.has-image {
+    background-size: cover; background-position: center;
+  }
+  /* cc-image-info removed — no file info shown */
+
+  /* === Universal port system: ⊕ button → expand to pin list === */
+  .port-group {
+    position: absolute; top: 0; bottom: 0;
+    display: flex; align-items: center;
+    opacity: 0; transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .content-card:hover .port-group, .content-card.selected .port-group,
+  .func-node:hover .port-group, .func-node.selected .port-group {
+    opacity: 1; pointer-events: auto;
+  }
+  .port-group.left { right: 100%; padding-right: 6px; }
+  .port-group.right { left: 100%; padding-left: 6px; }
+
+  /* ⊕ trigger button — SVG icon for perfect centering */
+  .port-trigger {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: white; border: 1.5px solid #d4d4d8;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.15s;
+    position: relative;
+  }
+  .port-trigger svg {
+    width: 10px; height: 10px;
+    stroke: #a1a1aa; stroke-width: 2; stroke-linecap: round;
+    transition: stroke 0.15s;
+  }
+  .port-trigger:hover {
+    border-color: #18181b;
+    transform: scale(1.1);
+  }
+  .port-trigger:hover svg { stroke: #18181b; }
+
+  /* Pin list — pops out from ⊕, aligned to trigger center */
+  .pin-list {
+    position: absolute;
+    display: flex; flex-direction: column; gap: 4px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.15s;
+    background: white; border: 1px solid #e4e4e7; border-radius: 8px;
+    padding: 6px 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    white-space: nowrap;
+  }
+  .port-group.left .pin-list {
+    right: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  }
+  .port-group.right .pin-list {
+    left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  }
+  .pin-list.open {
+    opacity: 1; pointer-events: auto;
+  }
+  /* Safe zone — invisible bridge between trigger and list */
+  .safe-zone {
+    position: absolute;
+    pointer-events: auto;
+    z-index: -1;
+  }
+
+  /* Single pin — same behavior as multi, always show ⊕ first */
+
+  /* Pin item inside list — dots aligned on the node-facing edge */
+  .pin-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; color: #71717a;
+    cursor: crosshair; transition: color 0.1s;
+    padding: 2px 0;
+  }
+  .pin-item:hover { color: #18181b; }
+  .pin-item:hover .pin-dot { transform: scale(1.3); }
+  .pin-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0; transition: transform 0.1s;
+    border: 1.5px solid white;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+  }
+  /* Left port: dots on right side → pin-item is [label] [dot], labels right-aligned */
+  .port-group.left .pin-item {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+  /* Right port: dots on left side → pin-item is [dot] [label], labels left-aligned */
+  .port-group.right .pin-item {
+    flex-direction: row;
+  }
+  /* Fixed-width pin list so dots align */
+  .port-group.left .pin-list { align-items: flex-end; }
+  .port-group.right .pin-list { align-items: flex-start; }
+
+  /* ====== FUNCTION NODE ====== */
+  .func-node {
+    position: absolute;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e4e4e7;
+    overflow: visible;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    cursor: grab;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    width: 192px;
+  }
+  .func-node:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+  .func-node.selected {
+    border-color: #18181b;
+    box-shadow: 0 0 0 2px rgba(24,24,27,0.08);
+  }
+  .func-node.dragging { cursor: grabbing; opacity: 0.92; z-index: 100; }
+  .fn-label {
+    position: absolute; top: -20px; left: 2px;
+    font-size: 11px; color: #a1a1aa; letter-spacing: 0.02em;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .fn-cat-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .fn-header { display: none; }
+  .fn-body { padding: 8px 0; }
+
+  /* Legacy pin styles — removed */
+  .fn-pins-left, .fn-pins-right, .fn-pin-row { display: none; }
+
+  /* Function node params */
+  .fn-params { padding: 4px 12px; }
+  .fn-sep { border-top: 1px solid #f4f4f5; margin: 4px 0; }
+
+  /* Slider in function node */
+  .fn-slider { margin-bottom: 6px; }
+  .fn-slider-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: #71717a; margin-bottom: 4px;
+  }
+  .fn-slider-label .val { font-family: monospace; color: #18181b; font-size: 10px; }
+  .fn-slider-track {
+    position: relative; height: 3px;
+    background: #e4e4e7; border-radius: 2px;
+    cursor: pointer;
+  }
+  .fn-slider-fill {
+    position: absolute; left: 0; top: 0; height: 100%;
+    background: #18181b; border-radius: 2px; pointer-events: none;
+  }
+  .fn-slider-thumb {
+    position: absolute; top: -5px;
+    width: 12px; height: 12px;
+    background: white; border-radius: 50%;
+    border: 1.5px solid #18181b;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    cursor: grab; transform: translateX(-50%);
+  }
+
+  /* Dropdown in function node */
+  .fn-dropdown { margin-bottom: 6px; }
+  .fn-dropdown-label { font-size: 10px; color: #a1a1aa; margin-bottom: 2px; }
+  .fn-dropdown-select {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 5px;
+    padding: 4px 8px; font-size: 11px; color: #18181b;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; position: relative;
+  }
+  .fn-dropdown-select:hover { border-color: #d4d4d8; }
+  .fn-dropdown-menu {
+    display: none; position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+    background: white; border: 1px solid #e4e4e7; border-radius: 5px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 50; overflow: hidden;
+  }
+  .fn-dropdown-menu.open { display: block; }
+  .fn-dropdown-item { padding: 5px 8px; font-size: 11px; cursor: pointer; }
+  .fn-dropdown-item:hover { background: #f4f4f5; }
+
+  /* Num input in function node */
+  .fn-num { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .fn-num span { font-size: 11px; color: #71717a; }
+  .fn-num input {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px;
+    padding: 3px 6px; font-size: 10px; color: #18181b;
+    font-family: monospace; width: 60px; text-align: right; outline: none;
+  }
+
+  /* File picker in function node */
+  .fn-file { margin-bottom: 6px; }
+  .fn-file-label { font-size: 10px; color: #a1a1aa; margin-bottom: 2px; }
+  .fn-file-row { display: flex; gap: 4px; }
+  .fn-file-input {
+    flex: 1; background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px;
+    padding: 4px 6px; font-size: 10px; font-family: monospace; color: #71717a;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fn-file-btn {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px;
+    padding: 4px 6px; font-size: 10px; cursor: pointer;
+  }
+
+  /* ====== API BOTTOM BAR — attached to node ====== */
+  .api-bar {
+    position: absolute;
+    left: 50%; transform: translateX(-50%);
+    top: calc(100% + 8px);
+    background: white; border: 1px solid #e4e4e7; border-radius: 12px;
+    padding: 10px 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    display: none; align-items: center; gap: 10px;
+    z-index: 300;
+    font-size: 12px; color: #71717a;
+    white-space: nowrap;
+    min-width: 100%;
+  }
+  .api-bar.visible { display: flex; }
+  .api-bar-sep {
+    width: 1px; height: 20px; background: #e4e4e7;
+  }
+  .api-bar-select {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 6px;
+    padding: 5px 10px; font-size: 11px; color: #18181b;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; position: relative;
+  }
+  .api-bar-select:hover { border-color: #d4d4d8; }
+  .api-bar-select .arrow { color: #a1a1aa; font-size: 9px; }
+  .api-bar-select .dd-menu {
+    display: none; position: absolute; bottom: calc(100% + 4px); left: 0;
+    background: white; border: 1px solid #e4e4e7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow: hidden;
+    min-width: 140px;
+  }
+  .api-bar-select .dd-menu.open { display: block; }
+  .api-bar-select .dd-item {
+    padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .api-bar-select .dd-item:hover { background: #f4f4f5; }
+  .api-bar-label { font-size: 11px; color: #a1a1aa; }
+  .api-bar-size {
+    display: flex; align-items: center; gap: 4px;
+  }
+  .api-bar-size span { font-size: 11px; color: #18181b; }
+  .api-bar-btn {
+    background: #18181b; color: white; border: none;
+    padding: 6px 18px; border-radius: 6px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+  }
+  .api-bar-btn:hover { background: #27272a; }
+
+  /* ====== ADDITIONAL WIDGETS ====== */
+
+  /* DragValue — click to type, drag to adjust */
+  .fn-drag-value { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .fn-drag-value span { font-size: 11px; color: #71717a; }
+  .fn-drag-value-input {
+    background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px;
+    padding: 3px 8px; font-size: 11px; color: #18181b;
+    font-family: monospace; width: 72px; text-align: right; outline: none;
+    cursor: ew-resize;
+  }
+  .fn-drag-value-input:focus { cursor: text; border-color: #18181b; }
+
+  /* SliderInt — same as slider but integer display */
+
+  /* RadioGroup — horizontal radio buttons */
+  .fn-radio { margin-bottom: 6px; }
+  .fn-radio-label { font-size: 10px; color: #a1a1aa; margin-bottom: 4px; }
+  .fn-radio-group { display: flex; gap: 0; border: 1px solid #e4e4e7; border-radius: 6px; overflow: hidden; }
+  .fn-radio-item {
+    flex: 1; padding: 4px 8px; font-size: 11px; color: #71717a;
+    text-align: center; cursor: pointer; transition: all 0.1s;
+    border-right: 1px solid #e4e4e7;
+    background: white;
+  }
+  .fn-radio-item:last-child { border-right: none; }
+  .fn-radio-item:hover { background: #f4f4f5; }
+  .fn-radio-item.active { background: #18181b; color: white; }
+
+  /* Checkbox */
+  .fn-checkbox { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: pointer; }
+  .fn-checkbox-box {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid #d4d4d8; background: white;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.1s; flex-shrink: 0;
+  }
+  .fn-checkbox.checked .fn-checkbox-box {
+    background: #18181b; border-color: #18181b;
+  }
+  .fn-checkbox-box svg {
+    width: 10px; height: 10px; stroke: white; stroke-width: 2.5;
+    stroke-linecap: round; stroke-linejoin: round; fill: none;
+    opacity: 0;
+  }
+  .fn-checkbox.checked .fn-checkbox-box svg { opacity: 1; }
+  .fn-checkbox span { font-size: 11px; color: #71717a; }
+
+  /* ColorPicker */
+  .fn-color { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .fn-color-label { font-size: 11px; color: #71717a; }
+  .fn-color-swatch {
+    width: 24px; height: 24px; border-radius: 6px;
+    border: 1.5px solid #e4e4e7; cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .fn-color-swatch:hover { transform: scale(1.1); }
+  .fn-color-hex {
+    font-size: 10px; font-family: monospace; color: #a1a1aa;
+  }
+
+  /* ImagePreview (thumbnail inside node) */
+  .fn-image-preview {
+    width: 100%; height: 60px;
+    background: #f4f4f5; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 6px; overflow: hidden;
+  }
+  .fn-image-preview img, .fn-image-preview .placeholder {
+    font-size: 10px; color: #d4d4d8;
+  }
+
+  /* ActionButton */
+  .fn-action-btn {
+    width: 100%; padding: 5px 12px; border-radius: 6px;
+    background: #18181b; color: white; border: none;
+    font-size: 11px; font-weight: 500; cursor: pointer;
+    font-family: inherit; margin-bottom: 6px;
+    transition: background 0.1s;
+  }
+  .fn-action-btn:hover { background: #27272a; }
+
+  /* Labels */
+  .section-label {
+    position: fixed; z-index: 200;
+    font-size: 11px; color: #a1a1aa;
+    background: white; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid #e4e4e7;
+  }
+  .top-label {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 200;
+    font-size: 13px; color: #a1a1aa;
+    background: white; padding: 10px 18px; border-radius: 8px;
+    border: 1px solid #e4e4e7; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .top-label b { color: #18181b; }
+</style>
+</head>
+<body>
+
+<div class="top-label">
+  <b>两种节点形态</b> — 左侧：内容卡片（Content Card） · 右侧：功能节点（Function Node）
+</div>
+
+<div class="section-label" style="top:60px;left:40px;">Content Cards — 内容是主体</div>
+<div class="section-label" style="top:60px;right:40px;">Function Nodes — 控件是主体</div>
+
+<div class="canvas" id="canvas">
+
+  <!-- ===== CONTENT CARDS (left side) ===== -->
+
+  <!-- CLIPTextEncode -->
+  <div class="content-card" style="left:50px;top:100px;" onclick="sel(this,'cc')">
+    <div class="cc-label"><span class="icon">≡</span> CLIPTextEncode</div>
+    <div class="port-group left single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>clip</span><div class="pin-dot" style="background:#eab308;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#c4b5fd;"></div><span>conditioning</span></div>
+      </div>
+    </div>
+    <div class="cc-body">
+      <div class="cc-text" contenteditable="false" data-placeholder="输入提示词...">a beautiful sunset over mountains, golden hour lighting, photorealistic, 8k</div>
+    </div>
+  </div>
+
+  <!-- LoadImage -->
+  <div class="content-card" style="left:50px;top:270px;" onclick="sel(this,'cc')">
+    <div class="cc-label"><span class="icon">⊞</span> LoadImage</div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#3b82f6;"></div><span>image</span></div>
+      </div>
+    </div>
+    <div class="cc-body">
+      <div class="cc-image" style="background:linear-gradient(135deg,#c7d2cc,#9ab89a,#d4c9a8);cursor:pointer;" title="点击选择图片"></div>
+    </div>
+  </div>
+
+  <!-- SaveImage -->
+  <div class="content-card" style="left:50px;top:440px;" onclick="sel(this,'cc')">
+    <div class="cc-label"><span class="icon">⊞</span> SaveImage</div>
+    <div class="port-group left single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>image</span><div class="pin-dot" style="background:#3b82f6;"></div></div>
+      </div>
+    </div>
+    <div class="cc-body">
+      <div class="cc-image" style="background:linear-gradient(135deg,#d4e7d4,#b8d4a8,#e0e8d0);"></div>
+    </div>
+  </div>
+
+  <!-- SD Generate (API) -->
+  <div class="content-card" style="left:290px;top:100px;width:200px;" data-api="true" onclick="sel(this,'cc')">
+    <div class="cc-label"><span class="icon">◈</span> SD Generate</div>
+    <div class="port-group left">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>image</span><div class="pin-dot" style="background:#3b82f6;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#3b82f6;"></div><span>images</span></div>
+      </div>
+    </div>
+    <div class="cc-body">
+      <div class="cc-image" style="width:100%;height:150px;background:linear-gradient(135deg,#2a1a3a,#1a2a4a,#3a2a5a);"></div>
+    </div>
+    <!-- API bar attached to node bottom -->
+    <div class="api-bar" id="apiBar">
+      <div style="width:100%;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <div class="api-bar-select" onclick="togBarDD(event,this)">
+            <span>Stability AI</span>
+            <span class="arrow">▼</span>
+            <div class="dd-menu">
+              <div class="dd-item" onclick="pickBarDD(event,this)">Stability AI</div>
+              <div class="dd-item" onclick="pickBarDD(event,this)">OpenAI</div>
+              <div class="dd-item" onclick="pickBarDD(event,this)">Replicate</div>
+            </div>
+          </div>
+          <div class="api-bar-select" onclick="togBarDD(event,this)">
+            <span>sd3-medium</span>
+            <span class="arrow">▼</span>
+            <div class="dd-menu">
+              <div class="dd-item" onclick="pickBarDD(event,this)">sd3-medium</div>
+              <div class="dd-item" onclick="pickBarDD(event,this)">sd3-large</div>
+              <div class="dd-item" onclick="pickBarDD(event,this)">sdxl-1.0</div>
+            </div>
+          </div>
+          <div class="api-bar-size"><span>□</span><span>1:1 · 1024</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:8px;">
+          <textarea onclick="event.stopPropagation()" placeholder="描述你想要生成的内容..." style="flex:1;background:#f4f4f5;border:1px solid #e4e4e7;border-radius:8px;padding:8px 10px;font-size:12px;color:#18181b;font-family:inherit;resize:none;min-height:40px;outline:none;">a futuristic cityscape at night, neon lights</textarea>
+          <div class="api-bar-btn" onclick="event.stopPropagation();alert('生成中...')">↑</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== WIDGET SHOWCASE (center) ===== -->
+
+  <!-- WidgetShowcase — all 10 widget types -->
+  <div class="func-node" style="left:290px;top:310px;width:220px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#6366f1;"></div>
+      WidgetShowcase
+    </div>
+    <div class="port-group left">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>image</span><div class="pin-dot" style="background:#3b82f6;"></div></div>
+        <div class="pin-item"><span>mask</span><div class="pin-dot" style="background:#2dd4bf;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#3b82f6;"></div><span>image</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div class="fn-params">
+
+        <!-- 1. Slider (Float + Range) -->
+        <div class="fn-slider" data-min="0" data-max="1" data-value="0.5">
+          <div class="fn-slider-label"><span>strength</span><span class="val">0.50</span></div>
+          <div class="fn-slider-track">
+            <div class="fn-slider-fill" style="width:50%;"></div>
+            <div class="fn-slider-thumb" style="left:50%;"></div>
+          </div>
+        </div>
+
+        <!-- 2. DragValue (Float, no constraint) -->
+        <div class="fn-drag-value">
+          <span>offset_x</span>
+          <input class="fn-drag-value-input" type="text" value="12.50" onclick="event.stopPropagation()">
+        </div>
+
+        <!-- 3. SliderInt (Int + Range) -->
+        <div class="fn-slider" data-min="1" data-max="100" data-value="32">
+          <div class="fn-slider-label"><span>iterations</span><span class="val">32</span></div>
+          <div class="fn-slider-track">
+            <div class="fn-slider-fill" style="width:32%;"></div>
+            <div class="fn-slider-thumb" style="left:32%;"></div>
+          </div>
+        </div>
+
+        <!-- 4. Dropdown (String + Enum, >4 options) -->
+        <div class="fn-dropdown">
+          <div class="fn-dropdown-label">algorithm</div>
+          <div class="fn-dropdown-select" onclick="togDD(event,this)">
+            <span>bilinear</span><span style="color:#a1a1aa;font-size:9px;">▼</span>
+            <div class="fn-dropdown-menu">
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">nearest</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">bilinear</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">bicubic</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">lanczos</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">area</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. RadioGroup (String + Enum, ≤4 options) -->
+        <div class="fn-radio">
+          <div class="fn-radio-label">mode</div>
+          <div class="fn-radio-group">
+            <div class="fn-radio-item active" onclick="pickRadio(this)">RGB</div>
+            <div class="fn-radio-item" onclick="pickRadio(this)">HSL</div>
+            <div class="fn-radio-item" onclick="pickRadio(this)">LAB</div>
+          </div>
+        </div>
+
+        <!-- 6. FilePicker (String + FilePath) -->
+        <div class="fn-file">
+          <div class="fn-file-label">lut_file</div>
+          <div class="fn-file-row">
+            <div class="fn-file-input">cinematic_warm.cube</div>
+            <div class="fn-file-btn" onclick="event.stopPropagation()">📂</div>
+          </div>
+        </div>
+
+        <!-- 7. Checkbox (Bool) -->
+        <div class="fn-checkbox checked" onclick="event.stopPropagation();this.classList.toggle('checked')">
+          <div class="fn-checkbox-box">
+            <svg viewBox="0 0 12 12"><polyline points="2.5 6 5 8.5 9.5 3.5"/></svg>
+          </div>
+          <span>preserve_alpha</span>
+        </div>
+
+        <!-- 8. ColorPicker (Color) -->
+        <div class="fn-color">
+          <div class="fn-color-label">tint</div>
+          <div class="fn-color-swatch" style="background:#6366f1;" onclick="event.stopPropagation();"></div>
+          <div class="fn-color-hex">#6366f1</div>
+        </div>
+
+        <!-- 9. ImagePreview (Image param) -->
+        <div class="fn-image-preview">
+          <span class="placeholder" style="font-size:10px;color:#d4d4d8;">mask preview</span>
+        </div>
+
+        <!-- 10. ActionButton (action constraint) -->
+        <div class="fn-action-btn" onclick="event.stopPropagation();alert('执行中...')">Apply Effect</div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FUNCTION NODES (right side) ===== -->
+
+  <!-- Brightness (1 in, 1 out — single pins, show directly) -->
+  <div class="func-node" style="left:560px;top:100px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#f97316;"></div>
+      Brightness
+    </div>
+    <div class="port-group left single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>image</span><div class="pin-dot" style="background:#3b82f6;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#3b82f6;"></div><span>image</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div class="fn-params">
+        <div class="fn-slider" data-min="-1" data-max="1" data-value="0.3">
+          <div class="fn-slider-label"><span>brightness</span><span class="val">0.30</span></div>
+          <div class="fn-slider-track">
+            <div class="fn-slider-fill" style="width:65%;"></div>
+            <div class="fn-slider-thumb" style="left:65%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KSampler (4 in, 1 out — ⊕ expands to list) -->
+  <div class="func-node" style="left:560px;top:250px;width:200px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#be185d;"></div>
+      KSampler
+    </div>
+    <div class="port-group left">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>model</span><div class="pin-dot" style="background:#a855f7;"></div></div>
+        <div class="pin-item"><span>positive</span><div class="pin-dot" style="background:#c4b5fd;"></div></div>
+        <div class="pin-item"><span>negative</span><div class="pin-dot" style="background:#c4b5fd;"></div></div>
+        <div class="pin-item"><span>latent</span><div class="pin-dot" style="background:#f9a8d4;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#f9a8d4;"></div><span>latent</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div class="fn-params">
+        <div class="fn-num"><span>seed</span><input type="number" value="42" onclick="event.stopPropagation()"></div>
+        <div class="fn-num"><span>steps</span><input type="number" value="20" onclick="event.stopPropagation()"></div>
+        <div class="fn-slider" data-min="1" data-max="30" data-value="7">
+          <div class="fn-slider-label"><span>cfg</span><span class="val">7.0</span></div>
+          <div class="fn-slider-track">
+            <div class="fn-slider-fill" style="width:21%;"></div>
+            <div class="fn-slider-thumb" style="left:21%;"></div>
+          </div>
+        </div>
+        <div class="fn-dropdown">
+          <div class="fn-dropdown-label">sampler</div>
+          <div class="fn-dropdown-select" onclick="togDD(event,this)">
+            <span>euler</span><span style="color:#a1a1aa;font-size:9px;">▼</span>
+            <div class="fn-dropdown-menu">
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">euler</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">euler_ancestral</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">heun</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">ddim</div>
+            </div>
+          </div>
+        </div>
+        <div class="fn-dropdown">
+          <div class="fn-dropdown-label">scheduler</div>
+          <div class="fn-dropdown-select" onclick="togDD(event,this)">
+            <span>normal</span><span style="color:#a1a1aa;font-size:9px;">▼</span>
+            <div class="fn-dropdown-menu">
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">normal</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">karras</div>
+              <div class="fn-dropdown-item" onclick="pickDD(event,this)">exponential</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VAEDecode (2 in, 1 out — ⊕ expands left) -->
+  <div class="func-node" style="left:820px;top:100px;width:130px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#be185d;"></div>
+      VAEDecode
+    </div>
+    <div class="port-group left">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><span>vae</span><div class="pin-dot" style="background:#ef4444;"></div></div>
+        <div class="pin-item"><span>latent</span><div class="pin-dot" style="background:#f9a8d4;"></div></div>
+      </div>
+    </div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#3b82f6;"></div><span>image</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div style="padding:8px 12px;font-size:11px;color:#a1a1aa;text-align:center;">vae → image</div>
+    </div>
+  </div>
+
+  <!-- LoadCheckpoint (0 in, 3 out — ⊕ expands right) -->
+  <div class="func-node" style="left:820px;top:210px;width:180px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#be185d;"></div>
+      LoadCheckpoint
+    </div>
+    <div class="port-group right">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#a855f7;"></div><span>model</span></div>
+        <div class="pin-item"><div class="pin-dot" style="background:#eab308;"></div><span>clip</span></div>
+        <div class="pin-item"><div class="pin-dot" style="background:#ef4444;"></div><span>vae</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div class="fn-params">
+        <div class="fn-file">
+          <div class="fn-file-label">checkpoint</div>
+          <div class="fn-file-row">
+            <div class="fn-file-input">sd_xl_base.safetensors</div>
+            <div class="fn-file-btn">📂</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EmptyLatentImage (0 in, 1 out — single) -->
+  <div class="func-node" style="left:820px;top:370px;width:160px;" onclick="sel(this,'fn')">
+    <div class="fn-label">
+      <div class="fn-cat-dot" style="background:#be185d;"></div>
+      EmptyLatentImage
+    </div>
+    <div class="port-group right single">
+      <div class="port-trigger"><svg viewBox="0 0 10 10"><line x1="5" y1="1" x2="5" y2="9"/><line x1="1" y1="5" x2="9" y2="5"/></svg></div>
+      <div class="pin-list">
+        <div class="pin-item"><div class="pin-dot" style="background:#f9a8d4;"></div><span>latent</span></div>
+      </div>
+    </div>
+    <div class="fn-body">
+      <div class="fn-params">
+        <div class="fn-num"><span>width</span><input type="number" value="1024" onclick="event.stopPropagation()"></div>
+        <div class="fn-num"><span>height</span><input type="number" value="1024" onclick="event.stopPropagation()"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ===== SAFE TRIANGLE PIN SYSTEM =====
+let activePort = null;  // { trigger, pinList, group, closeTimer }
+let lastMouse = {x:0, y:0};
+
+function openPinList(group) {
+  closePinList();
+  const trigger = group.querySelector('.port-trigger');
+  const pinList = group.querySelector('.pin-list');
+  pinList.classList.add('open');
+  activePort = { trigger, pinList, group, closeTimer: null };
+}
+
+function closePinList() {
+  if (!activePort) return;
+  activePort.pinList.classList.remove('open');
+  if (activePort.closeTimer) clearTimeout(activePort.closeTimer);
+  activePort = null;
+}
+
+function schedulePinClose() {
+  if (!activePort) return;
+  activePort.closeTimer = setTimeout(() => closePinList(), 80);
+}
+
+function cancelPinClose() {
+  if (activePort && activePort.closeTimer) {
+    clearTimeout(activePort.closeTimer);
+    activePort.closeTimer = null;
+  }
+}
+
+// Point-in-triangle test
+function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
+  const d1 = (px-bx)*(ay-by)-(ax-bx)*(py-by);
+  const d2 = (px-cx)*(by-cy)-(bx-cx)*(py-cy);
+  const d3 = (px-ax)*(cy-ay)-(cx-ax)*(py-ay);
+  const hasNeg = (d1<0)||(d2<0)||(d3<0);
+  const hasPos = (d1>0)||(d2>0)||(d3>0);
+  return !(hasNeg && hasPos);
+}
+
+function isInSafeTriangle(mx, my) {
+  if (!activePort) return false;
+  const tr = activePort.trigger.getBoundingClientRect();
+  const pl = activePort.pinList.getBoundingClientRect();
+  const isLeft = activePort.group.classList.contains('left');
+
+  // Triangle: mouse position → two far corners of pin list
+  const tcx = tr.left + tr.width/2, tcy = tr.top + tr.height/2;
+  if (isLeft) {
+    return pointInTriangle(mx, my, tcx, tcy, pl.left, pl.top, pl.left, pl.bottom);
+  } else {
+    return pointInTriangle(mx, my, tcx, tcy, pl.right, pl.top, pl.right, pl.bottom);
+  }
+}
+
+// Bind events to all port triggers and pin lists
+document.querySelectorAll('.port-trigger').forEach(trigger => {
+  trigger.addEventListener('mouseenter', () => {
+    const group = trigger.closest('.port-group');
+    openPinList(group);
+  });
+  trigger.addEventListener('mouseleave', () => {
+    schedulePinClose();
+  });
+});
+
+document.querySelectorAll('.pin-list').forEach(list => {
+  list.addEventListener('mouseenter', () => cancelPinClose());
+  list.addEventListener('mouseleave', () => schedulePinClose());
+});
+
+// Track mouse globally for safe triangle
+document.addEventListener('mousemove', e => {
+  lastMouse.x = e.clientX;
+  lastMouse.y = e.clientY;
+
+  if (activePort && activePort.closeTimer) {
+    if (isInSafeTriangle(e.clientX, e.clientY)) {
+      cancelPinClose();
+    }
+  }
+
+  // Dragging
+  if (dragNode) {
+    dragNode.style.left = (e.clientX - dragOff.x) + 'px';
+    dragNode.style.top = (e.clientY - dragOff.y) + 'px';
+  }
+  if (activeSl) updSl(e);
+});
+
+// ===== SELECTION + API BAR =====
+const apiBar = document.getElementById('apiBar');
+function sel(el) {
+  document.querySelectorAll('.content-card,.func-node').forEach(n => n.classList.remove('selected'));
+  el.classList.add('selected');
+  apiBar.classList.toggle('visible', el.dataset.api === 'true');
+}
+document.getElementById('canvas').addEventListener('click', e => {
+  if (e.target.id === 'canvas') {
+    document.querySelectorAll('.content-card,.func-node').forEach(n => n.classList.remove('selected'));
+    apiBar.classList.remove('visible');
+  }
+});
+document.querySelectorAll('.content-card, .func-node').forEach(node => {
+  node.addEventListener('mousedown', function(e) {
+    sel(this);
+  }, true);
+});
+
+// API bar dropdowns
+function togBarDD(e, el) {
+  e.stopPropagation();
+  const m = el.querySelector('.dd-menu');
+  document.querySelectorAll('.api-bar .dd-menu.open').forEach(x => { if(x!==m) x.classList.remove('open'); });
+  m.classList.toggle('open');
+}
+function pickBarDD(e, item) {
+  e.stopPropagation();
+  const s = item.closest('.api-bar-select');
+  s.querySelector('span').textContent = item.textContent;
+  s.querySelector('.dd-menu').classList.remove('open');
+}
+
+// ===== NODE DRAGGING =====
+let dragNode = null, dragOff = {x:0, y:0};
+document.querySelectorAll('.content-card, .func-node').forEach(node => {
+  node.addEventListener('mousedown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.closest('.port-trigger,.pin-item,.fn-slider-track,.fn-slider-thumb,.fn-dropdown-select,.fn-file-btn,.api-bar-btn,.api-bar-select,.dd-menu')) return;
+    if (e.target.closest('.cc-text.editing')) return;
+    dragNode = node;
+    node.classList.add('dragging');
+    const r = node.getBoundingClientRect();
+    dragOff = {x: e.clientX - r.left, y: e.clientY - r.top};
+  });
+});
+document.addEventListener('mouseup', () => {
+  if (dragNode) { dragNode.classList.remove('dragging'); dragNode = null; }
+  activeSl = null;
+});
+
+// ===== DOUBLE CLICK TEXT EDITING =====
+document.querySelectorAll('.cc-text').forEach(el => {
+  el.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    el.contentEditable = 'true';
+    el.classList.add('editing');
+    el.focus();
+  });
+});
+document.addEventListener('mousedown', e => {
+  document.querySelectorAll('.cc-text.editing').forEach(el => {
+    if (!el.contains(e.target)) {
+      el.contentEditable = 'false';
+      el.classList.remove('editing');
+    }
+  });
+});
+
+// ===== SLIDER =====
+let activeSl = null;
+document.querySelectorAll('.fn-slider-thumb').forEach(th => {
+  th.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const p = th.closest('.fn-slider'), t = p.querySelector('.fn-slider-track');
+    activeSl = {th, p, t, min: +p.dataset.min, max: +p.dataset.max};
+  });
+});
+document.querySelectorAll('.fn-slider-track').forEach(tr => {
+  tr.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const p = tr.closest('.fn-slider'), th = p.querySelector('.fn-slider-thumb');
+    activeSl = {th, p, t: tr, min: +p.dataset.min, max: +p.dataset.max};
+    updSl(e);
+  });
+});
+function updSl(e) {
+  const r = activeSl.t.getBoundingClientRect();
+  let pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const v = activeSl.min + pct * (activeSl.max - activeSl.min);
+  activeSl.th.style.left = (pct * 100) + '%';
+  activeSl.p.querySelector('.fn-slider-fill').style.width = (pct * 100) + '%';
+  activeSl.p.querySelector('.val').textContent = v.toFixed(v === Math.floor(v) ? 1 : 2);
+}
+
+// ===== DROPDOWN =====
+function togDD(e, el) {
+  e.stopPropagation();
+  const m = el.querySelector('.fn-dropdown-menu');
+  document.querySelectorAll('.fn-dropdown-menu.open').forEach(x => { if(x !== m) x.classList.remove('open'); });
+  m.classList.toggle('open');
+}
+function pickDD(e, item) {
+  e.stopPropagation();
+  const s = item.closest('.fn-dropdown-select');
+  s.querySelector('span').textContent = item.textContent;
+  s.querySelector('.fn-dropdown-menu').classList.remove('open');
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.fn-dropdown-menu.open').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.api-bar .dd-menu.open').forEach(m => m.classList.remove('open'));
+});
+
+// ===== RADIO GROUP =====
+function pickRadio(item) {
+  event.stopPropagation();
+  item.parentElement.querySelectorAll('.fn-radio-item').forEach(i => i.classList.remove('active'));
+  item.classList.add('active');
+}
+</script>
+</body>
+</html>
