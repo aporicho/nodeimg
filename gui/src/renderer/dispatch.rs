@@ -1,16 +1,16 @@
 use winit::dpi::PhysicalSize;
 
-use super::blit::BlitPipeline;
 use super::buffer::SharedViewport;
-use super::circle::CirclePipeline;
 use super::command::DrawCommand;
-use super::curve::CurvePipeline;
-use super::image::ImagePipeline;
+use super::pipeline::blit::BlitPipeline;
+use super::pipeline::circle::CirclePipeline;
+use super::pipeline::curve::CurvePipeline;
+use super::pipeline::image::ImagePipeline;
+use super::pipeline::quad::QuadPipeline;
+use super::pipeline::shadow::ShadowPipeline;
+use super::pipeline::stencil::StencilState;
+use super::pipeline::text::{TextPipeline, TextRequest};
 use super::prepare::{prepare_frame, DrawOp};
-use super::quad::QuadPipeline;
-use super::shadow::ShadowPipeline;
-use super::stencil::StencilState;
-use super::text::{TextPipeline, TextRequest};
 
 pub fn dispatch(
     commands: &[DrawCommand],

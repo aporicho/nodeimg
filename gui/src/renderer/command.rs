@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use super::circle::CircleRequest;
-use super::curve::CurveRequest;
-use super::quad::QuadRequest;
-use super::shadow::ShadowRequest;
-use super::text::TextRequest;
+use super::pipeline::circle::CircleRequest;
+use super::pipeline::curve::CurveRequest;
+use super::pipeline::quad::QuadRequest;
+use super::pipeline::shadow::ShadowRequest;
+use super::pipeline::text::TextRequest;
 use super::types::Rect;
 
 pub enum DrawCommand {

@@ -5,11 +5,10 @@ use lyon::tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVerte
 use wgpu::util::DeviceExt;
 
 use super::blur::BlurPipeline;
-use super::buffer::ViewportUniform;
-use super::corner::{build_rounded_rect_path, DEFAULT_CORNER_SMOOTHING};
-use super::quad::QuadVertex;
-use super::style::Shadow;
-use super::types::Rect;
+use super::quad::{build_rounded_rect_path, QuadVertex, DEFAULT_CORNER_SMOOTHING};
+use super::super::buffer::ViewportUniform;
+use super::super::style::Shadow;
+use super::super::types::Rect;
 
 // ── 请求 ──
 
@@ -368,7 +367,7 @@ impl ShadowPipeline {
     ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow_composite_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shadow_composite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/shadow_composite.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -459,7 +458,7 @@ impl ShadowPipeline {
         // 复用 quad shader（逻辑像素 → NDC + 纯色）画到临时纹理
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow_shape_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/quad.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/quad.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

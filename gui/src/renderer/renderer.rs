@@ -1,18 +1,18 @@
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 
-use super::blit::{self, BlitPipeline};
 use super::buffer::SharedViewport;
-use super::circle::{CirclePipeline, CircleRequest};
 use super::command::DrawCommand;
-use super::curve::{CurvePipeline, CurveRequest};
 use super::dispatch;
-use super::image::ImagePipeline;
-use super::quad::{QuadPipeline, QuadRequest};
-use super::shadow::{ShadowPipeline, ShadowRequest};
-use super::stencil::StencilState;
+use super::pipeline::blit::{self, BlitPipeline};
+use super::pipeline::circle::{CirclePipeline, CircleRequest};
+use super::pipeline::curve::{CurvePipeline, CurveRequest};
+use super::pipeline::image::ImagePipeline;
+use super::pipeline::quad::{QuadPipeline, QuadRequest};
+use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
+use super::pipeline::stencil::StencilState;
+use super::pipeline::text::{TextPipeline, TextRequest};
 use super::style::{RectStyle, TextStyle};
-use super::text::{TextPipeline, TextRequest};
 use super::types::{Color, Point, Rect};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;

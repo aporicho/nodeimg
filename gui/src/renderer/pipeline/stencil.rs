@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use winit::dpi::PhysicalSize;
 
-use super::buffer::DynamicBuffer;
+use super::super::buffer::DynamicBuffer;
 
 
 pub const DEPTH_STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
@@ -62,7 +62,7 @@ impl StencilState {
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("stencil_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/stencil.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/stencil.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -120,7 +120,7 @@ impl StencilState {
     pub fn resize(&mut self, device: &wgpu::Device, size: PhysicalSize<u32>) {
         if size.width > 0 && size.height > 0 {
             self.size = size;
-            self.depth_stencil_view = create_depth_stencil_view(device, size, super::renderer::MSAA_SAMPLE_COUNT);
+            self.depth_stencil_view = create_depth_stencil_view(device, size, super::super::renderer::MSAA_SAMPLE_COUNT);
         }
     }
 

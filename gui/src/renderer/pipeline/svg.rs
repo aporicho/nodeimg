@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::types::Color;
+use super::super::types::Color;
 
 pub struct SvgCache {
     cache: HashMap<SvgKey, SvgEntry>,

@@ -1,43 +1,28 @@
 use bytemuck::{Pod, Zeroable};
 
-use super::buffer::DynamicBuffer;
-use super::corner::DEFAULT_CORNER_SMOOTHING;
-use super::style::RectStyle;
-use super::types::Rect;
+use super::super::buffer::DynamicBuffer;
+use super::super::types::{Color, Point};
 
-// ── 渲染 ──
+// ── 类型 ──
+
+pub struct CircleRequest {
+    pub center: Point,
+    pub radius: f32,
+    pub color: Color,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
-pub struct QuadVertex {
+pub struct CircleVertex {
     pub position: [f32; 2],
+    pub center: [f32; 2],
+    pub radius: f32,
     pub color: [f32; 4],
 }
 
-#[derive(Clone)]
-pub struct QuadRequest {
-    pub rect: Rect,
-    pub style_color: [f32; 4],
-    pub border_color: Option<[f32; 4]>,
-    pub border_width: f32,
-    pub radius: [f32; 4],
-    pub smoothing: f32,
-}
+// ── Pipeline ──
 
-impl QuadRequest {
-    pub fn from_style(rect: Rect, style: &RectStyle) -> Self {
-        Self {
-            rect,
-            style_color: style.color.to_array(),
-            border_color: style.border.map(|b| b.color.to_array()),
-            border_width: style.border.map_or(0.0, |b| b.width),
-            radius: style.radius,
-            smoothing: DEFAULT_CORNER_SMOOTHING,
-        }
-    }
-}
-
-pub struct QuadPipeline {
+pub struct CirclePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     vertex_buf: DynamicBuffer,
@@ -45,15 +30,19 @@ pub struct QuadPipeline {
     viewport_bind_group: Option<wgpu::BindGroup>,
 }
 
-impl QuadPipeline {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, multisample: wgpu::MultisampleState) -> Self {
+impl CirclePipeline {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        multisample: wgpu::MultisampleState,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("quad_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/quad.wgsl").into()),
+            label: Some("circle_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/circle.wgsl").into()),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("quad_bind_group_layout"),
+            label: Some("circle_bind_group_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
@@ -67,30 +56,44 @@ impl QuadPipeline {
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("quad_pipeline_layout"),
+            label: Some("circle_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
             immediate_size: 0,
         });
 
         let vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<QuadVertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<CircleVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
+                // position
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Float32x2,
                     offset: 0,
                     shader_location: 0,
                 },
+                // center
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x2,
                     offset: 8,
                     shader_location: 1,
+                },
+                // radius
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: 16,
+                    shader_location: 2,
+                },
+                // color
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 20,
+                    shader_location: 3,
                 },
             ],
         };
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("quad_pipeline"),
+            label: Some("circle_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -121,18 +124,17 @@ impl QuadPipeline {
         Self {
             pipeline,
             bind_group_layout,
-            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "quad_vertex_buffer", 4096),
-            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "quad_index_buffer", 4096),
+            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "circle_vertex_buffer", 4096),
+            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "circle_index_buffer", 4096),
             viewport_bind_group: None,
         }
     }
 
-    /// render pass 之前调用：上传顶点/索引数据
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        vertices: &[QuadVertex],
+        vertices: &[CircleVertex],
         indices: &[u32],
     ) {
         if vertices.is_empty() {
@@ -142,11 +144,10 @@ impl QuadPipeline {
         self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
     }
 
-    /// render pass 之前调用：确保 viewport bind group 已缓存
     pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {
         if self.viewport_bind_group.is_none() {
             self.viewport_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("quad_bind_group"),
+                label: Some("circle_bind_group"),
                 layout: &self.bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
@@ -156,7 +157,6 @@ impl QuadPipeline {
         }
     }
 
-    /// render pass 内调用：绑定管线 + buffer
     pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind");
         pass.set_pipeline(&self.pipeline);
@@ -165,7 +165,6 @@ impl QuadPipeline {
         pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
     }
 
-    /// render pass 内调用：绘制指定索引范围
     pub fn draw_batch(pass: &mut wgpu::RenderPass<'_>, index_start: u32, index_count: u32) {
         pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
     }

@@ -81,7 +81,7 @@ impl BlurPipeline {
     fn create_pipeline(device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> wgpu::ComputePipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gaussian_blur_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders/gaussian_blur.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/gaussian_blur.wgsl").into()),
         });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

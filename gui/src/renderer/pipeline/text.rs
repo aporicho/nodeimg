@@ -6,8 +6,8 @@ use glyphon::{
 };
 use winit::dpi::PhysicalSize;
 
-use super::style::TextStyle;
-use super::types::{Color, Point};
+use super::super::style::TextStyle;
+use super::super::types::{Color, Point};
 
 pub struct TextRequest {
     pub pos: Point,
