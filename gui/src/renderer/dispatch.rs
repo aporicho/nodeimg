@@ -6,6 +6,7 @@ use super::curve::CurvePipeline;
 use super::image::ImagePipeline;
 use super::prepare::{prepare_frame, DrawOp};
 use super::quad::QuadPipeline;
+use super::blit::BlitPipeline;
 use super::shadow::ShadowPipeline;
 use super::stencil::StencilState;
 use super::text::{TextPipeline, TextRequest};
@@ -14,10 +15,13 @@ pub fn dispatch(
     commands: &[DrawCommand],
     frame_view: &wgpu::TextureView,
     msaa_view: &wgpu::TextureView,
-    size: PhysicalSize<u32>,
+    resolve_view: &wgpu::TextureView,
+    internal_size: PhysicalSize<u32>,
     scale_factor: f64,
+    render_scale: f32,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    blit: &BlitPipeline,
     shared_viewport: &mut SharedViewport,
     quad_pipeline: &mut QuadPipeline,
     text_pipeline: &mut TextPipeline,
@@ -26,8 +30,9 @@ pub fn dispatch(
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
 ) {
-    let logical_w = size.width as f64 / scale_factor;
-    let logical_h = size.height as f64 / scale_factor;
+    // viewport 用放大后的逻辑尺寸，这样坐标 * render_scale 映射到内部分辨率
+    let logical_w = internal_size.width as f64 / scale_factor / render_scale as f64;
+    let logical_h = internal_size.height as f64 / scale_factor / render_scale as f64;
     let viewport_size = [logical_w as f32, logical_h as f32];
 
     // viewport uniform 只写一次
@@ -56,7 +61,7 @@ pub fn dispatch(
                 },
             })
             .collect();
-        text_pipeline.prepare(device, queue, &refs, size, scale_factor);
+        text_pipeline.prepare(device, queue, &refs, internal_size, scale_factor * render_scale as f64);
     }
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -86,7 +91,7 @@ pub fn dispatch(
     curve_pipeline.update_bind_group(device, viewport_buf);
     stencil.update_bind_group(device, viewport_buf);
 
-    // ── 阶段 5：render pass（&self pipeline）──
+    // ── 阶段 5：主 render pass（渲染到超分辨率 MSAA → resolve 到中间 texture）──
 
     let has_quads = !prepared.quad_vertices.is_empty();
     let has_stencils = !prepared.stencil_vertices.is_empty();
@@ -97,7 +102,7 @@ pub fn dispatch(
             label: Some("main"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: msaa_view,
-                resolve_target: Some(frame_view),
+                resolve_target: Some(resolve_view),
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
                         r: 0.15,
@@ -105,7 +110,7 @@ pub fn dispatch(
                         b: 0.15,
                         a: 1.0,
                     }),
-                    store: wgpu::StoreOp::Store,
+                    store: wgpu::StoreOp::Discard,
                 },
                 depth_slice: None,
             })],
@@ -183,6 +188,44 @@ pub fn dispatch(
             pass.set_stencil_reference(clip_depth);
             text_pipeline.render(&mut pass);
         }
+    }
+
+    // ── 阶段 6：blit pass（中间 texture → surface，缩放采样）──
+
+    {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blit_bind_group"),
+            layout: &blit.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(resolve_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&blit.sampler),
+                },
+            ],
+        });
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blit"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: frame_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            ..Default::default()
+        });
+
+        pass.set_pipeline(&blit.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     queue.submit(std::iter::once(encoder.finish()));

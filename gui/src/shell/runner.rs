@@ -40,6 +40,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
 
         let size = win.inner_size();
         let scale_factor = win.scale_factor();
+        log::info!("Window: {}x{}, scale_factor: {}", size.width, size.height, scale_factor);
         let surface_config = surface::configure(&surf, &adapter, &device, size);
 
         let renderer = Renderer::new(&device, &queue, surface_config.format, size);

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 
+use super::blit::{self, BlitPipeline};
 use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::curve::{CurvePipeline, CurveRequest};
@@ -14,6 +15,7 @@ use super::text::{TextPipeline, TextRequest};
 use super::types::{Color, Point, Rect};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
+const DEFAULT_RENDER_SCALE: f32 = 2.0;
 
 pub struct Renderer {
     shared_viewport: SharedViewport,
@@ -24,7 +26,10 @@ pub struct Renderer {
     shadow_pipeline: ShadowPipeline,
     stencil: StencilState,
     msaa_view: wgpu::TextureView,
+    resolve_view: wgpu::TextureView,
+    blit: BlitPipeline,
     format: wgpu::TextureFormat,
+    render_scale: f32,
     commands: Vec<DrawCommand>,
     frame: Option<FrameState>,
 }
@@ -41,6 +46,13 @@ fn msaa_multisample_state() -> wgpu::MultisampleState {
         mask: !0,
         alpha_to_coverage_enabled: false,
     }
+}
+
+pub(super) fn scale_size(size: PhysicalSize<u32>, scale: f32) -> PhysicalSize<u32> {
+    PhysicalSize::new(
+        ((size.width as f32 * scale) as u32).max(1),
+        ((size.height as f32 * scale) as u32).max(1),
+    )
 }
 
 fn create_msaa_texture(
@@ -73,6 +85,9 @@ impl Renderer {
         size: PhysicalSize<u32>,
     ) -> Self {
         let ms = msaa_multisample_state();
+        let render_scale = DEFAULT_RENDER_SCALE;
+        let internal = scale_size(size, render_scale);
+
         Self {
             shared_viewport: SharedViewport::new(device),
             quad_pipeline: QuadPipeline::new(device, format, ms),
@@ -80,17 +95,22 @@ impl Renderer {
             image_pipeline: ImagePipeline::new(device, format, ms),
             curve_pipeline: CurvePipeline::new(device, format, ms),
             shadow_pipeline: ShadowPipeline::new(device, format, ms),
-            stencil: StencilState::new(device, size, format, ms),
-            msaa_view: create_msaa_texture(device, format, size),
+            stencil: StencilState::new(device, internal, format, ms),
+            msaa_view: create_msaa_texture(device, format, internal),
+            resolve_view: blit::create_resolve_texture(device, format, internal),
+            blit: BlitPipeline::new(device, format),
             format,
+            render_scale,
             commands: Vec::new(),
             frame: None,
         }
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, size: PhysicalSize<u32>) {
-        self.stencil.resize(device, size);
-        self.msaa_view = create_msaa_texture(device, self.format, size);
+        let internal = scale_size(size, self.render_scale);
+        self.stencil.resize(device, internal);
+        self.msaa_view = create_msaa_texture(device, self.format, internal);
+        self.resolve_view = blit::create_resolve_texture(device, self.format, internal);
     }
 
     pub fn begin_frame(&mut self, view: wgpu::TextureView, size: PhysicalSize<u32>, scale_factor: f64) {
@@ -147,14 +167,19 @@ impl Renderer {
             return;
         };
 
+        let internal = scale_size(frame.size, self.render_scale);
+
         dispatch::dispatch(
             &self.commands,
             &frame.view,
             &self.msaa_view,
-            frame.size,
+            &self.resolve_view,
+            internal,
             frame.scale_factor,
+            self.render_scale,
             device,
             queue,
+            &self.blit,
             &mut self.shared_viewport,
             &mut self.quad_pipeline,
             &mut self.text_pipeline,

@@ -9,6 +9,9 @@ pub fn init_gpu(
     }))
     .expect("failed to find GPU adapter");
 
+    let info = adapter.get_info();
+    log::info!("GPU: {} ({:?})", info.name, info.backend);
+
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
             label: Some("nodeimg"),

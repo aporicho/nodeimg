@@ -1,3 +1,4 @@
+mod blit;
 mod buffer;
 mod command;
 mod curve;
