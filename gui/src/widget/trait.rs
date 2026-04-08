@@ -1,4 +1,4 @@
-use crate::controls::infra::layout::LayoutBox;
+use super::layout::LayoutBox;
 use crate::renderer::{Rect, Renderer};
 
 /// 所有控件的统一接口。

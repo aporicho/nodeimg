@@ -1,8 +1,8 @@
 use crate::canvas::Canvas;
-use crate::controls::atoms::button::Button;
-use crate::controls::infra::layout::{BoxStyle, Direction};
+use crate::widget::atoms::button::Button;
+use crate::widget::layout::{BoxStyle, Direction};
 use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
-use crate::panel_tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
+use crate::panel::tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
 use crate::renderer::{Color, Rect, Renderer};
 use crate::shell::{App, AppContext, AppEvent};
 

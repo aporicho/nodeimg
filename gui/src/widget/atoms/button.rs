@@ -1,8 +1,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::controls::infra::layout::{BoxStyle, LayoutBox, Size};
-use crate::controls::infra::widget::Widget;
+use crate::widget::layout::{BoxStyle, LayoutBox, Size};
+use crate::widget::r#trait::Widget;
 use crate::renderer::{Border, Color, Point, Rect, RectStyle, Renderer, TextStyle};
 
 // shadcn zinc 视觉常量

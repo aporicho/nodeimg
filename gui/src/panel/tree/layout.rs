@@ -1,6 +1,6 @@
 use super::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::controls::infra::layout::{self, LayoutBox};
+use crate::widget::layout::{self, LayoutBox};
 use crate::renderer::{Rect, Renderer};
 
 pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect, renderer: &mut Renderer) {

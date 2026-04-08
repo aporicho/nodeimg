@@ -3,6 +3,7 @@ mod frame;
 mod hit;
 mod layer;
 mod resize;
+pub mod tree;
 
 pub use drag::DragState;
 pub use frame::PanelFrame;

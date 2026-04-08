@@ -1,5 +1,5 @@
-use crate::controls::infra::layout::BoxStyle;
-use crate::controls::infra::widget::Widget;
+use crate::widget::layout::BoxStyle;
+use crate::widget::r#trait::Widget;
 use crate::renderer::Rect;
 
 pub type NodeId = usize;

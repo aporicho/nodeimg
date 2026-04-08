@@ -1,9 +1,8 @@
 pub mod canvas;
-pub mod controls;
 pub mod renderer;
 pub mod shell;
 pub mod panel;
-pub mod panel_tree;
+pub mod widget;
 
 mod demo;
 pub use demo::DemoApp;

@@ -1,5 +1,5 @@
-use crate::controls::infra::layout::BoxStyle;
-use crate::controls::infra::widget::Widget;
+use crate::widget::layout::BoxStyle;
+use crate::widget::r#trait::Widget;
 use super::node::NodeKind;
 
 /// 视图描述：view() 函数返回的轻量描述树。
