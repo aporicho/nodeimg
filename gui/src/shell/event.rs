@@ -35,6 +35,7 @@ pub struct Modifiers {
 }
 
 /// 应用层事件。由 EventTranslator 从 winit 原始事件翻译而来。
+#[derive(Debug)]
 pub enum AppEvent {
     // ── 鼠标 ──
     MouseMove { x: f32, y: f32 },

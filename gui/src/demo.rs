@@ -42,6 +42,11 @@ impl App for DemoApp {
     }
 
     fn event(&mut self, event: AppEvent, _ctx: &mut AppContext) {
+        // MouseMove 太频繁，不打印
+        if !matches!(event, AppEvent::MouseMove { .. }) {
+            tracing::debug!("{:?}", event);
+        }
+
         if let AppEvent::MousePress { x, y, .. } = event {
             if let Some(root) = self.tree.root() {
                 if let Some(id) = hit_test(&self.tree, root, x, y) {
