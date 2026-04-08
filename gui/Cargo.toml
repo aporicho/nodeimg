@@ -8,4 +8,16 @@ name = "nodeimg"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.14", features = ["canvas", "image", "svg", "wgpu", "tokio"] }
+winit = "0.30"
+wgpu = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true }
+glyphon = "0.10"
+lyon = "1"
+resvg = "0.44"
+image = { workspace = true }
+log = "0.4"
+env_logger = "0.11"
+
+# 旧 GUI 依赖（待移除）
+# iced = { version = "0.14", features = ["canvas", "image", "svg", "wgpu", "tokio"] }
