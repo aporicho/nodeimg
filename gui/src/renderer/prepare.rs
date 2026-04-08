@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use lyon::math::point;
-use lyon::path::Path;
 use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillTessellator, FillVertex, StrokeOptions, StrokeTessellator,
     StrokeVertex, VertexBuffers,
 };
 
+
 use super::command::DrawCommand;
-use super::curve::{CurveRequest, CurveVertex};
+use super::curve::{CurvePipeline, CurveRequest, CurveVertex};
 use super::quad::{build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING};
 use super::shadow::ShadowRequest;
 use super::stencil::StencilVertex;
@@ -43,7 +42,7 @@ pub struct PreparedFrame {
 
 // ── 预处理 ──
 
-pub fn prepare_frame(commands: &[DrawCommand]) -> PreparedFrame {
+pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipeline) -> PreparedFrame {
     let mut frame = PreparedFrame {
         ops: Vec::new(),
         quad_vertices: Vec::new(),
@@ -62,21 +61,21 @@ pub fn prepare_frame(commands: &[DrawCommand]) -> PreparedFrame {
         match cmd {
             DrawCommand::Shadow(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Shadow(req.clone()));
             }
             DrawCommand::Rect(req) => {
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 quad_batch.push(req);
             }
             DrawCommand::Text(_) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Text);
             }
             DrawCommand::Image { rect, view } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Image {
                     rect: *rect,
                     view: view.clone(),
@@ -88,13 +87,13 @@ pub fn prepare_frame(commands: &[DrawCommand]) -> PreparedFrame {
             }
             DrawCommand::PushClip { rect, radius } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 clip_stack.push((*rect, *radius));
                 tessellate_stencil(&mut frame, *rect, *radius, true);
             }
             DrawCommand::PopClip => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_curve_batch(&mut curve_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 if let Some((rect, radius)) = clip_stack.pop() {
                     tessellate_stencil(&mut frame, rect, radius, false);
                 }
@@ -103,7 +102,7 @@ pub fn prepare_frame(commands: &[DrawCommand]) -> PreparedFrame {
     }
 
     flush_quad_batch(&mut quad_batch, &mut frame);
-    flush_curve_batch(&mut curve_batch, &mut frame);
+    flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
 
     frame
 }
@@ -171,56 +170,40 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
     });
 }
 
-fn flush_curve_batch(batch: &mut Vec<&CurveRequest>, frame: &mut PreparedFrame) {
+fn flush_curve_batch(batch: &mut Vec<&CurveRequest>, frame: &mut PreparedFrame, curve_pipeline: &mut CurvePipeline) {
     if batch.is_empty() {
         return;
     }
 
-    let mut geometry: VertexBuffers<CurveVertex, u32> = VertexBuffers::new();
-    let mut tessellator = StrokeTessellator::new();
+    let mut total_vertices: Vec<CurveVertex> = Vec::new();
+    let mut total_indices: Vec<u32> = Vec::new();
 
     for curve in batch.iter() {
-        let color = curve.color.to_array();
-
-        let mut builder = Path::builder();
-        builder.begin(point(curve.points[0].x, curve.points[0].y));
-        builder.cubic_bezier_to(
-            point(curve.points[1].x, curve.points[1].y),
-            point(curve.points[2].x, curve.points[2].y),
-            point(curve.points[3].x, curve.points[3].y),
-        );
-        builder.end(false);
-        let path = builder.build();
-
-        tessellator
-            .tessellate_path(
-                &path,
-                &StrokeOptions::default().with_line_width(curve.width),
-                &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| CurveVertex {
-                    position: vertex.position().to_array(),
-                    color,
-                }),
-            )
-            .expect("failed to tessellate curve");
+        let (verts, idxs) = curve_pipeline.tessellate(curve);
+        let vertex_offset = total_vertices.len() as u32;
+        total_vertices.extend_from_slice(verts);
+        for idx in idxs {
+            total_indices.push(idx + vertex_offset);
+        }
     }
 
     batch.clear();
 
-    if geometry.indices.is_empty() {
+    if total_indices.is_empty() {
         return;
     }
 
     let index_start = frame.curve_indices.len() as u32;
     let vertex_offset = frame.curve_vertices.len() as u32;
 
-    for idx in &geometry.indices {
+    for idx in &total_indices {
         frame.curve_indices.push(idx + vertex_offset);
     }
-    frame.curve_vertices.extend_from_slice(&geometry.vertices);
+    frame.curve_vertices.extend_from_slice(&total_vertices);
 
     frame.ops.push(DrawOp::Curve {
         index_start,
-        index_count: geometry.indices.len() as u32,
+        index_count: total_indices.len() as u32,
     });
 }
 

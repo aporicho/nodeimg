@@ -175,6 +175,7 @@ pub struct QuadPipeline {
     bind_group_layout: wgpu::BindGroupLayout,
     vertex_buf: DynamicBuffer,
     index_buf: DynamicBuffer,
+    viewport_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl QuadPipeline {
@@ -255,6 +256,7 @@ impl QuadPipeline {
             bind_group_layout,
             vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "quad_vertex_buffer", 4096),
             index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "quad_index_buffer", 4096),
+            viewport_bind_group: None,
         }
     }
 
@@ -273,18 +275,25 @@ impl QuadPipeline {
         self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
     }
 
-    /// render pass 内调用：绑定管线 + buffer（每帧调用一次）
-    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device, viewport_buf: &'a wgpu::Buffer) {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("quad_bind_group"),
-            layout: &self.bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: viewport_buf.as_entire_binding(),
-            }],
-        });
+    /// render pass 之前调用：确保 viewport bind group 已缓存
+    pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {
+        if self.viewport_bind_group.is_none() {
+            self.viewport_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("quad_bind_group"),
+                layout: &self.bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: viewport_buf.as_entire_binding(),
+                }],
+            }));
+        }
+    }
+
+    /// render pass 内调用：绑定管线 + buffer
+    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
+        let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind");
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));
         pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
     }

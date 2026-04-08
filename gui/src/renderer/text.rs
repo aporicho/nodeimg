@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use glyphon::{
     Attrs, Buffer, Cache, Color as GlyphonColor, Family, FontSystem, Metrics, Resolution, Shaping,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport,
@@ -13,6 +15,26 @@ pub struct TextRequest {
     pub style: TextStyle,
 }
 
+#[derive(Hash, PartialEq, Eq, Clone)]
+struct TextCacheKey {
+    text: String,
+    size_bits: u32,
+}
+
+impl TextCacheKey {
+    fn new(text: &str, size: f32) -> Self {
+        Self {
+            text: text.to_string(),
+            size_bits: size.to_bits(),
+        }
+    }
+}
+
+struct CachedBuffer {
+    buffer: Buffer,
+    used: bool,
+}
+
 pub struct TextPipeline {
     font_system: FontSystem,
     swash_cache: SwashCache,
@@ -21,6 +43,7 @@ pub struct TextPipeline {
     viewport: Viewport,
     #[allow(dead_code)]
     cache: Cache,
+    buffer_cache: HashMap<TextCacheKey, CachedBuffer>,
 }
 
 impl TextPipeline {
@@ -49,6 +72,7 @@ impl TextPipeline {
             text_renderer,
             viewport,
             cache,
+            buffer_cache: HashMap::new(),
         }
     }
 
@@ -68,47 +92,62 @@ impl TextPipeline {
             },
         );
 
-        let mut buffers: Vec<Buffer> = Vec::with_capacity(texts.len());
-
-        for req in texts {
-            let mut buffer = Buffer::new(
-                &mut self.font_system,
-                Metrics::new(req.style.size, req.style.size * 1.2),
-            );
-            buffer.set_size(
-                &mut self.font_system,
-                Some(f32::MAX),
-                Some(req.style.size * 2.0),
-            );
-            buffer.set_text(
-                &mut self.font_system,
-                &req.text,
-                &Attrs::new().family(Family::SansSerif),
-                Shaping::Advanced,
-                None,
-            );
-            buffer.shape_until_scroll(&mut self.font_system, false);
-            buffers.push(buffer);
+        // 标记所有缓存为未使用
+        for entry in self.buffer_cache.values_mut() {
+            entry.used = false;
         }
+
+        // 确保每个文本都有缓存的 Buffer
+        for req in texts {
+            let key = TextCacheKey::new(&req.text, req.style.size);
+            if let Some(entry) = self.buffer_cache.get_mut(&key) {
+                entry.used = true;
+            } else {
+                let mut buffer = Buffer::new(
+                    &mut self.font_system,
+                    Metrics::new(req.style.size, req.style.size * 1.2),
+                );
+                buffer.set_size(
+                    &mut self.font_system,
+                    Some(f32::MAX),
+                    Some(req.style.size * 2.0),
+                );
+                buffer.set_text(
+                    &mut self.font_system,
+                    &req.text,
+                    &Attrs::new().family(Family::SansSerif),
+                    Shaping::Advanced,
+                    None,
+                );
+                buffer.shape_until_scroll(&mut self.font_system, false);
+                self.buffer_cache.insert(key, CachedBuffer { buffer, used: true });
+            }
+        }
+
+        // 清理未使用的缓存
+        self.buffer_cache.retain(|_, v| v.used);
 
         let sf = scale_factor as f32;
 
         let text_areas: Vec<TextArea<'_>> = texts
             .iter()
-            .zip(buffers.iter())
-            .map(|(req, buffer)| TextArea {
-                buffer,
-                left: req.pos.x * sf,
-                top: req.pos.y * sf,
-                scale: sf,
-                bounds: TextBounds {
-                    left: 0,
-                    top: 0,
-                    right: size.width as i32,
-                    bottom: size.height as i32,
-                },
-                default_color: to_glyphon_color(req.style.color),
-                custom_glyphs: &[],
+            .map(|req| {
+                let key = TextCacheKey::new(&req.text, req.style.size);
+                let buffer = &self.buffer_cache[&key].buffer;
+                TextArea {
+                    buffer,
+                    left: req.pos.x * sf,
+                    top: req.pos.y * sf,
+                    scale: sf,
+                    bounds: TextBounds {
+                        left: 0,
+                        top: 0,
+                        right: size.width as i32,
+                        bottom: size.height as i32,
+                    },
+                    default_color: to_glyphon_color(req.style.color),
+                    custom_glyphs: &[],
+                }
             })
             .collect();
 

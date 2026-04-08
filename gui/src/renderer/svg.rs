@@ -73,9 +73,7 @@ fn rasterize_svg(
     size: u32,
     color: [u8; 4],
 ) -> (wgpu::Texture, wgpu::TextureView) {
-    let mut svg_str = String::from_utf8_lossy(svg_data).to_string();
-    let color_hex = format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2]);
-    svg_str = svg_str.replace("currentColor", &color_hex);
+    let svg_str = String::from_utf8_lossy(svg_data);
 
     let tree = resvg::usvg::Tree::from_str(&svg_str, &resvg::usvg::Options::default())
         .expect("failed to parse SVG");
@@ -86,6 +84,16 @@ fn rasterize_svg(
     let scale = (size as f32 / svg_size.width()).min(size as f32 / svg_size.height());
     let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    // 光栅化后逐像素替换 RGB，保留原始 alpha（与 iced 相同的方式）
+    let [r, g, b, _a] = color;
+    for px in pixmap.data_mut().chunks_exact_mut(4) {
+        if px[3] > 0 {
+            px[0] = r;
+            px[1] = g;
+            px[2] = b;
+        }
+    }
 
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("svg_texture"),
