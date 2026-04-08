@@ -8,4 +8,4 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # 将 WSL 路径转换为 Windows 路径
 WIN_PATH="$(wslpath -w "$PROJECT_DIR")"
 
-/mnt/c/Users/pyura/scoop/shims/pwsh.exe -Command "Set-Location '$WIN_PATH'; cargo run --release $*"
+/mnt/c/Users/pyura/scoop/shims/pwsh.exe -Command "Set-Location '$WIN_PATH'; cargo run -p gui --release $*"
