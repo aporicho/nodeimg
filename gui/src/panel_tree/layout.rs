@@ -1,17 +1,15 @@
 use super::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::controls::infra::layout::{self, BoxStyle, Direction, LayoutBox, Size};
-use crate::renderer::Rect;
+use crate::controls::atoms::button::{ButtonProps, button_layout};
+use crate::controls::infra::layout::{self, BoxStyle, Direction, LayoutBox};
+use crate::renderer::{Rect, Renderer};
 
-const BUTTON_HEIGHT: f32 = 40.0;
 const SPACING: f32 = 8.0;
 
-/// 用新布局引擎计算面板树中每个节点的 rect。
-pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect) {
-    let layout_tree = build_layout_box(tree, root);
+pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect, renderer: &mut Renderer) {
+    let layout_tree = build_layout_box(tree, root, renderer);
     let result = layout::layout(&layout_tree, available);
 
-    // 写回 rect
     for (id, rect) in &result.rects {
         if let Some(node_id) = find_node_by_id(tree, root, id) {
             if let Some(node) = tree.get_mut(node_id) {
@@ -20,14 +18,12 @@ pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect) {
         }
     }
 
-    // 容器节点（Column）用 available rect
     if let Some(node) = tree.get_mut(root) {
         node.rect = available;
     }
 }
 
-/// PanelNode → LayoutBox
-fn build_layout_box(tree: &PanelTree, node_id: NodeId) -> LayoutBox {
+fn build_layout_box(tree: &PanelTree, node_id: NodeId, renderer: &mut Renderer) -> LayoutBox {
     let Some(node) = tree.get(node_id) else {
         return LayoutBox {
             id: None,
@@ -46,18 +42,19 @@ fn build_layout_box(tree: &PanelTree, node_id: NodeId) -> LayoutBox {
                     gap: SPACING,
                     ..BoxStyle::default()
                 },
-                children: children_ids.iter().map(|&id| build_layout_box(tree, id)).collect(),
+                children: children_ids
+                    .iter()
+                    .map(|&id| build_layout_box(tree, id, renderer))
+                    .collect(),
             }
         }
-        NodeKind::Button { .. } => {
-            LayoutBox {
-                id: Some(node.id),
-                style: BoxStyle {
-                    height: Size::Fixed(BUTTON_HEIGHT),
-                    ..BoxStyle::default()
-                },
-                children: Vec::new(),
-            }
+        NodeKind::Button { label, color } => {
+            let props = ButtonProps {
+                id: node.id,
+                label,
+                color: *color,
+            };
+            button_layout(&props, renderer)
         }
     }
 }

@@ -135,7 +135,10 @@ impl App for DemoApp {
         }
         let desc = self.view();
         reconcile(&mut self.tree, &desc);
+    }
 
+    fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
+        // layout 需要 renderer（文字度量），所以在 render 开头做
         if let (Some(frame), Some(root)) = (self.layer.get("demo"), self.tree.root()) {
             let content_rect = Rect {
                 x: frame.x + PADDING,
@@ -143,11 +146,8 @@ impl App for DemoApp {
                 w: frame.w - PADDING * 2.0,
                 h: frame.h - PADDING * 2.0,
             };
-            layout(&mut self.tree, root, content_rect);
+            layout(&mut self.tree, root, content_rect, renderer);
         }
-    }
-
-    fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
         let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
 
