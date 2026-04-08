@@ -164,6 +164,37 @@ impl TextPipeline {
             .expect("failed to prepare text");
     }
 
+    /// 度量文字尺寸（逻辑像素）。复用 buffer_cache。
+    pub fn measure(&mut self, text: &str, size: f32) -> (f32, f32) {
+        let key = TextCacheKey::new(text, size);
+
+        if !self.buffer_cache.contains_key(&key) {
+            let mut buffer = Buffer::new(
+                &mut self.font_system,
+                Metrics::new(size, size * 1.2),
+            );
+            buffer.set_size(&mut self.font_system, Some(f32::MAX), Some(size * 2.0));
+            buffer.set_text(
+                &mut self.font_system,
+                text,
+                &Attrs::new().family(Family::SansSerif),
+                Shaping::Advanced,
+                None,
+            );
+            buffer.shape_until_scroll(&mut self.font_system, false);
+            self.buffer_cache.insert(key.clone(), CachedBuffer { buffer, used: true });
+        }
+
+        let buffer = &self.buffer_cache[&key].buffer;
+        let mut width: f32 = 0.0;
+        let mut height: f32 = 0.0;
+        for run in buffer.layout_runs() {
+            width = width.max(run.line_w);
+            height += run.line_height;
+        }
+        (width, height)
+    }
+
     pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
         self.text_renderer
             .render(&self.atlas, &self.viewport, pass)

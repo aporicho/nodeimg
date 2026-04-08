@@ -1,4 +1,5 @@
 pub mod canvas;
+pub mod controls;
 pub mod renderer;
 pub mod shell;
 pub mod panel;

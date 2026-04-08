@@ -128,6 +128,10 @@ impl Renderer {
         self.frame = Some(FrameState { view, size, scale_factor });
     }
 
+    pub fn measure_text(&mut self, text: &str, size: f32) -> (f32, f32) {
+        self.text_pipeline.measure(text, size)
+    }
+
     pub fn draw_rect(&mut self, rect: Rect, style: &RectStyle) {
         if let Some(ref shadow) = style.shadow {
             self.commands.push(DrawCommand::Shadow(ShadowRequest {
