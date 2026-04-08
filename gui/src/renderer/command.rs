@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::circle::CircleRequest;
 use super::curve::CurveRequest;
 use super::quad::QuadRequest;
 use super::shadow::ShadowRequest;
@@ -9,6 +10,7 @@ use super::types::Rect;
 pub enum DrawCommand {
     Shadow(ShadowRequest),
     Rect(QuadRequest),
+    Circle(CircleRequest),
     Text(TextRequest),
     Image {
         rect: Rect,

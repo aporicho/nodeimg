@@ -40,12 +40,15 @@ impl EventTranslator {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (dx, dy) = match delta {
-                    MouseScrollDelta::LineDelta(x, y) => (*x * 40.0, *y * 40.0),
-                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
-                };
                 let (x, y) = self.logical_cursor();
-                Some(AppEvent::Scroll { x, y, delta_x: dx, delta_y: dy })
+                match delta {
+                    MouseScrollDelta::LineDelta(dx, dy) => {
+                        Some(AppEvent::ScrollLine { x, y, delta_x: *dx, delta_y: *dy })
+                    }
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        Some(AppEvent::ScrollPixel { x, y, delta_x: pos.x as f32, delta_y: pos.y as f32 })
+                    }
+                }
             }
 
             // ── 键盘 ──
@@ -85,7 +88,8 @@ impl EventTranslator {
 
             // ── 触控板手势 ──
             WindowEvent::PinchGesture { delta, .. } => {
-                Some(AppEvent::PinchZoom { delta: *delta as f32 })
+                let (x, y) = self.logical_cursor();
+                Some(AppEvent::PinchZoom { x, y, delta: *delta as f32 })
             }
 
             _ => None,

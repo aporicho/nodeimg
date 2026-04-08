@@ -11,5 +11,5 @@ mod window;
 pub use app::App;
 pub use context::AppContext;
 pub use cursor::{CursorState, CursorStyle};
-pub use event::AppEvent;
+pub use event::{AppEvent, MouseButton};
 pub use runner::run;

@@ -1,12 +1,13 @@
 use winit::dpi::PhysicalSize;
 
+use super::blit::BlitPipeline;
 use super::buffer::SharedViewport;
+use super::circle::CirclePipeline;
 use super::command::DrawCommand;
 use super::curve::CurvePipeline;
 use super::image::ImagePipeline;
 use super::prepare::{prepare_frame, DrawOp};
 use super::quad::QuadPipeline;
-use super::blit::BlitPipeline;
 use super::shadow::ShadowPipeline;
 use super::stencil::StencilState;
 use super::text::{TextPipeline, TextRequest};
@@ -19,6 +20,7 @@ pub fn dispatch(
     internal_size: PhysicalSize<u32>,
     scale_factor: f64,
     render_scale: f32,
+    clear_color: super::types::Color,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     blit: &BlitPipeline,
@@ -26,6 +28,7 @@ pub fn dispatch(
     quad_pipeline: &mut QuadPipeline,
     text_pipeline: &mut TextPipeline,
     image_pipeline: &mut ImagePipeline,
+    circle_pipeline: &mut CirclePipeline,
     curve_pipeline: &mut CurvePipeline,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
@@ -83,11 +86,13 @@ pub fn dispatch(
     // ── 阶段 4：上传 buffer（&mut pipeline）──
 
     quad_pipeline.upload(device, queue, &prepared.quad_vertices, &prepared.quad_indices);
+    circle_pipeline.upload(device, queue, &prepared.circle_vertices, &prepared.circle_indices);
     curve_pipeline.upload(device, queue, &prepared.curve_vertices, &prepared.curve_indices);
     stencil.upload(device, queue, &prepared.stencil_vertices, &prepared.stencil_indices);
 
     // 确保 bind group 已缓存
     quad_pipeline.update_bind_group(device, viewport_buf);
+    circle_pipeline.update_bind_group(device, viewport_buf);
     curve_pipeline.update_bind_group(device, viewport_buf);
     stencil.update_bind_group(device, viewport_buf);
 
@@ -105,10 +110,10 @@ pub fn dispatch(
                 resolve_target: Some(resolve_view),
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.15,
-                        g: 0.15,
-                        b: 0.15,
-                        a: 1.0,
+                        r: clear_color.r as f64,
+                        g: clear_color.g as f64,
+                        b: clear_color.b as f64,
+                        a: clear_color.a as f64,
                     }),
                     store: wgpu::StoreOp::Discard,
                 },
@@ -142,6 +147,14 @@ pub fn dispatch(
                     }
                     pass.set_stencil_reference(clip_depth);
                     QuadPipeline::draw_batch(&mut pass, *index_start, *index_count);
+                }
+                DrawOp::Circle { index_start, index_count } => {
+                    if last_bound != PipelineKind::Circle {
+                        circle_pipeline.bind(&mut pass);
+                        last_bound = PipelineKind::Circle;
+                    }
+                    pass.set_stencil_reference(clip_depth);
+                    CirclePipeline::draw_batch(&mut pass, *index_start, *index_count);
                 }
                 DrawOp::Curve { index_start, index_count } => {
                     if last_bound != PipelineKind::Curve {
@@ -235,6 +248,7 @@ pub fn dispatch(
 enum PipelineKind {
     None,
     Quad,
+    Circle,
     Curve,
     Stencil,
     Other,

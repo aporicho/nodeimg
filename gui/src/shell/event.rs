@@ -41,7 +41,10 @@ pub enum AppEvent {
     MouseMove { x: f32, y: f32 },
     MousePress { x: f32, y: f32, button: MouseButton },
     MouseRelease { x: f32, y: f32, button: MouseButton },
-    Scroll { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+    /// 鼠标滚轮（行级 delta）
+    ScrollLine { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+    /// trackpad 双指滑动（像素级 delta）
+    ScrollPixel { x: f32, y: f32, delta_x: f32, delta_y: f32 },
 
     // ── 键盘 ──
     KeyPress { key: Key, modifiers: Modifiers },
@@ -56,5 +59,5 @@ pub enum AppEvent {
     Unfocused,
 
     // ── 触控板手势 ──
-    PinchZoom { delta: f32 },
+    PinchZoom { x: f32, y: f32, delta: f32 },
 }

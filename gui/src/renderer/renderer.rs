@@ -3,6 +3,7 @@ use winit::dpi::PhysicalSize;
 
 use super::blit::{self, BlitPipeline};
 use super::buffer::SharedViewport;
+use super::circle::{CirclePipeline, CircleRequest};
 use super::command::DrawCommand;
 use super::curve::{CurvePipeline, CurveRequest};
 use super::dispatch;
@@ -22,6 +23,7 @@ pub struct Renderer {
     quad_pipeline: QuadPipeline,
     text_pipeline: TextPipeline,
     image_pipeline: ImagePipeline,
+    circle_pipeline: CirclePipeline,
     curve_pipeline: CurvePipeline,
     shadow_pipeline: ShadowPipeline,
     stencil: StencilState,
@@ -30,6 +32,7 @@ pub struct Renderer {
     blit: BlitPipeline,
     format: wgpu::TextureFormat,
     render_scale: f32,
+    clear_color: Color,
     commands: Vec<DrawCommand>,
     frame: Option<FrameState>,
 }
@@ -93,6 +96,7 @@ impl Renderer {
             quad_pipeline: QuadPipeline::new(device, format, ms),
             text_pipeline: TextPipeline::new(device, queue, format, ms),
             image_pipeline: ImagePipeline::new(device, format, ms),
+            circle_pipeline: CirclePipeline::new(device, format, ms),
             curve_pipeline: CurvePipeline::new(device, format, ms),
             shadow_pipeline: ShadowPipeline::new(device, format, ms),
             stencil: StencilState::new(device, internal, format, ms),
@@ -101,6 +105,7 @@ impl Renderer {
             blit: BlitPipeline::new(device, format),
             format,
             render_scale,
+            clear_color: Color::BLACK,
             commands: Vec::new(),
             frame: None,
         }
@@ -111,6 +116,10 @@ impl Renderer {
         self.stencil.resize(device, internal);
         self.msaa_view = create_msaa_texture(device, self.format, internal);
         self.resolve_view = blit::create_resolve_texture(device, self.format, internal);
+    }
+
+    pub fn set_clear_color(&mut self, color: Color) {
+        self.clear_color = color;
     }
 
     pub fn begin_frame(&mut self, view: wgpu::TextureView, size: PhysicalSize<u32>, scale_factor: f64) {
@@ -146,6 +155,14 @@ impl Renderer {
         self.commands.push(DrawCommand::Image { rect, view });
     }
 
+    pub fn draw_circle(&mut self, center: Point, radius: f32, color: Color) {
+        self.commands.push(DrawCommand::Circle(CircleRequest {
+            center,
+            radius,
+            color,
+        }));
+    }
+
     pub fn draw_curve(&mut self, points: [Point; 4], width: f32, color: Color) {
         self.commands.push(DrawCommand::Curve(CurveRequest {
             points,
@@ -177,6 +194,7 @@ impl Renderer {
             internal,
             frame.scale_factor,
             self.render_scale,
+            self.clear_color,
             device,
             queue,
             &self.blit,
@@ -184,6 +202,7 @@ impl Renderer {
             &mut self.quad_pipeline,
             &mut self.text_pipeline,
             &mut self.image_pipeline,
+            &mut self.circle_pipeline,
             &mut self.curve_pipeline,
             &mut self.shadow_pipeline,
             &mut self.stencil,

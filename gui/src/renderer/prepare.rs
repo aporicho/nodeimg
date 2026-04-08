@@ -6,6 +6,7 @@ use lyon::tessellation::{
 };
 
 
+use super::circle::{CircleRequest, CircleVertex};
 use super::command::DrawCommand;
 use super::curve::{CurvePipeline, CurveRequest, CurveVertex};
 use super::quad::{build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING};
@@ -17,6 +18,7 @@ use super::types::Rect;
 
 pub enum DrawOp {
     Quad { index_start: u32, index_count: u32 },
+    Circle { index_start: u32, index_count: u32 },
     Curve { index_start: u32, index_count: u32 },
     Shadow(ShadowRequest),
     Image { rect: Rect, view: Arc<wgpu::TextureView> },
@@ -36,6 +38,9 @@ pub struct PreparedFrame {
     pub curve_vertices: Vec<CurveVertex>,
     pub curve_indices: Vec<u32>,
 
+    pub circle_vertices: Vec<CircleVertex>,
+    pub circle_indices: Vec<u32>,
+
     pub stencil_vertices: Vec<StencilVertex>,
     pub stencil_indices: Vec<u32>,
 }
@@ -49,11 +54,14 @@ pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipelin
         quad_indices: Vec::new(),
         curve_vertices: Vec::new(),
         curve_indices: Vec::new(),
+        circle_vertices: Vec::new(),
+        circle_indices: Vec::new(),
         stencil_vertices: Vec::new(),
         stencil_indices: Vec::new(),
     };
 
     let mut quad_batch: Vec<&QuadRequest> = Vec::new();
+    let mut circle_batch: Vec<&CircleRequest> = Vec::new();
     let mut curve_batch: Vec<&CurveRequest> = Vec::new();
     let mut clip_stack: Vec<(Rect, f32)> = Vec::new();
 
@@ -61,20 +69,29 @@ pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipelin
         match cmd {
             DrawCommand::Shadow(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Shadow(req.clone()));
             }
             DrawCommand::Rect(req) => {
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 quad_batch.push(req);
             }
+            DrawCommand::Circle(req) => {
+                flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
+                circle_batch.push(req);
+            }
             DrawCommand::Text(_) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Text);
             }
             DrawCommand::Image { rect, view } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 frame.ops.push(DrawOp::Image {
                     rect: *rect,
@@ -83,16 +100,19 @@ pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipelin
             }
             DrawCommand::Curve(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 curve_batch.push(req);
             }
             DrawCommand::PushClip { rect, radius } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 clip_stack.push((*rect, *radius));
                 tessellate_stencil(&mut frame, *rect, *radius, true);
             }
             DrawCommand::PopClip => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 if let Some((rect, radius)) = clip_stack.pop() {
                     tessellate_stencil(&mut frame, rect, radius, false);
@@ -102,6 +122,7 @@ pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipelin
     }
 
     flush_quad_batch(&mut quad_batch, &mut frame);
+    flush_circle_batch(&mut circle_batch, &mut frame);
     flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
 
     frame
@@ -204,6 +225,51 @@ fn flush_curve_batch(batch: &mut Vec<&CurveRequest>, frame: &mut PreparedFrame, 
     frame.ops.push(DrawOp::Curve {
         index_start,
         index_count: total_indices.len() as u32,
+    });
+}
+
+fn flush_circle_batch(batch: &mut Vec<&CircleRequest>, frame: &mut PreparedFrame) {
+    if batch.is_empty() {
+        return;
+    }
+
+    let index_start = frame.circle_indices.len() as u32;
+    let mut index_count: u32 = 0;
+
+    for req in batch.iter() {
+        let cx = req.center.x;
+        let cy = req.center.y;
+        let r = req.radius;
+        let color = req.color.to_array();
+        let center = [cx, cy];
+        let ext = r + 1.0;
+
+        let vertex_offset = frame.circle_vertices.len() as u32;
+
+        frame.circle_vertices.extend_from_slice(&[
+            CircleVertex { position: [cx - ext, cy - ext], center, radius: r, color },
+            CircleVertex { position: [cx + ext, cy - ext], center, radius: r, color },
+            CircleVertex { position: [cx + ext, cy + ext], center, radius: r, color },
+            CircleVertex { position: [cx - ext, cy + ext], center, radius: r, color },
+        ]);
+
+        frame.circle_indices.extend_from_slice(&[
+            vertex_offset,
+            vertex_offset + 1,
+            vertex_offset + 2,
+            vertex_offset,
+            vertex_offset + 2,
+            vertex_offset + 3,
+        ]);
+
+        index_count += 6;
+    }
+
+    batch.clear();
+
+    frame.ops.push(DrawOp::Circle {
+        index_start,
+        index_count,
     });
 }
 

@@ -1,3 +1,4 @@
+use crate::canvas::Canvas;
 use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
 use crate::panel_tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
 use crate::renderer::{Color, Rect, Renderer};
@@ -9,6 +10,7 @@ const COLOR_ACTIVE: Color = Color { r: 0.2, g: 0.5, b: 0.9, a: 1.0 };
 const COLOR_INACTIVE: Color = Color { r: 0.85, g: 0.85, b: 0.87, a: 1.0 };
 
 pub struct DemoApp {
+    canvas: Canvas,
     layer: PanelLayer,
     drag: DragState,
     resize: ResizeState,
@@ -44,6 +46,7 @@ impl App for DemoApp {
         layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
 
         Self {
+            canvas: Canvas::new(),
             layer,
             drag: DragState::new(),
             resize: ResizeState::new(),
@@ -59,49 +62,63 @@ impl App for DemoApp {
             tracing::debug!("{:?}", event);
         }
 
-        match event {
-            AppEvent::MousePress { x, y, .. } => {
-                // 先检查面板 hit test
-                if let Some(panel_id) = hit_test_panel(&self.layer, x, y) {
-                    let frame = self.layer.get(panel_id).unwrap();
+        // 面板优先拦截
+        let panel_consumed = match &event {
+            AppEvent::MousePress { x, y, button } => {
+                if *button == crate::shell::MouseButton::Left {
+                    if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
+                        let frame = self.layer.get(panel_id).unwrap();
 
-                    // 检查是否在 resize 边缘
-                    if let Some(edge) = ResizeState::detect_edge(frame, x, y) {
-                        self.resize.start(panel_id, edge, x, y);
-                    } else {
-                        // 先检查面板树里的按钮
-                        let mut button_hit = false;
-                        if let Some(root) = self.tree.root() {
-                            if let Some(id) = hit_test(&self.tree, root, x, y) {
-                                self.active_button = Some(id);
-                                button_hit = true;
+                        if let Some(edge) = ResizeState::detect_edge(frame, *x, *y) {
+                            self.resize.start(panel_id, edge, *x, *y);
+                        } else {
+                            let mut button_hit = false;
+                            if let Some(root) = self.tree.root() {
+                                if let Some(id) = hit_test(&self.tree, root, *x, *y) {
+                                    self.active_button = Some(id);
+                                    button_hit = true;
+                                }
+                            }
+                            if !button_hit {
+                                self.drag.start(panel_id, *x, *y);
                             }
                         }
 
-                        // 没命中按钮则开始拖拽
-                        if !button_hit {
-                            self.drag.start(panel_id, x, y);
-                        }
+                        self.layer.bring_to_front(panel_id);
+                        true
+                    } else {
+                        false
                     }
-
-                    self.layer.bring_to_front(panel_id);
+                } else {
+                    false
                 }
             }
             AppEvent::MouseMove { x, y } => {
-                self.mouse_x = x;
-                self.mouse_y = y;
+                self.mouse_x = *x;
+                self.mouse_y = *y;
+                let mut consumed = false;
                 if self.drag.is_active() {
-                    self.drag.update(x, y, &mut self.layer);
+                    self.drag.update(*x, *y, &mut self.layer);
+                    consumed = true;
                 }
                 if self.resize.is_active() {
-                    self.resize.update(x, y, &mut self.layer);
+                    self.resize.update(*x, *y, &mut self.layer);
+                    consumed = true;
                 }
+                consumed
             }
             AppEvent::MouseRelease { .. } => {
+                let was_active = self.drag.is_active() || self.resize.is_active();
                 self.drag.end();
                 self.resize.end();
+                was_active
             }
-            _ => {}
+            _ => false,
+        };
+
+        // 面板没消费的事件给画布
+        if !panel_consumed {
+            self.canvas.event(&event);
         }
     }
 
@@ -130,7 +147,14 @@ impl App for DemoApp {
         }
     }
 
-    fn render(&mut self, renderer: &mut Renderer, _ctx: &AppContext) {
+    fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
+        let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
+        let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
+
+        // 先渲染画布（背景 + 点阵）
+        self.canvas.render(renderer, viewport_w, viewport_h);
+
+        // 再渲染面板（在画布上方）
         let tree = &self.tree;
         self.layer.render(renderer, |_frame, renderer| {
             if let Some(root) = tree.root() {

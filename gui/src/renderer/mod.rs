@@ -1,5 +1,6 @@
 mod blit;
 mod buffer;
+mod circle;
 mod command;
 mod curve;
 mod dispatch;

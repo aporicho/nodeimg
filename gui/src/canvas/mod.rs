@@ -1,90 +1,72 @@
-//! 节点画布 (2.1.0)
-//! 自建 Canvas widget：背景网格、节点渲染、连线渲染、叠加层。
+pub mod background;
+pub mod camera;
+pub mod pan;
 
-pub mod connection;
-pub mod controller;
-pub mod node;
+use camera::Camera;
+use pan::PanState;
 
-use controller::CanvasState;
-use iced::mouse;
-use iced::widget::canvas;
-use iced::{Color, Point, Rectangle, Renderer, Theme};
+use crate::renderer::Renderer;
+use crate::shell::{AppEvent, MouseButton};
 
-#[derive(Debug, Clone)]
-pub enum Message {}
+const SCROLL_LINE_ZOOM_SPEED: f32 = 0.1;
+const PINCH_ZOOM_SPEED: f32 = 1.0;
 
-/// 节点画布 Program。
-pub struct NodeCanvas;
+pub struct Canvas {
+    pub camera: Camera,
+    pan: PanState,
+}
 
-impl<Message> canvas::Program<Message> for NodeCanvas {
-    type State = CanvasState;
-
-    fn update(
-        &self,
-        state: &mut Self::State,
-        event: &canvas::Event,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Option<canvas::Action<Message>> {
-        state.handle_event(event, bounds, cursor)
+impl Canvas {
+    pub fn new() -> Self {
+        Self {
+            camera: Camera::new(),
+            pan: PanState::new(),
+        }
     }
 
-    fn draw(
-        &self,
-        state: &Self::State,
-        renderer: &Renderer,
-        theme: &Theme,
-        bounds: Rectangle,
-        _cursor: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let grid = state.grid_cache.draw(renderer, bounds.size(), |frame| {
-            // zinc-50 #fafafa
-            let bg = Color::from_rgb8(0xfa, 0xfa, 0xfa);
-            frame.fill_rectangle(Point::ORIGIN, bounds.size(), bg);
-
-            // zinc-300 #d4d4d8
-            let dot_color = Color::from_rgb8(0xd4, 0xd4, 0xd8);
-            let grid_spacing = 24.0 * state.scale;
-            let dot_radius = (1.0 * state.scale).max(0.5);
-
-            if grid_spacing < 4.0 {
-                return;
-            }
-
-            let offset_x = state.offset.x.rem_euclid(grid_spacing);
-            let offset_y = state.offset.y.rem_euclid(grid_spacing);
-
-            let mut x = offset_x;
-            while x < bounds.width {
-                let mut y = offset_y;
-                while y < bounds.height {
-                    let dot = canvas::Path::circle(Point::new(x, y), dot_radius);
-                    frame.fill(&dot, dot_color);
-                    y += grid_spacing;
+    /// 处理画布事件。返回 true 表示事件被消费。
+    pub fn event(&mut self, event: &AppEvent) -> bool {
+        match event {
+            // 中键拖拽 = 画布平移
+            AppEvent::MousePress { x, y, button } => {
+                if *button == MouseButton::Middle {
+                    self.pan.start(*x, *y);
+                    return true;
                 }
-                x += grid_spacing;
             }
-        });
-
-        vec![grid]
+            AppEvent::MouseMove { x, y } => {
+                if self.pan.is_active() {
+                    self.pan.update(*x, *y, &mut self.camera);
+                    return true;
+                }
+            }
+            AppEvent::MouseRelease { button, .. } => {
+                if *button == MouseButton::Middle {
+                    self.pan.end();
+                    return true;
+                }
+            }
+            // 鼠标滚轮 = 缩放
+            AppEvent::ScrollLine { x, y, delta_y, .. } => {
+                self.camera.zoom_at(*x, *y, *delta_y * SCROLL_LINE_ZOOM_SPEED);
+                return true;
+            }
+            // trackpad 双指滑动 = 平移
+            AppEvent::ScrollPixel { delta_x, delta_y, .. } => {
+                self.camera.pan(*delta_x, *delta_y);
+                return true;
+            }
+            // trackpad 双指捏合 = 缩放
+            AppEvent::PinchZoom { x, y, delta } => {
+                self.camera.zoom_at(*x, *y, *delta * PINCH_ZOOM_SPEED);
+                return true;
+            }
+            _ => {}
+        }
+        false
     }
 
-    fn mouse_interaction(
-        &self,
-        state: &Self::State,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> mouse::Interaction {
-        if !cursor.is_over(bounds) {
-            return mouse::Interaction::default();
-        }
-
-        if state.is_panning() {
-            mouse::Interaction::Grabbing
-        } else if state.space_held() {
-            mouse::Interaction::Grab
-        } else {
-            mouse::Interaction::default()
-        }
+    pub fn render(&self, renderer: &mut Renderer, viewport_w: f32, viewport_h: f32) {
+        background::render(renderer, &self.camera, viewport_w, viewport_h);
     }
 }
