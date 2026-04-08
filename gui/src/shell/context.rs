@@ -2,6 +2,8 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use super::cursor::CursorState;
+
 pub struct AppContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -9,4 +11,5 @@ pub struct AppContext {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
     pub scale_factor: f64,
+    pub cursor: CursorState,
 }

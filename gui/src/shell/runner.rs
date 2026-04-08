@@ -54,6 +54,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
             surface_config,
             size,
             scale_factor,
+            cursor: super::cursor::CursorState::new(),
         };
 
         let app = A::init(&mut ctx);
@@ -102,7 +103,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
 
         // 请求重绘
         if let WindowEvent::RedrawRequested = event {
+            state.ctx.cursor.reset();
             state.app.update(&mut state.ctx);
+            state.ctx.cursor.apply(&state.ctx.window);
 
             let output = match state.surface.get_current_texture() {
                 Ok(tex) => tex,
