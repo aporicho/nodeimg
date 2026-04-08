@@ -6,7 +6,7 @@ use winit::window::WindowId;
 
 use super::app::App;
 use super::context::AppContext;
-use super::event::{self, AppEvent};
+use super::event::{AppEvent, EventTranslator};
 use super::{gpu, surface, window};
 use crate::renderer::Renderer;
 
@@ -19,6 +19,7 @@ struct RunnerState<A: App> {
     ctx: AppContext,
     surface: wgpu::Surface<'static>,
     renderer: Renderer,
+    events: EventTranslator,
 }
 
 impl<A: App> Runner<A> {
@@ -61,6 +62,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
             ctx,
             surface: surf,
             renderer,
+            events: EventTranslator::new(scale_factor),
         });
     }
 
@@ -87,7 +89,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         }
 
         // 翻译并分发事件
-        if let Some(app_event) = event::translate(&event) {
+        if let Some(app_event) = state.events.translate(&event) {
             match app_event {
                 AppEvent::CloseRequested => {
                     event_loop.exit();
