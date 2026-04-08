@@ -1,6 +1,5 @@
 use super::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::controls::atoms::button::{ButtonProps, button_paint};
 use crate::renderer::Renderer;
 
 pub fn paint(tree: &PanelTree, root: NodeId, renderer: &mut Renderer) {
@@ -11,14 +10,9 @@ fn paint_node(tree: &PanelTree, node_id: NodeId, renderer: &mut Renderer) {
     let Some(node) = tree.get(node_id) else { return };
 
     match &node.kind {
-        NodeKind::Column => {}
-        NodeKind::Button { label, color } => {
-            let props = ButtonProps {
-                id: node.id,
-                label,
-                color: *color,
-            };
-            button_paint(&props, node.rect, renderer);
+        NodeKind::Container { .. } => {}
+        NodeKind::Widget(w) => {
+            w.paint(node.rect, renderer);
         }
     }
 
@@ -49,8 +43,13 @@ fn hit_test_node(tree: &PanelTree, node_id: NodeId, x: f32, y: f32) -> Option<&'
         }
     }
 
-    if matches!(node.kind, NodeKind::Button { .. }) {
-        return Some(node.id);
+    match &node.kind {
+        NodeKind::Widget(w) => {
+            if w.hit_test(node.rect, x, y) {
+                return Some(node.id);
+            }
+        }
+        _ => {}
     }
 
     None

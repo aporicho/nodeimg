@@ -1,4 +1,6 @@
 use crate::canvas::Canvas;
+use crate::controls::atoms::button::Button;
+use crate::controls::infra::layout::{BoxStyle, Direction};
 use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
 use crate::panel_tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
 use crate::renderer::{Color, Rect, Renderer};
@@ -23,18 +25,24 @@ pub struct DemoApp {
 impl DemoApp {
     fn view(&self) -> Desc {
         let active = self.active_button;
-        Desc::Column {
+        Desc::Container {
+            id: "__root",
+            style: BoxStyle {
+                direction: Direction::Column,
+                gap: 8.0,
+                ..BoxStyle::default()
+            },
             children: vec![
-                Desc::Button {
+                Desc::Widget(Box::new(Button {
                     id: "btn_a",
                     label: "Button A",
                     color: if active == Some("btn_a") { COLOR_ACTIVE } else { COLOR_INACTIVE },
-                },
-                Desc::Button {
+                })),
+                Desc::Widget(Box::new(Button {
                     id: "btn_b",
                     label: "Button B",
                     color: if active == Some("btn_b") { COLOR_ACTIVE } else { COLOR_INACTIVE },
-                },
+                })),
             ],
         }
     }
@@ -134,7 +142,7 @@ impl App for DemoApp {
             }
         }
         let desc = self.view();
-        reconcile(&mut self.tree, &desc);
+        reconcile(&mut self.tree, desc);
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {

@@ -8,6 +8,7 @@ pub struct LayoutBox {
 }
 
 /// 盒子样式（Flexbox + 盒模型）
+#[derive(Clone)]
 pub struct BoxStyle {
     // ── 盒模型 ──
     pub padding: Edges,
@@ -68,7 +69,7 @@ impl Edges {
 }
 
 /// 尺寸
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Size {
     Fixed(f32),
     Auto,
