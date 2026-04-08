@@ -18,6 +18,3 @@ resvg = "0.44"
 image = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# 旧 GUI 依赖（待移除）
-# iced = { version = "0.14", features = ["canvas", "image", "svg", "wgpu", "tokio"] }

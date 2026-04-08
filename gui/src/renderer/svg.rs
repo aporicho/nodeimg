@@ -85,7 +85,7 @@ fn rasterize_svg(
     let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-    // 光栅化后逐像素替换 RGB，保留原始 alpha（与 iced 相同的方式）
+    // 光栅化后逐像素替换 RGB，保留原始 alpha
     let [r, g, b, _a] = color;
     for px in pixmap.data_mut().chunks_exact_mut(4) {
         if px[3] > 0 {

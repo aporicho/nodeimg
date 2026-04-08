@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 autosave.nis
 .claude/worktrees/
+.superpowers/

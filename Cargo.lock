@@ -3909,7 +3909,3 @@ checksum = "0b7a1c0af6e5d8d1363f4994b7a091ccf963d8b694f7da5b0b9cceb82da2c0a6"
 dependencies = [
  "zune-core 0.5.1",
 ]
-
-[[patch.unused]]
-name = "iced_winit"
-version = "0.14.0"
