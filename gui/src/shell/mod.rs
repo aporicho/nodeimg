@@ -4,6 +4,7 @@ mod event;
 mod gpu;
 mod runner;
 mod surface;
+mod translator;
 mod window;
 
 pub use app::App;

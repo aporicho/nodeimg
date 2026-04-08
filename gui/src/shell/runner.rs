@@ -6,7 +6,8 @@ use winit::window::WindowId;
 
 use super::app::App;
 use super::context::AppContext;
-use super::event::{AppEvent, EventTranslator};
+use super::event::AppEvent;
+use super::translator::EventTranslator;
 use super::{gpu, surface, window};
 use crate::renderer::Renderer;
 

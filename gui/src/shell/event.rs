@@ -1,39 +1,59 @@
-use winit::dpi::PhysicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+/// 鼠标按钮。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
 
+/// 键盘按键（后续按需扩展）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Escape,
+    Tab,
+    Enter,
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Up,
+    Down,
+    Space,
+    /// 字母 A-Z（大写存储，不区分大小写）
+    Char(char),
+    /// 其他未映射的按键
+    Other,
+}
+
+/// 修饰键状态。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub meta: bool, // Cmd on macOS, Win on Windows
+}
+
+/// 应用层事件。由 EventTranslator 从 winit 原始事件翻译而来。
 pub enum AppEvent {
-    Resized(PhysicalSize<u32>),
+    // ── 鼠标 ──
+    MouseMove { x: f32, y: f32 },
+    MousePress { x: f32, y: f32, button: MouseButton },
+    MouseRelease { x: f32, y: f32, button: MouseButton },
+    Scroll { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+
+    // ── 键盘 ──
+    KeyPress { key: Key, modifiers: Modifiers },
+    KeyRelease { key: Key, modifiers: Modifiers },
+    TextInput { text: String },
+
+    // ── 窗口 ──
+    Resized { width: u32, height: u32 },
+    ScaleFactorChanged { scale_factor: f64 },
     CloseRequested,
-    MousePress { x: f32, y: f32 },
-}
+    Focused,
+    Unfocused,
 
-/// 有状态的事件翻译器，追踪光标位置。
-pub struct EventTranslator {
-    cursor_x: f64,
-    cursor_y: f64,
-    scale_factor: f64,
-}
-
-impl EventTranslator {
-    pub fn new(scale_factor: f64) -> Self {
-        Self { cursor_x: 0.0, cursor_y: 0.0, scale_factor }
-    }
-
-    pub fn translate(&mut self, event: &WindowEvent) -> Option<AppEvent> {
-        match event {
-            WindowEvent::Resized(size) => Some(AppEvent::Resized(*size)),
-            WindowEvent::CloseRequested => Some(AppEvent::CloseRequested),
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_x = position.x;
-                self.cursor_y = position.y;
-                None
-            }
-            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
-                let x = (self.cursor_x / self.scale_factor) as f32;
-                let y = (self.cursor_y / self.scale_factor) as f32;
-                Some(AppEvent::MousePress { x, y })
-            }
-            _ => None,
-        }
-    }
+    // ── 触控板手势 ──
+    PinchZoom { delta: f32 },
 }

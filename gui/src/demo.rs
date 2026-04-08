@@ -42,7 +42,7 @@ impl App for DemoApp {
     }
 
     fn event(&mut self, event: AppEvent, _ctx: &mut AppContext) {
-        if let AppEvent::MousePress { x, y } = event {
+        if let AppEvent::MousePress { x, y, .. } = event {
             if let Some(root) = self.tree.root() {
                 if let Some(id) = hit_test(&self.tree, root, x, y) {
                     self.active_button = Some(id);
