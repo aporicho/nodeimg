@@ -72,12 +72,7 @@ struct BlurParams {
     _pad1: [f32; 2],
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct ViewportUniform {
-    size: [f32; 2],
-    _padding: [f32; 2],
-}
+use super::buffer::ViewportUniform;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -169,7 +164,7 @@ impl ShadowPipeline {
         pass: &mut wgpu::RenderPass<'a>,
         device: &wgpu::Device,
         request: &ShadowRequest,
-        viewport_size: [f32; 2],
+        viewport_buf: &'a wgpu::Buffer,
         stencil_ref: u32,
     ) {
         let key = CacheKey::new(request.rect, request.radius, &request.shadow);
@@ -184,7 +179,7 @@ impl ShadowPipeline {
                 h: cached.tex_h as f32 * self.downsample_factor as f32,
             };
 
-            self.composite(pass, device, &cached.texture_view, dest_rect, viewport_size, stencil_ref);
+            self.composite(pass, device, &cached.texture_view, dest_rect, viewport_buf, stencil_ref);
         }
     }
 
@@ -390,19 +385,9 @@ impl ShadowPipeline {
         device: &wgpu::Device,
         shadow_view: &'a wgpu::TextureView,
         dest_rect: Rect,
-        viewport_size: [f32; 2],
+        viewport_buf: &'a wgpu::Buffer,
         stencil_ref: u32,
     ) {
-        let viewport_uniform = ViewportUniform {
-            size: viewport_size,
-            _padding: [0.0; 2],
-        };
-        let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("shadow_composite_viewport"),
-            contents: bytemuck::bytes_of(&viewport_uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
         let rect_uniform = ShadowRectUniform {
             rect: [dest_rect.x, dest_rect.y, dest_rect.w, dest_rect.h],
         };
@@ -418,7 +403,7 @@ impl ShadowPipeline {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: viewport_buffer.as_entire_binding(),
+                    resource: viewport_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,

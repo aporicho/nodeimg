@@ -50,3 +50,45 @@ impl DynamicBuffer {
         &self.buffer
     }
 }
+
+// ── 共享 viewport uniform ──────────────────────────────────────────
+
+use bytemuck::{Pod, Zeroable};
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ViewportUniform {
+    pub size: [f32; 2],
+    pub _padding: [f32; 2],
+}
+
+/// 主视口 uniform buffer。帧间复用，所有管线共享引用。
+pub struct SharedViewport {
+    buf: DynamicBuffer,
+}
+
+impl SharedViewport {
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self {
+            buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::UNIFORM,
+                "shared_viewport_uniform",
+                256,
+            ),
+        }
+    }
+
+    /// 每帧调用一次，写入主视口尺寸。
+    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, viewport_size: [f32; 2]) {
+        let uniform = ViewportUniform {
+            size: viewport_size,
+            _padding: [0.0; 2],
+        };
+        self.buf.write(device, queue, bytemuck::bytes_of(&uniform));
+    }
+
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        self.buf.buffer()
+    }
+}

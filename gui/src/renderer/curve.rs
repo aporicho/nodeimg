@@ -16,17 +16,9 @@ pub struct CurveRequest {
     pub color: Color,
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct ViewportUniform {
-    size: [f32; 2],
-    _padding: [f32; 2],
-}
-
 pub struct CurvePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    uniform_buf: DynamicBuffer,
     vertex_buf: DynamicBuffer,
     index_buf: DynamicBuffer,
 }
@@ -107,7 +99,6 @@ impl CurvePipeline {
         Self {
             pipeline,
             bind_group_layout,
-            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "curve_viewport_uniform", 256),
             vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "curve_vertex_buffer", 4096),
             index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "curve_index_buffer", 4096),
         }
@@ -119,27 +110,21 @@ impl CurvePipeline {
         queue: &wgpu::Queue,
         vertices: &[CurveVertex],
         indices: &[u32],
-        viewport_size: [f32; 2],
     ) {
         if vertices.is_empty() {
             return;
         }
-        let uniform = ViewportUniform {
-            size: viewport_size,
-            _padding: [0.0; 2],
-        };
-        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
         self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
         self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
     }
 
-    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device) {
+    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device, viewport_buf: &'a wgpu::Buffer) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("curve_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: self.uniform_buf.buffer().as_entire_binding(),
+                resource: viewport_buf.as_entire_binding(),
             }],
         });
         pass.set_pipeline(&self.pipeline);

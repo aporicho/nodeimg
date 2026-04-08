@@ -3,20 +3,12 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use super::buffer::DynamicBuffer;
 use super::types::Rect;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct ImageInstance {
     rect: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct ViewportUniform {
-    size: [f32; 2],
-    _padding: [f32; 2],
 }
 
 pub struct ImageRequest<'a> {
@@ -28,7 +20,6 @@ pub struct ImagePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    uniform_buf: DynamicBuffer,
 }
 
 impl ImagePipeline {
@@ -129,16 +120,7 @@ impl ImagePipeline {
             pipeline,
             bind_group_layout,
             sampler,
-            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "image_viewport_uniform", 256),
         }
-    }
-
-    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, viewport_size: [f32; 2]) {
-        let uniform = ViewportUniform {
-            size: viewport_size,
-            _padding: [0.0; 2],
-        };
-        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
     }
 
     pub fn draw<'a>(
@@ -147,6 +129,7 @@ impl ImagePipeline {
         device: &wgpu::Device,
         texture_view: &'a wgpu::TextureView,
         rect: Rect,
+        viewport_buf: &'a wgpu::Buffer,
     ) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image_bind_group"),
@@ -154,7 +137,7 @@ impl ImagePipeline {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.uniform_buf.buffer().as_entire_binding(),
+                    resource: viewport_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,

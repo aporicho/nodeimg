@@ -1,5 +1,6 @@
 use winit::dpi::PhysicalSize;
 
+use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::curve::CurvePipeline;
 use super::image::ImagePipeline;
@@ -17,6 +18,7 @@ pub fn dispatch(
     scale_factor: f64,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    shared_viewport: &mut SharedViewport,
     quad_pipeline: &mut QuadPipeline,
     text_pipeline: &mut TextPipeline,
     image_pipeline: &mut ImagePipeline,
@@ -27,6 +29,10 @@ pub fn dispatch(
     let logical_w = size.width as f64 / scale_factor;
     let logical_h = size.height as f64 / scale_factor;
     let viewport_size = [logical_w as f32, logical_h as f32];
+
+    // viewport uniform 只写一次
+    shared_viewport.upload(device, queue, viewport_size);
+    let viewport_buf = shared_viewport.buffer();
 
     // ── 阶段 1：文字 prepare ──
 
@@ -71,10 +77,9 @@ pub fn dispatch(
 
     // ── 阶段 4：上传 buffer（&mut pipeline）──
 
-    quad_pipeline.upload(device, queue, &prepared.quad_vertices, &prepared.quad_indices, viewport_size);
-    curve_pipeline.upload(device, queue, &prepared.curve_vertices, &prepared.curve_indices, viewport_size);
-    stencil.upload(device, queue, &prepared.stencil_vertices, &prepared.stencil_indices, viewport_size);
-    image_pipeline.upload(device, queue, viewport_size);
+    quad_pipeline.upload(device, queue, &prepared.quad_vertices, &prepared.quad_indices);
+    curve_pipeline.upload(device, queue, &prepared.curve_vertices, &prepared.curve_indices);
+    stencil.upload(device, queue, &prepared.stencil_vertices, &prepared.stencil_indices);
 
     // ── 阶段 5：render pass（&self pipeline）──
 
@@ -112,7 +117,7 @@ pub fn dispatch(
 
         // 绑定各管线 buffer（每帧一次）
         if has_quads {
-            quad_pipeline.bind(&mut pass, device);
+            quad_pipeline.bind(&mut pass, device, viewport_buf);
         }
 
         let mut last_bound = PipelineKind::None;
@@ -122,7 +127,7 @@ pub fn dispatch(
             match op {
                 DrawOp::Quad { index_start, index_count } => {
                     if last_bound != PipelineKind::Quad {
-                        quad_pipeline.bind(&mut pass, device);
+                        quad_pipeline.bind(&mut pass, device, viewport_buf);
                         last_bound = PipelineKind::Quad;
                     }
                     pass.set_stencil_reference(clip_depth);
@@ -130,7 +135,7 @@ pub fn dispatch(
                 }
                 DrawOp::Curve { index_start, index_count } => {
                     if last_bound != PipelineKind::Curve {
-                        curve_pipeline.bind(&mut pass, device);
+                        curve_pipeline.bind(&mut pass, device, viewport_buf);
                         last_bound = PipelineKind::Curve;
                     }
                     pass.set_stencil_reference(clip_depth);
@@ -138,19 +143,19 @@ pub fn dispatch(
                 }
                 DrawOp::Shadow(req) => {
                     last_bound = PipelineKind::Other;
-                    shadow_pipeline.draw(&mut pass, device, req, viewport_size, clip_depth);
+                    shadow_pipeline.draw(&mut pass, device, req, viewport_buf, clip_depth);
                 }
                 DrawOp::Image { rect, view } => {
                     last_bound = PipelineKind::Other;
                     pass.set_stencil_reference(clip_depth);
-                    image_pipeline.draw(&mut pass, device, view, *rect);
+                    image_pipeline.draw(&mut pass, device, view, *rect, viewport_buf);
                 }
                 DrawOp::Text => {
                     // text 在最后统一渲染
                 }
                 DrawOp::StencilWrite { index_start, index_count } => {
                     if has_stencils && last_bound != PipelineKind::Stencil {
-                        stencil.bind_stencil(&mut pass, device);
+                        stencil.bind_stencil(&mut pass, device, viewport_buf);
                         last_bound = PipelineKind::Stencil;
                     }
                     stencil.draw_write(&mut pass, clip_depth, *index_start, *index_count);
@@ -158,7 +163,7 @@ pub fn dispatch(
                 }
                 DrawOp::StencilClear { index_start, index_count } => {
                     if has_stencils && last_bound != PipelineKind::Stencil {
-                        stencil.bind_stencil(&mut pass, device);
+                        stencil.bind_stencil(&mut pass, device, viewport_buf);
                         last_bound = PipelineKind::Stencil;
                     }
                     stencil.draw_clear(&mut pass, clip_depth, *index_start, *index_count);

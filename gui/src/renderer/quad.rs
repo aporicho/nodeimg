@@ -7,6 +7,7 @@ use super::buffer::DynamicBuffer;
 use super::style::RectStyle;
 use super::types::Rect;
 
+
 /// 默认 corner smoothing（iOS 风格）
 pub const DEFAULT_CORNER_SMOOTHING: f32 = 0.6;
 
@@ -169,17 +170,9 @@ impl QuadRequest {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct ViewportUniform {
-    size: [f32; 2],
-    _padding: [f32; 2],
-}
-
 pub struct QuadPipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    uniform_buf: DynamicBuffer,
     vertex_buf: DynamicBuffer,
     index_buf: DynamicBuffer,
 }
@@ -260,41 +253,34 @@ impl QuadPipeline {
         Self {
             pipeline,
             bind_group_layout,
-            uniform_buf: DynamicBuffer::new(device, wgpu::BufferUsages::UNIFORM, "quad_viewport_uniform", 256),
             vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "quad_vertex_buffer", 4096),
             index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "quad_index_buffer", 4096),
         }
     }
 
-    /// render pass 之前调用：上传所有顶点/索引/uniform 数据
+    /// render pass 之前调用：上传顶点/索引数据
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         vertices: &[QuadVertex],
         indices: &[u32],
-        viewport_size: [f32; 2],
     ) {
         if vertices.is_empty() {
             return;
         }
-        let uniform = ViewportUniform {
-            size: viewport_size,
-            _padding: [0.0; 2],
-        };
-        self.uniform_buf.write(device, queue, bytemuck::bytes_of(&uniform));
         self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
         self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
     }
 
     /// render pass 内调用：绑定管线 + buffer（每帧调用一次）
-    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device) {
+    pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, device: &wgpu::Device, viewport_buf: &'a wgpu::Buffer) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("quad_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: self.uniform_buf.buffer().as_entire_binding(),
+                resource: viewport_buf.as_entire_binding(),
             }],
         });
         pass.set_pipeline(&self.pipeline);

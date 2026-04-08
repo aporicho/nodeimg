@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 
+use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::curve::{CurvePipeline, CurveRequest};
 use super::dispatch;
@@ -15,6 +16,7 @@ use super::types::{Color, Point, Rect};
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
 
 pub struct Renderer {
+    shared_viewport: SharedViewport,
     quad_pipeline: QuadPipeline,
     text_pipeline: TextPipeline,
     image_pipeline: ImagePipeline,
@@ -72,6 +74,7 @@ impl Renderer {
     ) -> Self {
         let ms = msaa_multisample_state();
         Self {
+            shared_viewport: SharedViewport::new(device),
             quad_pipeline: QuadPipeline::new(device, format, ms),
             text_pipeline: TextPipeline::new(device, queue, format, ms),
             image_pipeline: ImagePipeline::new(device, format, ms),
@@ -152,6 +155,7 @@ impl Renderer {
             frame.scale_factor,
             device,
             queue,
+            &mut self.shared_viewport,
             &mut self.quad_pipeline,
             &mut self.text_pipeline,
             &mut self.image_pipeline,
