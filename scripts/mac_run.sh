@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-cargo run -p gui --release "$@"
+RUST_LOG=info cargo run -p gui --release "$@"

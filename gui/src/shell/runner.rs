@@ -41,7 +41,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
 
         let size = win.inner_size();
         let scale_factor = win.scale_factor();
-        log::info!("Window: {}x{}, scale_factor: {}", size.width, size.height, scale_factor);
+        tracing::info!("Window: {}x{}, scale_factor: {}", size.width, size.height, scale_factor);
         let surface_config = surface::configure(&surf, &adapter, &device, size);
 
         let renderer = Renderer::new(&device, &queue, surface_config.format, size);
@@ -127,7 +127,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
 }
 
 pub fn run<A: App>() {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     let event_loop = EventLoop::new().expect("failed to create event loop");
     let mut runner = Runner::<A>::new();
     event_loop.run_app(&mut runner).expect("event loop error");
