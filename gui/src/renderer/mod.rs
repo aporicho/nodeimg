@@ -1,7 +1,9 @@
 mod blit;
+mod blur;
 mod buffer;
 mod circle;
 mod command;
+mod corner;
 mod curve;
 mod dispatch;
 mod image;

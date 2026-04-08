@@ -9,7 +9,8 @@ use lyon::tessellation::{
 use super::circle::{CircleRequest, CircleVertex};
 use super::command::DrawCommand;
 use super::curve::{CurvePipeline, CurveRequest, CurveVertex};
-use super::quad::{build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING};
+use super::corner::{build_rounded_rect_path, DEFAULT_CORNER_SMOOTHING};
+use super::quad::{QuadRequest, QuadVertex};
 use super::shadow::ShadowRequest;
 use super::stencil::StencilVertex;
 use super::types::Rect;
