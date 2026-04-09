@@ -11,6 +11,7 @@ use super::pipeline::shadow::ShadowPipeline;
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::{TextPipeline, TextRequest};
 use super::prepare::{prepare_frame, DrawOp};
+use super::text_measurer::TextMeasurer;
 
 pub fn dispatch(
     commands: &[DrawCommand],
@@ -32,6 +33,7 @@ pub fn dispatch(
     curve_pipeline: &mut CurvePipeline,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
+    text_measurer: &mut TextMeasurer,
 ) {
     // viewport 用放大后的逻辑尺寸，这样坐标 * render_scale 映射到内部分辨率
     let logical_w = internal_size.width as f64 / scale_factor / render_scale as f64;
@@ -64,7 +66,7 @@ pub fn dispatch(
                 },
             })
             .collect();
-        text_pipeline.prepare(device, queue, &refs, internal_size, scale_factor * render_scale as f64);
+        text_pipeline.prepare(device, queue, &refs, internal_size, scale_factor * render_scale as f64, text_measurer);
     }
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

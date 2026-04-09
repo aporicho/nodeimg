@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-
 use glyphon::{
-    Attrs, Buffer, Cache, Color as GlyphonColor, Family, FontSystem, Metrics, Resolution, Shaping,
-    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport,
+    Cache, Color as GlyphonColor, Resolution, SwashCache, TextArea, TextAtlas, TextBounds,
+    TextRenderer, Viewport,
 };
 use winit::dpi::PhysicalSize;
 
 use super::super::style::TextStyle;
+use super::super::text_measurer::{TextCacheKey, TextMeasurer};
 use super::super::types::{Color, Point};
 
 pub struct TextRequest {
@@ -15,35 +14,13 @@ pub struct TextRequest {
     pub style: TextStyle,
 }
 
-#[derive(Hash, PartialEq, Eq, Clone)]
-struct TextCacheKey {
-    text: String,
-    size_bits: u32,
-}
-
-impl TextCacheKey {
-    fn new(text: &str, size: f32) -> Self {
-        Self {
-            text: text.to_string(),
-            size_bits: size.to_bits(),
-        }
-    }
-}
-
-struct CachedBuffer {
-    buffer: Buffer,
-    used: bool,
-}
-
 pub struct TextPipeline {
-    font_system: FontSystem,
     swash_cache: SwashCache,
     atlas: TextAtlas,
     text_renderer: TextRenderer,
     viewport: Viewport,
     #[allow(dead_code)]
     cache: Cache,
-    buffer_cache: HashMap<TextCacheKey, CachedBuffer>,
 }
 
 impl TextPipeline {
@@ -52,8 +29,8 @@ impl TextPipeline {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         multisample: wgpu::MultisampleState,
+        _font_system: &mut glyphon::FontSystem,
     ) -> Self {
-        let font_system = FontSystem::new();
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
         let mut atlas = TextAtlas::new(device, queue, &cache, format);
@@ -66,13 +43,11 @@ impl TextPipeline {
         let viewport = Viewport::new(device, &cache);
 
         Self {
-            font_system,
             swash_cache,
             atlas,
             text_renderer,
             viewport,
             cache,
-            buffer_cache: HashMap::new(),
         }
     }
 
@@ -83,6 +58,7 @@ impl TextPipeline {
         texts: &[TextRequest],
         size: PhysicalSize<u32>,
         scale_factor: f64,
+        text_measurer: &mut TextMeasurer,
     ) {
         self.viewport.update(
             queue,
@@ -92,48 +68,21 @@ impl TextPipeline {
             },
         );
 
-        // 标记所有缓存为未使用
-        for entry in self.buffer_cache.values_mut() {
-            entry.used = false;
-        }
+        // Phase 1 (mutable): mark all unused, ensure buffers exist for each request
+        text_measurer.mark_all_unused();
 
-        // 确保每个文本都有缓存的 Buffer
         for req in texts {
-            let key = TextCacheKey::new(&req.text, req.style.size);
-            if let Some(entry) = self.buffer_cache.get_mut(&key) {
-                entry.used = true;
-            } else {
-                let mut buffer = Buffer::new(
-                    &mut self.font_system,
-                    Metrics::new(req.style.size, req.style.size * 1.2),
-                );
-                buffer.set_size(
-                    &mut self.font_system,
-                    Some(f32::MAX),
-                    Some(req.style.size * 2.0),
-                );
-                buffer.set_text(
-                    &mut self.font_system,
-                    &req.text,
-                    &Attrs::new().family(Family::SansSerif),
-                    Shaping::Advanced,
-                    None,
-                );
-                buffer.shape_until_scroll(&mut self.font_system, false);
-                self.buffer_cache.insert(key, CachedBuffer { buffer, used: true });
-            }
+            text_measurer.ensure_buffer(&req.text, req.style.size);
         }
 
-        // 清理未使用的缓存
-        self.buffer_cache.retain(|_, v| v.used);
-
+        // Phase 2 (immutable borrow of buffer_cache): build TextArea references
         let sf = scale_factor as f32;
 
         let text_areas: Vec<TextArea<'_>> = texts
             .iter()
             .map(|req| {
                 let key = TextCacheKey::new(&req.text, req.style.size);
-                let buffer = &self.buffer_cache[&key].buffer;
+                let buffer = &text_measurer.buffer_cache[&key].buffer;
                 TextArea {
                     buffer,
                     left: req.pos.x * sf,
@@ -155,44 +104,16 @@ impl TextPipeline {
             .prepare(
                 device,
                 queue,
-                &mut self.font_system,
+                &mut text_measurer.font_system,
                 &mut self.atlas,
                 &self.viewport,
                 text_areas,
                 &mut self.swash_cache,
             )
             .expect("failed to prepare text");
-    }
 
-    /// 度量文字尺寸（逻辑像素）。复用 buffer_cache。
-    pub fn measure(&mut self, text: &str, size: f32) -> (f32, f32) {
-        let key = TextCacheKey::new(text, size);
-
-        if !self.buffer_cache.contains_key(&key) {
-            let mut buffer = Buffer::new(
-                &mut self.font_system,
-                Metrics::new(size, size * 1.2),
-            );
-            buffer.set_size(&mut self.font_system, Some(f32::MAX), Some(size * 2.0));
-            buffer.set_text(
-                &mut self.font_system,
-                text,
-                &Attrs::new().family(Family::SansSerif),
-                Shaping::Advanced,
-                None,
-            );
-            buffer.shape_until_scroll(&mut self.font_system, false);
-            self.buffer_cache.insert(key.clone(), CachedBuffer { buffer, used: true });
-        }
-
-        let buffer = &self.buffer_cache[&key].buffer;
-        let mut width: f32 = 0.0;
-        let mut height: f32 = 0.0;
-        for run in buffer.layout_runs() {
-            width = width.max(run.line_w);
-            height += run.line_height;
-        }
-        (width, height)
+        // Evict unused buffers after prepare
+        text_measurer.evict_unused();
     }
 
     pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {

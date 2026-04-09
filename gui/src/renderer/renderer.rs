@@ -13,6 +13,7 @@ use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::{TextPipeline, TextRequest};
 use super::style::{RectStyle, TextStyle};
+use super::text_measurer::TextMeasurer;
 use super::types::{Color, Point, Rect};
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
@@ -21,6 +22,7 @@ const DEFAULT_RENDER_SCALE: f32 = 2.0;
 pub struct Renderer {
     shared_viewport: SharedViewport,
     quad_pipeline: QuadPipeline,
+    text_measurer: TextMeasurer,
     text_pipeline: TextPipeline,
     image_pipeline: ImagePipeline,
     circle_pipeline: CirclePipeline,
@@ -90,11 +92,13 @@ impl Renderer {
         let ms = msaa_multisample_state();
         let render_scale = DEFAULT_RENDER_SCALE;
         let internal = scale_size(size, render_scale);
+        let mut text_measurer = TextMeasurer::new();
 
         Self {
             shared_viewport: SharedViewport::new(device),
             quad_pipeline: QuadPipeline::new(device, format, ms),
-            text_pipeline: TextPipeline::new(device, queue, format, ms),
+            text_pipeline: TextPipeline::new(device, queue, format, ms, &mut text_measurer.font_system),
+            text_measurer,
             image_pipeline: ImagePipeline::new(device, format, ms),
             circle_pipeline: CirclePipeline::new(device, format, ms),
             curve_pipeline: CurvePipeline::new(device, format, ms),
@@ -129,7 +133,11 @@ impl Renderer {
     }
 
     pub fn measure_text(&mut self, text: &str, size: f32) -> (f32, f32) {
-        self.text_pipeline.measure(text, size)
+        self.text_measurer.measure(text, size)
+    }
+
+    pub fn text_measurer(&mut self) -> &mut TextMeasurer {
+        &mut self.text_measurer
     }
 
     pub fn draw_rect(&mut self, rect: Rect, style: &RectStyle) {
@@ -210,6 +218,7 @@ impl Renderer {
             &mut self.curve_pipeline,
             &mut self.shadow_pipeline,
             &mut self.stencil,
+            &mut self.text_measurer,
         );
         self.shadow_pipeline.evict_cache();
     }
