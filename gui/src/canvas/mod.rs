@@ -2,8 +2,6 @@ pub mod background;
 pub mod camera;
 pub mod pan;
 
-mod canvas;
-mod event;
-mod render;
+mod renderer;
 
-pub use canvas::Canvas;
+pub use renderer::CanvasRenderer;

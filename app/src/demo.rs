@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::time::Instant;
 
-use gui::canvas::Canvas;
+use gui::context::Context;
 use gui::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
 use gui::widget::layout::{BoxStyle, Direction};
-use gui::panel::{PanelFrame, PanelLayer, PanelRenderer, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
+use gui::panel::{PanelFrame, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
 use gui::panel::tree::Desc;
 use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, MouseButton};
@@ -55,9 +55,7 @@ impl PanelInteraction {
 }
 
 pub struct DemoApp {
-    canvas: Canvas,
-    layer: PanelLayer,
-    panel: PanelRenderer,
+    gui: Context,
     arena: Option<GestureArena>,
     panel_interaction: PanelInteraction,
     active_button: Option<String>,
@@ -69,10 +67,10 @@ pub struct DemoApp {
 
 impl App for DemoApp {
     fn init(_ctx: &mut AppContext) -> Self {
-        let mut layer = PanelLayer::new();
-        layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
+        let mut gui = Context::new();
+        gui.layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
         Self {
-            canvas: Canvas::new(), layer, panel: PanelRenderer::new(),
+            gui,
             arena: None, panel_interaction: PanelInteraction::new(),
             active_button: None, slider_value: 5.0, last_tap_time: None,
             mouse_x: 0.0, mouse_y: 0.0,
@@ -90,8 +88,8 @@ impl App for DemoApp {
                 self.mouse_x = *x;
                 self.mouse_y = *y;
 
-                if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
-                    let frame = self.layer.get(panel_id).unwrap();
+                if let Some(panel_id) = hit_test_panel(&self.gui.layer, *x, *y) {
+                    let frame = self.gui.layer.get(panel_id).unwrap();
 
                     if let Some(edge) = detect_edge(frame, *x, *y) {
                         let mut arena = GestureArena::new(format!("panel_resize:{panel_id}"));
@@ -103,8 +101,8 @@ impl App for DemoApp {
                         self.panel_interaction.resize_edge = Some(edge);
                         self.panel_interaction.last_x = *x;
                         self.panel_interaction.last_y = *y;
-                    } else if self.panel.root().is_some() {
-                        if let Some(widget_id) = self.panel.hit_test(*x, *y) {
+                    } else if self.gui.panel.root().is_some() {
+                        if let Some(widget_id) = self.gui.panel.hit_test(*x, *y) {
                             let mut arena = GestureArena::new(widget_id.to_string());
                             let mut tap = TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
                             tap.on_pointer_down(*x, *y);
@@ -136,10 +134,10 @@ impl App for DemoApp {
                         self.panel_interaction.last_x = *x;
                         self.panel_interaction.last_y = *y;
                     }
-                    self.layer.bring_to_front(panel_id);
+                    self.gui.layer.bring_to_front(panel_id);
                     return;
                 }
-                self.canvas.event(&event);
+                self.gui.canvas.event(&event);
             }
 
             AppEvent::MouseMove { x, y } => {
@@ -150,14 +148,14 @@ impl App for DemoApp {
                         self.handle_action(action);
                     }
                 } else {
-                    if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
-                        if let Some(frame) = self.layer.get(panel_id) {
+                    if let Some(panel_id) = hit_test_panel(&self.gui.layer, *x, *y) {
+                        if let Some(frame) = self.gui.layer.get(panel_id) {
                             if let Some(edge) = detect_edge(frame, *x, *y) {
                                 ctx.cursor.set(edge.cursor_style());
                             }
                         }
                     }
-                    self.canvas.event(&event);
+                    self.gui.canvas.event(&event);
                 }
             }
 
@@ -170,11 +168,11 @@ impl App for DemoApp {
                     self.panel_interaction.resize_panel = None;
                     self.panel_interaction.resize_edge = None;
                 } else {
-                    self.canvas.event(&event);
+                    self.gui.canvas.event(&event);
                 }
             }
 
-            _ => { self.canvas.event(&event); }
+            _ => { self.gui.canvas.event(&event); }
         }
     }
 
@@ -182,21 +180,17 @@ impl App for DemoApp {
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
-        if let Some(frame) = self.layer.get("demo") {
+        if let Some(frame) = self.gui.layer.get("demo") {
             let content_rect = Rect {
                 x: frame.x + PADDING, y: frame.y + PADDING,
                 w: frame.w - PADDING * 2.0, h: frame.h - PADDING * 2.0,
             };
             let desc = build_view(self.active_button.as_deref(), self.slider_value);
-            self.panel.update(desc, content_rect, renderer.text_measurer());
+            self.gui.panel.update(desc, content_rect, renderer.text_measurer());
         }
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
         let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
-        self.canvas.render(renderer, viewport_w, viewport_h);
-        let panel = &self.panel;
-        self.layer.render(renderer, |_frame, renderer| {
-            panel.paint(renderer);
-        });
+        self.gui.render(renderer, viewport_w, viewport_h);
     }
 }
 
@@ -214,12 +208,12 @@ impl DemoApp {
             }
             Action::DragMove { id: _, x, y } => {
                 if let Some(panel_id) = self.panel_interaction.drag_panel {
-                    apply_drag_move(&mut self.layer, panel_id, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                    apply_drag_move(&mut self.gui.layer, panel_id, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
                     self.panel_interaction.last_x = *x;
                     self.panel_interaction.last_y = *y;
                 } else if let Some(panel_id) = self.panel_interaction.resize_panel {
                     if let Some(edge) = self.panel_interaction.resize_edge {
-                        apply_resize(&mut self.layer, panel_id, edge, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                        apply_resize(&mut self.gui.layer, panel_id, edge, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
                         self.panel_interaction.last_x = *x;
                         self.panel_interaction.last_y = *y;
                     }
