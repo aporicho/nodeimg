@@ -37,12 +37,14 @@ pub(crate) fn measure<T: LayoutTree>(tree: &T, node: T::NodeId) -> DesiredSize {
 
     DesiredSize {
         width: match style.width {
-            Size::Fixed(w) => w,
-            _ => content_w + style.padding.horizontal() + style.margin.horizontal(),
+            Size::Fixed(w) => w.clamp(style.min_width, style.max_width),
+            _ => (content_w + style.padding.horizontal() + style.margin.horizontal())
+                .clamp(style.min_width, style.max_width),
         },
         height: match style.height {
-            Size::Fixed(h) => h,
-            _ => content_h + style.padding.vertical() + style.margin.vertical(),
+            Size::Fixed(h) => h.clamp(style.min_height, style.max_height),
+            _ => (content_h + style.padding.vertical() + style.margin.vertical())
+                .clamp(style.min_height, style.max_height),
         },
     }
 }

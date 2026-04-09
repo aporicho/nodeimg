@@ -16,6 +16,12 @@ pub struct BoxStyle {
     pub justify_content: Justify,
     pub flex_grow: f32,
 
+    // ── 尺寸约束 ──
+    pub min_width: f32,
+    pub max_width: f32,
+    pub min_height: f32,
+    pub max_height: f32,
+
     // ── 溢出 ──
     pub overflow: Overflow,
 }
@@ -32,6 +38,10 @@ impl Default for BoxStyle {
             align_items: Align::Stretch,
             justify_content: Justify::Start,
             flex_grow: 0.0,
+            min_width: 0.0,
+            max_width: f32::INFINITY,
+            min_height: 0.0,
+            max_height: f32::INFINITY,
             overflow: Overflow::Visible,
         }
     }

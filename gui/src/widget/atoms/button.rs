@@ -22,10 +22,13 @@ impl WidgetProps for ButtonProps {
     }
     fn build(&self, id: &str) -> WidgetBuild {
         use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Size, Direction, Align, Justify, Edges, LeafKind};
-        use crate::renderer::Color;
+        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, Justify, Edges, LeafKind};
+        use crate::renderer::{Border, Color};
 
-        let text_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };
+        // shadcn zinc 色系
+        let bg_color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };           // white
+        let border_color = Color { r: 0.894, g: 0.894, b: 0.906, a: 1.0 };  // zinc-200
+        let text_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };    // zinc-900
         let font_size = 12.0;
 
         WidgetBuild {
@@ -37,7 +40,11 @@ impl WidgetProps for ButtonProps {
                 padding: Edges::symmetric(8.0, 16.0),
                 ..BoxStyle::default()
             },
-            decoration: None,
+            decoration: Some(Decoration {
+                background: Some(bg_color),
+                border: Some(Border { width: 1.0, color: border_color }),
+                radius: [4.0; 4],
+            }),
             children: vec![
                 Desc::Leaf {
                     id: Cow::Owned(format!("{id}::label")),

@@ -22,11 +22,11 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
         w: match style.width {
             Size::Fixed(w) => w,
             _ => after_margin.w,
-        },
+        }.clamp(style.min_width, style.max_width),
         h: match style.height {
             Size::Fixed(h) => h,
             _ => after_margin.h,
-        },
+        }.clamp(style.min_height, style.max_height),
     };
 
     tree.set_rect(node, node_rect);
@@ -63,16 +63,16 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
     };
 
     // 度量子节点 + 预读子节点样式字段
+    let is_column = style.direction == Direction::Column;
     let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
-    let child_styles: Vec<(f32, Size, Size)> = children.iter().map(|&c| {
+    let child_styles: Vec<(f32, Size, Size, f32)> = children.iter().map(|&c| {
         let s = tree.style(c);
-        (s.flex_grow, s.width, s.height)
+        let main_margin = if is_column { s.margin.vertical() } else { s.margin.horizontal() };
+        (s.flex_grow, s.width, s.height, main_margin)
     }).collect();
 
     let n = child_sizes.len();
     let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
-
-    let is_column = style.direction == Direction::Column;
 
     // 主轴可用空间
     let main_available = if is_column { content.h } else { content.w };
@@ -80,7 +80,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
     // 计算固定子节点占用 + 收集 flex_grow
     let mut fixed_main: f32 = total_gap;
     let mut total_grow: f32 = 0.0;
-    for (i, &(grow, width, height)) in child_styles.iter().enumerate() {
+    for (i, &(grow, width, height, main_margin)) in child_styles.iter().enumerate() {
         let child_main = if is_column { child_sizes[i].height } else { child_sizes[i].width };
         let is_fill = if is_column {
             matches!(height, Size::Fill)
@@ -90,6 +90,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
 
         if grow > 0.0 || is_fill {
             total_grow += if grow > 0.0 { grow } else { 1.0 };
+            fixed_main += main_margin; // flex 子节点的 margin 也要从剩余空间扣除
         } else {
             fixed_main += child_main;
         }
@@ -116,7 +117,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
     // 排列子节点
     for (i, &child) in children.iter().enumerate() {
         let child_desired = &child_sizes[i];
-        let (grow, width, height) = child_styles[i];
+        let (grow, width, height, _) = child_styles[i];
         let is_fill = if is_column {
             matches!(height, Size::Fill)
         } else {
