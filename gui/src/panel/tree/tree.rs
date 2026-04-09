@@ -55,4 +55,8 @@ impl PanelTree {
     pub fn set_root(&mut self, id: NodeId) {
         self.root = Some(id);
     }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut PanelNode> {
+        self.nodes.iter_mut().filter_map(|n| n.as_mut())
+    }
 }

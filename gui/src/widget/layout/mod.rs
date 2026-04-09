@@ -1,5 +1,6 @@
 mod arrange;
 mod measure;
+pub mod resolve;
 mod types;
 
 pub use types::*;
