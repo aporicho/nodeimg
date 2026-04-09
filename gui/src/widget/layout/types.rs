@@ -1,7 +1,7 @@
 use crate::renderer::{Border, Color, Rect};
 
 /// 盒子样式（Flexbox + 盒模型）
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BoxStyle {
     // ── 盒模型 ──
     pub padding: Edges,
@@ -38,7 +38,7 @@ impl Default for BoxStyle {
 }
 
 /// 四边值
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Edges {
     pub top: f32,
     pub right: f32,
@@ -77,7 +77,7 @@ pub enum Direction {
 }
 
 /// 交叉轴对齐
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Align {
     Start,
     Center,
@@ -86,7 +86,7 @@ pub enum Align {
 }
 
 /// 主轴分布
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Justify {
     Start,
     Center,
@@ -130,7 +130,7 @@ pub trait LayoutTree {
 }
 
 /// 渲染图元类型。叶子节点的具体内容。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LeafKind {
     /// 文本图元。尺寸在创建时由 measure_text() 预算，存入 BoxStyle 的 width/height。
     Text {
@@ -142,7 +142,7 @@ pub enum LeafKind {
 
 /// 视觉装饰。附加在 Container 上，纯视觉属性，不影响布局。
 /// paint 时 Decoration → RectStyle 转换（shadow 暂不支持）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decoration {
     pub background: Option<Color>,
     pub border: Option<Border>,

@@ -14,16 +14,12 @@ pub fn reconcile(tree: &mut PanelTree, desc: Desc) {
 }
 
 fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
-    let new_hash = desc.props_hash();
-    let old_hash = tree.get(node_id).map(|n| n.props_hash).unwrap_or(0);
-
     // 提取子描述和节点类型
     let (_id, desc_children, new_kind) = desc.into_parts();
 
-    // 属性变化时更新 kind
-    if old_hash != new_hash {
+    // 属性变化时更新 kind（直接比较，不用 hash）
+    if tree.get(node_id).map(|n| n.kind != new_kind).unwrap_or(true) {
         if let Some(node) = tree.get_mut(node_id) {
-            node.props_hash = new_hash;
             node.kind = new_kind;
         }
     }
@@ -62,7 +58,6 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
 }
 
 fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
-    let props_hash = desc.props_hash();
     let (id, child_descs, kind) = desc.into_parts();
 
     let node_id = tree.insert(PanelNode {
@@ -70,7 +65,6 @@ fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
         kind,
         rect: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         children: Vec::new(),
-        props_hash,
         scroll_offset: 0.0,
         content_height: 0.0,
     });

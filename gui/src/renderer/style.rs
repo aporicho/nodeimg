@@ -1,6 +1,6 @@
 use super::types::Color;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Border {
     pub width: f32,
     pub color: Color,
