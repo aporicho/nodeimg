@@ -1,4 +1,5 @@
 pub mod canvas;
+pub mod gesture;
 pub mod renderer;
 pub mod shell;
 pub mod panel;
