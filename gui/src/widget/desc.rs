@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
 use super::node::NodeKind;
+use super::props::WidgetProps;
 
 /// 视图描述：view() 函数返回的轻量描述树。
 pub enum Desc {
@@ -15,6 +16,10 @@ pub enum Desc {
         style: BoxStyle,
         kind: LeafKind,
     },
+    Widget {
+        id: Cow<'static, str>,
+        props: Box<dyn WidgetProps>,
+    },
 }
 
 impl Desc {
@@ -22,6 +27,7 @@ impl Desc {
         match self {
             Desc::Container { id, .. } => id,
             Desc::Leaf { id, .. } => id,
+            Desc::Widget { id, .. } => id,
         }
     }
 
@@ -33,6 +39,9 @@ impl Desc {
             }
             Desc::Leaf { id, style, kind } => {
                 (id, Vec::new(), style, None, NodeKind::Leaf(kind))
+            }
+            Desc::Widget { .. } => {
+                unimplemented!("Widget desc should be expanded via build() before reconcile")
             }
         }
     }

@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
+use crate::widget::props::WidgetProps;
 use crate::renderer::Rect;
 
 pub type NodeId = usize;
@@ -8,6 +9,7 @@ pub type NodeId = usize;
 pub enum NodeKind {
     Container,
     Leaf(LeafKind),
+    Widget(Box<dyn WidgetProps>),
 }
 
 pub struct PanelNode {
