@@ -1,16 +1,16 @@
 use std::borrow::Cow;
 use std::time::Instant;
 
-use crate::canvas::Canvas;
-use crate::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
-use crate::widget::action::Action;
-use crate::widget::atoms::button::ButtonProps;
-use crate::widget::atoms::slider::SliderProps;
-use crate::widget::layout::{BoxStyle, Direction, resolve};
-use crate::panel::{PanelFrame, PanelLayer, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
-use crate::panel::tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
-use crate::renderer::{Rect, Renderer};
-use crate::shell::{App, AppContext, AppEvent, MouseButton};
+use gui::canvas::Canvas;
+use gui::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
+use gui::widget::action::Action;
+use gui::widget::atoms::button::ButtonProps;
+use gui::widget::atoms::slider::SliderProps;
+use gui::widget::layout::{BoxStyle, Direction};
+use gui::panel::{PanelFrame, PanelLayer, PanelRenderer, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
+use gui::panel::tree::Desc;
+use gui::renderer::{Rect, Renderer};
+use gui::shell::{App, AppContext, AppEvent, MouseButton};
 
 const PADDING: f32 = 16.0;
 
@@ -57,7 +57,7 @@ impl PanelInteraction {
 pub struct DemoApp {
     canvas: Canvas,
     layer: PanelLayer,
-    tree: PanelTree,
+    panel: PanelRenderer,
     arena: Option<GestureArena>,
     panel_interaction: PanelInteraction,
     active_button: Option<String>,
@@ -72,7 +72,7 @@ impl App for DemoApp {
         let mut layer = PanelLayer::new();
         layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
         Self {
-            canvas: Canvas::new(), layer, tree: PanelTree::new(),
+            canvas: Canvas::new(), layer, panel: PanelRenderer::new(),
             arena: None, panel_interaction: PanelInteraction::new(),
             active_button: None, slider_value: 5.0, last_tap_time: None,
             mouse_x: 0.0, mouse_y: 0.0,
@@ -103,8 +103,8 @@ impl App for DemoApp {
                         self.panel_interaction.resize_edge = Some(edge);
                         self.panel_interaction.last_x = *x;
                         self.panel_interaction.last_y = *y;
-                    } else if let Some(root) = self.tree.root() {
-                        if let Some(widget_id) = hit_test(&self.tree, root, *x, *y) {
+                    } else if self.panel.root().is_some() {
+                        if let Some(widget_id) = self.panel.hit_test(*x, *y) {
                             let mut arena = GestureArena::new(widget_id.to_string());
                             let mut tap = TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
                             tap.on_pointer_down(*x, *y);
@@ -179,25 +179,23 @@ impl App for DemoApp {
     }
 
     fn update(&mut self, _renderer: &mut Renderer, _ctx: &mut AppContext) {
-        let desc = build_view(self.active_button.as_deref(), self.slider_value);
-        reconcile(&mut self.tree, desc);
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
-        if let (Some(frame), Some(root)) = (self.layer.get("demo"), self.tree.root()) {
+        if let Some(frame) = self.layer.get("demo") {
             let content_rect = Rect {
                 x: frame.x + PADDING, y: frame.y + PADDING,
                 w: frame.w - PADDING * 2.0, h: frame.h - PADDING * 2.0,
             };
-            resolve::resolve(&mut self.tree, renderer.text_measurer());
-            layout(&mut self.tree, root, content_rect);
+            let desc = build_view(self.active_button.as_deref(), self.slider_value);
+            self.panel.update(desc, content_rect, renderer.text_measurer());
         }
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
         let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
         self.canvas.render(renderer, viewport_w, viewport_h);
-        let tree = &self.tree;
+        let panel = &self.panel;
         self.layer.render(renderer, |_frame, renderer| {
-            if let Some(root) = tree.root() { paint(tree, root, renderer); }
+            panel.paint(renderer);
         });
     }
 }

@@ -137,6 +137,9 @@ pub trait LayoutTree {
 
     /// 布局引擎在发现 Overflow::Scroll 容器时调用，记录内容总高度
     fn set_content_height(&mut self, node: Self::NodeId, height: f32);
+
+    /// 如果节点是文字叶子，返回 (文字内容, 字号)。layout 引擎在 measure 阶段调用。
+    fn text_content(&self, node: Self::NodeId) -> Option<(&str, f32)>;
 }
 
 /// 渲染图元类型。叶子节点的具体内容。

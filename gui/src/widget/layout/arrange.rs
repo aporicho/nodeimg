@@ -4,7 +4,12 @@ use super::measure::measure;
 use super::types::*;
 
 /// 自顶向下分配位置，直接写入树节点。
-pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: Rect) {
+pub(crate) fn arrange<T: LayoutTree>(
+    tree: &mut T,
+    node: T::NodeId,
+    available: Rect,
+    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+) {
     let style = tree.style(node).clone();
 
     // 扣除 margin
@@ -48,7 +53,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
     let scroll_offset = if style.overflow == Overflow::Scroll {
         let offset = tree.scroll_offset(node);
 
-        let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
+        let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c, measure_text)).collect();
         let n = child_sizes.len();
         let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
         let content_height = match style.direction {
@@ -64,7 +69,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
 
     // 度量子节点 + 预读子节点样式字段
     let is_column = style.direction == Direction::Column;
-    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
+    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c, measure_text)).collect();
     let child_styles: Vec<(f32, Size, Size, f32)> = children.iter().map(|&c| {
         let s = tree.style(c);
         let main_margin = if is_column { s.margin.vertical() } else { s.margin.horizontal() };
@@ -164,7 +169,7 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
             }
         };
 
-        arrange(tree, child, child_rect);
+        arrange(tree, child, child_rect, measure_text);
 
         main_offset += child_main + style.gap + extra_gap;
     }

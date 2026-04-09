@@ -1,24 +1,32 @@
 use super::types::*;
 
 /// 自底向上计算每个节点的期望尺寸。
-pub(crate) fn measure<T: LayoutTree>(tree: &T, node: T::NodeId) -> DesiredSize {
+pub(crate) fn measure<T: LayoutTree>(
+    tree: &T,
+    node: T::NodeId,
+    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+) -> DesiredSize {
     let children = tree.children(node);
     let style = tree.style(node);
 
     if children.is_empty() {
+        let (intrinsic_w, intrinsic_h) = tree.text_content(node)
+            .map(|(text, size)| measure_text(text, size))
+            .unwrap_or((0.0, 0.0));
+
         return DesiredSize {
             width: match style.width {
                 Size::Fixed(w) => w,
-                _ => 0.0,
+                _ => intrinsic_w,
             },
             height: match style.height {
                 Size::Fixed(h) => h,
-                _ => 0.0,
+                _ => intrinsic_h,
             },
         };
     }
 
-    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(tree, c)).collect();
+    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(tree, c, measure_text)).collect();
     let n = child_sizes.len();
     let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
 

@@ -1,6 +1,6 @@
-use crate::widget::node::NodeId;
+use crate::widget::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::widget::layout::{self, BoxStyle, LayoutTree};
+use crate::widget::layout::{self, BoxStyle, LeafKind, LayoutTree};
 use crate::renderer::Rect;
 
 impl LayoutTree for PanelTree {
@@ -29,10 +29,22 @@ impl LayoutTree for PanelTree {
             n.content_height = height;
         }
     }
+
+    fn text_content(&self, node: NodeId) -> Option<(&str, f32)> {
+        match &self.get(node)?.kind {
+            NodeKind::Leaf(LeafKind::Text { content, font_size, .. }) => Some((content, *font_size)),
+            _ => None,
+        }
+    }
 }
 
-pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect) {
-    layout::layout(tree, root, available);
+pub fn layout(
+    tree: &mut PanelTree,
+    root: NodeId,
+    available: Rect,
+    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+) {
+    layout::layout(tree, root, available, measure_text);
 }
 
 /// 更新滚动偏移。delta 为正数向下滚。
