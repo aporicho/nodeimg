@@ -1,12 +1,5 @@
 use crate::renderer::{Border, Color, Rect};
 
-/// 布局节点。有 children 的是容器，没有的是叶子。
-pub struct LayoutBox {
-    pub id: Option<&'static str>,
-    pub style: BoxStyle,
-    pub children: Vec<LayoutBox>,
-}
-
 /// 盒子样式（Flexbox + 盒模型）
 #[derive(Debug, Clone)]
 pub struct BoxStyle {
@@ -114,20 +107,6 @@ pub enum Overflow {
 pub(crate) struct DesiredSize {
     pub width: f32,
     pub height: f32,
-}
-
-/// 布局结果
-pub struct LayoutResult {
-    pub rects: Vec<(&'static str, Rect)>,
-    pub scroll_areas: Vec<ScrollArea>,
-}
-
-/// 可滚动区域信息
-pub struct ScrollArea {
-    pub id: &'static str,
-    pub viewport: Rect,
-    pub content_height: f32,
-    pub offset: f32,
 }
 
 /// 布局引擎的树抽象。Flexbox 引擎通过此 trait 操作任意树结构。
