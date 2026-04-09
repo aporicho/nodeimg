@@ -1,4 +1,4 @@
-use super::node::NodeId;
+use crate::widget::node::NodeId;
 use super::tree::PanelTree;
 use crate::widget::layout::{self, BoxStyle, LayoutTree};
 use crate::renderer::Rect;

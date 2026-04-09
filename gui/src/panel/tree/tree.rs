@@ -1,4 +1,4 @@
-use super::node::{NodeId, PanelNode};
+use crate::widget::node::{NodeId, PanelNode};
 
 /// 面板树存储。用 Vec<Option<>> 做 arena，索引访问。
 pub struct PanelTree {

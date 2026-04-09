@@ -1,4 +1,4 @@
-use super::node::NodeId;
+use crate::widget::node::NodeId;
 use super::tree::PanelTree;
 
 pub fn hit_test<'a>(tree: &'a PanelTree, root: NodeId, x: f32, y: f32) -> Option<&'a str> {

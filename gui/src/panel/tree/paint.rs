@@ -1,4 +1,4 @@
-use super::node::{NodeId, NodeKind};
+use crate::widget::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
 use crate::widget::layout::LeafKind;
 use crate::renderer::{Color, Point, Renderer, RectStyle, TextStyle};

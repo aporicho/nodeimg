@@ -1,5 +1,5 @@
-use super::desc::Desc;
-use super::node::{NodeId, PanelNode};
+use crate::widget::desc::Desc;
+use crate::widget::node::{NodeId, PanelNode};
 use super::tree::PanelTree;
 use crate::renderer::Rect;
 

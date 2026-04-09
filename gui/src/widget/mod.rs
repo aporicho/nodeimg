@@ -1,5 +1,7 @@
 pub mod atoms;
+pub mod desc;
 pub mod layout;
+pub mod node;
 
 mod action;
 mod focus;
