@@ -25,14 +25,14 @@ impl Desc {
         }
     }
 
-    /// 消费 Desc，返回 (id, 子描述列表, NodeKind)。
-    pub(crate) fn into_parts(self) -> (Cow<'static, str>, Vec<Desc>, NodeKind) {
+    /// 消费 Desc，返回 (id, 子描述列表, style, decoration, NodeKind)。
+    pub(crate) fn into_parts(self) -> (Cow<'static, str>, Vec<Desc>, BoxStyle, Option<Decoration>, NodeKind) {
         match self {
             Desc::Container { id, style, decoration, children } => {
-                (id, children, NodeKind::Container { style, decoration })
+                (id, children, style, decoration, NodeKind::Container)
             }
             Desc::Leaf { id, style, kind } => {
-                (id, Vec::new(), NodeKind::Leaf { style, kind })
+                (id, Vec::new(), style, None, NodeKind::Leaf(kind))
             }
         }
     }

@@ -1,4 +1,4 @@
-use super::node::{NodeId, NodeKind};
+use super::node::NodeId;
 use super::tree::PanelTree;
 use crate::widget::layout::{self, BoxStyle, LayoutTree};
 use crate::renderer::Rect;
@@ -7,9 +7,7 @@ impl LayoutTree for PanelTree {
     type NodeId = NodeId;
 
     fn style(&self, node: NodeId) -> &BoxStyle {
-        match &self.get(node).unwrap().kind {
-            NodeKind::Container { style, .. } | NodeKind::Leaf { style, .. } => style,
-        }
+        &self.get(node).unwrap().style
     }
 
     fn children(&self, node: NodeId) -> Vec<NodeId> {

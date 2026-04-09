@@ -1,4 +1,4 @@
-use super::node::{NodeId, NodeKind};
+use super::node::NodeId;
 use super::tree::PanelTree;
 
 pub fn hit_test<'a>(tree: &'a PanelTree, root: NodeId, x: f32, y: f32) -> Option<&'a str> {
@@ -19,8 +19,9 @@ fn hit_test_node<'a>(tree: &'a PanelTree, node_id: NodeId, x: f32, y: f32) -> Op
         }
     }
 
-    match &node.kind {
-        NodeKind::Container { decoration, .. } if decoration.is_some() => Some(node.id.as_ref()),
-        _ => None,
+    if node.decoration.is_some() {
+        Some(node.id.as_ref())
+    } else {
+        None
     }
 }
