@@ -104,7 +104,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         // 请求重绘
         if let WindowEvent::RedrawRequested = event {
             state.ctx.cursor.reset();
-            state.app.update(&mut state.ctx);
+            state.app.update(&mut state.renderer, &mut state.ctx);
             state.ctx.cursor.apply(&state.ctx.window);
 
             let output = match state.surface.get_current_texture() {

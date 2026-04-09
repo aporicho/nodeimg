@@ -3,14 +3,9 @@ use crate::renderer::Rect;
 use super::measure::measure;
 use super::types::*;
 
-/// 自顶向下分配位置，收集结果到 rects 和 scroll_areas。
-pub(crate) fn arrange(
-    node: &LayoutBox,
-    available: Rect,
-    rects: &mut Vec<(&'static str, Rect)>,
-    scroll_areas: &mut Vec<ScrollArea>,
-) {
-    let style = &node.style;
+/// 自顶向下分配位置，直接写入树节点。
+pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: Rect) {
+    let style = tree.style(node).clone();
 
     // 扣除 margin
     let after_margin = Rect {
@@ -34,12 +29,10 @@ pub(crate) fn arrange(
         },
     };
 
-    // 记录有 id 的节点
-    if let Some(id) = node.id {
-        rects.push((id, node_rect));
-    }
+    tree.set_rect(node, node_rect);
 
-    if node.children.is_empty() {
+    let children = tree.children(node);
+    if children.is_empty() {
         return;
     }
 
@@ -53,15 +46,9 @@ pub(crate) fn arrange(
 
     // 处理滚动
     let scroll_offset = if style.overflow == Overflow::Scroll {
-        // scroll_areas 由外部管理 offset，这里查找已有的
-        let offset = scroll_areas
-            .iter()
-            .find(|s| node.id.is_some() && Some(s.id) == node.id)
-            .map(|s| s.offset)
-            .unwrap_or(0.0);
+        let offset = tree.scroll_offset(node);
 
-        // 计算内容总高度用于滚动
-        let child_sizes: Vec<DesiredSize> = node.children.iter().map(measure).collect();
+        let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
         let n = child_sizes.len();
         let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
         let content_height = match style.direction {
@@ -69,28 +56,19 @@ pub(crate) fn arrange(
             Direction::Row => child_sizes.iter().map(|s| s.height).fold(0.0f32, f32::max),
         };
 
-        if let Some(id) = node.id {
-            // 更新或插入 scroll area
-            if let Some(sa) = scroll_areas.iter_mut().find(|s| s.id == id) {
-                sa.viewport = content;
-                sa.content_height = content_height;
-            } else {
-                scroll_areas.push(ScrollArea {
-                    id,
-                    viewport: content,
-                    content_height,
-                    offset: 0.0,
-                });
-            }
-        }
-
+        tree.set_content_height(node, content_height);
         offset
     } else {
         0.0
     };
 
-    // 度量子节点
-    let child_sizes: Vec<DesiredSize> = node.children.iter().map(measure).collect();
+    // 度量子节点 + 预读子节点样式字段
+    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
+    let child_styles: Vec<(f32, Size, Size)> = children.iter().map(|&c| {
+        let s = tree.style(c);
+        (s.flex_grow, s.width, s.height)
+    }).collect();
+
     let n = child_sizes.len();
     let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
 
@@ -102,13 +80,12 @@ pub(crate) fn arrange(
     // 计算固定子节点占用 + 收集 flex_grow
     let mut fixed_main: f32 = total_gap;
     let mut total_grow: f32 = 0.0;
-    for (i, child) in node.children.iter().enumerate() {
+    for (i, &(grow, width, height)) in child_styles.iter().enumerate() {
         let child_main = if is_column { child_sizes[i].height } else { child_sizes[i].width };
-        let grow = child.style.flex_grow;
         let is_fill = if is_column {
-            matches!(child.style.height, Size::Fill)
+            matches!(height, Size::Fill)
         } else {
-            matches!(child.style.width, Size::Fill)
+            matches!(width, Size::Fill)
         };
 
         if grow > 0.0 || is_fill {
@@ -137,13 +114,13 @@ pub(crate) fn arrange(
     main_offset -= scroll_offset;
 
     // 排列子节点
-    for (i, child) in node.children.iter().enumerate() {
+    for (i, &child) in children.iter().enumerate() {
         let child_desired = &child_sizes[i];
-        let grow = child.style.flex_grow;
+        let (grow, width, height) = child_styles[i];
         let is_fill = if is_column {
-            matches!(child.style.height, Size::Fill)
+            matches!(height, Size::Fill)
         } else {
-            matches!(child.style.width, Size::Fill)
+            matches!(width, Size::Fill)
         };
         let effective_grow = if grow > 0.0 {
             grow
@@ -153,7 +130,6 @@ pub(crate) fn arrange(
             0.0
         };
 
-        // 主轴尺寸
         let child_main = if effective_grow > 0.0 {
             remaining * effective_grow / total_grow
         } else if is_column {
@@ -162,7 +138,6 @@ pub(crate) fn arrange(
             child_desired.width
         };
 
-        // 交叉轴尺寸和偏移
         let cross_available = if is_column { content.w } else { content.h };
         let child_cross_desired = if is_column { child_desired.width } else { child_desired.height };
         let (cross_offset, child_cross) = match style.align_items {
@@ -188,7 +163,7 @@ pub(crate) fn arrange(
             }
         };
 
-        arrange(child, child_rect, rects, scroll_areas);
+        arrange(tree, child, child_rect);
 
         main_offset += child_main + style.gap + extra_gap;
     }

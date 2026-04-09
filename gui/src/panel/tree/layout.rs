@@ -1,59 +1,46 @@
 use super::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::widget::layout::{self, LayoutBox};
-use crate::renderer::{Rect, Renderer};
+use crate::widget::layout::{self, BoxStyle, LayoutTree};
+use crate::renderer::Rect;
 
-pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect, renderer: &mut Renderer) {
-    let layout_tree = build_layout_box(tree, root, renderer);
-    let result = layout::layout(&layout_tree, available);
+impl LayoutTree for PanelTree {
+    type NodeId = NodeId;
 
-    for (id, rect) in &result.rects {
-        if let Some(node_id) = find_node_by_id(tree, root, id) {
-            if let Some(node) = tree.get_mut(node_id) {
-                node.rect = *rect;
-            }
+    fn style(&self, node: NodeId) -> &BoxStyle {
+        match &self.get(node).unwrap().kind {
+            NodeKind::Container { style, .. } | NodeKind::Leaf { style, .. } => style,
         }
     }
 
-    if let Some(node) = tree.get_mut(root) {
-        node.rect = available;
+    fn children(&self, node: NodeId) -> Vec<NodeId> {
+        self.get(node).map(|n| n.children.clone()).unwrap_or_default()
+    }
+
+    fn set_rect(&mut self, node: NodeId, rect: Rect) {
+        if let Some(n) = self.get_mut(node) {
+            n.rect = rect;
+        }
+    }
+
+    fn scroll_offset(&self, node: NodeId) -> f32 {
+        self.get(node).map(|n| n.scroll_offset).unwrap_or(0.0)
+    }
+
+    fn set_content_height(&mut self, node: NodeId, height: f32) {
+        if let Some(n) = self.get_mut(node) {
+            n.content_height = height;
+        }
     }
 }
 
-fn build_layout_box(tree: &PanelTree, node_id: NodeId, renderer: &mut Renderer) -> LayoutBox {
-    let Some(node) = tree.get(node_id) else {
-        return LayoutBox {
-            id: None,
-            style: Default::default(),
-            children: Vec::new(),
-        };
-    };
-
-    match &node.kind {
-        NodeKind::Container { style } => {
-            let children_ids = node.children.clone();
-            LayoutBox {
-                id: Some(node.id),
-                style: style.clone(),
-                children: children_ids
-                    .iter()
-                    .map(|&id| build_layout_box(tree, id, renderer))
-                    .collect(),
-            }
-        }
-        NodeKind::Widget(w) => w.layout(renderer),
-    }
+pub fn layout(tree: &mut PanelTree, root: NodeId, available: Rect) {
+    layout::layout(tree, root, available);
 }
 
-fn find_node_by_id(tree: &PanelTree, root: NodeId, target_id: &str) -> Option<NodeId> {
-    let Some(node) = tree.get(root) else { return None };
-    if node.id == target_id {
-        return Some(root);
+/// 更新滚动偏移。delta 为正数向下滚。
+pub fn scroll(tree: &mut PanelTree, node_id: NodeId, delta: f32) {
+    if let Some(node) = tree.get_mut(node_id) {
+        let max = (node.content_height - node.rect.h).max(0.0);
+        node.scroll_offset = (node.scroll_offset + delta).clamp(0.0, max);
     }
-    for &child_id in &node.children {
-        if let Some(found) = find_node_by_id(tree, child_id, target_id) {
-            return Some(found);
-        }
-    }
-    None
 }

@@ -1,22 +1,24 @@
 use super::types::*;
 
-/// 自底向上计算每个节点的期望尺寸。返回根节点的期望尺寸。
-pub(crate) fn measure(node: &LayoutBox) -> DesiredSize {
-    if node.children.is_empty() {
+/// 自底向上计算每个节点的期望尺寸。
+pub(crate) fn measure<T: LayoutTree>(tree: &T, node: T::NodeId) -> DesiredSize {
+    let children = tree.children(node);
+    let style = tree.style(node);
+
+    if children.is_empty() {
         return DesiredSize {
-            width: match node.style.width {
+            width: match style.width {
                 Size::Fixed(w) => w,
                 _ => 0.0,
             },
-            height: match node.style.height {
+            height: match style.height {
                 Size::Fixed(h) => h,
                 _ => 0.0,
             },
         };
     }
 
-    let child_sizes: Vec<DesiredSize> = node.children.iter().map(measure).collect();
-    let style = &node.style;
+    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(tree, c)).collect();
     let n = child_sizes.len();
     let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
 

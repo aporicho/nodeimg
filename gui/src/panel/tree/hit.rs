@@ -20,13 +20,7 @@ fn hit_test_node(tree: &PanelTree, node_id: NodeId, x: f32, y: f32) -> Option<&'
     }
 
     match &node.kind {
-        NodeKind::Widget(w) => {
-            if w.hit_test(node.rect, x, y) {
-                return Some(node.id);
-            }
-        }
-        _ => {}
+        NodeKind::Container { decoration, .. } if decoration.is_some() => Some(node.id),
+        _ => None,
     }
-
-    None
 }

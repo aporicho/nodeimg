@@ -17,7 +17,7 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
     let new_hash = desc.props_hash();
     let old_hash = tree.get(node_id).map(|n| n.props_hash).unwrap_or(0);
 
-    // 提取子描述（Container 有 children，Widget 没有）
+    // 提取子描述和节点类型
     let (desc_children, new_kind) = desc.into_parts();
 
     // 属性变化时更新 kind
@@ -72,6 +72,8 @@ fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
         rect: Rect { x: 0.0, y: 0.0, w: 0.0, h: 0.0 },
         children: Vec::new(),
         props_hash,
+        scroll_offset: 0.0,
+        content_height: 0.0,
     });
 
     let child_ids: Vec<NodeId> = child_descs
