@@ -1,9 +1,8 @@
 use crate::widget::desc::Desc;
-use crate::widget::node::{NodeId, PanelNode};
+use crate::widget::node::{NodeId, NodeKind, PanelNode};
 use super::tree::PanelTree;
 use crate::renderer::Rect;
 
-/// 对比视图描述和旧树，直接更新树。消费 desc 的所有权。
 pub fn reconcile(tree: &mut PanelTree, desc: Desc) {
     if let Some(root_id) = tree.root() {
         reconcile_node(tree, root_id, desc);
@@ -14,19 +13,49 @@ pub fn reconcile(tree: &mut PanelTree, desc: Desc) {
 }
 
 fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
-    // 提取子描述和节点类型
-    let (_id, desc_children, new_style, new_decoration, new_kind) = desc.into_parts();
+    match desc {
+        Desc::Container { id: _, style, decoration, children } => {
+            if let Some(node) = tree.get_mut(node_id) {
+                if !node.props_match(&style, &decoration, &NodeKind::Container) {
+                    node.style = style;
+                    node.decoration = decoration;
+                    node.kind = NodeKind::Container;
+                }
+            }
+            reconcile_children(tree, node_id, children);
+        }
+        Desc::Leaf { id: _, style, kind } => {
+            let new_kind = NodeKind::Leaf(kind);
+            if let Some(node) = tree.get_mut(node_id) {
+                if !node.props_match(&style, &None, &new_kind) {
+                    node.style = style;
+                    node.decoration = None;
+                    node.kind = new_kind;
+                }
+            }
+        }
+        Desc::Widget { id, props } => {
+            let props_changed = tree.get(node_id)
+                .map(|n| match &n.kind {
+                    NodeKind::Widget(old) => !old.props_eq(props.as_ref()),
+                    _ => true,
+                })
+                .unwrap_or(true);
 
-    // 属性变化时更新（直接比较，不用 hash）
-    if let Some(node) = tree.get_mut(node_id) {
-        if !node.props_match(&new_style, &new_decoration, &new_kind) {
-            node.style = new_style;
-            node.decoration = new_decoration;
-            node.kind = new_kind;
+            if props_changed {
+                let wb = props.build(&id);
+                if let Some(node) = tree.get_mut(node_id) {
+                    node.style = wb.style;
+                    node.decoration = wb.decoration;
+                    node.kind = NodeKind::Widget(props);
+                }
+                reconcile_children(tree, node_id, wb.children);
+            }
         }
     }
+}
 
-    // 递归处理子节点
+fn reconcile_children(tree: &mut PanelTree, node_id: NodeId, desc_children: Vec<Desc>) {
     let old_children: Vec<NodeId> = tree
         .get(node_id)
         .map(|n| n.children.clone())
@@ -60,7 +89,18 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
 }
 
 fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
-    let (id, child_descs, style, decoration, kind) = desc.into_parts();
+    let (id, style, decoration, kind, child_descs) = match desc {
+        Desc::Container { id, style, decoration, children } => {
+            (id, style, decoration, NodeKind::Container, children)
+        }
+        Desc::Leaf { id, style, kind } => {
+            (id, style, None, NodeKind::Leaf(kind), Vec::new())
+        }
+        Desc::Widget { id, props } => {
+            let wb = props.build(&id);
+            (id, wb.style, wb.decoration, NodeKind::Widget(props), wb.children)
+        }
+    };
 
     let node_id = tree.insert(PanelNode {
         id,
