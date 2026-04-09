@@ -1,4 +1,4 @@
-use crate::renderer::Rect;
+use crate::renderer::{Border, Color, Rect};
 
 /// 布局节点。有 children 的是容器，没有的是叶子。
 pub struct LayoutBox {
@@ -8,7 +8,7 @@ pub struct LayoutBox {
 }
 
 /// 盒子样式（Flexbox + 盒模型）
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BoxStyle {
     // ── 盒模型 ──
     pub padding: Edges,
@@ -128,4 +128,44 @@ pub struct ScrollArea {
     pub viewport: Rect,
     pub content_height: f32,
     pub offset: f32,
+}
+
+/// 布局引擎的树抽象。Flexbox 引擎通过此 trait 操作任意树结构。
+pub trait LayoutTree {
+    type NodeId: Copy;
+
+    /// 读取节点的布局样式（纯数据，已预计算）
+    fn style(&self, node: Self::NodeId) -> &BoxStyle;
+
+    /// 获取子节点列表（返回 Vec 以避免借用冲突）
+    fn children(&self, node: Self::NodeId) -> Vec<Self::NodeId>;
+
+    /// 布局引擎算出位置后直接写入节点
+    fn set_rect(&mut self, node: Self::NodeId, rect: Rect);
+
+    /// 滚动容器的当前偏移量（非滚动节点返回 0.0）
+    fn scroll_offset(&self, node: Self::NodeId) -> f32;
+
+    /// 布局引擎在发现 Overflow::Scroll 容器时调用，记录内容总高度
+    fn set_content_height(&mut self, node: Self::NodeId, height: f32);
+}
+
+/// 渲染图元类型。叶子节点的具体内容。
+#[derive(Debug, Clone)]
+pub enum LeafKind {
+    /// 文本图元。尺寸在创建时由 measure_text() 预算，存入 BoxStyle 的 width/height。
+    Text {
+        content: String,
+        font_size: f32,
+        color: Color,
+    },
+}
+
+/// 视觉装饰。附加在 Container 上，纯视觉属性，不影响布局。
+/// paint 时 Decoration → RectStyle 转换（shadow 暂不支持）。
+#[derive(Debug, Clone)]
+pub struct Decoration {
+    pub background: Option<Color>,
+    pub border: Option<Border>,
+    pub radius: [f32; 4],
 }
