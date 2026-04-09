@@ -63,6 +63,8 @@ pub enum LeafKind {
 }
 
 /// 视觉装饰。附加在 Container 上，纯视觉属性，不影响布局。
+/// 与 renderer::RectStyle 的区别：Decoration 是描述层的数据，RectStyle 是渲染命令的参数。
+/// paint 时 Decoration → RectStyle 转换（background → color，shadow 暂不支持，后续按需添加）。
 #[derive(Debug, Clone)]
 pub struct Decoration {
     pub background: Option<Color>,
@@ -75,9 +77,21 @@ pub struct Decoration {
 
 **`widget/layout/measure.rs`** — 签名改为泛型：
 ```rust
-pub(crate) fn measure<T: LayoutTree>(tree: &T, node: T::NodeId) -> DesiredSize
+pub(crate) fn measure<T: LayoutTree>(tree: &T, node: T::NodeId) -> DesiredSize {
+    let children = tree.children(node);
+    if children.is_empty() {
+        let style = tree.style(node);
+        return DesiredSize {
+            width: match style.width { Size::Fixed(w) => w, _ => 0.0 },
+            height: match style.height { Size::Fixed(h) => h, _ => 0.0 },
+        };
+    }
+    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(tree, c)).collect();
+    let style = tree.style(node);
+    // ... 汇总逻辑与现有代码相同（Direction::Column/Row 分支）
+}
 ```
-逻辑不变。`node.style` → `tree.style(node)`，`node.children` → `tree.children(node)`。
+递归模式从 `node.children.iter().map(measure)` 变为 `children.iter().map(|&c| measure(tree, c))`。
 
 **`widget/layout/arrange.rs`** — 签名改为泛型：
 ```rust
@@ -86,7 +100,18 @@ pub(crate) fn arrange<T: LayoutTree>(tree: &mut T, node: T::NodeId, available: R
 主要变化：
 - 删除 `rects`/`scroll_areas` 输出参数，直接调 `tree.set_rect(node, rect)`
 - 滚动处理改用 `tree.scroll_offset(node)` / `tree.set_content_height(node, h)`
-- 函数开头 `let style = tree.style(node).clone()` 避免 `&self`/`&mut self` 借用冲突（BoxStyle 只有 ~60 bytes，clone 零开销）
+- 函数开头 clone 当前节点的 style：`let style = tree.style(node).clone()`（BoxStyle ~60 bytes，clone 零开销）
+- **子节点样式预读**：循环开始前，把每个子节点的 flex_grow、width/height（用于 Fill 检测）等值提前读出到局部变量，避免在递归 `arrange(tree, child, ...)` 时与 `tree.style(child)` 产生借用冲突：
+  ```rust
+  let children = tree.children(node);
+  let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c)).collect();
+  // 预读子节点样式字段
+  let child_styles: Vec<(f32, Size, Size)> = children.iter().map(|&c| {
+      let s = tree.style(c);
+      (s.flex_grow, s.width, s.height)
+  }).collect();
+  // 后续循环使用 child_styles[i] 而非 tree.style(child)
+  ```
 
 **`widget/layout/mod.rs`** — 入口改为泛型：
 ```rust
@@ -94,6 +119,8 @@ pub fn layout<T: LayoutTree>(tree: &mut T, root: T::NodeId, available: Rect) {
     arrange::arrange(tree, root, available);
 }
 ```
+
+**额外：`BoxStyle` 加 `Debug` derive**（当前只有 `Clone`），使包含 BoxStyle 的新类型能自动 derive Debug。
 
 ### 3. NodeKind 和 PanelNode 改造
 
@@ -141,6 +168,10 @@ pub enum Desc {
 ```
 
 `into_parts()` 对应返回 `NodeKind::Container` 或 `NodeKind::Leaf`。
+
+`props_hash()` 更新：
+- `Desc::Container` — hash id + children.len() + decoration 状态（background color 等），确保按钮颜色切换触发 reconcile
+- `Desc::Leaf` — hash id + LeafKind 全部字段（content、font_size、color），确保文字内容变化被检测到
 
 ### 5. PanelTree 实现 LayoutTree
 
@@ -292,7 +323,8 @@ pub fn scroll(tree: &mut PanelTree, node_id: NodeId, delta: f32) {
 | `widget/atoms/button.rs` | Widget impl → 返回 Desc 的函数 |
 | `widget/mod.rs` | 更新导出 |
 | `panel/tree/node.rs` | NodeKind 改造，PanelNode 加 scroll_offset/content_height |
-| `panel/tree/desc.rs` | Desc 加 Leaf/decoration，删 Widget |
+| `panel/tree/desc.rs` | Desc 加 Leaf/decoration，删 Widget，更新 props_hash() |
+| `panel/tree/diff.rs` | create_from_desc 初始化 scroll_offset/content_height 为 0.0 |
 | `panel/tree/layout.rs` | impl LayoutTree for PanelTree，删除中间转换 |
 | `panel/tree/paint.rs` | 直接画图元 |
 | `panel/tree/hit.rs` | decoration 命中检测 |
@@ -300,6 +332,13 @@ pub fn scroll(tree: &mut PanelTree, node_id: NodeId, delta: f32) {
 | `shell/app.rs` | update() 加 `renderer: &mut Renderer` 参数 |
 | `shell/runner.rs` | update() 调用传入 renderer |
 | `demo.rs` | Button 函数化，layout() 不再传 renderer |
+
+## 不受影响的文件
+
+`widget/` 目录下以下文件不受本次重构影响，保持原样：
+- `widget/focus.rs` — 焦点管理
+- `widget/text_edit.rs` — 文字编辑状态
+- `widget/action.rs`、`widget/mapping.rs`、`widget/state.rs` — 占位文件
 
 ## 验证
 
