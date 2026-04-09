@@ -1,15 +1,20 @@
 use std::borrow::Cow;
+use std::time::Instant;
+
 use crate::canvas::Canvas;
+use crate::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
+use crate::widget::action::Action;
 use crate::widget::atoms::button::ButtonProps;
+use crate::widget::atoms::slider::SliderProps;
 use crate::widget::layout::{BoxStyle, Direction, resolve};
-use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
+use crate::panel::{PanelFrame, PanelLayer, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
 use crate::panel::tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
 use crate::renderer::{Rect, Renderer};
-use crate::shell::{App, AppContext, AppEvent};
+use crate::shell::{App, AppContext, AppEvent, MouseButton};
 
 const PADDING: f32 = 16.0;
 
-fn build_view(_active: Option<&str>) -> Desc {
+fn build_view(_active: Option<&str>, slider_value: f32) -> Desc {
     Desc::Container {
         id: Cow::Borrowed("__root"),
         style: BoxStyle {
@@ -21,31 +26,43 @@ fn build_view(_active: Option<&str>) -> Desc {
         children: vec![
             Desc::Widget {
                 id: Cow::Borrowed("btn_a"),
-                props: Box::new(ButtonProps {
-                    label: "Button A".into(),
-                    icon: None,
-                    disabled: false,
-                }),
+                props: Box::new(ButtonProps { label: "Button A".into(), icon: None, disabled: false }),
             },
             Desc::Widget {
                 id: Cow::Borrowed("btn_b"),
-                props: Box::new(ButtonProps {
-                    label: "Button B".into(),
-                    icon: None,
-                    disabled: false,
-                }),
+                props: Box::new(ButtonProps { label: "Button B".into(), icon: None, disabled: false }),
+            },
+            Desc::Widget {
+                id: Cow::Borrowed("slider_radius"),
+                props: Box::new(SliderProps { label: "Radius".into(), min: 0.0, max: 10.0, step: 0.1, value: slider_value, disabled: false }),
             },
         ],
+    }
+}
+
+struct PanelInteraction {
+    drag_panel: Option<&'static str>,
+    resize_panel: Option<&'static str>,
+    resize_edge: Option<ResizeEdge>,
+    last_x: f32,
+    last_y: f32,
+}
+
+impl PanelInteraction {
+    fn new() -> Self {
+        Self { drag_panel: None, resize_panel: None, resize_edge: None, last_x: 0.0, last_y: 0.0 }
     }
 }
 
 pub struct DemoApp {
     canvas: Canvas,
     layer: PanelLayer,
-    drag: DragState,
-    resize: ResizeState,
     tree: PanelTree,
+    arena: Option<GestureArena>,
+    panel_interaction: PanelInteraction,
     active_button: Option<String>,
+    slider_value: f32,
+    last_tap_time: Option<Instant>,
     mouse_x: f32,
     mouse_y: f32,
 }
@@ -54,119 +71,166 @@ impl App for DemoApp {
     fn init(_ctx: &mut AppContext) -> Self {
         let mut layer = PanelLayer::new();
         layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
-
         Self {
-            canvas: Canvas::new(),
-            layer,
-            drag: DragState::new(),
-            resize: ResizeState::new(),
-            tree: PanelTree::new(),
-            active_button: None,
-            mouse_x: 0.0,
-            mouse_y: 0.0,
+            canvas: Canvas::new(), layer, tree: PanelTree::new(),
+            arena: None, panel_interaction: PanelInteraction::new(),
+            active_button: None, slider_value: 5.0, last_tap_time: None,
+            mouse_x: 0.0, mouse_y: 0.0,
         }
     }
 
-    fn event(&mut self, event: AppEvent, _ctx: &mut AppContext) {
+    fn event(&mut self, event: AppEvent, ctx: &mut AppContext) {
         if !matches!(event, AppEvent::MouseMove { .. }) {
             tracing::debug!("{:?}", event);
         }
 
-        let panel_consumed = match &event {
-            AppEvent::MousePress { x, y, button } => {
-                if *button == crate::shell::MouseButton::Left {
-                    if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
-                        let frame = self.layer.get(panel_id).unwrap();
+        match &event {
+            AppEvent::MousePress { x, y, button } if *button == MouseButton::Left => {
+                if self.arena.is_some() { return; }
+                self.mouse_x = *x;
+                self.mouse_y = *y;
 
-                        if let Some(edge) = ResizeState::detect_edge(frame, *x, *y) {
-                            self.resize.start(panel_id, edge, *x, *y);
+                if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
+                    let frame = self.layer.get(panel_id).unwrap();
+
+                    if let Some(edge) = detect_edge(frame, *x, *y) {
+                        let mut arena = GestureArena::new(format!("panel_resize:{panel_id}"));
+                        let mut rec = DragRecognizer::new(format!("panel_resize:{panel_id}"));
+                        rec.on_pointer_down(*x, *y);
+                        arena.add(Box::new(rec));
+                        self.arena = Some(arena);
+                        self.panel_interaction.resize_panel = Some(panel_id);
+                        self.panel_interaction.resize_edge = Some(edge);
+                        self.panel_interaction.last_x = *x;
+                        self.panel_interaction.last_y = *y;
+                    } else if let Some(root) = self.tree.root() {
+                        if let Some(widget_id) = hit_test(&self.tree, root, *x, *y) {
+                            let mut arena = GestureArena::new(widget_id.to_string());
+                            let mut tap = TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
+                            tap.on_pointer_down(*x, *y);
+                            arena.add(Box::new(tap));
+
+                            if widget_id.contains("slider") || widget_id.contains("track") || widget_id.contains("fill") || widget_id.contains("spacer") {
+                                let mut drag = DragRecognizer::new(widget_id.to_string());
+                                drag.on_pointer_down(*x, *y);
+                                arena.add(Box::new(drag));
+                            }
+                            self.arena = Some(arena);
                         } else {
-                            let mut button_hit = false;
-                            if let Some(root) = self.tree.root() {
-                                if let Some(id) = hit_test(&self.tree, root, *x, *y) {
-                                    self.active_button = Some(id.to_string());
-                                    button_hit = true;
-                                }
-                            }
-                            if !button_hit {
-                                self.drag.start(panel_id, *x, *y);
-                            }
+                            let mut arena = GestureArena::new(format!("panel_drag:{panel_id}"));
+                            let mut rec = DragRecognizer::new(format!("panel_drag:{panel_id}"));
+                            rec.on_pointer_down(*x, *y);
+                            arena.add(Box::new(rec));
+                            self.arena = Some(arena);
+                            self.panel_interaction.drag_panel = Some(panel_id);
+                            self.panel_interaction.last_x = *x;
+                            self.panel_interaction.last_y = *y;
                         }
-
-                        self.layer.bring_to_front(panel_id);
-                        true
                     } else {
-                        false
+                        let mut arena = GestureArena::new(format!("panel_drag:{panel_id}"));
+                        let mut rec = DragRecognizer::new(format!("panel_drag:{panel_id}"));
+                        rec.on_pointer_down(*x, *y);
+                        arena.add(Box::new(rec));
+                        self.arena = Some(arena);
+                        self.panel_interaction.drag_panel = Some(panel_id);
+                        self.panel_interaction.last_x = *x;
+                        self.panel_interaction.last_y = *y;
                     }
-                } else {
-                    false
+                    self.layer.bring_to_front(panel_id);
+                    return;
                 }
+                self.canvas.event(&event);
             }
+
             AppEvent::MouseMove { x, y } => {
                 self.mouse_x = *x;
                 self.mouse_y = *y;
-                let mut consumed = false;
-                if self.drag.is_active() {
-                    self.drag.update(*x, *y, &mut self.layer);
-                    consumed = true;
+                if let Some(arena) = &mut self.arena {
+                    if let Some(action) = arena.pointer_move(*x, *y) {
+                        self.handle_action(action);
+                    }
+                } else {
+                    if let Some(panel_id) = hit_test_panel(&self.layer, *x, *y) {
+                        if let Some(frame) = self.layer.get(panel_id) {
+                            if let Some(edge) = detect_edge(frame, *x, *y) {
+                                ctx.cursor.set(edge.cursor_style());
+                            }
+                        }
+                    }
+                    self.canvas.event(&event);
                 }
-                if self.resize.is_active() {
-                    self.resize.update(*x, *y, &mut self.layer);
-                    consumed = true;
-                }
-                consumed
             }
-            AppEvent::MouseRelease { .. } => {
-                let was_active = self.drag.is_active() || self.resize.is_active();
-                self.drag.end();
-                self.resize.end();
-                was_active
-            }
-            _ => false,
-        };
 
-        if !panel_consumed {
-            self.canvas.event(&event);
+            AppEvent::MouseRelease { x, y, button } if *button == MouseButton::Left => {
+                if let Some(mut arena) = self.arena.take() {
+                    if let Some(action) = arena.pointer_up(*x, *y) {
+                        self.handle_action(action);
+                    }
+                    self.panel_interaction.drag_panel = None;
+                    self.panel_interaction.resize_panel = None;
+                    self.panel_interaction.resize_edge = None;
+                } else {
+                    self.canvas.event(&event);
+                }
+            }
+
+            _ => { self.canvas.event(&event); }
         }
     }
 
-    fn update(&mut self, _renderer: &mut Renderer, ctx: &mut AppContext) {
-        // 光标样式
-        if let Some(edge) = self.resize.current_edge() {
-            ctx.cursor.set(edge.cursor_style());
-        } else if let Some(panel_id) = hit_test_panel(&self.layer, self.mouse_x, self.mouse_y) {
-            if let Some(frame) = self.layer.get(panel_id) {
-                if let Some(edge) = ResizeState::detect_edge(frame, self.mouse_x, self.mouse_y) {
-                    ctx.cursor.set(edge.cursor_style());
-                }
-            }
-        }
-
-        let desc = build_view(self.active_button.as_deref());
+    fn update(&mut self, _renderer: &mut Renderer, _ctx: &mut AppContext) {
+        let desc = build_view(self.active_button.as_deref(), self.slider_value);
         reconcile(&mut self.tree, desc);
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
         if let (Some(frame), Some(root)) = (self.layer.get("demo"), self.tree.root()) {
             let content_rect = Rect {
-                x: frame.x + PADDING,
-                y: frame.y + PADDING,
-                w: frame.w - PADDING * 2.0,
-                h: frame.h - PADDING * 2.0,
+                x: frame.x + PADDING, y: frame.y + PADDING,
+                w: frame.w - PADDING * 2.0, h: frame.h - PADDING * 2.0,
             };
             resolve::resolve(&mut self.tree, renderer.text_measurer());
             layout(&mut self.tree, root, content_rect);
         }
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
         let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
-
         self.canvas.render(renderer, viewport_w, viewport_h);
-
         let tree = &self.tree;
         self.layer.render(renderer, |_frame, renderer| {
-            if let Some(root) = tree.root() {
-                paint(tree, root, renderer);
-            }
+            if let Some(root) = tree.root() { paint(tree, root, renderer); }
         });
+    }
+}
+
+impl DemoApp {
+    fn handle_action(&mut self, action: Action) {
+        tracing::debug!("Action: {:?}", action);
+        match &action {
+            Action::Click(id) => {
+                self.last_tap_time = Some(Instant::now());
+                self.active_button = Some(id.clone());
+            }
+            Action::DoubleClick(id) => {
+                self.last_tap_time = None;
+                if id.contains("slider") { self.slider_value = 5.0; }
+            }
+            Action::DragMove { id: _, x, y } => {
+                if let Some(panel_id) = self.panel_interaction.drag_panel {
+                    apply_drag_move(&mut self.layer, panel_id, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                    self.panel_interaction.last_x = *x;
+                    self.panel_interaction.last_y = *y;
+                } else if let Some(panel_id) = self.panel_interaction.resize_panel {
+                    if let Some(edge) = self.panel_interaction.resize_edge {
+                        apply_resize(&mut self.layer, panel_id, edge, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                        self.panel_interaction.last_x = *x;
+                        self.panel_interaction.last_y = *y;
+                    }
+                } else {
+                    tracing::debug!("Slider drag at ({}, {})", x, y);
+                }
+            }
+            Action::DragStart { .. } | Action::DragEnd { .. } => {}
+            Action::LongPress(id) => { tracing::debug!("LongPress: {}", id); }
+        }
     }
 }
