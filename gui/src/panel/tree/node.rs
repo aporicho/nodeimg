@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
 use crate::renderer::Rect;
 
@@ -9,7 +10,7 @@ pub enum NodeKind {
 }
 
 pub struct PanelNode {
-    pub id: &'static str,
+    pub id: Cow<'static, str>,
     pub kind: NodeKind,
     pub rect: Rect,
     pub children: Vec<NodeId>,

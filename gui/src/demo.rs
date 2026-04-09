@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::canvas::Canvas;
 use crate::widget::layout::{Align, BoxStyle, Decoration, Direction, Justify, LeafKind, Size};
 use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
@@ -16,14 +17,13 @@ const COLOR_INACTIVE: Color = Color { r: 0.85, g: 0.85, b: 0.87, a: 1.0 };
 
 fn button(
     id: &'static str,
-    text_id: &'static str,
     label: &'static str,
     color: Color,
     renderer: &mut Renderer,
 ) -> Desc {
     let (text_w, text_h) = renderer.measure_text(label, FONT_SIZE);
     Desc::Container {
-        id,
+        id: Cow::Borrowed(id),
         style: BoxStyle {
             height: Size::Fixed(text_h + PADDING_V * 2.0),
             direction: Direction::Row,
@@ -37,7 +37,7 @@ fn button(
             radius: [RADIUS; 4],
         }),
         children: vec![Desc::Leaf {
-            id: text_id,
+            id: Cow::Owned(format!("{id}::text")),
             style: BoxStyle {
                 width: Size::Fixed(text_w),
                 height: Size::Fixed(text_h),
@@ -52,9 +52,9 @@ fn button(
     }
 }
 
-fn build_view(active: Option<&'static str>, renderer: &mut Renderer) -> Desc {
+fn build_view(active: Option<&str>, renderer: &mut Renderer) -> Desc {
     Desc::Container {
-        id: "__root",
+        id: Cow::Borrowed("__root"),
         style: BoxStyle {
             direction: Direction::Column,
             gap: 8.0,
@@ -63,12 +63,12 @@ fn build_view(active: Option<&'static str>, renderer: &mut Renderer) -> Desc {
         decoration: None,
         children: vec![
             button(
-                "btn_a", "btn_a_text", "Button A",
+                "btn_a", "Button A",
                 if active == Some("btn_a") { COLOR_ACTIVE } else { COLOR_INACTIVE },
                 renderer,
             ),
             button(
-                "btn_b", "btn_b_text", "Button B",
+                "btn_b", "Button B",
                 if active == Some("btn_b") { COLOR_ACTIVE } else { COLOR_INACTIVE },
                 renderer,
             ),
@@ -82,7 +82,7 @@ pub struct DemoApp {
     drag: DragState,
     resize: ResizeState,
     tree: PanelTree,
-    active_button: Option<&'static str>,
+    active_button: Option<String>,
     mouse_x: f32,
     mouse_y: f32,
 }
@@ -121,7 +121,7 @@ impl App for DemoApp {
                             let mut button_hit = false;
                             if let Some(root) = self.tree.root() {
                                 if let Some(id) = hit_test(&self.tree, root, *x, *y) {
-                                    self.active_button = Some(id);
+                                    self.active_button = Some(id.to_string());
                                     button_hit = true;
                                 }
                             }
@@ -179,7 +179,7 @@ impl App for DemoApp {
             }
         }
 
-        let desc = build_view(self.active_button, renderer);
+        let desc = build_view(self.active_button.as_deref(), renderer);
         reconcile(&mut self.tree, desc);
     }
 

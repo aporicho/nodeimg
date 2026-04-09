@@ -18,7 +18,7 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
     let old_hash = tree.get(node_id).map(|n| n.props_hash).unwrap_or(0);
 
     // 提取子描述和节点类型
-    let (desc_children, new_kind) = desc.into_parts();
+    let (_id, desc_children, new_kind) = desc.into_parts();
 
     // 属性变化时更新 kind
     if old_hash != new_hash {
@@ -35,14 +35,14 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
         .unwrap_or_default();
 
     let mut new_children = Vec::new();
-    let mut old_map: Vec<(NodeId, &'static str)> = old_children
+    let mut old_map: Vec<(NodeId, String)> = old_children
         .iter()
-        .filter_map(|&id| tree.get(id).map(|n| (id, n.id)))
+        .filter_map(|&id| tree.get(id).map(|n| (id, n.id.as_ref().to_owned())))
         .collect();
 
     for child_desc in desc_children {
         let child_id_str = child_desc.id();
-        if let Some(pos) = old_map.iter().position(|(_, id)| *id == child_id_str) {
+        if let Some(pos) = old_map.iter().position(|(_, id)| id == child_id_str) {
             let (existing_id, _) = old_map.remove(pos);
             reconcile_node(tree, existing_id, child_desc);
             new_children.push(existing_id);
@@ -62,9 +62,8 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
 }
 
 fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
-    let id = desc.id();
     let props_hash = desc.props_hash();
-    let (child_descs, kind) = desc.into_parts();
+    let (id, child_descs, kind) = desc.into_parts();
 
     let node_id = tree.insert(PanelNode {
         id,

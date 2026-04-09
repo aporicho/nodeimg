@@ -1,11 +1,11 @@
 use super::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
 
-pub fn hit_test(tree: &PanelTree, root: NodeId, x: f32, y: f32) -> Option<&'static str> {
+pub fn hit_test<'a>(tree: &'a PanelTree, root: NodeId, x: f32, y: f32) -> Option<&'a str> {
     hit_test_node(tree, root, x, y)
 }
 
-fn hit_test_node(tree: &PanelTree, node_id: NodeId, x: f32, y: f32) -> Option<&'static str> {
+fn hit_test_node<'a>(tree: &'a PanelTree, node_id: NodeId, x: f32, y: f32) -> Option<&'a str> {
     let Some(node) = tree.get(node_id) else { return None };
 
     let r = &node.rect;
@@ -20,7 +20,7 @@ fn hit_test_node(tree: &PanelTree, node_id: NodeId, x: f32, y: f32) -> Option<&'
     }
 
     match &node.kind {
-        NodeKind::Container { decoration, .. } if decoration.is_some() => Some(node.id),
+        NodeKind::Container { decoration, .. } if decoration.is_some() => Some(node.id.as_ref()),
         _ => None,
     }
 }

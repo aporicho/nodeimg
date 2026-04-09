@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
 use super::node::NodeKind;
@@ -5,34 +6,34 @@ use super::node::NodeKind;
 /// 视图描述：view() 函数返回的轻量描述树。
 pub enum Desc {
     Container {
-        id: &'static str,
+        id: Cow<'static, str>,
         style: BoxStyle,
         decoration: Option<Decoration>,
         children: Vec<Desc>,
     },
     Leaf {
-        id: &'static str,
+        id: Cow<'static, str>,
         style: BoxStyle,
         kind: LeafKind,
     },
 }
 
 impl Desc {
-    pub fn id(&self) -> &'static str {
+    pub fn id(&self) -> &str {
         match self {
             Desc::Container { id, .. } => id,
             Desc::Leaf { id, .. } => id,
         }
     }
 
-    /// 消费 Desc，返回 (子描述列表, NodeKind)。
-    pub(crate) fn into_parts(self) -> (Vec<Desc>, NodeKind) {
+    /// 消费 Desc，返回 (id, 子描述列表, NodeKind)。
+    pub(crate) fn into_parts(self) -> (Cow<'static, str>, Vec<Desc>, NodeKind) {
         match self {
-            Desc::Container { style, decoration, children, .. } => {
-                (children, NodeKind::Container { style, decoration })
+            Desc::Container { id, style, decoration, children } => {
+                (id, children, NodeKind::Container { style, decoration })
             }
-            Desc::Leaf { style, kind, .. } => {
-                (Vec::new(), NodeKind::Leaf { style, kind })
+            Desc::Leaf { id, style, kind } => {
+                (id, Vec::new(), NodeKind::Leaf { style, kind })
             }
         }
     }
