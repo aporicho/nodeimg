@@ -20,7 +20,39 @@ impl WidgetProps for ButtonProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, _id: &str) -> WidgetBuild {
-        todo!("ButtonProps::build")
+    fn build(&self, id: &str) -> WidgetBuild {
+        use crate::widget::desc::Desc;
+        use crate::widget::layout::{BoxStyle, Size, Direction, Align, Justify, Edges, LeafKind};
+        use crate::renderer::Color;
+
+        let text_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };
+        let font_size = 12.0;
+
+        WidgetBuild {
+            style: BoxStyle {
+                height: Size::Auto,
+                direction: Direction::Row,
+                align_items: Align::Center,
+                justify_content: Justify::Center,
+                padding: Edges::symmetric(8.0, 16.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![
+                Desc::Leaf {
+                    id: Cow::Owned(format!("{id}::label")),
+                    style: BoxStyle {
+                        width: Size::Auto,
+                        height: Size::Auto,
+                        ..BoxStyle::default()
+                    },
+                    kind: LeafKind::Text {
+                        content: self.label.to_string(),
+                        font_size,
+                        color: text_color,
+                    },
+                },
+            ],
+        }
     }
 }

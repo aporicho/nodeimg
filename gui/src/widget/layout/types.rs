@@ -132,7 +132,7 @@ pub trait LayoutTree {
 /// 渲染图元类型。叶子节点的具体内容。
 #[derive(Debug, Clone, PartialEq)]
 pub enum LeafKind {
-    /// 文本图元。尺寸在创建时由 measure_text() 预算，存入 BoxStyle 的 width/height。
+    /// 文本图元。尺寸在 resolve 阶段由 TextMeasurer 解析，创建时使用 Size::Auto。
     Text {
         content: String,
         font_size: f32,

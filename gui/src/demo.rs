@@ -1,58 +1,15 @@
 use std::borrow::Cow;
 use crate::canvas::Canvas;
-use crate::widget::layout::{Align, BoxStyle, Decoration, Direction, Justify, LeafKind, Size};
+use crate::widget::atoms::button::ButtonProps;
+use crate::widget::layout::{BoxStyle, Direction, resolve};
 use crate::panel::{DragState, PanelFrame, PanelLayer, ResizeState, hit_test_panel};
 use crate::panel::tree::{reconcile, layout, paint, hit_test, Desc, PanelTree};
-use crate::renderer::{Border, Color, Rect, Renderer};
+use crate::renderer::{Rect, Renderer};
 use crate::shell::{App, AppContext, AppEvent};
 
 const PADDING: f32 = 16.0;
-const FONT_SIZE: f32 = 12.0;
-const PADDING_V: f32 = 8.0;
-const RADIUS: f32 = 4.0;
-const BORDER_COLOR: Color = Color { r: 0.894, g: 0.894, b: 0.906, a: 1.0 };
-const TEXT_COLOR: Color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };
-const COLOR_ACTIVE: Color = Color { r: 0.2, g: 0.5, b: 0.9, a: 1.0 };
-const COLOR_INACTIVE: Color = Color { r: 0.85, g: 0.85, b: 0.87, a: 1.0 };
 
-fn button(
-    id: &'static str,
-    label: &'static str,
-    color: Color,
-    renderer: &mut Renderer,
-) -> Desc {
-    let (text_w, text_h) = renderer.measure_text(label, FONT_SIZE);
-    Desc::Container {
-        id: Cow::Borrowed(id),
-        style: BoxStyle {
-            height: Size::Fixed(text_h + PADDING_V * 2.0),
-            direction: Direction::Row,
-            align_items: Align::Center,
-            justify_content: Justify::Center,
-            ..BoxStyle::default()
-        },
-        decoration: Some(Decoration {
-            background: Some(color),
-            border: Some(Border { width: 1.0, color: BORDER_COLOR }),
-            radius: [RADIUS; 4],
-        }),
-        children: vec![Desc::Leaf {
-            id: Cow::Owned(format!("{id}::text")),
-            style: BoxStyle {
-                width: Size::Fixed(text_w),
-                height: Size::Fixed(text_h),
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Text {
-                content: label.to_string(),
-                font_size: FONT_SIZE,
-                color: TEXT_COLOR,
-            },
-        }],
-    }
-}
-
-fn build_view(active: Option<&str>, renderer: &mut Renderer) -> Desc {
+fn build_view(_active: Option<&str>) -> Desc {
     Desc::Container {
         id: Cow::Borrowed("__root"),
         style: BoxStyle {
@@ -62,16 +19,22 @@ fn build_view(active: Option<&str>, renderer: &mut Renderer) -> Desc {
         },
         decoration: None,
         children: vec![
-            button(
-                "btn_a", "Button A",
-                if active == Some("btn_a") { COLOR_ACTIVE } else { COLOR_INACTIVE },
-                renderer,
-            ),
-            button(
-                "btn_b", "Button B",
-                if active == Some("btn_b") { COLOR_ACTIVE } else { COLOR_INACTIVE },
-                renderer,
-            ),
+            Desc::Widget {
+                id: Cow::Borrowed("btn_a"),
+                props: Box::new(ButtonProps {
+                    label: "Button A".into(),
+                    icon: None,
+                    disabled: false,
+                }),
+            },
+            Desc::Widget {
+                id: Cow::Borrowed("btn_b"),
+                props: Box::new(ButtonProps {
+                    label: "Button B".into(),
+                    icon: None,
+                    disabled: false,
+                }),
+            },
         ],
     }
 }
@@ -167,7 +130,7 @@ impl App for DemoApp {
         }
     }
 
-    fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
+    fn update(&mut self, _renderer: &mut Renderer, ctx: &mut AppContext) {
         // 光标样式
         if let Some(edge) = self.resize.current_edge() {
             ctx.cursor.set(edge.cursor_style());
@@ -179,7 +142,7 @@ impl App for DemoApp {
             }
         }
 
-        let desc = build_view(self.active_button.as_deref(), renderer);
+        let desc = build_view(self.active_button.as_deref());
         reconcile(&mut self.tree, desc);
     }
 
@@ -191,6 +154,7 @@ impl App for DemoApp {
                 w: frame.w - PADDING * 2.0,
                 h: frame.h - PADDING * 2.0,
             };
+            resolve::resolve(&mut self.tree, renderer.text_measurer());
             layout(&mut self.tree, root, content_rect);
         }
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
