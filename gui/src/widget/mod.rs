@@ -4,10 +4,10 @@ pub mod layout;
 pub mod node;
 pub mod props;
 
-mod action;
+pub mod action;
 mod focus;
 mod mapping;
-mod state;
+pub mod state;
 mod text_edit;
 
 pub use layout::{BoxStyle, Decoration, LeafKind, LayoutTree, Size};
