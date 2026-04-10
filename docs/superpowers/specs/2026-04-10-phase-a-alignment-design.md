@@ -127,8 +127,8 @@ pub enum LeafKind {
         dot_size: f32,
     },
     Connection {
-        from_port: String,
-        to_port: String,
+        from_port: std::borrow::Cow<'static, str>,
+        to_port: std::borrow::Cow<'static, str>,
     },
 
     // 逃生舱
@@ -141,7 +141,7 @@ pub enum LeafKind {
 - `TextureHandle(u64)` 是简单的 ID 壳。阶段 A 里没人创建它，定义为类型就够。真正的 `Arc<wgpu::TextureView>` 映射将在后续阶段由 Renderer 内部维护。
 - `Path` 暂留空体（无字段），占位，阶段 C 实现画布时再填。
 - `CustomPainter` trait 要求 `Debug + Send + Sync`，以便 `LeafKind` 整体能派生 `Debug`、`Clone`、`PartialEq`。
-- `Connection` 用 `String` 作为 port id，和 widget 树的 `Cow<'static, str>` id 体系一致。
+- `Connection` 用 `Cow<'static, str>` 作为 port id，和 widget 树的 id 体系一致（既可以从字面量零开销构造，也可以 owned）。
 
 ### 2. BoxStyle 新增字段
 
@@ -516,7 +516,7 @@ fn build(&self, id: &str) -> WidgetBuild {
 | 8 | `gui/src/widget/layout/types.rs` | Decoration 加 shadow 字段 |
 | 9 | `gui/src/widget/atoms/button.rs` | Decoration 字面量加 `shadow: None` |
 | 10 | `gui/src/widget/atoms/slider.rs` | Decoration 字面量加 `shadow: None`（两处：track, fill）|
-| 11 | `gui/src/panel/tree/paint.rs` | paint 时 `dec.shadow` 传给 `RectStyle.shadow`（之前硬编码 None） |
+| 11 | `gui/src/panel/tree/paint.rs` | paint 时 `dec.shadow` 传给 `RectStyle.shadow`（之前硬编码 None）—— 这是本阶段唯一的 paint 行为改动，仅作用于 Container 的 decoration 通路，不影响新 LeafKind 变体的 fallthrough 策略 |
 | 12 | `gui/src/widget/atoms/text_input.rs` | 实现 build() |
 | 13 | `gui/src/widget/atoms/toggle.rs` | 实现 build() |
 | 14 | `gui/src/widget/atoms/dropdown.rs` | 实现 build() |
@@ -527,6 +527,10 @@ fn build(&self, id: &str) -> WidgetBuild {
 1. **步骤 7**：如果代码中有绕过 `..BoxStyle::default()` 构造 BoxStyle 的地方（完整字段字面量），新字段会要求补齐。需要先 grep `BoxStyle {` 定位所有字面量构造点
 2. **步骤 4**：`CustomPainter` trait 的签名使用 `&mut Renderer`，需要确认 `widget/layout/types.rs` 能 import `crate::renderer::Renderer` 而不产生循环依赖。当前 types.rs 已 import `renderer::{Color, Rect, Border}`，再加 `Renderer` 应该也可以
 3. **步骤 1**：`Shadow` 结构若有字段未实现 PartialEq，需要手动实现而不是派生
+4. **步骤 5-6 的 match fallthrough 警告**：添加 9 个新 LeafKind 变体后，paint.rs 和 layout.rs 里的 match 可能产生 unused variable 警告。允许的处理方式：
+   - 使用 `_ => { /* TODO 阶段 C */ }` 兜底分支
+   - 或显式列出每个变体，body 留空并用 `_` 前缀命名未使用变量
+   - 目标是 `cargo check -p gui` 零 warning
 
 ## Commit 策略
 
