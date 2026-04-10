@@ -43,6 +43,17 @@ impl Graph {
         let id = self.next_id;
         (id + 1, NodeId(id))
     }
+
+    /// 返回所有叶子节点（无下游连线的节点）
+    pub fn leaf_nodes(&self) -> Vec<NodeId> {
+        let nodes_with_output: std::collections::HashSet<NodeId> = self.connections.iter()
+            .map(|c| c.from_node)
+            .collect();
+        self.nodes.keys()
+            .filter(|id| !nodes_with_output.contains(id))
+            .copied()
+            .collect()
+    }
 }
 
 impl Default for Graph {

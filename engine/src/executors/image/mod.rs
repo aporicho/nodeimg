@@ -22,4 +22,9 @@ impl ImageExecutor {
     pub fn context(&self) -> ExecContext<'_> {
         ExecContext::new(self.gpu.as_ref(), &self.cpu)
     }
+
+    /// 返回 GPU 执行器的引用（如果存在）
+    pub fn gpu_executor(&self) -> Option<&GpuExecutor> {
+        self.gpu.as_ref()
+    }
 }
