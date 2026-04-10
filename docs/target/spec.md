@@ -60,13 +60,11 @@ flowchart TB
 |------|------|------|
 | 内部模块 | 绿 `fill:#6DBFA0` | 当前文档描述的模块自身的前端组件 |
 | 逻辑模块 | 蓝 `fill:#5B9BD5` | 当前文档描述的模块自身的后端 / 逻辑层组件 |
-| 数据模型 | 橙 `fill:#F4B183` | 纯数据结构，无行为逻辑（UIState、节点图等） |
 | 外部模块 | 灰 `fill:#B0B8C1` | 不属于当前模块，但有交互的外部依赖 |
 
 ```
 classDef internal fill:#6DBFA0,stroke:#5BAD8E,color:#fff
 classDef logic fill:#5B9BD5,stroke:#4A8AC4,color:#fff
-classDef data fill:#F4B183,stroke:#E09B6D,color:#fff
 classDef external fill:#B0B8C1,stroke:#9EA6AF,color:#fff
 ```
 

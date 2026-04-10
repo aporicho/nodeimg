@@ -3,14 +3,13 @@ name = "gui"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "nodeimg"
+path = "src/main.rs"
+
 [dependencies]
-winit = "0.30"
+iced = { version = "0.13", features = ["canvas", "wgpu", "tokio", "image"] }
+engine = { path = "../engine" }
+types = { path = "../types" }
 wgpu = { workspace = true }
 pollster = { workspace = true }
-bytemuck = { workspace = true }
-glyphon = "0.10"
-lyon = "1"
-resvg = "0.44"
-image = { workspace = true }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
