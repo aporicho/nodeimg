@@ -85,6 +85,7 @@ impl WidgetProps for SliderProps {
                         background: Some(track_color),
                         border: None,
                         radius: [track_radius; 4],
+                        shadow: None,
                     }),
                     children: vec![
                         // 填充条（按比例占空间）
@@ -99,6 +100,7 @@ impl WidgetProps for SliderProps {
                                 background: Some(fill_color),
                                 border: None,
                                 radius: [track_radius; 4],
+                                shadow: None,
                             }),
                             children: vec![],
                         },

@@ -18,7 +18,7 @@ pub struct TextStyle {
     pub size: f32, // 字号（逻辑像素）
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
     pub color: Color,
     pub offset: [f32; 2], // x, y 偏移

@@ -16,7 +16,7 @@ fn paint_node(tree: &PanelTree, node_id: NodeId, renderer: &mut Renderer) {
             color: dec.background.unwrap_or(Color::TRANSPARENT),
             border: dec.border,
             radius: dec.radius,
-            shadow: None,
+            shadow: dec.shadow,
         });
     }
 

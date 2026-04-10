@@ -44,6 +44,7 @@ impl WidgetProps for ButtonProps {
                 background: Some(bg_color),
                 border: Some(Border { width: 1.0, color: border_color }),
                 radius: [4.0; 4],
+                shadow: None,
             }),
             children: vec![
                 Desc::Leaf {
