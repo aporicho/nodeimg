@@ -334,112 +334,35 @@ fn validate_node_decl(
     outputs: &[PythonPinSpec],
     params: &[PythonParamSpec],
 ) {
-    validate_unique_names(path, inputs, outputs, params);
-    validate_param_rules(path, params);
-}
+    let input_specs = inputs
+        .iter()
+        .map(|pin| node_manager_validate::PythonPinValidationSpec {
+            name: pin.name.clone(),
+            required: pin.required,
+        })
+        .collect::<Vec<_>>();
+    let output_specs = outputs
+        .iter()
+        .map(|pin| node_manager_validate::PythonPinValidationSpec {
+            name: pin.name.clone(),
+            required: pin.required,
+        })
+        .collect::<Vec<_>>();
+    let param_specs = params
+        .iter()
+        .map(|param| node_manager_validate::PythonParamValidationSpec {
+            name: param.name.clone(),
+            data_type: param.data_type.clone(),
+            default_expr: param.default_expr.clone(),
+            expose_values: parse_string_list_literal_from_exprs(&param.expose_expr),
+        })
+        .collect::<Vec<_>>();
 
-fn validate_unique_names(
-    path: &Path,
-    inputs: &[PythonPinSpec],
-    outputs: &[PythonPinSpec],
-    params: &[PythonParamSpec],
-) {
-    use std::collections::HashSet;
-
-    let mut input_names = HashSet::new();
-    let mut output_names = HashSet::new();
-
-    for name in inputs.iter().map(|p| &p.name) {
-        if !input_names.insert(name.clone()) {
-            panic!(
-                "duplicate input interface name '{}' in '{}'",
-                name,
-                path.display()
-            );
-        }
+    if let Err(err) =
+        node_manager_validate::validate_python_node_decl(&input_specs, &output_specs, &param_specs)
+    {
+        panic!("{} in '{}'", err, path.display());
     }
-    for name in outputs.iter().map(|p| &p.name) {
-        if !output_names.insert(name.clone()) {
-            panic!(
-                "duplicate output interface name '{}' in '{}'",
-                name,
-                path.display()
-            );
-        }
-    }
-
-    for param in params {
-        let expose_values = parse_string_list_literal_from_exprs(&param.expose_expr);
-
-        if expose_values.iter().any(|value| value == "input")
-            && !input_names.insert(param.name.clone())
-        {
-            panic!(
-                "duplicate input-side interface name '{}' in '{}'",
-                param.name,
-                path.display()
-            );
-        }
-
-        if expose_values.iter().any(|value| value == "output")
-            && !output_names.insert(param.name.clone())
-        {
-            panic!(
-                "duplicate output-side interface name '{}' in '{}'",
-                param.name,
-                path.display()
-            );
-        }
-    }
-}
-
-fn validate_param_rules(path: &Path, params: &[PythonParamSpec]) {
-    for param in params {
-        if param.expose_expr.is_empty() {
-            panic!(
-                "Param '{}' in '{}' must declare non-empty expose=[...]",
-                param.name,
-                path.display()
-            );
-        }
-
-        let expose_values = parse_string_list_literal_from_exprs(&param.expose_expr);
-        if expose_values.is_empty() {
-            panic!(
-                "Param '{}' in '{}' must declare at least one valid expose value",
-                param.name,
-                path.display()
-            );
-        }
-
-        for value in &expose_values {
-            match value.as_str() {
-                "control" | "input" | "output" => {}
-                other => panic!(
-                    "Param '{}' in '{}' has unsupported expose value '{}'",
-                    param.name,
-                    path.display(),
-                    other
-                ),
-            }
-        }
-
-        if is_complex_python_type(&param.data_type) && param.default_expr.trim() != "None" {
-            panic!(
-                "Param '{}' in '{}' with complex type '{}' must use default=None",
-                param.name,
-                path.display(),
-                param.data_type
-            );
-        }
-    }
-}
-
-fn is_complex_python_type(data_type: &str) -> bool {
-    matches!(
-        data_type,
-        "IMAGE" | "MASK" | "MODEL" | "CLIP" | "VAE" | "LATENT" | "CONDITIONING"
-    )
 }
 
 fn split_top_level_items(block: &str) -> Vec<String> {
@@ -779,4 +702,11 @@ fn parse_string_list_literal_from_exprs(exprs: &[String]) -> Vec<String> {
         .iter()
         .flat_map(|expr| parse_string_list_literal(expr))
         .collect()
+}
+
+mod node_manager_validate {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/node_manager/collect/validate_python_decl.rs"
+    ));
 }
