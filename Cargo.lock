@@ -626,6 +626,7 @@ dependencies = [
  "inventory",
  "macros",
  "pollster",
+ "serde",
  "serde_json",
  "tokio",
  "types",

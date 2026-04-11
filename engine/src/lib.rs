@@ -1,7 +1,7 @@
 pub mod graph;
 pub mod graph_controller;
 pub mod node_manager;
-pub mod registry;
+pub mod artifact;
 pub mod executors;
 pub mod builtins;
 
@@ -47,7 +47,7 @@ impl Engine {
         for node_id in order {
             let node = graph.nodes.get(&node_id)
                 .ok_or_else(|| format!("Node {:?} not found in graph", node_id))?;
-            let def = self.node_manager.get(&node.type_id)
+            let def = self.node_manager.get_node_def(&node.type_id)
                 .ok_or_else(|| format!("Node type '{}' not registered", node.type_id))?;
 
             // Collect upstream inputs from results
