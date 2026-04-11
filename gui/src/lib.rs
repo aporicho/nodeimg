@@ -4,4 +4,5 @@ pub mod gesture;
 pub mod renderer;
 pub mod shell;
 pub mod panel;
+pub mod tree;
 pub mod widget;

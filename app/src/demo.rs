@@ -6,9 +6,9 @@ use gui::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognize
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
-use gui::widget::layout::{BoxStyle, Direction};
+use gui::tree::layout::{BoxStyle, Direction};
 use gui::panel::{PanelFrame, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
-use gui::panel::tree::Desc;
+use gui::tree::Desc;
 use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, MouseButton};
 

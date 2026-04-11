@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
+use super::layout::{BoxStyle, Decoration, LeafKind};
 use crate::widget::props::WidgetProps;
 use crate::renderer::Rect;
 

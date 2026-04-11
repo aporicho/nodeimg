@@ -24,8 +24,8 @@ impl WidgetProps for SliderProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str) -> WidgetBuild {
-        use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, LeafKind};
+        use crate::tree::Desc;
+        use crate::tree::layout::{BoxStyle, Decoration, Size, Direction, Align, LeafKind};
         use crate::renderer::Color;
 
         // shadcn zinc 色系

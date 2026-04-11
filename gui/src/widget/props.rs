@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::fmt;
-use super::desc::Desc;
-use super::layout::{BoxStyle, Decoration};
+use crate::tree::Desc;
+use crate::tree::layout::{BoxStyle, Decoration};
 
 /// build() 的返回值。提供 Widget 节点的根样式、装饰和展开后的子树。
 pub struct WidgetBuild {

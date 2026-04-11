@@ -1,13 +1,13 @@
-use crate::widget::node::{NodeId, NodeKind};
-use super::tree::PanelTree;
-use crate::widget::layout::LeafKind;
+use super::layout::LeafKind;
+use super::node::{NodeId, NodeKind};
+use super::tree::Tree;
 use crate::renderer::{Color, Point, Renderer, RectStyle, TextStyle};
 
-pub fn paint(tree: &PanelTree, root: NodeId, renderer: &mut Renderer) {
+pub fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer) {
     paint_node(tree, root, renderer);
 }
 
-fn paint_node(tree: &PanelTree, node_id: NodeId, renderer: &mut Renderer) {
+fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer) {
     let Some(node) = tree.get(node_id) else { return };
     let rect = node.rect;
 
