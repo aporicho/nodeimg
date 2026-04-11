@@ -1,12 +1,12 @@
 use super::node::NodeId;
 use super::tree::Tree;
 
-pub fn hit_test<'a>(tree: &'a Tree, root: NodeId, x: f32, y: f32) -> Option<&'a str> {
+pub fn hit_test(tree: &Tree, root: NodeId, x: f32, y: f32) -> Option<&str> {
     hit_test_node(tree, root, x, y)
 }
 
-fn hit_test_node<'a>(tree: &'a Tree, node_id: NodeId, x: f32, y: f32) -> Option<&'a str> {
-    let Some(node) = tree.get(node_id) else { return None };
+fn hit_test_node(tree: &Tree, node_id: NodeId, x: f32, y: f32) -> Option<&str> {
+    let node = tree.get(node_id)?;
 
     let r = &node.rect;
     if x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h {

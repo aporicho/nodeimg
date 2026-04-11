@@ -6,6 +6,7 @@ mod layout_adapter;
 mod node;
 mod paint;
 mod scroll;
+#[allow(clippy::module_inception)]
 mod tree;
 
 pub use desc::Desc;
