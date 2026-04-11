@@ -1,7 +1,7 @@
 use engine::Engine;
 use engine::graph::Connection;
 use engine::graph_controller::GraphController;
-use engine::registry::{NodeDef, NodeManager, PinDef};
+use engine::node_manager::{NodeDef, NodeManager, PinDef};
 use types::{DataType, Value, Vec2};
 use std::sync::Arc;
 
@@ -107,7 +107,7 @@ fn test_inventory_collects_all_builtins() {
     let nm = NodeManager::from_inventory();
     let expected = ["load_image", "save_image", "brightness", "contrast"];
     for name in &expected {
-        assert!(nm.get(name).is_some(), "Missing builtin node: {}", name);
+        assert!(nm.get_node_def(name).is_some(), "Missing builtin node: {}", name);
     }
 }
 

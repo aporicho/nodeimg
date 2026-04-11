@@ -60,7 +60,7 @@ mod test_inventory {
     fn test_macro_node_collected() {
         let nm = crate::node_manager::NodeManager::from_inventory();
         assert!(
-            nm.get("test_passthrough").is_some(),
+            nm.get_node_def("test_passthrough").is_some(),
             "test_passthrough should be registered via inventory"
         );
     }
@@ -68,7 +68,9 @@ mod test_inventory {
     #[test]
     fn test_full_node_structure() {
         let nm = crate::node_manager::NodeManager::from_inventory();
-        let def = nm.get("test_full").expect("test_full should exist");
+        let def = nm
+            .get_node_def("test_full")
+            .expect("test_full should exist");
 
         assert_eq!(def.type_id, "test_full");
         assert_eq!(def.name, "Test Full Node");
@@ -110,7 +112,9 @@ mod test_inventory {
     #[test]
     fn test_empty_node() {
         let nm = crate::node_manager::NodeManager::from_inventory();
-        let def = nm.get("test_empty").expect("test_empty should exist");
+        let def = nm
+            .get_node_def("test_empty")
+            .expect("test_empty should exist");
         assert!(def.inputs.is_empty());
         assert!(def.outputs.is_empty());
         assert!(def.params.is_empty());
@@ -119,9 +123,18 @@ mod test_inventory {
     #[test]
     fn test_builtin_nodes_collected() {
         let nm = crate::node_manager::NodeManager::from_inventory();
-        assert!(nm.get("load_image").is_some(), "load_image not found");
-        assert!(nm.get("save_image").is_some(), "save_image not found");
-        assert!(nm.get("brightness").is_some(), "brightness not found");
-        assert!(nm.get("contrast").is_some(), "contrast not found");
+        assert!(
+            nm.get_node_def("load_image").is_some(),
+            "load_image not found"
+        );
+        assert!(
+            nm.get_node_def("save_image").is_some(),
+            "save_image not found"
+        );
+        assert!(
+            nm.get_node_def("brightness").is_some(),
+            "brightness not found"
+        );
+        assert!(nm.get_node_def("contrast").is_some(), "contrast not found");
     }
 }

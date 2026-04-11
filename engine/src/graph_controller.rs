@@ -24,7 +24,7 @@ impl GraphController {
     }
 
     pub fn add_node(&mut self, type_id: &str, position: Vec2) -> Result<NodeId, String> {
-        if self.node_manager.get(type_id).is_none() {
+        if self.node_manager.get_node_def(type_id).is_none() {
             return Err(format!("Unknown node type: {}", type_id));
         }
         let defaults = self

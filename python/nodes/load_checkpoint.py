@@ -3,7 +3,7 @@ import logging
 import torch
 from diffusers import StableDiffusionXLPipeline
 
-from registry import NodeDef, PinDef, ParamDef
+from registry import Param, Pin, node
 from device import DEVICE, DTYPE
 
 log = logging.getLogger("load_checkpoint")
@@ -13,7 +13,27 @@ log = logging.getLogger("load_checkpoint")
 SDXL_VAE_SCALING_FACTOR = 0.13025
 
 
-def execute(inputs, params):
+@node(
+    type_id="ai.load_checkpoint",
+    title="Load Checkpoint",
+    category="ai/model",
+    inputs=[],
+    outputs=[
+        Pin("model", "MODEL"),
+        Pin("clip", "CLIP"),
+        Pin("vae", "VAE"),
+    ],
+    params=[
+        Param(
+            "checkpoint_path",
+            "STRING",
+            default=None,
+            expose=["control"],
+            widget="file_picker",
+        ),
+    ],
+)
+def execute(ctx, inputs, params):
     path = params["checkpoint_path"]
     log.info("Loading checkpoint: %s", path)
     log.info("Device: %s, dtype: %s", DEVICE, DTYPE)
@@ -30,7 +50,8 @@ def execute(inputs, params):
     if abs(original_sf - SDXL_VAE_SCALING_FACTOR) > 1e-4:
         log.warning(
             "VAE scaling_factor is %.5f, expected %.5f for SDXL — overriding",
-            original_sf, SDXL_VAE_SCALING_FACTOR,
+            original_sf,
+            SDXL_VAE_SCALING_FACTOR,
         )
         pipe.vae.config.scaling_factor = SDXL_VAE_SCALING_FACTOR
     else:
@@ -44,13 +65,22 @@ def execute(inputs, params):
     # correct beta schedule for proper noise prediction.
     sched_cfg = dict(pipe.scheduler.config)
     pipe.unet._pipeline_scheduler_config = sched_cfg
-    log.info("Scheduler config: beta_start=%.5f, beta_end=%.4f, schedule=%s, prediction=%s",
-             sched_cfg.get("beta_start", "?"), sched_cfg.get("beta_end", "?"),
-             sched_cfg.get("beta_schedule", "?"), sched_cfg.get("prediction_type", "?"))
+    log.info(
+        "Scheduler config: beta_start=%.5f, beta_end=%.4f, schedule=%s, prediction=%s",
+        sched_cfg.get("beta_start", "?"),
+        sched_cfg.get("beta_end", "?"),
+        sched_cfg.get("beta_schedule", "?"),
+        sched_cfg.get("prediction_type", "?"),
+    )
 
     result = {
         "model": pipe.unet,
-        "clip": (pipe.tokenizer, pipe.text_encoder, pipe.tokenizer_2, pipe.text_encoder_2),
+        "clip": (
+            pipe.tokenizer,
+            pipe.text_encoder,
+            pipe.tokenizer_2,
+            pipe.text_encoder_2,
+        ),
         "vae": pipe.vae,
     }
 
@@ -61,17 +91,3 @@ def execute(inputs, params):
 
     log.info("Checkpoint loaded successfully")
     return result
-
-
-definition = NodeDef(
-    inputs=[],
-    outputs=[
-        PinDef("model", "MODEL"),
-        PinDef("clip", "CLIP"),
-        PinDef("vae", "VAE"),
-    ],
-    params=[
-        ParamDef("checkpoint_path", "STRING", widget="file_picker"),
-    ],
-    execute=execute,
-)

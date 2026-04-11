@@ -1,4 +1,4 @@
-use crate::registry::{NodeDef, NodeDefEntry};
+use crate::node_manager::{NodeDef, NodeDefEntry};
 
 pub fn collect_rust_defs() -> Vec<NodeDef> {
     inventory::iter::<NodeDefEntry>

@@ -2,6 +2,7 @@ pub mod graph;
 pub mod graph_controller;
 pub mod node_manager;
 pub mod artifact;
+pub mod cache;
 pub mod executors;
 pub mod builtins;
 

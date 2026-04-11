@@ -1,4 +1,4 @@
-use crate::registry::NodeDef;
+use crate::node_manager::NodeDef;
 
 pub fn search_nodes<'a>(defs: impl Iterator<Item = &'a NodeDef>, query: &str) -> Vec<&'a NodeDef> {
     let q = query.to_lowercase();

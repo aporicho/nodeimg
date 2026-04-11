@@ -297,7 +297,7 @@ fn pin_def_tokens(pin: &PinInput) -> TokenStream2 {
     let dt = data_type_tokens(&pin.data_type);
     let optional = !pin.required;
     quote! {
-        crate::registry::PinDef {
+        crate::node_manager::PinDef {
             name: #name_str.to_string(),
             data_type: #dt,
             optional: #optional,
@@ -312,11 +312,12 @@ fn param_def_tokens(param: &ParamInput) -> TokenStream2 {
     let constraint = constraint_tokens(&param.constraint);
     let default = default_value_tokens(&param.data_type, &param.default_expr);
     quote! {
-        crate::registry::ParamDef {
+        crate::node_manager::ParamDef {
             name: #name_str.to_string(),
             data_type: #dt,
             constraint: #constraint,
             default_value: #default,
+            expose: vec![crate::node_manager::ParamExpose::Control],
         }
     }
 }
@@ -340,8 +341,8 @@ pub fn node(input: TokenStream) -> TokenStream {
     let body = &input.exec_body;
 
     let expanded = quote! {
-        inventory::submit!(crate::registry::NodeDefEntry(|| {
-            crate::registry::NodeDef {
+        inventory::submit!(crate::node_manager::NodeDefEntry(|| {
+            crate::node_manager::NodeDef {
                 type_id: #name.to_string(),
                 name: #title.to_string(),
                 category: #category.to_string(),

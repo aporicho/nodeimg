@@ -1,4 +1,4 @@
-use crate::registry::NodeDef;
+use crate::node_manager::NodeDef;
 use std::collections::HashMap;
 
 pub fn defs_by_type(defs: Vec<NodeDef>) -> HashMap<String, NodeDef> {

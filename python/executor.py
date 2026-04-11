@@ -41,10 +41,19 @@ class GraphExecutor:
         connections = graph.get("connections", [])
         output_node = graph.get("output_node")
 
-        log.info("Graph received: %d nodes, %d connections, output_node=%s",
-                 len(nodes), len(connections), output_node)
+        log.info(
+            "Graph received: %d nodes, %d connections, output_node=%s",
+            len(nodes),
+            len(connections),
+            output_node,
+        )
         for nid, info in nodes.items():
-            log.info("  node %s: type=%s params=%s", nid, info["type"], list(info.get("params", {}).keys()))
+            log.info(
+                "  node %s: type=%s params=%s",
+                nid,
+                info["type"],
+                list(info.get("params", {}).keys()),
+            )
 
         # Build adjacency info: for each node, which inputs come from where
         # input_map[to_node][to_input] = (from_node, from_output)
@@ -69,20 +78,33 @@ class GraphExecutor:
 
             # Gather inputs from upstream results
             inputs: dict[str, Any] = {}
-            for mapping_input, (src_node, src_output) in input_map.get(node_id, {}).items():
+            for mapping_input, (src_node, src_output) in input_map.get(
+                node_id, {}
+            ).items():
                 inputs[mapping_input] = results[src_node][src_output]
 
             # Execute the node
             params = node_info.get("params", {})
-            log.info("Executing node %s (%s) inputs=%s", node_id, node_type, list(inputs.keys()))
+            log.info(
+                "Executing node %s (%s) inputs=%s",
+                node_id,
+                node_type,
+                list(inputs.keys()),
+            )
             t0 = time.time()
             try:
-                outputs = node_def.execute(inputs, params)
+                outputs = node_def.execute(None, inputs, params)
             except Exception:
                 log.exception("Node %s (%s) failed", node_id, node_type)
                 raise
             elapsed = time.time() - t0
-            log.info("Node %s (%s) done in %.2fs, outputs=%s", node_id, node_type, elapsed, list(outputs.keys()))
+            log.info(
+                "Node %s (%s) done in %.2fs, outputs=%s",
+                node_id,
+                node_type,
+                elapsed,
+                list(outputs.keys()),
+            )
             results[node_id] = outputs
 
         total_elapsed = time.time() - total_start
@@ -93,7 +115,9 @@ class GraphExecutor:
         if not output_node:
             raise ValueError("'output_node' is required in the graph definition")
         if output_node not in results:
-            raise KeyError(f"output_node '{output_node}' not found in execution results")
+            raise KeyError(
+                f"output_node '{output_node}' not found in execution results"
+            )
         return {"outputs": {output_node: results[output_node]}}
 
     @staticmethod

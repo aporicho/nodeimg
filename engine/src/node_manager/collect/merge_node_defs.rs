@@ -1,4 +1,4 @@
-use crate::registry::NodeDef;
+use crate::node_manager::NodeDef;
 
 pub fn merge_node_defs(rust_defs: Vec<NodeDef>, python_defs: Vec<NodeDef>) -> Vec<NodeDef> {
     let mut merged = Vec::new();

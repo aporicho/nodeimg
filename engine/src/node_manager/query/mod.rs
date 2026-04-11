@@ -1,5 +1,11 @@
+pub mod get_exposed_input_pin;
+pub mod get_exposed_output_pin;
+pub mod get_exposed_pin;
 pub mod get_node_def;
 pub mod list_categories;
+pub mod list_exposed_input_pins;
+pub mod list_exposed_output_pins;
+pub mod list_exposed_pins;
 pub mod list_node_defs;
 pub mod list_nodes_by_category;
 pub mod search_nodes;

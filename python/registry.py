@@ -1,88 +1,133 @@
-"""Node registry for the Python backend.
+"""Node declaration and registry support for the Python backend.
 
-Defines dataclasses for node definitions (pins, params) and a registry
-that stores node types by name.
+Provides the new declaration style:
+- @node(...)
+- Pin(...)
+- Param(...)
+
+And a runtime registry that can load definitions from python/nodes modules.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+import importlib
+import pkgutil
 
 
 @dataclass
-class PinDef:
-    """Definition of a single input or output pin on a node."""
-
+class Pin:
     name: str
-    type: str  # e.g. "IMAGE", "INT", "FLOAT", "STRING", "LATENT", "MODEL", ...
+    data_type: str
+    required: bool = True
 
 
 @dataclass
-class ParamDef:
-    """Definition of a user-configurable parameter on a node."""
-
+class Param:
     name: str
-    type: str  # "INT", "FLOAT", "STRING", "BOOL", "ENUM"
-    default: Any = None
+    data_type: str
+    default: Any
+    expose: list[str]
     min: Optional[float] = None
     max: Optional[float] = None
-    options: Optional[list[str]] = None  # for ENUM type
-    widget: Optional[str] = None  # UI hint: "slider", "dropdown", "text", ...
+    options: Optional[list[str]] = None
+    widget: Optional[str] = None
 
 
 @dataclass
-class NodeDef:
-    """Full definition of a node type."""
+class NodeSpec:
+    type_id: str
+    title: str
+    category: str
+    inputs: list[Pin] = field(default_factory=list)
+    outputs: list[Pin] = field(default_factory=list)
+    params: list[Param] = field(default_factory=list)
+    execute: Optional[Callable[[Any, dict, dict], dict]] = None
 
-    inputs: list[PinDef] = field(default_factory=list)
-    outputs: list[PinDef] = field(default_factory=list)
-    params: list[ParamDef] = field(default_factory=list)
-    execute: Callable[[dict, dict], dict] = lambda inputs, params: {}
+
+def node(
+    *,
+    type_id: str,
+    title: str,
+    category: str,
+    inputs: list[Pin],
+    outputs: list[Pin],
+    params: list[Param],
+):
+    def decorator(func: Callable[[Any, dict, dict], dict]):
+        func.__node_spec__ = NodeSpec(
+            type_id=type_id,
+            title=title,
+            category=category,
+            inputs=inputs,
+            outputs=outputs,
+            params=params,
+            execute=func,
+        )
+        return func
+
+    return decorator
 
 
 class NodeRegistry:
-    """Registry that maps node type names to their definitions."""
-
     def __init__(self) -> None:
-        self._nodes: dict[str, NodeDef] = {}
+        self._nodes: dict[str, NodeSpec] = {}
 
-    def register(self, name: str, node_def: NodeDef) -> None:
-        """Register a node type. Raises ValueError if already registered."""
-        if name in self._nodes:
-            raise ValueError(f"Node type '{name}' is already registered")
-        self._nodes[name] = node_def
+    def register(self, spec: NodeSpec) -> None:
+        if spec.type_id in self._nodes:
+            raise ValueError(f"Node type '{spec.type_id}' is already registered")
+        self._nodes[spec.type_id] = spec
 
-    def get(self, name: str) -> NodeDef:
-        """Retrieve a node definition by name. Raises KeyError if not found."""
-        if name not in self._nodes:
-            raise KeyError(f"Unknown node type: '{name}'")
-        return self._nodes[name]
+    def get(self, type_id: str) -> NodeSpec:
+        if type_id not in self._nodes:
+            raise KeyError(f"Unknown node type: '{type_id}'")
+        return self._nodes[type_id]
 
     def list_all(self) -> dict[str, Any]:
-        """Return all registered node types as a JSON-serializable dict."""
         result: dict[str, Any] = {}
-        for name, node_def in self._nodes.items():
-            result[name] = {
+        for type_id, spec in self._nodes.items():
+            result[type_id] = {
+                "title": spec.title,
+                "category": spec.category,
                 "inputs": [
-                    {"name": pin.name, "type": pin.type}
-                    for pin in node_def.inputs
+                    {
+                        "name": pin.name,
+                        "type": pin.data_type,
+                        "required": pin.required,
+                    }
+                    for pin in spec.inputs
                 ],
                 "outputs": [
-                    {"name": pin.name, "type": pin.type}
-                    for pin in node_def.outputs
+                    {
+                        "name": pin.name,
+                        "type": pin.data_type,
+                    }
+                    for pin in spec.outputs
                 ],
                 "params": [
                     {
-                        "name": p.name,
-                        "type": p.type,
-                        "default": p.default,
-                        "min": p.min,
-                        "max": p.max,
-                        "options": p.options,
-                        "widget": p.widget,
+                        "name": param.name,
+                        "type": param.data_type,
+                        "default": param.default,
+                        "min": param.min,
+                        "max": param.max,
+                        "options": param.options,
+                        "widget": param.widget,
+                        "expose": param.expose,
                     }
-                    for p in node_def.params
+                    for param in spec.params
                 ],
             }
         return result
+
+    def register_package(self, package_name: str) -> None:
+        package = importlib.import_module(package_name)
+        for module_info in pkgutil.iter_modules(package.__path__):
+            if module_info.name.startswith("__"):
+                continue
+            module = importlib.import_module(f"{package_name}.{module_info.name}")
+            for value in module.__dict__.values():
+                spec = getattr(value, "__node_spec__", None)
+                if spec is not None:
+                    self.register(spec)

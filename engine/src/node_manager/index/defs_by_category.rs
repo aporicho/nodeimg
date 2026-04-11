@@ -1,4 +1,4 @@
-use crate::registry::NodeDef;
+use crate::node_manager::NodeDef;
 use std::collections::BTreeSet;
 
 pub fn list_categories<'a>(defs: impl Iterator<Item = &'a NodeDef>) -> Vec<String> {
