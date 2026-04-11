@@ -8,4 +8,5 @@ pub enum Gesture {
     DoubleTap,
     Drag,
     LongPress,
+    Resize,
 }

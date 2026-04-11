@@ -1,14 +1,14 @@
-use super::tree::{reconcile, layout, paint, hit_test, scroll, Desc, PanelTree, NodeId};
+use crate::tree::{reconcile, layout, paint, hit_test, Desc, NodeId, Tree};
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 
 /// 面板渲染器。封装 reconcile → layout → paint 流水线。
 pub struct PanelRenderer {
-    tree: PanelTree,
+    tree: Tree,
 }
 
 impl PanelRenderer {
     pub fn new() -> Self {
-        Self { tree: PanelTree::new() }
+        Self { tree: Tree::new() }
     }
 
     /// 更新面板内容并重新布局。
@@ -34,19 +34,22 @@ impl PanelRenderer {
     /// 命中测试，返回被点击的 widget id。
     pub fn hit_test(&self, x: f32, y: f32) -> Option<&str> {
         let root = self.tree.root()?;
-        hit_test(&self.tree, root, x, y)
+        let chain = hit_test(&self.tree, root, x, y);
+        chain.leaf()
+            .and_then(|id| self.tree.get(id))
+            .map(|n| n.id.as_ref())
     }
 
     /// 滚动指定节点。
     pub fn scroll(&mut self, node_id: NodeId, delta: f32) {
-        scroll(&mut self.tree, node_id, delta);
+        self.tree.scroll(node_id, delta);
     }
 
     pub fn root(&self) -> Option<NodeId> {
         self.tree.root()
     }
 
-    pub fn tree(&self) -> &PanelTree {
+    pub fn tree(&self) -> &Tree {
         &self.tree
     }
 }

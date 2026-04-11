@@ -21,8 +21,8 @@ impl WidgetProps for ButtonProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str) -> WidgetBuild {
-        use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, Justify, Edges, LeafKind};
+        use crate::tree::Desc;
+        use crate::tree::layout::{BoxStyle, Decoration, Size, Direction, Align, Justify, Edges, LeafKind};
         use crate::renderer::{Border, Color};
 
         // shadcn zinc 色系
