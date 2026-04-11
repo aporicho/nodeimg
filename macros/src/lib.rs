@@ -99,7 +99,10 @@ impl Parse for NodeMacroInput {
         }
 
         let missing = |name: &str| {
-            syn::Error::new(proc_macro2::Span::call_site(), format!("缺少字段: `{name}`"))
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("缺少字段: `{name}`"),
+            )
         };
 
         Ok(NodeMacroInput {

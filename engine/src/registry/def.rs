@@ -1,8 +1,8 @@
 use crate::executors::image::context::ExecContext;
-use types::{Constraint, DataType, Value};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use types::{Constraint, DataType, Value};
 
 /// 引脚定义（输入/输出）。
 pub struct PinDef {
