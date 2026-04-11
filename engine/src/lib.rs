@@ -1,14 +1,14 @@
 pub mod graph;
-pub mod graph_controller;
 pub mod node_manager;
 pub mod artifact;
 pub mod cache;
 pub mod executors;
 pub mod builtins;
+pub mod scheduler;
 
 use cache::manager::CacheManager;
-use graph_controller::GraphController;
-use graph::topology::topo_sort;
+use graph::{GraphController, NodeInstance};
+use graph::query::topo_sort::topo_sort;
 use node_manager::NodeManager;
 use executors::image::{ImageExecutor, GpuExecutor};
 use types::{NodeId, Value};
@@ -20,7 +20,7 @@ use std::sync::Arc;
 /// Engine：顶层协调者。
 ///
 /// 当前持有：
-/// - graph_controller：节点图实例与编辑
+/// - graph：节点图实例与编辑
 /// - node_manager：节点定义收集、注册、索引与查询
 /// - executor：图像执行入口
 pub struct Engine {
@@ -57,19 +57,17 @@ impl Engine {
             let def = self.node_manager.get_node_def(&node.type_id)
                 .ok_or_else(|| format!("Node type '{}' not registered", node.type_id))?;
 
-            // Collect upstream inputs from results
             let mut inputs: HashMap<String, Value> = HashMap::new();
             for conn in &graph.connections {
-                if conn.to_node == node_id {
-                    if let Some(upstream_outputs) = results.get(&conn.from_node) {
-                        if let Some(val) = upstream_outputs.get(&conn.from_pin) {
-                            inputs.insert(conn.to_pin.clone(), val.clone());
+                if conn.to.node == node_id {
+                    if let Some(upstream_outputs) = results.get(&conn.from.node) {
+                        if let Some(val) = upstream_outputs.get(&conn.from.interface) {
+                            inputs.insert(conn.to.interface.clone(), val.clone());
                         }
                     }
                 }
             }
 
-            // Merge param defaults + user values
             for param_def in &def.params {
                 if !inputs.contains_key(&param_def.name) {
                     let val = node.params.get(&param_def.name)
@@ -124,7 +122,7 @@ impl Engine {
 
 fn compute_exec_signature(
     def: &node_manager::model::NodeDef,
-    node: &graph::Node,
+    node: &NodeInstance,
     inputs: &HashMap<String, Value>,
 ) -> cache::model::ExecSignature {
     let param_names: std::collections::HashSet<&str> = def.params.iter().map(|p| p.name.as_str()).collect();

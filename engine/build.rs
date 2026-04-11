@@ -156,6 +156,7 @@ fn render_inventory_generated_file(files: &[PythonNodeFile]) -> String {
         out.push_str(&format!("        type_id: {:?}.into(),\n", file.type_id));
         out.push_str(&format!("        name: {:?}.into(),\n", file.title));
         out.push_str(&format!("        category: {:?}.into(),\n", file.category));
+        out.push_str("        executor_type: crate::node_manager::ExecutorType::Image,\n");
         out.push_str(&format!(
             "        inputs: vec![{}],\n",
             render_inventory_pins(&file.inputs, true)

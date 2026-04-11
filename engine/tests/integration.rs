@@ -1,8 +1,9 @@
 use engine::Engine;
-use engine::graph::Connection;
-use engine::graph_controller::GraphController;
+use engine::graph::{Connection, PinRef};
+use engine::graph::GraphController;
+use engine::graph::model::events::{GraphChange, GraphEventKind};
 use engine::node_manager::{NodeDef, NodeManager, PinDef};
-use types::{DataType, Value, Vec2};
+use types::{DataType, Value};
 use std::sync::Arc;
 
 // === 图操作测试 ===
@@ -10,11 +11,11 @@ use std::sync::Arc;
 #[test]
 fn test_add_node_and_connect() {
     let mut engine = Engine::new(None);
-    let load = engine.graph.add_node("load_image", Vec2::default()).unwrap();
-    let brightness = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let load = engine.graph.add_node("load_image").unwrap();
+    let brightness = engine.graph.add_node("brightness").unwrap();
     engine.graph.connect(Connection {
-        from_node: load, from_pin: "image".into(),
-        to_node: brightness, to_pin: "image".into(),
+        from: PinRef { node: load, interface: "image".into() },
+        to: PinRef { node: brightness, interface: "image".into() },
     }).unwrap();
     assert_eq!(engine.graph.current().connections.len(), 1);
 }
@@ -22,22 +23,22 @@ fn test_add_node_and_connect() {
 #[test]
 fn test_unknown_node_type_rejected() {
     let mut engine = Engine::new(None);
-    let result = engine.graph.add_node("nonexistent_node_type", Vec2::default());
+    let result = engine.graph.add_node("nonexistent_node_type");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cycle_detection() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("brightness", Vec2::default()).unwrap();
-    let b = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let a = engine.graph.add_node("brightness").unwrap();
+    let b = engine.graph.add_node("brightness").unwrap();
     engine.graph.connect(Connection {
-        from_node: a, from_pin: "image".into(),
-        to_node: b, to_pin: "image".into(),
+        from: PinRef { node: a, interface: "image".into() },
+        to: PinRef { node: b, interface: "image".into() },
     }).unwrap();
     let result = engine.graph.connect(Connection {
-        from_node: b, from_pin: "image".into(),
-        to_node: a, to_pin: "image".into(),
+        from: PinRef { node: b, interface: "image".into() },
+        to: PinRef { node: a, interface: "image".into() },
     });
     assert!(result.is_err());
 }
@@ -45,10 +46,10 @@ fn test_cycle_detection() {
 #[test]
 fn test_self_connection_rejected() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let a = engine.graph.add_node("brightness").unwrap();
     let result = engine.graph.connect(Connection {
-        from_node: a, from_pin: "image".into(),
-        to_node: a, to_pin: "image".into(),
+        from: PinRef { node: a, interface: "image".into() },
+        to: PinRef { node: a, interface: "image".into() },
     });
     assert!(result.is_err());
 }
@@ -58,7 +59,7 @@ fn test_self_connection_rejected() {
 #[test]
 fn test_undo_redo() {
     let mut engine = Engine::new(None);
-    engine.graph.add_node("load_image", Vec2::default()).unwrap();
+    engine.graph.add_node("load_image").unwrap();
     assert_eq!(engine.graph.current().nodes.len(), 1);
     engine.graph.undo();
     assert_eq!(engine.graph.current().nodes.len(), 0);
@@ -69,7 +70,7 @@ fn test_undo_redo() {
 #[test]
 fn test_preview_does_not_affect_undo() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let id = engine.graph.add_node("brightness").unwrap();
     engine.graph.set_param(id, "brightness", Value::Float(0.5), true); // preview
     engine.graph.undo(); // should undo add_node, not set_param
     assert_eq!(engine.graph.current().nodes.len(), 0);
@@ -78,11 +79,11 @@ fn test_preview_does_not_affect_undo() {
 #[test]
 fn test_multiple_undo_redo() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("load_image", Vec2::default()).unwrap();
-    let b = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let a = engine.graph.add_node("load_image").unwrap();
+    let b = engine.graph.add_node("brightness").unwrap();
     engine.graph.connect(Connection {
-        from_node: a, from_pin: "image".into(),
-        to_node: b, to_pin: "image".into(),
+        from: PinRef { node: a, interface: "image".into() },
+        to: PinRef { node: b, interface: "image".into() },
     }).unwrap();
     assert_eq!(engine.graph.current().nodes.len(), 2);
     assert_eq!(engine.graph.current().connections.len(), 1);
@@ -100,6 +101,185 @@ fn test_multiple_undo_redo() {
     assert_eq!(engine.graph.current().nodes.len(), 1);
 }
 
+#[test]
+fn test_preview_sets_has_preview_in_summary() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+
+    let before = engine.graph.state_summary();
+    assert!(!before.has_preview);
+
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+
+    let after = engine.graph.state_summary();
+    assert!(after.has_preview);
+    assert!(after.dirty);
+}
+
+#[test]
+fn test_discard_preview_clears_has_preview() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+    assert!(engine.graph.state_summary().has_preview);
+
+    assert!(engine.graph.discard_preview());
+    assert!(!engine.graph.state_summary().has_preview);
+}
+
+#[test]
+fn test_commit_clears_preview() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+    assert!(engine.graph.state_summary().has_preview);
+
+    engine.graph.set_param(id, "brightness", Value::Float(0.75), false);
+
+    let summary = engine.graph.state_summary();
+    assert!(!summary.has_preview);
+    assert!(summary.dirty);
+}
+
+#[test]
+fn test_undo_and_redo_clear_preview() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+    assert!(engine.graph.state_summary().has_preview);
+
+    engine.graph.undo();
+    assert!(!engine.graph.state_summary().has_preview);
+
+    engine.graph.set_param(id, "brightness", Value::Float(0.25), true);
+    assert!(engine.graph.state_summary().has_preview);
+
+    engine.graph.redo();
+    assert!(!engine.graph.state_summary().has_preview);
+}
+
+#[test]
+fn test_replace_clears_preview_and_sets_dirty() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+    assert!(engine.graph.state_summary().has_preview);
+
+    engine.graph.replace(engine::graph::Graph::new());
+
+    let summary = engine.graph.state_summary();
+    assert!(!summary.has_preview);
+    assert!(summary.dirty);
+}
+
+#[test]
+fn test_mark_saved_updates_summary() {
+    let mut engine = Engine::new(None);
+    engine.graph.add_node("brightness").unwrap();
+    assert!(engine.graph.state_summary().dirty);
+
+    engine.graph.mark_saved();
+
+    let summary = engine.graph.state_summary();
+    assert!(!summary.dirty);
+    assert_eq!(summary.graph_version, engine.graph.graph_version());
+}
+
+#[test]
+fn test_add_node_emits_graph_changed() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    let events = engine.graph.events_snapshot();
+    let last = events.last().expect("missing event");
+
+    match &last.kind {
+        GraphEventKind::GraphChanged(event) => {
+            assert!(matches!(event.changes.as_slice(), [GraphChange::NodeAdded { node_id }] if *node_id == id));
+        }
+        other => panic!("expected GraphChanged, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_preview_and_discard_emit_preview_events() {
+    let mut engine = Engine::new(None);
+    let id = engine.graph.add_node("brightness").unwrap();
+    engine.graph.set_param(id, "brightness", Value::Float(0.5), true);
+    engine.graph.discard_preview();
+
+    let events = engine.graph.events_snapshot();
+    match &events[1].kind {
+        GraphEventKind::PreviewChanged(event) => {
+            assert_eq!(event.node_id, id);
+            assert_eq!(event.param, "brightness");
+            assert!(event.has_preview);
+        }
+        other => panic!("expected PreviewChanged, got {:?}", other),
+    }
+    match &events[2].kind {
+        GraphEventKind::PreviewChanged(event) => {
+            assert_eq!(event.node_id, id);
+            assert_eq!(event.param, "brightness");
+            assert!(!event.has_preview);
+        }
+        other => panic!("expected PreviewChanged, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_mark_saved_emits_empty_graph_changed() {
+    let mut engine = Engine::new(None);
+    engine.graph.add_node("brightness").unwrap();
+    engine.graph.mark_saved();
+
+    let events = engine.graph.events_snapshot();
+    let last = events.last().expect("missing event");
+    match &last.kind {
+        GraphEventKind::GraphChanged(event) => {
+            assert!(event.changes.is_empty());
+            assert!(!event.dirty);
+        }
+        other => panic!("expected GraphChanged, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_connect_replacing_input_emits_remove_and_add() {
+    let mut engine = Engine::new(None);
+    let a = engine.graph.add_node("load_image").unwrap();
+    let b = engine.graph.add_node("load_image").unwrap();
+    let c = engine.graph.add_node("brightness").unwrap();
+
+    engine.graph.connect(Connection {
+        from: PinRef { node: a, interface: "image".into() },
+        to: PinRef { node: c, interface: "image".into() },
+    }).unwrap();
+
+    engine.graph.connect(Connection {
+        from: PinRef { node: b, interface: "image".into() },
+        to: PinRef { node: c, interface: "image".into() },
+    }).unwrap();
+
+    let events = engine.graph.events_snapshot();
+    let last = events.last().expect("missing event");
+    match &last.kind {
+        GraphEventKind::GraphChanged(event) => {
+            assert_eq!(event.changes.len(), 2);
+            assert!(matches!(
+                &event.changes[0],
+                GraphChange::ConnectionRemoved { from, to }
+                if from.node == a && to.node == c
+            ));
+            assert!(matches!(
+                &event.changes[1],
+                GraphChange::ConnectionAdded { from, to }
+                if from.node == b && to.node == c
+            ));
+        }
+        other => panic!("expected GraphChanged, got {:?}", other),
+    }
+}
+
 // === inventory 测试 ===
 
 #[test]
@@ -114,7 +294,7 @@ fn test_inventory_collects_all_builtins() {
 #[test]
 fn test_node_default_params() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let id = engine.graph.add_node("brightness").unwrap();
     let node = engine.graph.current().nodes.get(&id).unwrap();
     match node.params.get("brightness") {
         Some(Value::Float(v)) => assert_eq!(*v, 0.0),
@@ -127,7 +307,7 @@ fn test_node_default_params() {
 #[tokio::test]
 async fn test_evaluate_gpu_node_without_gpu_returns_error() {
     let mut engine = Engine::new(None); // 无 GPU
-    let id = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let id = engine.graph.add_node("brightness").unwrap();
     let result = engine.evaluate(id).await;
     assert!(result.is_err(), "GPU node should fail without GPU");
 }
@@ -135,7 +315,7 @@ async fn test_evaluate_gpu_node_without_gpu_returns_error() {
 #[tokio::test]
 async fn test_evaluate_load_image_empty_path() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("load_image", Vec2::default()).unwrap();
+    let id = engine.graph.add_node("load_image").unwrap();
     // path is empty string (default), should return empty outputs
     let result = engine.evaluate(id).await;
     assert!(result.is_ok());
@@ -177,12 +357,12 @@ fn test_type_incompatible_connection_rejected() {
     });
 
     let mut gc = GraphController::new(Arc::new(nm), 50);
-    let a = gc.add_node("float_source", Vec2::default()).unwrap();
-    let b = gc.add_node("image_sink", Vec2::default()).unwrap();
+    let a = gc.add_node("float_source").unwrap();
+    let b = gc.add_node("image_sink").unwrap();
 
     let result = gc.connect(Connection {
-        from_node: a, from_pin: "value".into(),
-        to_node: b, to_pin: "image".into(),
+        from: PinRef { node: a, interface: "value".into() },
+        to: PinRef { node: b, interface: "image".into() },
     });
     assert!(result.is_err(), "Float -> Image connection should be rejected");
 }
@@ -192,14 +372,17 @@ fn test_type_incompatible_connection_rejected() {
 #[test]
 fn test_disconnect() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("load_image", Vec2::default()).unwrap();
-    let b = engine.graph.add_node("brightness", Vec2::default()).unwrap();
+    let a = engine.graph.add_node("load_image").unwrap();
+    let b = engine.graph.add_node("brightness").unwrap();
     engine.graph.connect(Connection {
-        from_node: a, from_pin: "image".into(),
-        to_node: b, to_pin: "image".into(),
+        from: PinRef { node: a, interface: "image".into() },
+        to: PinRef { node: b, interface: "image".into() },
     }).unwrap();
     assert_eq!(engine.graph.current().connections.len(), 1);
 
-    engine.graph.disconnect(a, "image", b, "image");
+    engine.graph.disconnect(
+        PinRef { node: a, interface: "image".into() },
+        PinRef { node: b, interface: "image".into() },
+    );
     assert_eq!(engine.graph.current().connections.len(), 0);
 }

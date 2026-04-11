@@ -346,6 +346,7 @@ pub fn node(input: TokenStream) -> TokenStream {
                 type_id: #name.to_string(),
                 name: #title.to_string(),
                 category: #category.to_string(),
+                executor_type: crate::node_manager::ExecutorType::Image,
                 inputs: vec![
                     #( #input_defs ),*
                 ],

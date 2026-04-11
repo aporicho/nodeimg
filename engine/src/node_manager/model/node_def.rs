@@ -6,6 +6,13 @@ use types::Value;
 
 use super::{ParamDef, PinDef};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ExecutorType {
+    Image,
+    Ai,
+    Api,
+}
+
 /// 节点执行函数类型。
 /// 接收 ExecContext（GPU/CPU 执行上下文）和输入参数，返回输出结果。
 pub type ExecuteFn = Box<
@@ -30,6 +37,7 @@ pub struct NodeDef {
     pub type_id: String,
     pub name: String,
     pub category: String,
+    pub executor_type: ExecutorType,
     pub inputs: Vec<PinDef>,
     pub outputs: Vec<PinDef>,
     pub params: Vec<ParamDef>,

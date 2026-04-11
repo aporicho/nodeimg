@@ -40,6 +40,7 @@ app = FastAPI(title="Node Image Studio Backend")
 # Request / Response models
 # ---------------------------------------------------------------------------
 
+
 class ExecuteRequest(BaseModel):
     graph: dict[str, Any]
 
@@ -47,6 +48,7 @@ class ExecuteRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 def health() -> dict[str, Any]:
@@ -87,6 +89,7 @@ def node_types() -> dict[str, Any]:
 def _make_serializable(obj: Any) -> Any:
     """Convert non-JSON-serializable objects to placeholder strings."""
     import math
+
     if isinstance(obj, dict):
         return {k: _make_serializable(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):

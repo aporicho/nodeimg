@@ -67,7 +67,7 @@ mod tests {
         parse_param_expose, python_node_decl_specs, PythonNodeDeclFormat,
         PythonParamExpose,
     };
-    use crate::node_manager::{ExposedPinSource, ParamDef, ParamExpose, PinDef};
+    use crate::node_manager::{ExecutorType, ExposedPinSource, ParamDef, ParamExpose, PinDef};
     use std::collections::HashSet;
 
     fn make_test_def(type_id: &str, category: &str) -> NodeDef {
@@ -75,6 +75,7 @@ mod tests {
             type_id: type_id.into(),
             name: type_id.into(),
             category: category.into(),
+            executor_type: ExecutorType::Image,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::image(),
