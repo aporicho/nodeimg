@@ -8,9 +8,7 @@ pub struct NodeManager {
 
 impl NodeManager {
     pub fn from_inventory() -> Self {
-        let rust_defs = crate::node_manager::collect::collect_rust_defs::collect_rust_defs();
-        let python_defs = crate::node_manager::collect::collect_python_defs::collect_python_defs();
-        let defs = crate::node_manager::collect::merge_node_defs::merge_node_defs(rust_defs, python_defs);
+        let defs = crate::node_manager::collect::collect_inventory_defs::collect_inventory_defs();
         let nodes = crate::node_manager::store::defs_by_type::defs_by_type(defs);
         Self { nodes }
     }
@@ -39,12 +37,20 @@ impl NodeManager {
     }
 
     pub fn pin_type(&self, type_id: &str, pin_name: &str) -> Option<&DataType> {
-        let def = self.get_node_def(type_id)?;
-        def.inputs
+        let pin = self.get_exposed_pin(type_id, pin_name)?;
+        self.get_node_def(type_id)?
+            .inputs
             .iter()
-            .chain(def.outputs.iter())
-            .find(|p| p.name == pin_name)
+            .chain(self.get_node_def(type_id)?.outputs.iter())
+            .find(|p| p.name == pin.name)
             .map(|p| &p.data_type)
+            .or_else(|| {
+                self.get_node_def(type_id)?
+                    .params
+                    .iter()
+                    .find(|p| p.name == pin.name)
+                    .map(|p| &p.data_type)
+            })
     }
 }
 
@@ -511,5 +517,107 @@ mod tests {
             .get_exposed_output_pin("ai.clip_text_encode", "text")
             .is_none());
         assert!(nm.get_exposed_pin("ai.clip_text_encode", "missing").is_none());
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_params_have_non_empty_expose() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for param in spec.params {
+                assert!(
+                    !param.expose_expr.is_empty(),
+                    "{}:{} expose should not be empty",
+                    spec.path,
+                    param.name
+                );
+                assert!(
+                    !parse_param_expose(param).is_empty(),
+                    "{}:{} expose should parse into at least one value",
+                    spec.path,
+                    param.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_complex_defaults_follow_rules() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for param in spec.params {
+                let is_complex = matches!(
+                    param.data_type,
+                    "IMAGE" | "MASK" | "MODEL" | "CLIP" | "VAE" | "LATENT" | "CONDITIONING"
+                );
+                if is_complex {
+                    assert_eq!(
+                        param.default_expr, "None",
+                        "{}:{} complex type default must be None",
+                        spec.path, param.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_output_pins_are_not_marked_required() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for output in spec.outputs {
+                assert!(
+                    !output.required,
+                    "{}:{} output pin must not be marked required",
+                    spec.path,
+                    output.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_names_are_unique_per_direction() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            let input_names = spec
+                .inputs
+                .iter()
+                .map(|pin| pin.name)
+                .chain(spec.params.iter().filter_map(|param| {
+                    let exposes = parse_param_expose(param);
+                    exposes.contains(&PythonParamExpose::Input).then_some(param.name)
+                }))
+                .collect::<Vec<_>>();
+
+            let output_names = spec
+                .outputs
+                .iter()
+                .map(|pin| pin.name)
+                .chain(spec.params.iter().filter_map(|param| {
+                    let exposes = parse_param_expose(param);
+                    exposes.contains(&PythonParamExpose::Output).then_some(param.name)
+                }))
+                .collect::<Vec<_>>();
+
+            let input_unique = input_names.iter().copied().collect::<HashSet<_>>();
+            let output_unique = output_names.iter().copied().collect::<HashSet<_>>();
+
+            assert_eq!(
+                input_unique.len(),
+                input_names.len(),
+                "{} input-side names must be unique",
+                spec.path
+            );
+            assert_eq!(
+                output_unique.len(),
+                output_names.len(),
+                "{} output-side names must be unique",
+                spec.path
+            );
+        }
     }
 }
