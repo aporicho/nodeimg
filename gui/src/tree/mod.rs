@@ -5,6 +5,7 @@ pub mod layout;
 mod layout_adapter;
 mod node;
 mod paint;
+mod paint_helpers;
 mod scroll;
 #[allow(clippy::module_inception)]
 mod tree;
