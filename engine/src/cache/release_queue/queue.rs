@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::RwLock;
 
+use super::{process_pending_release, ReleaseReport, RetryPolicy};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingRelease {
     pub handle_id: String,
@@ -61,11 +63,24 @@ impl ReleaseQueue {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    pub fn process_next<F>(&self, policy: RetryPolicy, release_fn: F) -> Option<ReleaseReport>
+    where
+        F: FnOnce(&str) -> bool,
+    {
+        let pending = self.dequeue()?;
+        let (report, next) = process_pending_release(pending, policy, release_fn);
+        if let Some(pending) = next {
+            self.enqueue(pending);
+        }
+        Some(report)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{PendingRelease, ReleaseQueue};
+    use crate::cache::release_queue::{ReleaseAttempt, RetryPolicy};
 
     #[test]
     fn queue_roundtrip() {
@@ -75,5 +90,18 @@ mod tests {
         let pending = queue.dequeue().expect("pending release");
         assert_eq!(pending.handle_id, "h1");
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn process_next_requeues_on_failure() {
+        let queue = ReleaseQueue::new();
+        queue.enqueue(PendingRelease::new("h1"));
+
+        let attempt = queue
+            .process_next(RetryPolicy::new(2), |_| false)
+            .expect("attempt result");
+
+        assert_eq!(attempt.attempt, ReleaseAttempt::Requeued);
+        assert_eq!(queue.len(), 1);
     }
 }

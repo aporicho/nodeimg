@@ -26,7 +26,7 @@ impl ResultStore {
         let value = entries.get(key).map(|entry| Arc::clone(&entry.value));
         drop(entries);
 
-        if value.is_some() {
+        if matches!(value.as_deref(), Some(v) if !matches!(v, Value::Handle(_))) {
             self.lru
                 .write()
                 .expect("result store lru lock poisoned")
@@ -45,6 +45,7 @@ impl ResultStore {
     }
 
     pub fn insert(&self, key: CacheKey, entry: ResultEntry) -> Option<ResultEntry> {
+        let should_touch_lru = !matches!(entry.value.as_ref(), Value::Handle(_));
         let mut entries = self
             .entries
             .write()
@@ -52,10 +53,12 @@ impl ResultStore {
         let previous = entries.insert(key.clone(), entry);
         drop(entries);
 
-        self.lru
-            .write()
-            .expect("result store lru lock poisoned")
-            .touch(&key);
+        if should_touch_lru {
+            self.lru
+                .write()
+                .expect("result store lru lock poisoned")
+                .touch(&key);
+        }
 
         previous
     }
@@ -100,6 +103,20 @@ impl ResultStore {
             .read()
             .expect("result store read lock poisoned");
         entries.values().map(|entry| entry.bytes).sum()
+    }
+
+    pub fn total_handle_bytes(&self) -> usize {
+        let entries = self
+            .entries
+            .read()
+            .expect("result store read lock poisoned");
+        entries
+            .values()
+            .filter_map(|entry| match entry.value.as_ref() {
+                Value::Handle(handle) => Some(handle.bytes),
+                _ => None,
+            })
+            .sum()
     }
 
     pub(crate) fn remove(&self, key: &CacheKey) -> Option<ResultEntry> {

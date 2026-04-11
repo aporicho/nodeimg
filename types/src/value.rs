@@ -7,12 +7,52 @@ use std::sync::{Arc, OnceLock};
 pub struct DataType(pub String);
 
 impl DataType {
-    pub fn image() -> Self { Self("image".into()) }
-    pub fn float() -> Self { Self("float".into()) }
-    pub fn int() -> Self { Self("int".into()) }
-    pub fn bool() -> Self { Self("bool".into()) }
-    pub fn color() -> Self { Self("color".into()) }
-    pub fn string() -> Self { Self("string".into()) }
+    pub fn image() -> Self {
+        Self("image".into())
+    }
+    pub fn float() -> Self {
+        Self("float".into())
+    }
+    pub fn int() -> Self {
+        Self("int".into())
+    }
+    pub fn bool() -> Self {
+        Self("bool".into())
+    }
+    pub fn color() -> Self {
+        Self("color".into())
+    }
+    pub fn string() -> Self {
+        Self("string".into())
+    }
+    pub fn handle() -> Self {
+        Self("handle".into())
+    }
+}
+
+/// 外部资源句柄。用于引用 Python 后端或其他运行时持有的对象。
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Handle {
+    pub handle_id: String,
+    pub data_type: DataType,
+    pub backend: String,
+    pub bytes: usize,
+}
+
+impl Handle {
+    pub fn new(
+        handle_id: impl Into<String>,
+        data_type: DataType,
+        backend: impl Into<String>,
+        bytes: usize,
+    ) -> Self {
+        Self {
+            handle_id: handle_id.into(),
+            data_type,
+            backend: backend.into(),
+            bytes,
+        }
+    }
 }
 
 impl std::fmt::Display for DataType {
@@ -75,8 +115,12 @@ impl Image {
         self.gpu.get()
     }
 
-    pub fn has_cpu(&self) -> bool { self.cpu.get().is_some() }
-    pub fn has_gpu(&self) -> bool { self.gpu.get().is_some() }
+    pub fn has_cpu(&self) -> bool {
+        self.cpu.get().is_some()
+    }
+    pub fn has_gpu(&self) -> bool {
+        self.gpu.get().is_some()
+    }
 }
 
 impl std::fmt::Debug for Image {
@@ -92,6 +136,7 @@ impl std::fmt::Debug for Image {
 #[derive(Clone, Debug)]
 pub enum Value {
     Image(Image),
+    Handle(Handle),
     Float(f32),
     Int(i64),
     Bool(bool),
@@ -130,6 +175,17 @@ mod tests {
         match v2 {
             Value::Float(f) => assert_eq!(f, 3.14),
             _ => panic!("expected Float"),
+        }
+    }
+
+    #[test]
+    fn test_handle_value_clone() {
+        let handle = Handle::new("h1", DataType::handle(), "python", 1024);
+        let value = Value::Handle(handle.clone());
+
+        match value.clone() {
+            Value::Handle(v) => assert_eq!(v, handle),
+            _ => panic!("expected Handle"),
         }
     }
 }

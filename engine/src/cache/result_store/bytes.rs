@@ -3,6 +3,7 @@ use types::Value;
 pub fn estimate_bytes(value: &Value) -> usize {
     match value {
         Value::Float(_) | Value::Int(_) | Value::Bool(_) | Value::Color(_) => 0,
+        Value::Handle(handle) => handle.bytes,
         Value::String(text) => text.len(),
         Value::Image(image) => image
             .cpu_data()
@@ -27,6 +28,13 @@ mod tests {
         assert_eq!(estimate_bytes(&Value::Int(1)), 0);
         assert_eq!(estimate_bytes(&Value::Bool(true)), 0);
         assert_eq!(estimate_bytes(&Value::Color([0.0, 0.0, 0.0, 1.0])), 0);
+    }
+
+    #[test]
+    fn handle_estimates_from_reported_bytes() {
+        let handle = types::Handle::new("h1", types::DataType::handle(), "python", 2048);
+
+        assert_eq!(estimate_bytes(&Value::Handle(handle)), 2048);
     }
 
     #[test]

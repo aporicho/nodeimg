@@ -6,9 +6,9 @@ use crate::cache::model::{CacheError, CacheKey, ExecSignature, GenerationId, Res
 
 use super::{bytes::estimate_bytes, lookup::ResultStore};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum WriteResult {
-    Written,
+    Written { replaced_entry: Option<ResultEntry> },
     DroppedByGeneration,
 }
 
@@ -32,9 +32,9 @@ impl ResultStore {
         let bytes = estimate_bytes(&value);
         let entry = ResultEntry::new(write_generation, Arc::new(value), bytes);
 
-        let _ = self.insert(key, entry);
+        let replaced_entry = self.insert(key, entry);
 
-        Ok(WriteResult::Written)
+        Ok(WriteResult::Written { replaced_entry })
     }
 }
 
@@ -58,7 +58,12 @@ mod tests {
             Value::Int(7),
         );
 
-        assert_eq!(result, Ok(WriteResult::Written));
+        assert!(matches!(
+            result,
+            Ok(WriteResult::Written {
+                replaced_entry: None
+            })
+        ));
         assert_eq!(store.len(), 1);
     }
 
@@ -74,7 +79,7 @@ mod tests {
             Value::Int(7),
         );
 
-        assert_eq!(result, Ok(WriteResult::DroppedByGeneration));
+        assert!(matches!(result, Ok(WriteResult::DroppedByGeneration)));
         assert!(store.is_empty());
     }
 }

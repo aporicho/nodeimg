@@ -1,6 +1,7 @@
 use types::NodeId;
+use types::Value;
 
-use crate::cache::model::CacheKey;
+use crate::cache::model::{CacheKey, GenerationId};
 
 use super::lookup::ResultStore;
 
@@ -63,6 +64,54 @@ impl ResultStore {
             let _ = self.remove(&key);
         }
         removed
+    }
+
+    pub fn remove_handles(&self) -> Vec<String> {
+        let keys_and_handles: Vec<(CacheKey, String)> = {
+            let entries = self
+                .entries
+                .read()
+                .expect("result store read lock poisoned");
+            entries
+                .iter()
+                .filter_map(|(key, entry)| match entry.value.as_ref() {
+                    Value::Handle(handle) => Some((key.clone(), handle.handle_id.clone())),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut handle_ids = Vec::with_capacity(keys_and_handles.len());
+        for (key, handle_id) in keys_and_handles {
+            let _ = self.remove(&key);
+            handle_ids.push(handle_id);
+        }
+        handle_ids
+    }
+
+    pub fn remove_stale_handles(&self, current_generation: GenerationId) -> Vec<String> {
+        let keys_and_handles: Vec<(CacheKey, String)> = {
+            let entries = self
+                .entries
+                .read()
+                .expect("result store read lock poisoned");
+            entries
+                .iter()
+                .filter_map(|(key, entry)| match entry.value.as_ref() {
+                    Value::Handle(handle) if entry.generation != current_generation => {
+                        Some((key.clone(), handle.handle_id.clone()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut handle_ids = Vec::with_capacity(keys_and_handles.len());
+        for (key, handle_id) in keys_and_handles {
+            let _ = self.remove(&key);
+            handle_ids.push(handle_id);
+        }
+        handle_ids
     }
 }
 

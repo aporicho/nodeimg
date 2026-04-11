@@ -1,10 +1,11 @@
 use crate::cache::model::BudgetWatermark;
+use crate::cache::model::ResultEntry;
 
 use super::lookup::ResultStore;
 
 impl ResultStore {
-    pub fn evict_to_budget(&self, budget: BudgetWatermark) -> usize {
-        let mut evicted = 0;
+    pub fn evict_to_budget(&self, budget: BudgetWatermark) -> Vec<ResultEntry> {
+        let mut evicted = Vec::new();
 
         loop {
             if self.total_bytes() <= budget.soft {
@@ -15,8 +16,8 @@ impl ResultStore {
                 break;
             };
 
-            if self.remove(&key).is_some() {
-                evicted += 1;
+            if let Some(entry) = self.remove(&key) {
+                evicted.push(entry);
             }
         }
 
