@@ -3,6 +3,7 @@ mod drag;
 mod kind;
 mod long_press;
 mod recognizer;
+pub mod resize;
 mod tap;
 
 pub use arena::GestureArena;

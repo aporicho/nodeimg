@@ -223,6 +223,7 @@ impl DemoApp {
             }
             Action::DragStart { .. } | Action::DragEnd { .. } => {}
             Action::LongPress(id) => { tracing::debug!("LongPress: {}", id); }
+            Action::ResizeStart { .. } | Action::ResizeMove { .. } | Action::ResizeEnd { .. } => {}
         }
     }
 }
