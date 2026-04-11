@@ -37,6 +37,7 @@ python/                  — AI 后端（FastAPI + SDXL）
 - `docs/current/protocol.md` / `docs/current/backend-*.md` — AI 后端协议和架构
 
 **目标架构（描述理想状态）：**
+- `docs/target/architecture-invariants.md` — **架构不变量（7 条真源，修改引擎接口前必读）**
 - `docs/target/roadmap.md` — 实现路线图（7 个里程碑）
 - `docs/target/spec.md` — 文档规范
 - `docs/target/0.x.x` — 全局文档（架构总览、数据模型）
