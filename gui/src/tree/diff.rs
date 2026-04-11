@@ -1,9 +1,9 @@
-use crate::widget::desc::Desc;
-use crate::widget::node::{NodeId, NodeKind, PanelNode};
-use super::tree::PanelTree;
+use super::desc::Desc;
+use super::node::{NodeId, NodeKind, PanelNode};
+use super::tree::Tree;
 use crate::renderer::Rect;
 
-pub fn reconcile(tree: &mut PanelTree, desc: Desc) {
+pub fn reconcile(tree: &mut Tree, desc: Desc) {
     if let Some(root_id) = tree.root() {
         reconcile_node(tree, root_id, desc);
     } else {
@@ -12,7 +12,7 @@ pub fn reconcile(tree: &mut PanelTree, desc: Desc) {
     }
 }
 
-fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
+fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
     match desc {
         Desc::Container { id: _, style, decoration, children } => {
             if let Some(node) = tree.get_mut(node_id) {
@@ -55,7 +55,7 @@ fn reconcile_node(tree: &mut PanelTree, node_id: NodeId, desc: Desc) {
     }
 }
 
-fn reconcile_children(tree: &mut PanelTree, node_id: NodeId, desc_children: Vec<Desc>) {
+fn reconcile_children(tree: &mut Tree, node_id: NodeId, desc_children: Vec<Desc>) {
     let old_children: Vec<NodeId> = tree
         .get(node_id)
         .map(|n| n.children.clone())
@@ -88,13 +88,13 @@ fn reconcile_children(tree: &mut PanelTree, node_id: NodeId, desc_children: Vec<
     }
 }
 
-fn create_from_desc(tree: &mut PanelTree, desc: Desc) -> NodeId {
+fn create_from_desc(tree: &mut Tree, desc: Desc) -> NodeId {
     let (id, style, decoration, kind, child_descs) = match desc {
         Desc::Container { id, style, decoration, children } => {
             (id, style, decoration, NodeKind::Container, children)
         }
         Desc::Leaf { id, style, kind } => {
-            (id, style, None, NodeKind::Leaf(kind), Vec::new())
+            (id, style, None, NodeKind::Leaf(kind), Vec::<Desc>::new())
         }
         Desc::Widget { id, props } => {
             let wb = props.build(&id);

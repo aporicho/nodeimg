@@ -1,9 +1,9 @@
-use crate::widget::node::{NodeId, NodeKind};
-use super::tree::PanelTree;
-use crate::widget::layout::{self, BoxStyle, LeafKind, LayoutTree};
+use super::layout::{BoxStyle, LayoutTree, LeafKind};
+use super::node::{NodeId, NodeKind};
+use super::tree::Tree;
 use crate::renderer::Rect;
 
-impl LayoutTree for PanelTree {
+impl LayoutTree for Tree {
     type NodeId = NodeId;
 
     fn style(&self, node: NodeId) -> &BoxStyle {
@@ -35,22 +35,5 @@ impl LayoutTree for PanelTree {
             NodeKind::Leaf(LeafKind::Text { content, font_size, .. }) => Some((content, *font_size)),
             _ => None,
         }
-    }
-}
-
-pub fn layout(
-    tree: &mut PanelTree,
-    root: NodeId,
-    available: Rect,
-    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
-) {
-    layout::layout(tree, root, available, measure_text);
-}
-
-/// 更新滚动偏移。delta 为正数向下滚。
-pub fn scroll(tree: &mut PanelTree, node_id: NodeId, delta: f32) {
-    if let Some(node) = tree.get_mut(node_id) {
-        let max = (node.content_height - node.rect.h).max(0.0);
-        node.scroll_offset = (node.scroll_offset + delta).clamp(0.0, max);
     }
 }

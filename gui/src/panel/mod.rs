@@ -4,7 +4,6 @@ mod hit;
 mod layer;
 mod renderer;
 mod resize;
-pub mod tree;
 
 pub use drag::apply_drag_move;
 pub use frame::PanelFrame;
