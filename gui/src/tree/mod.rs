@@ -11,7 +11,7 @@ mod tree;
 
 pub use desc::Desc;
 pub use diff::reconcile;
-pub use hit::hit_test;
+pub use hit::{hit_test, HitChain};
 pub use layout::layout;
 pub use node::{NodeId, NodeKind, PanelNode};
 pub use paint::paint;

@@ -34,7 +34,10 @@ impl PanelRenderer {
     /// 命中测试，返回被点击的 widget id。
     pub fn hit_test(&self, x: f32, y: f32) -> Option<&str> {
         let root = self.tree.root()?;
-        hit_test(&self.tree, root, x, y)
+        let chain = hit_test(&self.tree, root, x, y);
+        chain.leaf()
+            .and_then(|id| self.tree.get(id))
+            .map(|n| n.id.as_ref())
     }
 
     /// 滚动指定节点。
