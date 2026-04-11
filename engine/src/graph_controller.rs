@@ -1,7 +1,7 @@
-use crate::graph::{Connection, Graph, version::GraphState, validate};
-use crate::registry::NodeManager;
-use types::{NodeId, Value, Vec2};
+use crate::graph::{validate, version::GraphState, Connection, Graph};
+use crate::node_manager::NodeManager;
 use std::sync::Arc;
+use types::{NodeId, Value, Vec2};
 
 pub struct GraphController {
     state: GraphState,
@@ -16,14 +16,21 @@ impl GraphController {
         }
     }
 
-    pub fn current(&self) -> &Graph { self.state.current() }
-    pub fn snapshot(&self) -> Arc<Graph> { self.state.snapshot() }
+    pub fn current(&self) -> &Graph {
+        self.state.current()
+    }
+    pub fn snapshot(&self) -> Arc<Graph> {
+        self.state.snapshot()
+    }
 
     pub fn add_node(&mut self, type_id: &str, position: Vec2) -> Result<NodeId, String> {
         if self.node_manager.get(type_id).is_none() {
             return Err(format!("Unknown node type: {}", type_id));
         }
-        let defaults = self.node_manager.default_params(type_id).unwrap_or_default();
+        let defaults = self
+            .node_manager
+            .default_params(type_id)
+            .unwrap_or_default();
         let (graph, id) = self.state.current().add_node(type_id, position, defaults);
         self.state.commit(graph);
         Ok(id)
@@ -43,13 +50,22 @@ impl GraphController {
         validate::validate_connection_basic(self.state.current(), &conn)?;
 
         // Type compatibility check via NodeManager
-        let from_node = self.state.current().nodes.get(&conn.from_node)
+        let from_node = self
+            .state
+            .current()
+            .nodes
+            .get(&conn.from_node)
             .ok_or(validate::ConnectionError::NodeNotFound(conn.from_node))?;
-        let to_node = self.state.current().nodes.get(&conn.to_node)
+        let to_node = self
+            .state
+            .current()
+            .nodes
+            .get(&conn.to_node)
             .ok_or(validate::ConnectionError::NodeNotFound(conn.to_node))?;
 
         if let (Some(from_type), Some(to_type)) = (
-            self.node_manager.pin_type(&from_node.type_id, &conn.from_pin),
+            self.node_manager
+                .pin_type(&from_node.type_id, &conn.from_pin),
             self.node_manager.pin_type(&to_node.type_id, &conn.to_pin),
         ) {
             if from_type != to_type {
@@ -84,7 +100,13 @@ impl GraphController {
         self.state.preview(graph);
     }
 
-    pub fn undo(&mut self) -> bool { self.state.undo() }
-    pub fn redo(&mut self) -> bool { self.state.redo() }
-    pub fn replace(&mut self, graph: Graph) { self.state.replace(graph); }
+    pub fn undo(&mut self) -> bool {
+        self.state.undo()
+    }
+    pub fn redo(&mut self) -> bool {
+        self.state.redo()
+    }
+    pub fn replace(&mut self, graph: Graph) {
+        self.state.replace(graph);
+    }
 }

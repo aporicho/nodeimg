@@ -1,7 +1,7 @@
-mod load_image;
-mod save_image;
 mod brightness;
 mod contrast;
+mod load_image;
+mod save_image;
 
 #[cfg(test)]
 mod test_macro {
@@ -58,7 +58,7 @@ mod test_inventory {
 
     #[test]
     fn test_macro_node_collected() {
-        let nm = crate::registry::NodeManager::from_inventory();
+        let nm = crate::node_manager::NodeManager::from_inventory();
         assert!(
             nm.get("test_passthrough").is_some(),
             "test_passthrough should be registered via inventory"
@@ -67,7 +67,7 @@ mod test_inventory {
 
     #[test]
     fn test_full_node_structure() {
-        let nm = crate::registry::NodeManager::from_inventory();
+        let nm = crate::node_manager::NodeManager::from_inventory();
         let def = nm.get("test_full").expect("test_full should exist");
 
         assert_eq!(def.type_id, "test_full");
@@ -109,7 +109,7 @@ mod test_inventory {
 
     #[test]
     fn test_empty_node() {
-        let nm = crate::registry::NodeManager::from_inventory();
+        let nm = crate::node_manager::NodeManager::from_inventory();
         let def = nm.get("test_empty").expect("test_empty should exist");
         assert!(def.inputs.is_empty());
         assert!(def.outputs.is_empty());
@@ -118,7 +118,7 @@ mod test_inventory {
 
     #[test]
     fn test_builtin_nodes_collected() {
-        let nm = crate::registry::NodeManager::from_inventory();
+        let nm = crate::node_manager::NodeManager::from_inventory();
         assert!(nm.get("load_image").is_some(), "load_image not found");
         assert!(nm.get("save_image").is_some(), "save_image not found");
         assert!(nm.get("brightness").is_some(), "brightness not found");

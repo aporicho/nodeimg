@@ -1,17 +1,24 @@
 pub mod graph;
 pub mod graph_controller;
+pub mod node_manager;
 pub mod registry;
 pub mod executors;
 pub mod builtins;
 
 use graph_controller::GraphController;
 use graph::topology::topo_sort;
-use registry::NodeManager;
+use node_manager::NodeManager;
 use executors::image::{ImageExecutor, GpuExecutor};
 use types::{NodeId, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Engine：顶层协调者。
+///
+/// 当前持有：
+/// - graph_controller：节点图实例与编辑
+/// - node_manager：节点定义收集、注册、索引与查询
+/// - executor：图像执行入口
 pub struct Engine {
     pub graph: GraphController,
     pub node_manager: Arc<NodeManager>,
