@@ -1,21 +1,37 @@
+use crate::capability::CapabilityRegistry;
 use crate::node_manager::NodeDef;
+use crate::node_registry::{
+    NodeRegistration, PresentationProvider, ResolvedSchema, SchemaError, SchemaProvider,
+    SchemaQuery,
+};
 use std::collections::HashMap;
+use std::sync::Arc;
 use types::{DataType, Value};
 
 pub struct NodeManager {
     nodes: HashMap<String, NodeDef>,
+    schema_providers: HashMap<String, Arc<dyn SchemaProvider>>,
+    presentation_providers: HashMap<String, Arc<dyn PresentationProvider>>,
+    capability_versions: HashMap<(String, String), u32>,
 }
 
 impl NodeManager {
     pub fn from_inventory() -> Self {
-        let defs = crate::node_manager::collect::collect_inventory_defs::collect_inventory_defs();
-        let nodes = crate::node_manager::store::defs_by_type::defs_by_type(defs);
-        Self { nodes }
+        let mut registry = crate::node_registry::NodeRegistry::new();
+        registry.register(crate::node_registry::sources::InventoryNodeSource);
+        registry.register(crate::node_registry::sources::GenericImageGenerationSource);
+        registry.register(crate::node_registry::sources::ApiVideoGenerationSource);
+        registry.register(crate::node_registry::sources::ColorAdjustSource);
+        registry.register(crate::node_registry::sources::SaveVideoSource);
+        registry.build().node_manager
     }
 
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
+            schema_providers: HashMap::new(),
+            presentation_providers: HashMap::new(),
+            capability_versions: HashMap::new(),
         }
     }
 
@@ -23,17 +39,109 @@ impl NodeManager {
         self.nodes.insert(def.type_id.clone(), def);
     }
 
+    pub fn register_all(&mut self, defs: impl IntoIterator<Item = NodeDef>) {
+        for def in defs {
+            self.register(def);
+        }
+    }
+
     pub(crate) fn nodes(&self) -> &HashMap<String, NodeDef> {
         &self.nodes
     }
 
-    pub fn default_params(&self, type_id: &str) -> Option<HashMap<String, Value>> {
-        self.get_node_def(type_id).map(|def| {
-            def.params
-                .iter()
-                .map(|p| (p.name.clone(), p.default_value.clone()))
-                .collect()
+    pub fn register_registration(
+        &mut self,
+        registration: NodeRegistration,
+        capability_registry: &CapabilityRegistry,
+    ) {
+        let type_id = registration.static_def.type_id.clone();
+        for capability_id in &registration.static_def.requires {
+            if let Some(version) = capability_registry.capability_version(capability_id) {
+                self.capability_versions
+                    .insert((type_id.clone(), capability_id.clone()), version);
+            }
+        }
+
+        if let Some(schema_provider) = registration.schema_provider {
+            self.schema_providers
+                .insert(type_id.clone(), schema_provider);
+        }
+        if let Some(presentation_provider) = registration.presentation_provider {
+            self.presentation_providers
+                .insert(type_id.clone(), presentation_provider);
+        }
+
+        self.register(registration.static_def);
+    }
+
+    pub fn resolve_schema(
+        &self,
+        type_id: &str,
+        current_params: &HashMap<String, Value>,
+    ) -> Result<ResolvedSchema, SchemaError> {
+        let def = self.get_node_def(type_id).ok_or_else(|| SchemaError {
+            message: format!("Node type '{type_id}' is not registered"),
+        })?;
+
+        let mut params = def.params.clone();
+        let mut system_values = HashMap::new();
+
+        if let Some(schema_provider) = self.schema_providers.get(type_id) {
+            let resolved = schema_provider.resolve_schema(SchemaQuery {
+                type_id,
+                current_params,
+            })?;
+            for param in resolved.params {
+                if let Some(existing) = params
+                    .iter_mut()
+                    .find(|existing| existing.name == param.name)
+                {
+                    *existing = param;
+                } else {
+                    params.push(param);
+                }
+            }
+            system_values.extend(resolved.system_values);
+        }
+
+        Ok(ResolvedSchema {
+            params,
+            system_values,
         })
+    }
+
+    pub fn resolve_effective_params(
+        &self,
+        type_id: &str,
+        current_params: &HashMap<String, Value>,
+    ) -> Result<HashMap<String, Value>, SchemaError> {
+        let schema = self.resolve_schema(type_id, current_params)?;
+        let mut resolved = schema
+            .params
+            .iter()
+            .map(|param| (param.name.clone(), param.default_value.clone()))
+            .collect::<HashMap<_, _>>();
+        resolved.extend(current_params.clone());
+        resolved.extend(schema.system_values);
+        Ok(resolved)
+    }
+
+    pub fn capability_version_of(&self, type_id: &str, capability_id: &str) -> Option<u32> {
+        self.capability_versions
+            .get(&(type_id.to_string(), capability_id.to_string()))
+            .copied()
+    }
+
+    pub fn default_params(&self, type_id: &str) -> Option<HashMap<String, Value>> {
+        self.resolve_schema(type_id, &HashMap::new())
+            .ok()
+            .map(|resolved| {
+                resolved
+                    .params
+                    .into_iter()
+                    .map(|param| (param.name, param.default_value))
+                    .collect()
+            })
     }
 
     pub fn pin_type(&self, type_id: &str, pin_name: &str) -> Option<&DataType> {
@@ -64,8 +172,7 @@ impl Default for NodeManager {
 mod tests {
     use super::*;
     use crate::node_manager::collect::collect_python_defs::{
-        parse_param_expose, python_node_decl_specs, PythonNodeDeclFormat,
-        PythonParamExpose,
+        parse_param_expose, python_node_decl_specs, PythonNodeDeclFormat, PythonParamExpose,
     };
     use crate::node_manager::{ExecutorType, ExposedPinSource, ParamDef, ParamExpose, PinDef};
     use std::collections::HashSet;
@@ -73,9 +180,17 @@ mod tests {
     fn make_test_def(type_id: &str, category: &str) -> NodeDef {
         NodeDef {
             type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: category.into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::image(),
@@ -230,6 +345,7 @@ mod tests {
         assert!(type_ids.contains("save_image"));
         assert!(type_ids.contains("brightness"));
         assert!(type_ids.contains("contrast"));
+        assert!(type_ids.contains("image_gen"));
     }
 
     #[test]
@@ -282,7 +398,10 @@ mod tests {
         assert_eq!(decorator_node.params.len(), 1);
         assert_eq!(decorator_node.params[0].name, "text");
         assert_eq!(decorator_node.params[0].default_expr, "\"\"");
-        assert_eq!(decorator_node.params[0].expose_expr, &["[\"control\", \"input\"]"]);
+        assert_eq!(
+            decorator_node.params[0].expose_expr,
+            &["[\"control\", \"input\"]"]
+        );
     }
 
     #[test]
@@ -296,7 +415,10 @@ mod tests {
         assert_eq!(load_checkpoint.category, "ai/model");
         assert_eq!(load_checkpoint.outputs.len(), 3);
         assert_eq!(load_checkpoint.outputs[0].name, "model");
-        assert_eq!(load_checkpoint.outputs[0].data_type, DataType("ai.model".into()));
+        assert_eq!(
+            load_checkpoint.outputs[0].data_type,
+            DataType("ai.model".into())
+        );
         assert_eq!(load_checkpoint.params.len(), 1);
         assert_eq!(load_checkpoint.params[0].name, "checkpoint_path");
         assert_eq!(load_checkpoint.params[0].data_type, DataType::string());
@@ -439,7 +561,10 @@ mod tests {
             .list_exposed_input_pins("ai.clip_text_encode")
             .expect("clip_text_encode should expose inputs");
 
-        let names = pins.iter().map(|pin| pin.name.as_str()).collect::<HashSet<_>>();
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
         assert!(names.contains("clip"));
         assert!(names.contains("text"));
 
@@ -458,7 +583,10 @@ mod tests {
             .list_exposed_pins("ai.load_checkpoint")
             .expect("load_checkpoint should expose pins");
 
-        let names = pins.iter().map(|pin| pin.name.as_str()).collect::<HashSet<_>>();
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
         assert!(names.contains("model"));
         assert!(names.contains("clip"));
         assert!(names.contains("vae"));
@@ -479,7 +607,10 @@ mod tests {
             .list_exposed_output_pins("ai.ksampler")
             .expect("ksampler should expose outputs");
 
-        let names = pins.iter().map(|pin| pin.name.as_str()).collect::<HashSet<_>>();
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
         assert!(names.contains("latent"));
         assert!(!names.contains("seed"));
 
@@ -517,7 +648,9 @@ mod tests {
         assert!(nm
             .get_exposed_output_pin("ai.clip_text_encode", "text")
             .is_none());
-        assert!(nm.get_exposed_pin("ai.clip_text_encode", "missing").is_none());
+        assert!(nm
+            .get_exposed_pin("ai.clip_text_encode", "missing")
+            .is_none());
     }
 
     #[test]
@@ -572,8 +705,7 @@ mod tests {
                 assert!(
                     !output.required,
                     "{}:{} output pin must not be marked required",
-                    spec.path,
-                    output.name
+                    spec.path, output.name
                 );
             }
         }
@@ -590,7 +722,9 @@ mod tests {
                 .map(|pin| pin.name)
                 .chain(spec.params.iter().filter_map(|param| {
                     let exposes = parse_param_expose(param);
-                    exposes.contains(&PythonParamExpose::Input).then_some(param.name)
+                    exposes
+                        .contains(&PythonParamExpose::Input)
+                        .then_some(param.name)
                 }))
                 .collect::<Vec<_>>();
 
@@ -600,7 +734,9 @@ mod tests {
                 .map(|pin| pin.name)
                 .chain(spec.params.iter().filter_map(|param| {
                     let exposes = parse_param_expose(param);
-                    exposes.contains(&PythonParamExpose::Output).then_some(param.name)
+                    exposes
+                        .contains(&PythonParamExpose::Output)
+                        .then_some(param.name)
                 }))
                 .collect::<Vec<_>>();
 

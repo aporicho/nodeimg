@@ -40,15 +40,8 @@ impl TextMeasurer {
     pub(crate) fn ensure_buffer(&mut self, text: &str, size: f32) {
         let key = TextCacheKey::new(text, size);
         if !self.buffer_cache.contains_key(&key) {
-            let mut buffer = Buffer::new(
-                &mut self.font_system,
-                Metrics::new(size, size * 1.2),
-            );
-            buffer.set_size(
-                &mut self.font_system,
-                Some(f32::MAX),
-                Some(size * 2.0),
-            );
+            let mut buffer = Buffer::new(&mut self.font_system, Metrics::new(size, size * 1.2));
+            buffer.set_size(&mut self.font_system, Some(f32::MAX), Some(size * 2.0));
             buffer.set_text(
                 &mut self.font_system,
                 text,
@@ -57,7 +50,8 @@ impl TextMeasurer {
                 None,
             );
             buffer.shape_until_scroll(&mut self.font_system, false);
-            self.buffer_cache.insert(key, CachedBuffer { buffer, used: true });
+            self.buffer_cache
+                .insert(key, CachedBuffer { buffer, used: true });
         } else {
             self.buffer_cache.get_mut(&key).unwrap().used = true;
         }

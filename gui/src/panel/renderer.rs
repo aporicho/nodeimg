@@ -1,4 +1,4 @@
-use super::tree::{reconcile, layout, paint, hit_test, scroll, Desc, PanelTree, NodeId};
+use super::tree::{hit_test, layout, paint, reconcile, scroll, Desc, NodeId, PanelTree};
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 
 /// 面板渲染器。封装 reconcile → layout → paint 流水线。
@@ -8,19 +8,18 @@ pub struct PanelRenderer {
 
 impl PanelRenderer {
     pub fn new() -> Self {
-        Self { tree: PanelTree::new() }
+        Self {
+            tree: PanelTree::new(),
+        }
     }
 
     /// 更新面板内容并重新布局。
     pub fn update(&mut self, desc: Desc, content_rect: Rect, measurer: &mut TextMeasurer) {
         reconcile(&mut self.tree, desc);
         if let Some(root) = self.tree.root() {
-            layout(
-                &mut self.tree,
-                root,
-                content_rect,
-                &mut |text, size| measurer.measure(text, size),
-            );
+            layout(&mut self.tree, root, content_rect, &mut |text, size| {
+                measurer.measure(text, size)
+            });
         }
     }
 

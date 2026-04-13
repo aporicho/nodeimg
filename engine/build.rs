@@ -154,9 +154,17 @@ fn render_inventory_generated_file(files: &[PythonNodeFile]) -> String {
         out.push_str("inventory::submit!(crate::node_manager::NodeDefEntry(|| {\n");
         out.push_str("    crate::node_manager::NodeDef {\n");
         out.push_str(&format!("        type_id: {:?}.into(),\n", file.type_id));
+        out.push_str("        version: 1,\n");
+        out.push_str("        source: crate::node_manager::NodeSourceKind::Python,\n");
         out.push_str(&format!("        name: {:?}.into(),\n", file.title));
         out.push_str(&format!("        category: {:?}.into(),\n", file.category));
-        out.push_str("        executor_type: crate::node_manager::ExecutorType::Image,\n");
+        out.push_str("        executor_type: crate::node_manager::ExecutorType::Ai,\n");
+        out.push_str("        requires: vec![],\n");
+        out.push_str("        purity: crate::node_manager::Purity::Impure,\n");
+        out.push_str("        cooking_sensitivity: vec![],\n");
+        out.push_str("        realtime_capable: false,\n");
+        out.push_str("        execution: crate::node_manager::ExecutionPolicy::default(),\n");
+        out.push_str("        api: None,\n");
         out.push_str(&format!(
             "        inputs: vec![{}],\n",
             render_inventory_pins(&file.inputs, true)

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::executors::api::ApiExecutor;
 use crate::executors::image::ImageExecutor;
 use crate::node_manager::NodeManager;
 use crate::scheduler::model::{ExecutorType, PlannedNode};
@@ -35,6 +36,7 @@ pub async fn run_planned_node(
     executor_registry: &ExecutorRegistry,
     node_manager: &NodeManager,
     image_executor: &ImageExecutor,
+    api_executor: &ApiExecutor,
     node_type_id: &str,
     planned_node: &PlannedNode,
     inputs: HashMap<String, Value>,
@@ -44,14 +46,18 @@ pub async fn run_planned_node(
         has_gpu: image_executor.context().has_gpu(),
     };
 
-    let entry = executor_registry
-        .resolve(descriptor)
-        .ok_or(NodeRunError::ExecutorNotRegistered {
-            executor_type: planned_node.executor_type,
-        })?;
+    let entry =
+        executor_registry
+            .resolve(descriptor)
+            .ok_or(NodeRunError::ExecutorNotRegistered {
+                executor_type: planned_node.executor_type,
+            })?;
 
     match entry.executor_type {
-        ExecutorType::Image => run_image_node(node_manager, image_executor, node_type_id, inputs).await,
+        ExecutorType::Image => {
+            run_image_node(node_manager, image_executor, node_type_id, inputs).await
+        }
+        ExecutorType::Api => run_api_node(node_manager, api_executor, node_type_id, inputs).await,
         executor_type => Err(NodeRunError::UnsupportedExecutorType { executor_type }),
     }
 }
@@ -62,11 +68,12 @@ async fn run_image_node(
     node_type_id: &str,
     inputs: HashMap<String, Value>,
 ) -> Result<HashMap<String, Value>, NodeRunError> {
-    let node_def = node_manager
-        .get_node_def(node_type_id)
-        .ok_or_else(|| NodeRunError::NodeNotFound {
-            type_id: node_type_id.to_string(),
-        })?;
+    let node_def =
+        node_manager
+            .get_node_def(node_type_id)
+            .ok_or_else(|| NodeRunError::NodeNotFound {
+                type_id: node_type_id.to_string(),
+            })?;
 
     let ctx = image_executor.context();
     (node_def.execute)(ctx, inputs)
@@ -74,9 +81,29 @@ async fn run_image_node(
         .map_err(NodeRunError::ExecutionFailed)
 }
 
+async fn run_api_node(
+    node_manager: &NodeManager,
+    api_executor: &ApiExecutor,
+    node_type_id: &str,
+    inputs: HashMap<String, Value>,
+) -> Result<HashMap<String, Value>, NodeRunError> {
+    let node_def =
+        node_manager
+            .get_node_def(node_type_id)
+            .ok_or_else(|| NodeRunError::NodeNotFound {
+                type_id: node_type_id.to_string(),
+            })?;
+
+    api_executor
+        .execute(node_def, inputs)
+        .await
+        .map_err(NodeRunError::ExecutionFailed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::executors::api::ApiExecutor;
     use crate::executors::image::GpuExecutor;
     use crate::node_manager::{ExecutorType, NodeDef, ParamDef, ParamExpose, PinDef};
     use crate::scheduler::runtime::executor_registry::{ExecutorEntry, ExecutorRegistry};
@@ -85,9 +112,17 @@ mod tests {
     fn make_test_def(type_id: &str) -> NodeDef {
         NodeDef {
             type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::float(),
@@ -111,7 +146,10 @@ mod tests {
                         Some(Value::Float(v)) => v,
                         _ => 0.0,
                     };
-                    Ok(HashMap::from([(String::from("out"), Value::Float(value + 1.0))]))
+                    Ok(HashMap::from([(
+                        String::from("out"),
+                        Value::Float(value + 1.0),
+                    )]))
                 })
             }),
         }
@@ -122,6 +160,7 @@ mod tests {
         let mut node_manager = NodeManager::new();
         node_manager.register(make_test_def("test.node"));
         let image_executor = ImageExecutor::new(None::<GpuExecutor>);
+        let api_executor = ApiExecutor::new();
         let mut registry = ExecutorRegistry::new();
         registry.register(ExecutorEntry::new("image", ExecutorType::Image, |_| true));
         let planned_node = PlannedNode {
@@ -134,6 +173,7 @@ mod tests {
             &registry,
             &node_manager,
             &image_executor,
+            &api_executor,
             "test.node",
             &planned_node,
             HashMap::from([(String::from("in"), Value::Float(2.0))]),
@@ -149,6 +189,7 @@ mod tests {
         let mut node_manager = NodeManager::new();
         node_manager.register(make_test_def("test.node"));
         let image_executor = ImageExecutor::new(None::<GpuExecutor>);
+        let api_executor = ApiExecutor::new();
         let registry = ExecutorRegistry::new();
         let planned_node = PlannedNode {
             node_id: NodeId(1),
@@ -160,6 +201,7 @@ mod tests {
             &registry,
             &node_manager,
             &image_executor,
+            &api_executor,
             "test.node",
             &planned_node,
             HashMap::new(),
@@ -180,6 +222,7 @@ mod tests {
         let mut node_manager = NodeManager::new();
         node_manager.register(make_test_def("test.node"));
         let image_executor = ImageExecutor::new(None::<GpuExecutor>);
+        let api_executor = ApiExecutor::new();
         let mut registry = ExecutorRegistry::new();
         registry.register(ExecutorEntry::new(
             "gpu-image",
@@ -196,6 +239,7 @@ mod tests {
             &registry,
             &node_manager,
             &image_executor,
+            &api_executor,
             "test.node",
             &planned_node,
             HashMap::new(),

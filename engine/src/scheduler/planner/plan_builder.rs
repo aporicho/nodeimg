@@ -22,14 +22,13 @@ pub fn build_plan(
     mode: ExecutionMode,
     run_id: RunId,
     generation: GenerationId,
-) -> Result<Option<ExecutionPlan>, CycleError>
-{
+) -> Result<Option<ExecutionPlan>, CycleError> {
     let selected_nodes = select_nodes(&graph, dirty_state, request)?;
     if selected_nodes.is_empty() {
         return Ok(None);
     }
 
-    let filtered_nodes = filter_by_mode(node_manager, selected_nodes, mode);
+    let filtered_nodes = filter_by_mode(graph.as_ref(), node_manager, selected_nodes, mode);
     if filtered_nodes.is_empty() {
         return Ok(None);
     }
@@ -71,6 +70,7 @@ fn select_nodes(
 }
 
 fn filter_by_mode(
+    graph: &Graph,
     node_manager: &NodeManager,
     nodes: HashSet<NodeId>,
     mode: ExecutionMode,
@@ -80,8 +80,10 @@ fn filter_by_mode(
         ExecutionMode::Auto => nodes
             .into_iter()
             .filter(|node_id| {
-                node_manager
-                    .get_node_def_for_node_id(*node_id)
+                graph
+                    .nodes
+                    .get(node_id)
+                    .and_then(|node| node_manager.get_node_def(&node.type_id))
                     .is_some_and(|def| matches!(def.executor_type, ExecutorType::Image))
             })
             .collect(),
@@ -112,7 +114,8 @@ fn build_layers(
     frontier.sort_by_key(|id| id.0);
 
     let mut layers = Vec::new();
-    let mut accumulated_results = crate::scheduler::runtime::input_resolver::ExecutionResults::new();
+    let mut accumulated_results =
+        crate::scheduler::runtime::input_resolver::ExecutionResults::new();
 
     while !frontier.is_empty() {
         let current_layer = frontier;
@@ -128,10 +131,11 @@ fn build_layers(
                 Some(def) => def,
                 None => continue,
             };
-            let inputs = match resolve_node_inputs(graph, node_manager, &accumulated_results, node_id) {
-                Ok(inputs) => inputs,
-                Err(_) => HashMap::new(),
-            };
+            let inputs =
+                match resolve_node_inputs(graph, node_manager, &accumulated_results, node_id) {
+                    Ok(inputs) => inputs,
+                    Err(_) => HashMap::new(),
+                };
             let exec_signature = compose_exec_signature(node_def, node, &inputs);
 
             planned_layer.push(PlannedNode {
@@ -205,9 +209,17 @@ mod tests {
     fn make_test_def(type_id: &str) -> NodeDef {
         NodeDef {
             type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::float(),
@@ -286,9 +298,17 @@ mod tests {
         dirty.mark(b, DirtyReason::UpstreamChanged);
         node_manager.register(NodeDef {
             type_id: "b".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Python,
             name: "b".into(),
             category: "test".into(),
             executor_type: ExecutorType::Ai,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Impure,
+            cooking_sensitivity: vec![],
+            realtime_capable: false,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![],
             outputs: vec![],
             params: vec![],

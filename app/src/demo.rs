@@ -2,15 +2,17 @@ use std::borrow::Cow;
 use std::time::Instant;
 
 use gui::context::Context;
-use gui::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
+use gui::gesture::{DragRecognizer, GestureArena, GestureRecognizer, TapRecognizer};
+use gui::panel::tree::Desc;
+use gui::panel::{
+    apply_drag_move, apply_resize, detect_edge, hit_test_panel, PanelFrame, ResizeEdge,
+};
+use gui::renderer::{Rect, Renderer};
+use gui::shell::{App, AppContext, AppEvent, MouseButton};
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
 use gui::widget::layout::{BoxStyle, Direction};
-use gui::panel::{PanelFrame, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
-use gui::panel::tree::Desc;
-use gui::renderer::{Rect, Renderer};
-use gui::shell::{App, AppContext, AppEvent, MouseButton};
 
 const PADDING: f32 = 16.0;
 
@@ -26,15 +28,30 @@ fn build_view(_active: Option<&str>, slider_value: f32) -> Desc {
         children: vec![
             Desc::Widget {
                 id: Cow::Borrowed("btn_a"),
-                props: Box::new(ButtonProps { label: "Button A".into(), icon: None, disabled: false }),
+                props: Box::new(ButtonProps {
+                    label: "Button A".into(),
+                    icon: None,
+                    disabled: false,
+                }),
             },
             Desc::Widget {
                 id: Cow::Borrowed("btn_b"),
-                props: Box::new(ButtonProps { label: "Button B".into(), icon: None, disabled: false }),
+                props: Box::new(ButtonProps {
+                    label: "Button B".into(),
+                    icon: None,
+                    disabled: false,
+                }),
             },
             Desc::Widget {
                 id: Cow::Borrowed("slider_radius"),
-                props: Box::new(SliderProps { label: "Radius".into(), min: 0.0, max: 10.0, step: 0.1, value: slider_value, disabled: false }),
+                props: Box::new(SliderProps {
+                    label: "Radius".into(),
+                    min: 0.0,
+                    max: 10.0,
+                    step: 0.1,
+                    value: slider_value,
+                    disabled: false,
+                }),
             },
         ],
     }
@@ -50,7 +67,13 @@ struct PanelInteraction {
 
 impl PanelInteraction {
     fn new() -> Self {
-        Self { drag_panel: None, resize_panel: None, resize_edge: None, last_x: 0.0, last_y: 0.0 }
+        Self {
+            drag_panel: None,
+            resize_panel: None,
+            resize_edge: None,
+            last_x: 0.0,
+            last_y: 0.0,
+        }
     }
 }
 
@@ -68,12 +91,17 @@ pub struct DemoApp {
 impl App for DemoApp {
     fn init(_ctx: &mut AppContext) -> Self {
         let mut gui = Context::new();
-        gui.layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
+        gui.layer
+            .add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
         Self {
             gui,
-            arena: None, panel_interaction: PanelInteraction::new(),
-            active_button: None, slider_value: 5.0, last_tap_time: None,
-            mouse_x: 0.0, mouse_y: 0.0,
+            arena: None,
+            panel_interaction: PanelInteraction::new(),
+            active_button: None,
+            slider_value: 5.0,
+            last_tap_time: None,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
         }
     }
 
@@ -84,7 +112,9 @@ impl App for DemoApp {
 
         match &event {
             AppEvent::MousePress { x, y, button } if *button == MouseButton::Left => {
-                if self.arena.is_some() { return; }
+                if self.arena.is_some() {
+                    return;
+                }
                 self.mouse_x = *x;
                 self.mouse_y = *y;
 
@@ -104,11 +134,16 @@ impl App for DemoApp {
                     } else if self.gui.panel.root().is_some() {
                         if let Some(widget_id) = self.gui.panel.hit_test(*x, *y) {
                             let mut arena = GestureArena::new(widget_id.to_string());
-                            let mut tap = TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
+                            let mut tap =
+                                TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
                             tap.on_pointer_down(*x, *y);
                             arena.add(Box::new(tap));
 
-                            if widget_id.contains("slider") || widget_id.contains("track") || widget_id.contains("fill") || widget_id.contains("spacer") {
+                            if widget_id.contains("slider")
+                                || widget_id.contains("track")
+                                || widget_id.contains("fill")
+                                || widget_id.contains("spacer")
+                            {
                                 let mut drag = DragRecognizer::new(widget_id.to_string());
                                 drag.on_pointer_down(*x, *y);
                                 arena.add(Box::new(drag));
@@ -172,21 +207,26 @@ impl App for DemoApp {
                 }
             }
 
-            _ => { self.gui.canvas.event(&event); }
+            _ => {
+                self.gui.canvas.event(&event);
+            }
         }
     }
 
-    fn update(&mut self, _renderer: &mut Renderer, _ctx: &mut AppContext) {
-    }
+    fn update(&mut self, _renderer: &mut Renderer, _ctx: &mut AppContext) {}
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
         if let Some(frame) = self.gui.layer.get("demo") {
             let content_rect = Rect {
-                x: frame.x + PADDING, y: frame.y + PADDING,
-                w: frame.w - PADDING * 2.0, h: frame.h - PADDING * 2.0,
+                x: frame.x + PADDING,
+                y: frame.y + PADDING,
+                w: frame.w - PADDING * 2.0,
+                h: frame.h - PADDING * 2.0,
             };
             let desc = build_view(self.active_button.as_deref(), self.slider_value);
-            self.gui.panel.update(desc, content_rect, renderer.text_measurer());
+            self.gui
+                .panel
+                .update(desc, content_rect, renderer.text_measurer());
         }
         let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
         let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
@@ -204,16 +244,33 @@ impl DemoApp {
             }
             Action::DoubleClick(id) => {
                 self.last_tap_time = None;
-                if id.contains("slider") { self.slider_value = 5.0; }
+                if id.contains("slider") {
+                    self.slider_value = 5.0;
+                }
             }
             Action::DragMove { id: _, x, y } => {
                 if let Some(panel_id) = self.panel_interaction.drag_panel {
-                    apply_drag_move(&mut self.gui.layer, panel_id, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                    apply_drag_move(
+                        &mut self.gui.layer,
+                        panel_id,
+                        *x,
+                        *y,
+                        self.panel_interaction.last_x,
+                        self.panel_interaction.last_y,
+                    );
                     self.panel_interaction.last_x = *x;
                     self.panel_interaction.last_y = *y;
                 } else if let Some(panel_id) = self.panel_interaction.resize_panel {
                     if let Some(edge) = self.panel_interaction.resize_edge {
-                        apply_resize(&mut self.gui.layer, panel_id, edge, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
+                        apply_resize(
+                            &mut self.gui.layer,
+                            panel_id,
+                            edge,
+                            *x,
+                            *y,
+                            self.panel_interaction.last_x,
+                            self.panel_interaction.last_y,
+                        );
                         self.panel_interaction.last_x = *x;
                         self.panel_interaction.last_y = *y;
                     }
@@ -222,7 +279,9 @@ impl DemoApp {
                 }
             }
             Action::DragStart { .. } | Action::DragEnd { .. } => {}
-            Action::LongPress(id) => { tracing::debug!("LongPress: {}", id); }
+            Action::LongPress(id) => {
+                tracing::debug!("LongPress: {}", id);
+            }
         }
     }
 }

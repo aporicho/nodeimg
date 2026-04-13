@@ -4,6 +4,7 @@ node! {
     name: "load_image",
     title: "Load Image",
     category: "data",
+    purity: Impure,
     inputs: [],
     outputs: [image: Image],
     params: [path: String default("")],

@@ -4,11 +4,11 @@ use bytemuck::{Pod, Zeroable};
 use lyon::tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
 use wgpu::util::DeviceExt;
 
-use super::blur::BlurPipeline;
-use super::quad::{build_rounded_rect_path, QuadVertex, DEFAULT_CORNER_SMOOTHING};
 use super::super::buffer::ViewportUniform;
 use super::super::style::Shadow;
 use super::super::types::Rect;
+use super::blur::BlurPipeline;
+use super::quad::{build_rounded_rect_path, QuadVertex, DEFAULT_CORNER_SMOOTHING};
 
 // ── 请求 ──
 
@@ -166,7 +166,14 @@ impl ShadowPipeline {
                 h: cached.tex_h as f32 * self.downsample_factor as f32,
             };
 
-            self.composite(pass, device, &cached.texture_view, dest_rect, viewport_buf, stencil_ref);
+            self.composite(
+                pass,
+                device,
+                &cached.texture_view,
+                dest_rect,
+                viewport_buf,
+                stencil_ref,
+            );
         }
     }
 
@@ -193,12 +200,27 @@ impl ShadowPipeline {
         let shadow = &request.shadow;
 
         // 创建三张纹理：shape → blur_a → blur_b → blur_a（最终结果）
-        let shape_tex = Self::create_texture(device, tex_w, tex_h, "shadow_shape",
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING);
-        let blur_a = Self::create_texture(device, tex_w, tex_h, "shadow_blur_a",
-            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING);
-        let blur_b = Self::create_texture(device, tex_w, tex_h, "shadow_blur_b",
-            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING);
+        let shape_tex = Self::create_texture(
+            device,
+            tex_w,
+            tex_h,
+            "shadow_shape",
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let blur_a = Self::create_texture(
+            device,
+            tex_w,
+            tex_h,
+            "shadow_blur_a",
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+        );
+        let blur_b = Self::create_texture(
+            device,
+            tex_w,
+            tex_h,
+            "shadow_blur_b",
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
+        );
 
         let shape_view = shape_tex.create_view(&Default::default());
         let blur_a_view = blur_a.create_view(&Default::default());
@@ -211,15 +233,42 @@ impl ShadowPipeline {
             w: request.rect.w + shadow.spread * 2.0,
             h: request.rect.h + shadow.spread * 2.0,
         };
-        self.render_shape(encoder, device, &shape_view, spread_rect, request.radius, shadow, tex_w, tex_h);
+        self.render_shape(
+            encoder,
+            device,
+            &shape_view,
+            spread_rect,
+            request.radius,
+            shadow,
+            tex_w,
+            tex_h,
+        );
 
         let sigma = shadow.blur / 2.0;
 
         // 2. 水平模糊：shape_tex → blur_b
-        self.blur.run(encoder, device, &shape_view, &blur_b_view, tex_w, tex_h, [1.0, 0.0], sigma);
+        self.blur.run(
+            encoder,
+            device,
+            &shape_view,
+            &blur_b_view,
+            tex_w,
+            tex_h,
+            [1.0, 0.0],
+            sigma,
+        );
 
         // 3. 垂直模糊：blur_b → blur_a
-        self.blur.run(encoder, device, &blur_b_view, &blur_a_view, tex_w, tex_h, [0.0, 1.0], sigma);
+        self.blur.run(
+            encoder,
+            device,
+            &blur_b_view,
+            &blur_a_view,
+            tex_w,
+            tex_h,
+            [0.0, 1.0],
+            sigma,
+        );
 
         blur_a_view
     }
@@ -367,7 +416,9 @@ impl ShadowPipeline {
     ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow_composite_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/shadow_composite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../shaders/shadow_composite.wgsl").into(),
+            ),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -454,7 +505,9 @@ impl ShadowPipeline {
         (pipeline, bind_group_layout)
     }
 
-    fn create_shape_pipeline(device: &wgpu::Device) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
+    fn create_shape_pipeline(
+        device: &wgpu::Device,
+    ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
         // 复用 quad shader（逻辑像素 → NDC + 纯色）画到临时纹理
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shadow_shape_shader"),

@@ -1,4 +1,6 @@
-use crate::graph::model::validation::{IssueSubject, ValidationIssue, ValidationIssueCode, ValidationReport};
+use crate::graph::model::validation::{
+    IssueSubject, ValidationIssue, ValidationIssueCode, ValidationReport,
+};
 use crate::graph::{validate, Graph};
 use crate::node_manager::NodeManager;
 
@@ -66,9 +68,17 @@ mod tests {
         let mut nm = NodeManager::new();
         nm.register(NodeDef {
             type_id: "src".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "src".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![],
             outputs: vec![PinDef {
                 name: "image".into(),
@@ -86,9 +96,17 @@ mod tests {
         });
         nm.register(NodeDef {
             type_id: "dst".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "dst".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "image".into(),
                 data_type: DataType::image(),
@@ -114,8 +132,14 @@ mod tests {
         let (g, a) = g.add_node("src", Default::default());
         let (g, b) = g.add_node("dst", Default::default());
         let g = g.connect(Connection {
-            from: PinRef { node: a, interface: "strength".into() },
-            to: PinRef { node: b, interface: "strength".into() },
+            from: PinRef {
+                node: a,
+                interface: "strength".into(),
+            },
+            to: PinRef {
+                node: b,
+                interface: "strength".into(),
+            },
         });
 
         let report = validate_graph(&g, &nm);
@@ -130,13 +154,22 @@ mod tests {
         let (g, a) = g.add_node("src", Default::default());
         let (g, b) = g.add_node("dst", Default::default());
         let g = g.connect(Connection {
-            from: PinRef { node: b, interface: "image".into() },
-            to: PinRef { node: a, interface: "image".into() },
+            from: PinRef {
+                node: b,
+                interface: "image".into(),
+            },
+            to: PinRef {
+                node: a,
+                interface: "image".into(),
+            },
         });
 
         let report = validate_graph(&g, &nm);
         assert!(!report.is_valid);
-        assert!(report.issues.iter().any(|issue| issue.code == ValidationIssueCode::InvalidDirection));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == ValidationIssueCode::InvalidDirection));
     }
 
     #[test]
@@ -148,6 +181,9 @@ mod tests {
 
         let report = validate_graph(&g, &nm);
         assert!(!report.is_valid);
-        assert!(report.issues.iter().any(|issue| issue.code == ValidationIssueCode::InvalidParamValue));
+        assert!(report
+            .issues
+            .iter()
+            .any(|issue| issue.code == ValidationIssueCode::InvalidParamValue));
     }
 }

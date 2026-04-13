@@ -38,11 +38,7 @@ impl PanelLayer {
     }
 
     /// 渲染所有可见面板。content_fn 绘制每个面板的内部内容。
-    pub fn render(
-        &self,
-        renderer: &mut Renderer,
-        content_fn: impl Fn(&PanelFrame, &mut Renderer),
-    ) {
+    pub fn render(&self, renderer: &mut Renderer, content_fn: impl Fn(&PanelFrame, &mut Renderer)) {
         for frame in &self.panels {
             if !frame.visible {
                 continue;
@@ -51,20 +47,33 @@ impl PanelLayer {
             let rect = frame.rect();
 
             // 阴影 + 白色背景 + 描边
-            renderer.draw_rect(rect, &RectStyle {
-                color: Color::WHITE,
-                border: Some(Border {
-                    width: 1.0,
-                    color: Color { r: 0.894, g: 0.894, b: 0.906, a: 1.0 }, // #e4e4e7
-                }),
-                radius: [frame.radius; 4],
-                shadow: Some(Shadow {
-                    color: Color { r: 0.0, g: 0.0, b: 0.0, a: 0.06 },
-                    offset: [0.0, 2.0],
-                    blur: 8.0,
-                    spread: 0.0,
-                }),
-            });
+            renderer.draw_rect(
+                rect,
+                &RectStyle {
+                    color: Color::WHITE,
+                    border: Some(Border {
+                        width: 1.0,
+                        color: Color {
+                            r: 0.894,
+                            g: 0.894,
+                            b: 0.906,
+                            a: 1.0,
+                        }, // #e4e4e7
+                    }),
+                    radius: [frame.radius; 4],
+                    shadow: Some(Shadow {
+                        color: Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.06,
+                        },
+                        offset: [0.0, 2.0],
+                        blur: 8.0,
+                        spread: 0.0,
+                    }),
+                },
+            );
 
             // 圆角裁剪 + 内容
             renderer.push_clip(rect, frame.radius);

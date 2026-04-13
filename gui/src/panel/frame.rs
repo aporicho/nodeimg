@@ -18,7 +18,10 @@ impl PanelFrame {
         Self {
             id,
             visible: true,
-            x, y, w, h,
+            x,
+            y,
+            w,
+            h,
             min_w: 120.0,
             min_h: 80.0,
             radius: 12.0,
@@ -26,6 +29,11 @@ impl PanelFrame {
     }
 
     pub fn rect(&self) -> Rect {
-        Rect { x: self.x, y: self.y, w: self.w, h: self.h }
+        Rect {
+            x: self.x,
+            y: self.y,
+            w: self.w,
+            h: self.h,
+        }
     }
 }

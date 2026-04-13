@@ -78,7 +78,11 @@ impl BlitPipeline {
             ..Default::default()
         });
 
-        Self { pipeline, bind_group_layout, sampler }
+        Self {
+            pipeline,
+            bind_group_layout,
+            sampler,
+        }
     }
 }
 

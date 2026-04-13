@@ -11,4 +11,4 @@ pub use frame::PanelFrame;
 pub use hit::hit_test_panel;
 pub use layer::PanelLayer;
 pub use renderer::PanelRenderer;
-pub use resize::{ResizeEdge, apply_resize, detect_edge};
+pub use resize::{apply_resize, detect_edge, ResizeEdge};

@@ -1,7 +1,7 @@
+use crate::widget::props::{WidgetBuild, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-use crate::widget::props::{WidgetBuild, WidgetProps};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliderProps {
@@ -14,32 +14,65 @@ pub struct SliderProps {
 }
 
 impl WidgetProps for SliderProps {
-    fn widget_type(&self) -> &'static str { "Slider" }
-    fn as_any(&self) -> &dyn Any { self }
-    fn clone_box(&self) -> Box<dyn WidgetProps> { Box::new(self.clone()) }
+    fn widget_type(&self) -> &'static str {
+        "Slider"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn WidgetProps> {
+        Box::new(self.clone())
+    }
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other.as_any().downcast_ref::<Self>().map_or(false, |o| self == o)
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |o| self == o)
     }
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str) -> WidgetBuild {
-        use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, LeafKind};
         use crate::renderer::Color;
+        use crate::widget::desc::Desc;
+        use crate::widget::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
 
         // shadcn zinc 色系
-        let label_color = Color { r: 0.443, g: 0.443, b: 0.478, a: 1.0 };  // zinc-500
-        let value_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };  // zinc-900
-        let track_color = Color { r: 0.894, g: 0.894, b: 0.906, a: 1.0 };  // zinc-200
-        let fill_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };   // zinc-900
+        let label_color = Color {
+            r: 0.443,
+            g: 0.443,
+            b: 0.478,
+            a: 1.0,
+        }; // zinc-500
+        let value_color = Color {
+            r: 0.094,
+            g: 0.094,
+            b: 0.106,
+            a: 1.0,
+        }; // zinc-900
+        let track_color = Color {
+            r: 0.894,
+            g: 0.894,
+            b: 0.906,
+            a: 1.0,
+        }; // zinc-200
+        let fill_color = Color {
+            r: 0.094,
+            g: 0.094,
+            b: 0.106,
+            a: 1.0,
+        }; // zinc-900
         let font_size = 12.0;
         let track_height = 6.0;
         let track_radius = track_height / 2.0;
 
         // 填充比例
         let range = self.max - self.min;
-        let ratio = if range > 0.0 { ((self.value - self.min) / range).clamp(0.0, 1.0) } else { 0.0 };
+        let ratio = if range > 0.0 {
+            ((self.value - self.min) / range).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
 
         // 值文本格式化
         let value_text = if self.step >= 1.0 {

@@ -1,7 +1,7 @@
-use crate::widget::node::{NodeId, NodeKind};
 use super::tree::PanelTree;
-use crate::widget::layout::{self, BoxStyle, LeafKind, LayoutTree};
 use crate::renderer::Rect;
+use crate::widget::layout::{self, BoxStyle, LayoutTree, LeafKind};
+use crate::widget::node::{NodeId, NodeKind};
 
 impl LayoutTree for PanelTree {
     type NodeId = NodeId;
@@ -11,7 +11,9 @@ impl LayoutTree for PanelTree {
     }
 
     fn children(&self, node: NodeId) -> Vec<NodeId> {
-        self.get(node).map(|n| n.children.clone()).unwrap_or_default()
+        self.get(node)
+            .map(|n| n.children.clone())
+            .unwrap_or_default()
     }
 
     fn set_rect(&mut self, node: NodeId, rect: Rect) {
@@ -32,7 +34,9 @@ impl LayoutTree for PanelTree {
 
     fn text_content(&self, node: NodeId) -> Option<(&str, f32)> {
         match &self.get(node)?.kind {
-            NodeKind::Leaf(LeafKind::Text { content, font_size, .. }) => Some((content, *font_size)),
+            NodeKind::Leaf(LeafKind::Text {
+                content, font_size, ..
+            }) => Some((content, *font_size)),
             _ => None,
         }
     }

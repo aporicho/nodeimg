@@ -10,4 +10,4 @@ mod mapping;
 pub mod state;
 mod text_edit;
 
-pub use layout::{BoxStyle, Decoration, LeafKind, LayoutTree, Size};
+pub use layout::{BoxStyle, Decoration, LayoutTree, LeafKind, Size};

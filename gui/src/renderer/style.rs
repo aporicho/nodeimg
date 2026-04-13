@@ -22,6 +22,6 @@ pub struct TextStyle {
 pub struct Shadow {
     pub color: Color,
     pub offset: [f32; 2], // x, y 偏移
-    pub blur: f32,         // 模糊半径
-    pub spread: f32,       // 扩展距离
+    pub blur: f32,        // 模糊半径
+    pub spread: f32,      // 扩展距离
 }

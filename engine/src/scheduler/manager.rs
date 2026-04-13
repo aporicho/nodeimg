@@ -4,6 +4,7 @@ use crate::artifact::manager::ArtifactManager;
 use crate::cache::manager::CacheManager;
 use crate::cache::model::generation_id::GenerationId;
 use crate::cache::result_store::WriteResult;
+use crate::executors::api::ApiExecutor;
 use crate::executors::image::ImageExecutor;
 use crate::graph::model::events::GraphChangedEvent;
 use crate::graph::query::downstream::downstream;
@@ -47,6 +48,7 @@ pub struct SchedulerManager {
     next_run_id: u64,
     node_manager: Option<Arc<NodeManager>>,
     image_executor: Option<Arc<ImageExecutor>>,
+    api_executor: Option<Arc<ApiExecutor>>,
     cache_manager: Option<Arc<CacheManager>>,
     artifact_manager: Option<ArtifactManager>,
     executor_registry: ExecutorRegistry,
@@ -65,6 +67,7 @@ impl SchedulerManager {
             next_run_id: 1,
             node_manager: None,
             image_executor: None,
+            api_executor: None,
             cache_manager: None,
             artifact_manager: None,
             executor_registry: ExecutorRegistry::new(),
@@ -80,6 +83,7 @@ impl SchedulerManager {
         let mut manager = Self::new();
         manager.node_manager = Some(node_manager);
         manager.image_executor = Some(image_executor);
+        manager.api_executor = Some(Arc::new(ApiExecutor::new()));
         manager.cache_manager = Some(cache_manager);
         manager.register_default_executors();
         manager
@@ -129,16 +133,12 @@ impl SchedulerManager {
         self.mode = mode;
     }
 
-    pub fn notify_graph_changed<F>(
+    pub fn notify_graph_changed(
         &mut self,
         graph: Arc<Graph>,
         event: &GraphChangedEvent,
         generation: GenerationId,
-        classify_executor: F,
-    ) -> Result<Option<RunId>, SchedulerError>
-    where
-        F: Fn(NodeId) -> ExecutorType,
-    {
+    ) -> Result<Option<RunId>, SchedulerError> {
         self.cancel_conflicting_run();
         apply_graph_event(&graph, &mut self.dirty_state, event);
 
@@ -147,22 +147,17 @@ impl SchedulerManager {
                 graph,
                 ExecutionRequest::new(crate::scheduler::model::ExecuteTarget::Graph),
                 generation,
-                classify_executor,
             );
         }
 
         Ok(None)
     }
 
-    pub fn notify_graph_replaced<F>(
+    pub fn notify_graph_replaced(
         &mut self,
         snapshot_meta: GraphReplaceSnapshotMeta,
         generation: GenerationId,
-        classify_executor: F,
-    ) -> Result<Option<RunId>, SchedulerError>
-    where
-        F: Fn(NodeId) -> ExecutorType,
-    {
+    ) -> Result<Option<RunId>, SchedulerError> {
         self.cancel_conflicting_run();
         rebuild_dirty_state_in_place(
             &snapshot_meta.graph_snapshot,
@@ -175,23 +170,18 @@ impl SchedulerManager {
                 snapshot_meta.graph_snapshot,
                 ExecutionRequest::new(crate::scheduler::model::ExecuteTarget::Graph),
                 generation,
-                classify_executor,
             );
         }
 
         Ok(None)
     }
 
-    pub fn notify_artifact_selected<F>(
+    pub fn notify_artifact_selected(
         &mut self,
         graph: Arc<Graph>,
         selection: &ArtifactSelection,
         generation: GenerationId,
-        classify_executor: F,
-    ) -> Result<Option<RunId>, SchedulerError>
-    where
-        F: Fn(NodeId) -> ExecutorType,
-    {
+    ) -> Result<Option<RunId>, SchedulerError> {
         self.cancel_conflicting_run();
 
         for downstream_node in downstream(&graph, selection.node_id) {
@@ -204,28 +194,23 @@ impl SchedulerManager {
                 graph,
                 ExecutionRequest::new(crate::scheduler::model::ExecuteTarget::Graph),
                 generation,
-                classify_executor,
             );
         }
 
         Ok(None)
     }
 
-    pub fn request_execution<F>(
+    pub fn request_execution(
         &mut self,
         graph: Arc<Graph>,
         request: ExecutionRequest,
         generation: GenerationId,
-        classify_executor: F,
-    ) -> Result<RunId, SchedulerError>
-    where
-        F: Fn(NodeId) -> ExecutorType,
-    {
+    ) -> Result<RunId, SchedulerError> {
         if self.current_plan.is_some() {
             return Err(SchedulerError::RunAlreadyInProgress);
         }
 
-        match self.plan_stage_and_maybe_execute(graph, request, generation, classify_executor)? {
+        match self.plan_stage_and_maybe_execute(graph, request, generation)? {
             Some(run_id) => Ok(run_id),
             None => Err(SchedulerError::PlannerFailed {
                 message: "no executable nodes selected".into(),
@@ -260,25 +245,27 @@ impl SchedulerManager {
         }
     }
 
-    fn plan_stage_and_maybe_execute<F>(
+    fn plan_stage_and_maybe_execute(
         &mut self,
         graph: Arc<Graph>,
         request: ExecutionRequest,
         generation: GenerationId,
-        classify_executor: F,
-    ) -> Result<Option<RunId>, SchedulerError>
-    where
-        F: Fn(NodeId) -> ExecutorType,
-    {
+    ) -> Result<Option<RunId>, SchedulerError> {
         let run_id = self.allocate_run_id();
+        let node_manager =
+            self.node_manager
+                .as_ref()
+                .ok_or_else(|| SchedulerError::RuntimeFailed {
+                    message: "node manager not configured".into(),
+                })?;
         let maybe_plan = build_plan(
             graph,
+            node_manager,
             &self.dirty_state,
             request,
             self.mode,
             run_id,
             generation,
-            classify_executor,
         )
         .map_err(|error| SchedulerError::PlannerFailed {
             message: error.to_string(),
@@ -328,6 +315,11 @@ impl SchedulerManager {
                 message: "image executor not configured".into(),
             }
         })?);
+        let api_executor = Arc::clone(self.api_executor.as_ref().ok_or_else(|| {
+            SchedulerError::RuntimeFailed {
+                message: "api executor not configured".into(),
+            }
+        })?);
         let cache_manager = Arc::clone(self.cache_manager.as_ref().ok_or_else(|| {
             SchedulerError::RuntimeFailed {
                 message: "cache manager not configured".into(),
@@ -366,9 +358,11 @@ impl SchedulerManager {
                     };
                     return Ok(());
                 }
-                running_task.check_cancelled().map_err(|error| SchedulerError::RuntimeFailed {
-                    message: error.to_string(),
-                })?;
+                running_task
+                    .check_cancelled()
+                    .map_err(|error| SchedulerError::RuntimeFailed {
+                        message: error.to_string(),
+                    })?;
                 if let Err(error) = running_task.check_timeout() {
                     self.push_event(ExecutionEvent::Cancelled { run_id });
                     self.current_plan = None;
@@ -392,23 +386,20 @@ impl SchedulerManager {
                             planned_node.node_id
                         ),
                     })?;
-                let node_def = node_manager
-                    .get_node_def(&node.type_id)
-                    .ok_or_else(|| SchedulerError::RuntimeFailed {
+                let node_def = node_manager.get_node_def(&node.type_id).ok_or_else(|| {
+                    SchedulerError::RuntimeFailed {
                         message: format!("node type '{}' not registered", node.type_id),
-                    })?;
+                    }
+                })?;
 
                 self.push_event(ExecutionEvent::NodeStarted {
                     run_id,
                     node_id: planned_node.node_id,
                 });
 
-                if let Some(cached_outputs) = collect_cached_outputs(
-                    &cache_manager,
-                    planned_node,
-                    node_def,
-                    plan.generation,
-                ) {
+                if let Some(cached_outputs) =
+                    collect_cached_outputs(&cache_manager, planned_node, node_def, plan.generation)
+                {
                     results.insert(planned_node.node_id, cached_outputs);
                     self.dirty_state.dirty_nodes.remove(&planned_node.node_id);
                     self.dirty_state.dirty_reasons.remove(&planned_node.node_id);
@@ -447,8 +438,10 @@ impl SchedulerManager {
                                 input_signature: input_signature(planned_node),
                             },
                         )
-                        .map_err(|error| SchedulerError::RuntimeFailed {
-                            message: error.to_string(),
+                        .map_err(|error| {
+                            SchedulerError::RuntimeFailed {
+                                message: error.to_string(),
+                            }
                         })?;
                     }
 
@@ -496,6 +489,7 @@ impl SchedulerManager {
                     &self.executor_registry,
                     &node_manager,
                     &image_executor,
+                    &api_executor,
                     &node.type_id,
                     planned_node,
                     inputs,
@@ -538,8 +532,10 @@ impl SchedulerManager {
                                 input_signature: input_signature(planned_node),
                             },
                         )
-                        .map_err(|error| SchedulerError::RuntimeFailed {
-                            message: error.to_string(),
+                        .map_err(|error| {
+                            SchedulerError::RuntimeFailed {
+                                message: error.to_string(),
+                            }
                         })?;
                     }
                 }
@@ -599,7 +595,10 @@ impl SchedulerManager {
     }
 
     fn runtime_components_available(&self) -> bool {
-        self.node_manager.is_some() && self.image_executor.is_some() && self.cache_manager.is_some()
+        self.node_manager.is_some()
+            && self.image_executor.is_some()
+            && self.api_executor.is_some()
+            && self.cache_manager.is_some()
     }
 
     fn register_default_executors(&mut self) {
@@ -609,6 +608,8 @@ impl SchedulerManager {
                 ExecutorType::Image,
                 |_| true,
             ));
+            self.executor_registry
+                .register(ExecutorEntry::new("api", ExecutorType::Api, |_| true));
         }
     }
 
@@ -664,8 +665,7 @@ fn param_signature(planned_node: &crate::scheduler::model::PlannedNode) -> Strin
 fn input_signature(planned_node: &crate::scheduler::model::PlannedNode) -> String {
     format!(
         "schema:{}:upstream:{}",
-        planned_node.exec_signature.sig_schema_version,
-        planned_node.exec_signature.upstream_hash,
+        planned_node.exec_signature.sig_schema_version, planned_node.exec_signature.upstream_hash,
     )
 }
 
@@ -723,12 +723,31 @@ mod tests {
         )
     }
 
+    fn make_planning_manager() -> SchedulerManager {
+        let mut node_manager = NodeManager::new();
+        node_manager.register(make_test_def("a"));
+        node_manager.register(make_test_def("b"));
+        node_manager.register(make_test_def("c"));
+
+        let mut manager = SchedulerManager::new();
+        manager.node_manager = Some(Arc::new(node_manager));
+        manager
+    }
+
     fn make_test_def(type_id: &str) -> NodeDef {
         NodeDef {
             type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::float(),
@@ -752,7 +771,10 @@ mod tests {
                         Some(Value::Float(v)) => v,
                         _ => 0.0,
                     };
-                    Ok(HashMap::from([(String::from("out"), Value::Float(base + 1.0))]))
+                    Ok(HashMap::from([(
+                        String::from("out"),
+                        Value::Float(base + 1.0),
+                    )]))
                 })
             }),
         }
@@ -786,7 +808,7 @@ mod tests {
         manager.set_mode(ExecutionMode::Manual);
 
         let run_id = manager
-            .notify_graph_changed(graph, &event, GenerationId(0), |_| ExecutorType::Image)
+            .notify_graph_changed(graph, &event, GenerationId(0))
             .unwrap();
 
         assert_eq!(run_id, None);
@@ -799,7 +821,7 @@ mod tests {
     #[test]
     fn request_execution_stages_plan_and_updates_state() {
         let (graph, a, _b, _c) = sample_graph();
-        let mut manager = SchedulerManager::new();
+        let mut manager = make_planning_manager();
         manager.set_mode(ExecutionMode::Manual);
         manager.dirty_state.mark(a, DirtyReason::ParamChanged);
 
@@ -808,7 +830,6 @@ mod tests {
                 Arc::clone(&graph),
                 ExecutionRequest::new(ExecuteTarget::Graph),
                 GenerationId(0),
-                |_| ExecutorType::Image,
             )
             .unwrap();
 
@@ -831,7 +852,6 @@ mod tests {
                 graph,
                 ExecutionRequest::new(ExecuteTarget::Graph),
                 GenerationId(0),
-                |_| ExecutorType::Image,
             )
             .unwrap();
 
@@ -858,7 +878,6 @@ mod tests {
                 graph,
                 ExecutionRequest::new(ExecuteTarget::Graph),
                 GenerationId(0),
-                |_| ExecutorType::Image,
             )
             .unwrap();
 
@@ -881,7 +900,7 @@ mod tests {
     #[test]
     fn cancel_execution_clears_current_plan() {
         let (graph, a, _b, _c) = sample_graph();
-        let mut manager = SchedulerManager::new();
+        let mut manager = make_planning_manager();
         manager.set_mode(ExecutionMode::Manual);
         manager.dirty_state.mark(a, DirtyReason::ParamChanged);
 
@@ -890,7 +909,6 @@ mod tests {
                 graph,
                 ExecutionRequest::new(ExecuteTarget::Graph),
                 GenerationId(0),
-                |_| ExecutorType::Image,
             )
             .unwrap();
 

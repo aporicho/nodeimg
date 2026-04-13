@@ -12,14 +12,12 @@ pub fn init_gpu(
     let info = adapter.get_info();
     tracing::info!("GPU: {} ({:?})", info.name, info.backend);
 
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: Some("nodeimg"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        },
-    ))
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("nodeimg"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        ..Default::default()
+    }))
     .expect("failed to create GPU device");
 
     (adapter, device, queue)

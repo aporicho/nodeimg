@@ -59,9 +59,17 @@ mod tests {
     fn make_def() -> NodeDef {
         NodeDef {
             type_id: "test.node".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "test.node".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::float(),

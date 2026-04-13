@@ -1,6 +1,6 @@
-use crate::shell::CursorStyle;
 use super::frame::PanelFrame;
 use super::layer::PanelLayer;
+use crate::shell::CursorStyle;
 
 const EDGE_THRESHOLD: f32 = 6.0;
 
@@ -51,15 +51,29 @@ pub fn detect_edge(frame: &PanelFrame, x: f32, y: f32) -> Option<ResizeEdge> {
     }
 }
 
-pub fn apply_resize(layer: &mut PanelLayer, panel_id: &str, edge: ResizeEdge, x: f32, y: f32, last_x: f32, last_y: f32) {
+pub fn apply_resize(
+    layer: &mut PanelLayer,
+    panel_id: &str,
+    edge: ResizeEdge,
+    x: f32,
+    y: f32,
+    last_x: f32,
+    last_y: f32,
+) {
     let dx = x - last_x;
     let dy = y - last_y;
 
-    let Some(frame) = layer.get_mut(panel_id) else { return };
+    let Some(frame) = layer.get_mut(panel_id) else {
+        return;
+    };
 
     match edge {
-        ResizeEdge::Right => { frame.w = (frame.w + dx).max(frame.min_w); }
-        ResizeEdge::Bottom => { frame.h = (frame.h + dy).max(frame.min_h); }
+        ResizeEdge::Right => {
+            frame.w = (frame.w + dx).max(frame.min_w);
+        }
+        ResizeEdge::Bottom => {
+            frame.h = (frame.h + dy).max(frame.min_h);
+        }
         ResizeEdge::Left => {
             let new_w = (frame.w - dx).max(frame.min_w);
             frame.x += frame.w - new_w;

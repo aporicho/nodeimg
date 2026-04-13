@@ -45,7 +45,9 @@ impl CanvasRenderer {
                 self.camera.zoom_at(*x, *y, *delta_y * 0.1);
                 return true;
             }
-            AppEvent::ScrollPixel { delta_x, delta_y, .. } => {
+            AppEvent::ScrollPixel {
+                delta_x, delta_y, ..
+            } => {
                 self.camera.pan(*delta_x, *delta_y);
                 return true;
             }

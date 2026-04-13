@@ -1,6 +1,6 @@
-use std::borrow::Cow;
-use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
 use super::props::WidgetProps;
+use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
+use std::borrow::Cow;
 
 /// 视图描述：view() 函数返回的轻量描述树。
 pub enum Desc {

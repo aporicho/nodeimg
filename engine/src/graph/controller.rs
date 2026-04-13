@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use types::{NodeId, Value};
 
-use super::model::batch::{ApplyBatchError, BatchNodeRef, BatchPinRef, BatchWorkResult, EditBatchRequest, EditBatchResult, GraphEdit};
+use super::model::batch::{
+    ApplyBatchError, BatchNodeRef, BatchPinRef, BatchWorkResult, EditBatchRequest, EditBatchResult,
+    GraphEdit,
+};
 use super::model::events::{
     GraphChange, GraphChangedEvent, GraphEvent, GraphEventKind, PreviewChangedEvent,
 };
@@ -61,13 +64,17 @@ impl GraphController {
     }
 
     pub fn upstream(&self, node_id: NodeId) -> Vec<NodeId> {
-        let mut nodes: Vec<_> = upstream(self.state.current(), node_id).into_iter().collect();
+        let mut nodes: Vec<_> = upstream(self.state.current(), node_id)
+            .into_iter()
+            .collect();
         nodes.sort_by_key(|id| id.0);
         nodes
     }
 
     pub fn downstream(&self, node_id: NodeId) -> Vec<NodeId> {
-        let mut nodes: Vec<_> = downstream(self.state.current(), node_id).into_iter().collect();
+        let mut nodes: Vec<_> = downstream(self.state.current(), node_id)
+            .into_iter()
+            .collect();
         nodes.sort_by_key(|id| id.0);
         nodes
     }
@@ -169,7 +176,11 @@ impl GraphController {
         Ok(())
     }
 
-    pub fn disconnect(&mut self, from: PinRef, to: PinRef) -> Result<(), validate::ConnectionError> {
+    pub fn disconnect(
+        &mut self,
+        from: PinRef,
+        to: PinRef,
+    ) -> Result<(), validate::ConnectionError> {
         let conn = Connection {
             from: from.clone(),
             to: to.clone(),
@@ -283,7 +294,10 @@ impl GraphController {
         let _ = self.replace_graph(graph);
     }
 
-    pub fn apply_batch(&mut self, req: EditBatchRequest) -> Result<EditBatchResult, ApplyBatchError> {
+    pub fn apply_batch(
+        &mut self,
+        req: EditBatchRequest,
+    ) -> Result<EditBatchResult, ApplyBatchError> {
         let work = self.apply_batch_edits(req)?;
         let cleared_preview = self.state.preview_target().cloned();
         self.state.commit(work.graph);
@@ -321,7 +335,10 @@ impl GraphController {
                     if self.node_manager.get_node_def(&type_id).is_none() {
                         return Err(ApplyBatchError::UnknownNodeType { type_id });
                     }
-                    let mut defaults = self.node_manager.default_params(&type_id).unwrap_or_default();
+                    let mut defaults = self
+                        .node_manager
+                        .default_params(&type_id)
+                        .unwrap_or_default();
                     for (key, value) in param_overrides {
                         defaults.insert(key, value);
                     }
@@ -343,7 +360,12 @@ impl GraphController {
                         .map_err(ApplyBatchError::ConnectionError)?;
                     validate::validate_formal_connection(&self.node_manager, &graph, &conn)
                         .map_err(ApplyBatchError::ConnectionError)?;
-                    if let Some(old) = graph.connections.iter().find(|existing| existing.to == conn.to).cloned() {
+                    if let Some(old) = graph
+                        .connections
+                        .iter()
+                        .find(|existing| existing.to == conn.to)
+                        .cloned()
+                    {
                         changes.push(GraphChange::ConnectionRemoved {
                             from: old.from,
                             to: old.to,
@@ -434,9 +456,17 @@ mod tests {
         let mut nm = NodeManager::new();
         nm.register(NodeDef {
             type_id: "src".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "src".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![],
             outputs: vec![PinDef {
                 name: "image".into(),
@@ -454,9 +484,17 @@ mod tests {
         });
         nm.register(NodeDef {
             type_id: "mid".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "mid".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "image".into(),
                 data_type: DataType::image(),
@@ -478,9 +516,17 @@ mod tests {
         });
         nm.register(NodeDef {
             type_id: "dst".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "dst".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "image".into(),
                 data_type: DataType::image(),
@@ -529,10 +575,8 @@ mod tests {
 
         let report = gc.validate_graph();
         assert!(!report.is_valid);
-        assert!(report
-            .issues
-            .iter()
-            .any(|issue| issue.code == super::super::model::validation::ValidationIssueCode::InvalidParamValue));
+        assert!(report.issues.iter().any(|issue| issue.code
+            == super::super::model::validation::ValidationIssueCode::InvalidParamValue));
     }
 
     #[test]
@@ -722,6 +766,9 @@ mod tests {
             },
         );
 
-        assert!(matches!(result, Err(validate::ConnectionError::ConnectionNotFound)));
+        assert!(matches!(
+            result,
+            Err(validate::ConnectionError::ConnectionNotFound)
+        ));
     }
 }

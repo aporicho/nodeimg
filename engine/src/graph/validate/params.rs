@@ -7,11 +7,23 @@ pub fn validate_param_values(graph: &Graph, node_manager: &NodeManager) -> Vec<V
     let mut issues = Vec::new();
 
     for (node_id, node) in &graph.nodes {
-        let Some(def) = node_manager.get_node_def(&node.type_id) else {
+        let Some(_def) = node_manager.get_node_def(&node.type_id) else {
             continue;
         };
 
-        for param_def in &def.params {
+        let resolved_schema = match node_manager.resolve_schema(&node.type_id, &node.params) {
+            Ok(schema) => schema,
+            Err(error) => {
+                issues.push(ValidationIssue {
+                    code: ValidationIssueCode::InvalidParamValue,
+                    subject: Some(IssueSubject::Node(*node_id)),
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+
+        for param_def in &resolved_schema.params {
             let Some(value) = node.params.get(&param_def.name) else {
                 continue;
             };
@@ -53,7 +65,10 @@ fn validate_range(value: &Value, constraint: &Constraint) -> Option<String> {
     };
 
     if numeric < min || numeric > max {
-        Some(format!("value {} is outside range [{}, {}]", numeric, min, max))
+        Some(format!(
+            "value {} is outside range [{}, {}]",
+            numeric, min, max
+        ))
     } else {
         None
     }
@@ -66,7 +81,10 @@ fn validate_enum(value: &Value, constraint: &Constraint) -> Option<String> {
         _ => return Some("value is not a string for enum constraint".into()),
     };
 
-    let matched = options.iter().filter_map(|item| item.as_str()).any(|item| item == string);
+    let matched = options
+        .iter()
+        .filter_map(|item| item.as_str())
+        .any(|item| item == string);
     if matched {
         None
     } else {
@@ -102,9 +120,17 @@ mod tests {
         let mut nm = NodeManager::new();
         nm.register(NodeDef {
             type_id: "test".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "test".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![],
             outputs: vec![],
             params: vec![

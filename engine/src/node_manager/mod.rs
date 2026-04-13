@@ -7,6 +7,7 @@ pub mod store;
 
 pub use manager::NodeManager;
 pub use model::{
-    ExposedPinDef, ExposedPinKind, ExposedPinSource, NodeDef, NodeDefEntry, ParamDef,
-    ParamExpose, PinDef,
+    ApiNodeMeta, ArtifactPolicy, CachePolicy, ExecuteFn, ExecutionPolicy, ExecutorType,
+    ExposedPinDef, ExposedPinKind, ExposedPinSource, NodeDef, NodeDefEntry, NodeSourceKind,
+    ParamDef, ParamExpose, PinDef, Purity, RetryPolicy, TriggerPolicy,
 };

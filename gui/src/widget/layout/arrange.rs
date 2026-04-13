@@ -27,11 +27,13 @@ pub(crate) fn arrange<T: LayoutTree>(
         w: match style.width {
             Size::Fixed(w) => w,
             _ => after_margin.w,
-        }.clamp(style.min_width, style.max_width),
+        }
+        .clamp(style.min_width, style.max_width),
         h: match style.height {
             Size::Fixed(h) => h,
             _ => after_margin.h,
-        }.clamp(style.min_height, style.max_height),
+        }
+        .clamp(style.min_height, style.max_height),
     };
 
     tree.set_rect(node, node_rect);
@@ -53,9 +55,16 @@ pub(crate) fn arrange<T: LayoutTree>(
     let scroll_offset = if style.overflow == Overflow::Scroll {
         let offset = tree.scroll_offset(node);
 
-        let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c, measure_text)).collect();
+        let child_sizes: Vec<DesiredSize> = children
+            .iter()
+            .map(|&c| measure(&*tree, c, measure_text))
+            .collect();
         let n = child_sizes.len();
-        let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
+        let total_gap = if n > 1 {
+            style.gap * (n as f32 - 1.0)
+        } else {
+            0.0
+        };
         let content_height = match style.direction {
             Direction::Column => child_sizes.iter().map(|s| s.height).sum::<f32>() + total_gap,
             Direction::Row => child_sizes.iter().map(|s| s.height).fold(0.0f32, f32::max),
@@ -69,15 +78,29 @@ pub(crate) fn arrange<T: LayoutTree>(
 
     // 度量子节点 + 预读子节点样式字段
     let is_column = style.direction == Direction::Column;
-    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(&*tree, c, measure_text)).collect();
-    let child_styles: Vec<(f32, Size, Size, f32)> = children.iter().map(|&c| {
-        let s = tree.style(c);
-        let main_margin = if is_column { s.margin.vertical() } else { s.margin.horizontal() };
-        (s.flex_grow, s.width, s.height, main_margin)
-    }).collect();
+    let child_sizes: Vec<DesiredSize> = children
+        .iter()
+        .map(|&c| measure(&*tree, c, measure_text))
+        .collect();
+    let child_styles: Vec<(f32, Size, Size, f32)> = children
+        .iter()
+        .map(|&c| {
+            let s = tree.style(c);
+            let main_margin = if is_column {
+                s.margin.vertical()
+            } else {
+                s.margin.horizontal()
+            };
+            (s.flex_grow, s.width, s.height, main_margin)
+        })
+        .collect();
 
     let n = child_sizes.len();
-    let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
+    let total_gap = if n > 1 {
+        style.gap * (n as f32 - 1.0)
+    } else {
+        0.0
+    };
 
     // 主轴可用空间
     let main_available = if is_column { content.h } else { content.w };
@@ -86,7 +109,11 @@ pub(crate) fn arrange<T: LayoutTree>(
     let mut fixed_main: f32 = total_gap;
     let mut total_grow: f32 = 0.0;
     for (i, &(grow, width, height, main_margin)) in child_styles.iter().enumerate() {
-        let child_main = if is_column { child_sizes[i].height } else { child_sizes[i].width };
+        let child_main = if is_column {
+            child_sizes[i].height
+        } else {
+            child_sizes[i].width
+        };
         let is_fill = if is_column {
             matches!(height, Size::Fill)
         } else {
@@ -145,12 +172,19 @@ pub(crate) fn arrange<T: LayoutTree>(
         };
 
         let cross_available = if is_column { content.w } else { content.h };
-        let child_cross_desired = if is_column { child_desired.width } else { child_desired.height };
+        let child_cross_desired = if is_column {
+            child_desired.width
+        } else {
+            child_desired.height
+        };
         let (cross_offset, child_cross) = match style.align_items {
             Align::Stretch => (0.0, cross_available),
             Align::Start => (0.0, child_cross_desired),
             Align::End => (cross_available - child_cross_desired, child_cross_desired),
-            Align::Center => ((cross_available - child_cross_desired) / 2.0, child_cross_desired),
+            Align::Center => (
+                (cross_available - child_cross_desired) / 2.0,
+                child_cross_desired,
+            ),
         };
 
         let child_rect = if is_column {

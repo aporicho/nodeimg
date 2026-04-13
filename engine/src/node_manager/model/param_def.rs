@@ -8,6 +8,7 @@ pub enum ParamExpose {
 }
 
 /// 参数定义。
+#[derive(Clone, Debug)]
 pub struct ParamDef {
     pub name: String,
     pub data_type: DataType,

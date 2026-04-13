@@ -185,9 +185,17 @@ mod tests {
         let mut nm = NodeManager::new();
         nm.register(NodeDef {
             type_id: "src".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "src".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![],
             outputs: vec![PinDef {
                 name: "image".into(),
@@ -205,9 +213,17 @@ mod tests {
         });
         nm.register(NodeDef {
             type_id: "dst".into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: "dst".into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "image".into(),
                 data_type: DataType::image(),
@@ -339,7 +355,10 @@ mod tests {
             },
         );
 
-        assert!(matches!(result, Err(ConnectionError::InvalidDirection { .. })));
+        assert!(matches!(
+            result,
+            Err(ConnectionError::InvalidDirection { .. })
+        ));
     }
 
     #[test]

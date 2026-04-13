@@ -7,7 +7,6 @@ use super::super::buffer::DynamicBuffer;
 use super::super::style::RectStyle;
 use super::super::types::Rect;
 
-
 /// 默认 corner smoothing（iOS 风格）
 pub const DEFAULT_CORNER_SMOOTHING: f32 = 0.6;
 
@@ -77,7 +76,10 @@ pub fn build_rounded_rect_path(rect: Rect, radius: [f32; 4], smoothing: f32) -> 
 
     let x = rect.x;
     let y = rect.y;
-    let flags = ArcFlags { large_arc: false, sweep: true };
+    let flags = ArcFlags {
+        large_arc: false,
+        sweep: true,
+    };
 
     let mut b = Path::builder().with_svg();
 
@@ -89,9 +91,17 @@ pub fn build_rounded_rect_path(rect: Rect, radius: [f32; 4], smoothing: f32) -> 
         let abc = tr.a + tr.b + tr.c;
         let al = tr.arc_section_length;
         let r = tr.corner_radius;
-        b.relative_cubic_bezier_to(vector(tr.a, 0.0), vector(tr.a + tr.b, 0.0), vector(abc, tr.d));
+        b.relative_cubic_bezier_to(
+            vector(tr.a, 0.0),
+            vector(tr.a + tr.b, 0.0),
+            vector(abc, tr.d),
+        );
         b.relative_arc_to(vector(r, r), Angle::zero(), flags, vector(al, al));
-        b.relative_cubic_bezier_to(vector(tr.d, tr.c), vector(tr.d, tr.b + tr.c), vector(tr.d, abc));
+        b.relative_cubic_bezier_to(
+            vector(tr.d, tr.c),
+            vector(tr.d, tr.b + tr.c),
+            vector(tr.d, abc),
+        );
     }
 
     // L w (h - br.p)
@@ -102,9 +112,17 @@ pub fn build_rounded_rect_path(rect: Rect, radius: [f32; 4], smoothing: f32) -> 
         let abc = br.a + br.b + br.c;
         let al = br.arc_section_length;
         let r = br.corner_radius;
-        b.relative_cubic_bezier_to(vector(0.0, br.a), vector(0.0, br.a + br.b), vector(-br.d, abc));
+        b.relative_cubic_bezier_to(
+            vector(0.0, br.a),
+            vector(0.0, br.a + br.b),
+            vector(-br.d, abc),
+        );
         b.relative_arc_to(vector(r, r), Angle::zero(), flags, vector(-al, al));
-        b.relative_cubic_bezier_to(vector(-br.c, br.d), vector(-(br.b + br.c), br.d), vector(-abc, br.d));
+        b.relative_cubic_bezier_to(
+            vector(-br.c, br.d),
+            vector(-(br.b + br.c), br.d),
+            vector(-abc, br.d),
+        );
     }
 
     // L bl.p h
@@ -115,9 +133,17 @@ pub fn build_rounded_rect_path(rect: Rect, radius: [f32; 4], smoothing: f32) -> 
         let abc = bl.a + bl.b + bl.c;
         let al = bl.arc_section_length;
         let r = bl.corner_radius;
-        b.relative_cubic_bezier_to(vector(-bl.a, 0.0), vector(-(bl.a + bl.b), 0.0), vector(-abc, -bl.d));
+        b.relative_cubic_bezier_to(
+            vector(-bl.a, 0.0),
+            vector(-(bl.a + bl.b), 0.0),
+            vector(-abc, -bl.d),
+        );
         b.relative_arc_to(vector(r, r), Angle::zero(), flags, vector(-al, -al));
-        b.relative_cubic_bezier_to(vector(-bl.d, -bl.c), vector(-bl.d, -(bl.b + bl.c)), vector(-bl.d, -abc));
+        b.relative_cubic_bezier_to(
+            vector(-bl.d, -bl.c),
+            vector(-bl.d, -(bl.b + bl.c)),
+            vector(-bl.d, -abc),
+        );
     }
 
     // L 0 tl.p
@@ -128,9 +154,17 @@ pub fn build_rounded_rect_path(rect: Rect, radius: [f32; 4], smoothing: f32) -> 
         let abc = tl.a + tl.b + tl.c;
         let al = tl.arc_section_length;
         let r = tl.corner_radius;
-        b.relative_cubic_bezier_to(vector(0.0, -tl.a), vector(0.0, -(tl.a + tl.b)), vector(tl.d, -abc));
+        b.relative_cubic_bezier_to(
+            vector(0.0, -tl.a),
+            vector(0.0, -(tl.a + tl.b)),
+            vector(tl.d, -abc),
+        );
         b.relative_arc_to(vector(r, r), Angle::zero(), flags, vector(al, -al));
-        b.relative_cubic_bezier_to(vector(tl.c, -tl.d), vector(tl.b + tl.c, -tl.d), vector(abc, -tl.d));
+        b.relative_cubic_bezier_to(
+            vector(tl.c, -tl.d),
+            vector(tl.b + tl.c, -tl.d),
+            vector(abc, -tl.d),
+        );
     }
 
     // Z
@@ -179,7 +213,11 @@ pub struct QuadPipeline {
 }
 
 impl QuadPipeline {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, multisample: wgpu::MultisampleState) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        multisample: wgpu::MultisampleState,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("quad_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/quad.wgsl").into()),
@@ -254,8 +292,18 @@ impl QuadPipeline {
         Self {
             pipeline,
             bind_group_layout,
-            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "quad_vertex_buffer", 4096),
-            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "quad_index_buffer", 4096),
+            vertex_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::VERTEX,
+                "quad_vertex_buffer",
+                4096,
+            ),
+            index_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::INDEX,
+                "quad_index_buffer",
+                4096,
+            ),
             viewport_bind_group: None,
         }
     }
@@ -271,8 +319,10 @@ impl QuadPipeline {
         if vertices.is_empty() {
             return;
         }
-        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
-        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+        self.vertex_buf
+            .write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf
+            .write(device, queue, bytemuck::cast_slice(indices));
     }
 
     /// render pass 之前调用：确保 viewport bind group 已缓存
@@ -291,7 +341,10 @@ impl QuadPipeline {
 
     /// render pass 内调用：绑定管线 + buffer
     pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind");
+        let bg = self
+            .viewport_bind_group
+            .as_ref()
+            .expect("call update_bind_group before bind");
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));

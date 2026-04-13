@@ -10,7 +10,8 @@ pub(crate) fn measure<T: LayoutTree>(
     let style = tree.style(node);
 
     if children.is_empty() {
-        let (intrinsic_w, intrinsic_h) = tree.text_content(node)
+        let (intrinsic_w, intrinsic_h) = tree
+            .text_content(node)
             .map(|(text, size)| measure_text(text, size))
             .unwrap_or((0.0, 0.0));
 
@@ -26,9 +27,16 @@ pub(crate) fn measure<T: LayoutTree>(
         };
     }
 
-    let child_sizes: Vec<DesiredSize> = children.iter().map(|&c| measure(tree, c, measure_text)).collect();
+    let child_sizes: Vec<DesiredSize> = children
+        .iter()
+        .map(|&c| measure(tree, c, measure_text))
+        .collect();
     let n = child_sizes.len();
-    let total_gap = if n > 1 { style.gap * (n as f32 - 1.0) } else { 0.0 };
+    let total_gap = if n > 1 {
+        style.gap * (n as f32 - 1.0)
+    } else {
+        0.0
+    };
 
     let (content_w, content_h) = match style.direction {
         Direction::Column => {

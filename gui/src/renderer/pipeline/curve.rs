@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use bytemuck::{Pod, Zeroable};
 use lyon::math::point;
 use lyon::path::Path;
-use lyon::tessellation::{BuffersBuilder, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers};
+use lyon::tessellation::{
+    BuffersBuilder, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
+};
 
 use super::super::buffer::DynamicBuffer;
 use super::super::types::{Color, Point};
@@ -33,13 +35,22 @@ impl CurveCacheKey {
         let c = req.color.to_array();
         Self {
             points: [
-                req.points[0].x.to_bits(), req.points[0].y.to_bits(),
-                req.points[1].x.to_bits(), req.points[1].y.to_bits(),
-                req.points[2].x.to_bits(), req.points[2].y.to_bits(),
-                req.points[3].x.to_bits(), req.points[3].y.to_bits(),
+                req.points[0].x.to_bits(),
+                req.points[0].y.to_bits(),
+                req.points[1].x.to_bits(),
+                req.points[1].y.to_bits(),
+                req.points[2].x.to_bits(),
+                req.points[2].y.to_bits(),
+                req.points[3].x.to_bits(),
+                req.points[3].y.to_bits(),
             ],
             width_bits: req.width.to_bits(),
-            color_bits: [c[0].to_bits(), c[1].to_bits(), c[2].to_bits(), c[3].to_bits()],
+            color_bits: [
+                c[0].to_bits(),
+                c[1].to_bits(),
+                c[2].to_bits(),
+                c[3].to_bits(),
+            ],
         }
     }
 }
@@ -59,7 +70,11 @@ pub struct CurvePipeline {
 }
 
 impl CurvePipeline {
-    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, multisample: wgpu::MultisampleState) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        multisample: wgpu::MultisampleState,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("curve_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/curve.wgsl").into()),
@@ -134,8 +149,18 @@ impl CurvePipeline {
         Self {
             pipeline,
             bind_group_layout,
-            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "curve_vertex_buffer", 4096),
-            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "curve_index_buffer", 4096),
+            vertex_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::VERTEX,
+                "curve_vertex_buffer",
+                4096,
+            ),
+            index_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::INDEX,
+                "curve_index_buffer",
+                4096,
+            ),
             viewport_bind_group: None,
             tess_cache: HashMap::new(),
         }
@@ -189,8 +214,10 @@ impl CurvePipeline {
         if vertices.is_empty() {
             return;
         }
-        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
-        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+        self.vertex_buf
+            .write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf
+            .write(device, queue, bytemuck::cast_slice(indices));
     }
 
     pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {
@@ -207,7 +234,10 @@ impl CurvePipeline {
     }
 
     pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind");
+        let bg = self
+            .viewport_bind_group
+            .as_ref()
+            .expect("call update_bind_group before bind");
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));

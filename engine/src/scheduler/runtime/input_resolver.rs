@@ -18,11 +18,11 @@ pub fn resolve_node_inputs(
         .get(&node_id)
         .ok_or(ResolveInputError::NodeNotFound { node_id })?;
 
-    let def = node_manager
-        .get_node_def(&node.type_id)
-        .ok_or_else(|| ResolveInputError::NodeDefNotFound {
+    let def = node_manager.get_node_def(&node.type_id).ok_or_else(|| {
+        ResolveInputError::NodeDefNotFound {
             type_id: node.type_id.clone(),
-        })?;
+        }
+    })?;
 
     let mut inputs: NodeOutputs = HashMap::new();
 
@@ -79,9 +79,17 @@ mod tests {
     fn make_test_def(type_id: &str) -> NodeDef {
         NodeDef {
             type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: "test".into(),
             executor_type: ExecutorType::Image,
+            requires: vec![],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
             inputs: vec![PinDef {
                 name: "in".into(),
                 data_type: DataType::float(),
@@ -128,10 +136,7 @@ mod tests {
         node_manager.register(make_test_def("target"));
 
         let mut results = ExecutionResults::new();
-        results.insert(
-            a,
-            HashMap::from([(String::from("out"), Value::Float(2.0))]),
-        );
+        results.insert(a, HashMap::from([(String::from("out"), Value::Float(2.0))]));
 
         let inputs = resolve_node_inputs(&graph, &node_manager, &results, b).unwrap();
 
@@ -161,6 +166,11 @@ mod tests {
 
         let error = resolve_node_inputs(&graph, &node_manager, &results, NodeId(999)).unwrap_err();
 
-        assert_eq!(error, ResolveInputError::NodeNotFound { node_id: NodeId(999) });
+        assert_eq!(
+            error,
+            ResolveInputError::NodeNotFound {
+                node_id: NodeId(999)
+            }
+        );
     }
 }

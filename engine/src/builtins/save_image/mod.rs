@@ -4,6 +4,7 @@ node! {
     name: "save_image",
     title: "Save Image",
     category: "data",
+    purity: Impure,
     inputs: [image: Image required],
     outputs: [],
     params: [path: String default("")],

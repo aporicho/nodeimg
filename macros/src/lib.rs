@@ -14,6 +14,7 @@ struct NodeMacroInput {
     name: LitStr,
     title: LitStr,
     category: LitStr,
+    purity: Option<Ident>,
     inputs: Vec<PinInput>,
     outputs: Vec<PinInput>,
     params: Vec<ParamInput>,
@@ -50,6 +51,7 @@ impl Parse for NodeMacroInput {
         let mut name: Option<LitStr> = None;
         let mut title: Option<LitStr> = None;
         let mut category: Option<LitStr> = None;
+        let mut purity: Option<Ident> = None;
         let mut inputs: Option<Vec<PinInput>> = None;
         let mut outputs: Option<Vec<PinInput>> = None;
         let mut params: Option<Vec<ParamInput>> = None;
@@ -70,6 +72,9 @@ impl Parse for NodeMacroInput {
                 }
                 "category" => {
                     category = Some(input.parse()?);
+                }
+                "purity" => {
+                    purity = Some(input.parse()?);
                 }
                 "inputs" => {
                     inputs = Some(parse_pin_list(input)?);
@@ -109,6 +114,7 @@ impl Parse for NodeMacroInput {
             name: name.ok_or_else(|| missing("name"))?,
             title: title.ok_or_else(|| missing("title"))?,
             category: category.ok_or_else(|| missing("category"))?,
+            purity,
             inputs: inputs.ok_or_else(|| missing("inputs"))?,
             outputs: outputs.ok_or_else(|| missing("outputs"))?,
             params: params.ok_or_else(|| missing("params"))?,
@@ -331,6 +337,11 @@ pub fn node(input: TokenStream) -> TokenStream {
     let name = &input.name;
     let title = &input.title;
     let category = &input.category;
+    let purity = input
+        .purity
+        .as_ref()
+        .map(|purity| quote! { crate::node_manager::Purity::#purity })
+        .unwrap_or_else(|| quote! { crate::node_manager::Purity::Pure });
 
     let input_defs: Vec<TokenStream2> = input.inputs.iter().map(pin_def_tokens).collect();
     let output_defs: Vec<TokenStream2> = input.outputs.iter().map(pin_def_tokens).collect();
@@ -344,9 +355,17 @@ pub fn node(input: TokenStream) -> TokenStream {
         inventory::submit!(crate::node_manager::NodeDefEntry(|| {
             crate::node_manager::NodeDef {
                 type_id: #name.to_string(),
+                version: 1,
+                source: crate::node_manager::NodeSourceKind::Builtin,
                 name: #title.to_string(),
                 category: #category.to_string(),
                 executor_type: crate::node_manager::ExecutorType::Image,
+                requires: vec![],
+                purity: #purity,
+                cooking_sensitivity: vec![],
+                realtime_capable: true,
+                execution: crate::node_manager::ExecutionPolicy::default(),
+                api: None,
                 inputs: vec![
                     #( #input_defs ),*
                 ],
