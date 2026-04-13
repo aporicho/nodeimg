@@ -449,7 +449,7 @@ impl GraphController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node_manager::{ExecutorType, NodeDef, NodeManager, ParamDef, ParamExpose, PinDef};
+    use crate::node_manager::{NodeDef, NodeManager, ParamDef, ParamExpose, PinDef};
     use types::{Constraint, DataType, Value};
 
     fn make_manager() -> Arc<NodeManager> {
@@ -460,8 +460,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Builtin,
             name: "src".into(),
             category: "test".into(),
-            executor_type: ExecutorType::Image,
-            requires: vec![],
+            requires: vec!["test.src".into()],
             purity: crate::node_manager::Purity::Pure,
             cooking_sensitivity: vec![],
             realtime_capable: true,
@@ -488,8 +487,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Builtin,
             name: "mid".into(),
             category: "test".into(),
-            executor_type: ExecutorType::Image,
-            requires: vec![],
+            requires: vec!["test.mid".into()],
             purity: crate::node_manager::Purity::Pure,
             cooking_sensitivity: vec![],
             realtime_capable: true,
@@ -520,8 +518,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Builtin,
             name: "dst".into(),
             category: "test".into(),
-            executor_type: ExecutorType::Image,
-            requires: vec![],
+            requires: vec!["test.dst".into()],
             purity: crate::node_manager::Purity::Pure,
             cooking_sensitivity: vec![],
             realtime_capable: true,

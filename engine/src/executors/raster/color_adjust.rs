@@ -62,10 +62,14 @@ impl Executor for ColorAdjustExecutor {
             let saturation = float_param(&req.inputs, "saturation", 1.0)?;
 
             let adjusted = adjust_image(cpu.as_ref(), brightness, contrast, saturation);
-            Ok(ExecutionOutputs::full(HashMap::from([(
+            let mut outputs = HashMap::from([(
                 String::from("image"),
                 Value::Image(types::Image::from_cpu(adjusted)),
-            )])))
+            )]);
+            if let Some(fps) = req.inputs.get("fps") {
+                outputs.insert(String::from("fps"), fps.clone());
+            }
+            Ok(ExecutionOutputs::full(outputs))
         })
     }
 

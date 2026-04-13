@@ -174,7 +174,7 @@ mod tests {
     use crate::node_manager::collect::collect_python_defs::{
         parse_param_expose, python_node_decl_specs, PythonNodeDeclFormat, PythonParamExpose,
     };
-    use crate::node_manager::{ExecutorType, ExposedPinSource, ParamDef, ParamExpose, PinDef};
+    use crate::node_manager::{ExposedPinSource, ParamDef, ParamExpose, PinDef};
     use std::collections::HashSet;
 
     fn make_test_def(type_id: &str, category: &str) -> NodeDef {
@@ -184,8 +184,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Builtin,
             name: type_id.into(),
             category: category.into(),
-            executor_type: ExecutorType::Image,
-            requires: vec![],
+            requires: vec!["test.capability".into()],
             purity: crate::node_manager::Purity::Pure,
             cooking_sensitivity: vec![],
             realtime_capable: true,

@@ -112,6 +112,11 @@ impl NodeRegistry {
         capability_registry.freeze();
 
         for registration in registrations {
+            assert!(
+                !registration.static_def.requires.is_empty(),
+                "node '{}' must declare at least one capability in requires",
+                registration.static_def.type_id
+            );
             node_manager.register_registration(registration, &capability_registry);
         }
 

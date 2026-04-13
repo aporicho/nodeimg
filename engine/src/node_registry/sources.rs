@@ -11,8 +11,7 @@ use crate::executors::remote_video::{
 };
 use crate::executors::video::SaveVideoExecutor;
 use crate::node_manager::{
-    ExecutionPolicy, ExecutorType, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity,
-    TriggerPolicy,
+    ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity, TriggerPolicy,
 };
 use types::Value;
 
@@ -57,7 +56,6 @@ impl NodeSource for GenericImageGenerationSource {
                 source: NodeSourceKind::Api,
                 name: "Image Generation".into(),
                 category: "image/generation".into(),
-                executor_type: ExecutorType::Api,
                 requires: vec!["image.generate".into()],
                 purity: Purity::Impure,
                 cooking_sensitivity: Vec::new(),
@@ -84,6 +82,11 @@ impl NodeSource for GenericImageGenerationSource {
                     name: "image".into(),
                     data_type: types::DataType::image(),
                     optional: false,
+                },
+                PinDef {
+                    name: "fps".into(),
+                    data_type: types::DataType::int(),
+                    optional: true,
                 }],
                 params: vec![
                     ParamDef {
@@ -187,7 +190,6 @@ impl NodeSource for ColorAdjustSource {
                 source: NodeSourceKind::Builtin,
                 name: "Color Adjust".into(),
                 category: "image/color".into(),
-                executor_type: ExecutorType::Image,
                 requires: vec!["raster.color_adjust".into()],
                 purity: Purity::Pure,
                 cooking_sensitivity: vec![],
@@ -260,7 +262,6 @@ impl NodeSource for SaveVideoSource {
                 source: NodeSourceKind::Builtin,
                 name: "Save Video".into(),
                 category: "io/output".into(),
-                executor_type: ExecutorType::Image,
                 requires: vec!["video.encode".into()],
                 purity: Purity::Impure,
                 cooking_sensitivity: vec!["frame".into()],
@@ -335,7 +336,6 @@ fn build_api_video_generation_registrations(
             source: NodeSourceKind::Api,
             name: "AI Video Generate API".into(),
             category: "ai/generation".into(),
-            executor_type: ExecutorType::Api,
             requires: vec!["ai.video_generate".into()],
             purity: Purity::Impure,
             cooking_sensitivity: vec!["frame".into()],
@@ -381,13 +381,13 @@ fn build_api_video_generation_registrations(
                     default_value: Value::Int(2),
                     expose: vec![ParamExpose::Control],
                 },
-                ParamDef {
-                    name: "fps".into(),
-                    data_type: types::DataType::int(),
-                    constraint: Some(types::Constraint::range(1.0, 60.0)),
-                    default_value: Value::Int(12),
-                    expose: vec![ParamExpose::Control],
-                },
+                    ParamDef {
+                        name: "fps".into(),
+                        data_type: types::DataType::int(),
+                        constraint: Some(types::Constraint::range(0.0, 60.0)),
+                        default_value: Value::Int(0),
+                        expose: vec![ParamExpose::Control],
+                    },
                 ParamDef {
                     name: "width".into(),
                     data_type: types::DataType::int(),

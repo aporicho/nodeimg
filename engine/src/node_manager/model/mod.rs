@@ -12,7 +12,7 @@ pub use execution_policy::{
 };
 pub use exposed_pin::{ExposedPinDef, ExposedPinKind, ExposedPinSource};
 pub use inventory_entry::NodeDefEntry;
-pub use node_def::{ApiNodeMeta, ExecuteFn, ExecutorType, NodeDef};
+pub use node_def::{ApiNodeMeta, ExecuteFn, NodeDef};
 pub use node_source_kind::NodeSourceKind;
 pub use param_def::{ParamDef, ParamExpose};
 pub use pin_def::PinDef;

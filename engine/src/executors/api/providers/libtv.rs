@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::executors::api::provider::{placeholder_execute, Provider, ProviderRequest};
 use crate::executors::api::{ExecutionOutputs, ProviderFuture};
-use crate::node_manager::{ApiNodeMeta, ExecutorType, NodeDef, ParamDef, ParamExpose, PinDef};
+use crate::node_manager::{ApiNodeMeta, NodeDef, ParamDef, ParamExpose, PinDef};
 
 const API_BASE: &str = "https://api.liblib.tv";
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -353,7 +353,6 @@ impl Provider for LibTvProvider {
             source: crate::node_manager::NodeSourceKind::Api,
             name: "LibTV Image Gen".into(),
             category: "api/libtv".into(),
-            executor_type: ExecutorType::Api,
             requires: vec![],
             purity: crate::node_manager::Purity::Impure,
             cooking_sensitivity: vec![],
@@ -526,7 +525,6 @@ mod tests {
         let node = provider.nodes().remove(0);
 
         assert_eq!(node.type_id, "libtv.image_gen");
-        assert_eq!(node.executor_type, ExecutorType::Api);
         assert_eq!(
             node.api.as_ref().map(|meta| meta.provider_id.as_str()),
             Some("libtv")

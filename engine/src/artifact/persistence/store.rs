@@ -70,6 +70,7 @@ impl ArtifactStore {
             })?;
 
         let temp_path = record.path.with_file_name(format!(".{file_name}.tmp"));
+        self.ensure_parent_dir(&temp_path)?;
 
         handler.serialize(value, &temp_path)?;
         fs::rename(&temp_path, &record.path).map_err(|err| ArtifactError::StorageIo {

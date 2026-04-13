@@ -70,7 +70,7 @@ mod tests {
     use super::*;
     use crate::executors::api::provider::{placeholder_execute, Provider, ProviderRequest};
     use crate::executors::api::{ProviderFuture, ProviderRegistry};
-    use crate::node_manager::{ApiNodeMeta, ExecutorType, NodeDef};
+    use crate::node_manager::{ApiNodeMeta, NodeDef};
     use types::Value;
 
     struct EchoProvider;
@@ -107,8 +107,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Api,
             name: "Echo Image".into(),
             category: "test".into(),
-            executor_type: ExecutorType::Api,
-            requires: vec![],
+            requires: vec!["echo.image_gen".into()],
             purity: crate::node_manager::Purity::Impure,
             cooking_sensitivity: vec![],
             realtime_capable: false,

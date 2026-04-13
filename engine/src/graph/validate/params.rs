@@ -113,7 +113,7 @@ fn validate_file_path(value: &Value, constraint: &Constraint) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node_manager::{ExecutorType, NodeDef, NodeManager, ParamDef};
+    use crate::node_manager::{NodeDef, NodeManager, ParamDef};
     use types::{DataType, Value};
 
     fn make_manager() -> NodeManager {
@@ -124,8 +124,7 @@ mod tests {
             source: crate::node_manager::NodeSourceKind::Builtin,
             name: "test".into(),
             category: "test".into(),
-            executor_type: ExecutorType::Image,
-            requires: vec![],
+            requires: vec!["test.node".into()],
             purity: crate::node_manager::Purity::Pure,
             cooking_sensitivity: vec![],
             realtime_capable: true,

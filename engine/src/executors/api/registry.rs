@@ -31,7 +31,7 @@ mod tests {
     use super::*;
     use crate::executors::api::provider::{placeholder_execute, ProviderRequest};
     use crate::executors::api::ProviderFuture;
-    use crate::node_manager::{ExecutorType, NodeDef};
+    use crate::node_manager::NodeDef;
 
     struct TestProvider;
 
@@ -47,8 +47,7 @@ mod tests {
                 source: crate::node_manager::NodeSourceKind::Api,
                 name: "Test Node".into(),
                 category: "test".into(),
-                executor_type: ExecutorType::Api,
-                requires: vec![],
+                requires: vec!["test.run".into()],
                 purity: crate::node_manager::Purity::Impure,
                 cooking_sensitivity: vec![],
                 realtime_capable: false,

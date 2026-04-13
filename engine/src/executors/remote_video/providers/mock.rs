@@ -36,6 +36,10 @@ impl VideoGenerationProvider for MockVideoGenerationProvider {
         "Mock API"
     }
 
+    fn default_fps(&self, _model_id: &str) -> Option<u32> {
+        Some(8)
+    }
+
     fn models(&self, mode: VideoGenerationMode) -> Result<Vec<ModelInfo>, ExecutorError> {
         match mode {
             VideoGenerationMode::TextToVideo => Ok(vec![ModelInfo {

@@ -7,13 +7,6 @@ use types::Value;
 
 use super::{ExecutionPolicy, NodeSourceKind, ParamDef, PinDef, Purity};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ExecutorType {
-    Image,
-    Ai,
-    Api,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ApiNodeMeta {
     pub provider_id: String,
@@ -46,7 +39,6 @@ pub struct NodeDef {
     pub source: NodeSourceKind,
     pub name: String,
     pub category: String,
-    pub executor_type: ExecutorType,
     pub requires: Vec<CapabilityId>,
     pub purity: Purity,
     pub cooking_sensitivity: Vec<String>,

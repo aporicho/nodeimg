@@ -58,6 +58,9 @@ pub trait VideoGenerationProvider: Send + Sync {
     fn id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
     fn models(&self, mode: VideoGenerationMode) -> Result<Vec<ModelInfo>, ExecutorError>;
+    fn default_fps(&self, _model_id: &str) -> Option<u32> {
+        None
+    }
     fn param_schema(
         &self,
         query: ProviderSchemaQuery,

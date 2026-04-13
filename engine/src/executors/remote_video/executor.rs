@@ -38,6 +38,7 @@ pub struct RemoteVideoGenerationExecutor {
 struct CachedVideoAsset {
     video_path: PathBuf,
     frames_dir: PathBuf,
+    fps: Option<u32>,
 }
 
 impl RemoteVideoGenerationExecutor {
@@ -87,10 +88,21 @@ impl Executor for RemoteVideoGenerationExecutor {
                 .or_else(|_| required_string(&req.inputs, "model"))?;
             let prompt = required_string(&req.inputs, "prompt")?;
             let duration_seconds = required_int(&req.inputs, "duration_seconds")? as u32;
-            let fps = required_int(&req.inputs, "fps")? as u32;
+            let fps = optional_int(&req.inputs, "fps")
+                .filter(|fps| *fps > 0)
+                .map(|fps| fps as u32)
+                .or_else(|| provider.default_fps(&model_id))
+                .ok_or_else(|| ExecutorError::InvalidInput {
+                    message: format!(
+                        "provider '{provider_id}' does not expose a default fps and no positive fps was provided"
+                    ),
+                })?;
             let seed = required_int(&req.inputs, "seed").unwrap_or(0) as u64;
             let frame_count = duration_seconds.saturating_mul(fps).max(1);
             let frame_index = current_frame(&req.cooking_context);
+
+            let mut provider_inputs = req.inputs.clone();
+            provider_inputs.insert(String::from("fps"), Value::Int(fps as i64));
 
             let key = GenerationKey {
                 provider_id: provider_id.clone(),
@@ -118,19 +130,24 @@ impl Executor for RemoteVideoGenerationExecutor {
                 let video_path = self.cache_dir.join(format!("{key_hash}.mp4"));
                 let frames_dir = self.cache_dir.join(format!("{key_hash}_frames"));
                 let asset = if video_path.exists() {
-                    Arc::new(CachedVideoAsset { video_path, frames_dir })
+                    Arc::new(CachedVideoAsset {
+                        video_path,
+                        frames_dir,
+                        fps: Some(fps),
+                    })
                 } else {
                     let generated = provider.generate(
                         VideoGenerationRequest {
                             model_id,
                             prompt,
-                            inputs: req.inputs.clone(),
+                            inputs: provider_inputs,
                         },
                         video_path,
                     ).await?;
                     Arc::new(CachedVideoAsset {
                         video_path: generated.video_path,
                         frames_dir,
+                        fps: generated.fps,
                     })
                 };
 
@@ -150,7 +167,7 @@ impl Executor for RemoteVideoGenerationExecutor {
             )?;
 
             let image = load_frame(&animation.frames_dir, frame_index)?;
-            let output_fps = optional_int(&req.inputs, "fps").unwrap_or(fps as i64);
+            let output_fps = animation.fps.unwrap_or(fps) as i64;
 
             Ok(ExecutionOutputs::full(HashMap::from([
                 (
