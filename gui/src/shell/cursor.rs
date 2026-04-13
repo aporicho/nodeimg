@@ -13,7 +13,7 @@ pub enum CursorStyle {
     ResizeNE,
     ResizeSW,
     ResizeSE,
-    Pointer,  // 手形，用于可点击元素
+    Pointer, // 手形，用于可点击元素
 }
 
 impl CursorStyle {

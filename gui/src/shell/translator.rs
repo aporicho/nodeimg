@@ -42,12 +42,18 @@ impl EventTranslator {
             WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = self.logical_cursor();
                 match delta {
-                    MouseScrollDelta::LineDelta(dx, dy) => {
-                        Some(AppEvent::ScrollLine { x, y, delta_x: *dx, delta_y: *dy })
-                    }
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        Some(AppEvent::ScrollPixel { x, y, delta_x: pos.x as f32, delta_y: pos.y as f32 })
-                    }
+                    MouseScrollDelta::LineDelta(dx, dy) => Some(AppEvent::ScrollLine {
+                        x,
+                        y,
+                        delta_x: *dx,
+                        delta_y: *dy,
+                    }),
+                    MouseScrollDelta::PixelDelta(pos) => Some(AppEvent::ScrollPixel {
+                        x,
+                        y,
+                        delta_x: pos.x as f32,
+                        delta_y: pos.y as f32,
+                    }),
                 }
             }
 
@@ -65,8 +71,14 @@ impl EventTranslator {
             WindowEvent::KeyboardInput { event, .. } => {
                 let key = translate_key(event);
                 match event.state {
-                    ElementState::Pressed => Some(AppEvent::KeyPress { key, modifiers: self.modifiers }),
-                    ElementState::Released => Some(AppEvent::KeyRelease { key, modifiers: self.modifiers }),
+                    ElementState::Pressed => Some(AppEvent::KeyPress {
+                        key,
+                        modifiers: self.modifiers,
+                    }),
+                    ElementState::Released => Some(AppEvent::KeyRelease {
+                        key,
+                        modifiers: self.modifiers,
+                    }),
                 }
             }
             WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
@@ -74,22 +86,33 @@ impl EventTranslator {
             }
 
             // ── 窗口 ──
-            WindowEvent::Resized(size) => {
-                Some(AppEvent::Resized { width: size.width, height: size.height })
-            }
+            WindowEvent::Resized(size) => Some(AppEvent::Resized {
+                width: size.width,
+                height: size.height,
+            }),
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale_factor = *scale_factor;
-                Some(AppEvent::ScaleFactorChanged { scale_factor: *scale_factor })
+                Some(AppEvent::ScaleFactorChanged {
+                    scale_factor: *scale_factor,
+                })
             }
             WindowEvent::CloseRequested => Some(AppEvent::CloseRequested),
             WindowEvent::Focused(focused) => {
-                if *focused { Some(AppEvent::Focused) } else { Some(AppEvent::Unfocused) }
+                if *focused {
+                    Some(AppEvent::Focused)
+                } else {
+                    Some(AppEvent::Unfocused)
+                }
             }
 
             // ── 触控板手势 ──
             WindowEvent::PinchGesture { delta, .. } => {
                 let (x, y) = self.logical_cursor();
-                Some(AppEvent::PinchZoom { x, y, delta: *delta as f32 })
+                Some(AppEvent::PinchZoom {
+                    x,
+                    y,
+                    delta: *delta as f32,
+                })
             }
 
             _ => None,

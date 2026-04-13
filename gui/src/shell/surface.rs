@@ -2,10 +2,7 @@ use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-pub fn create_surface(
-    instance: &wgpu::Instance,
-    window: Arc<Window>,
-) -> wgpu::Surface<'static> {
+pub fn create_surface(instance: &wgpu::Instance, window: Arc<Window>) -> wgpu::Surface<'static> {
     instance
         .create_surface(window)
         .expect("failed to create surface")

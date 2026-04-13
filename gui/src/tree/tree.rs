@@ -1,13 +1,13 @@
-use crate::widget::node::{NodeId, PanelNode};
+use super::node::{NodeId, PanelNode};
 
-/// 面板树存储。用 Vec<Option<>> 做 arena，索引访问。
-pub struct PanelTree {
+/// 全局控件树存储。用 Vec<Option<>> 做 arena，索引访问。
+pub struct Tree {
     nodes: Vec<Option<PanelNode>>,
     root: Option<NodeId>,
     free: Vec<NodeId>,
 }
 
-impl PanelTree {
+impl Tree {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),

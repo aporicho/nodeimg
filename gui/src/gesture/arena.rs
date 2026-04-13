@@ -10,19 +10,32 @@ pub struct GestureArena {
 
 impl GestureArena {
     pub fn new(target_id: String) -> Self {
-        Self { members: Vec::new(), target_id, resolved: false, winner_action: None }
+        Self {
+            members: Vec::new(),
+            target_id,
+            resolved: false,
+            winner_action: None,
+        }
     }
 
-    pub fn target_id(&self) -> &str { &self.target_id }
-    pub fn is_empty(&self) -> bool { self.members.is_empty() }
-    pub fn is_resolved(&self) -> bool { self.resolved }
+    pub fn target_id(&self) -> &str {
+        &self.target_id
+    }
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+    pub fn is_resolved(&self) -> bool {
+        self.resolved
+    }
 
     pub fn add(&mut self, recognizer: Box<dyn GestureRecognizer>) {
         self.members.push(recognizer);
     }
 
     pub fn pointer_move(&mut self, x: f32, y: f32) -> Option<Action> {
-        if self.resolved { return None; }
+        if self.resolved {
+            return None;
+        }
 
         // 已有赢家持续产出 Action
         if self.winner_action.is_some() {
@@ -45,7 +58,10 @@ impl GestureArena {
                     self.members[i].reject();
                     self.members.remove(i);
                 }
-                GestureDisposition::Accepted => { accepted_idx = Some(i); break; }
+                GestureDisposition::Accepted => {
+                    accepted_idx = Some(i);
+                    break;
+                }
                 GestureDisposition::Pending => {}
             }
         }
@@ -57,7 +73,9 @@ impl GestureArena {
     }
 
     pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<Action> {
-        if self.resolved { return None; }
+        if self.resolved {
+            return None;
+        }
 
         if self.winner_action.is_some() {
             if let Some(member) = self.members.first_mut() {
@@ -79,7 +97,10 @@ impl GestureArena {
                     self.members[i].reject();
                     self.members.remove(i);
                 }
-                GestureDisposition::Accepted => { accepted_idx = Some(i); break; }
+                GestureDisposition::Accepted => {
+                    accepted_idx = Some(i);
+                    break;
+                }
                 GestureDisposition::Pending => {}
             }
         }
@@ -95,13 +116,17 @@ impl GestureArena {
             return Some(action);
         }
 
-        if self.members.is_empty() { self.resolved = true; }
+        if self.members.is_empty() {
+            self.resolved = true;
+        }
         None
     }
 
     fn resolve_winner(&mut self, winner_idx: usize) -> Action {
         for (i, member) in self.members.iter_mut().enumerate() {
-            if i != winner_idx { member.reject(); }
+            if i != winner_idx {
+                member.reject();
+            }
         }
         let winner = self.members.swap_remove(winner_idx);
         self.members.clear();

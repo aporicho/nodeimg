@@ -104,7 +104,7 @@ pub enum Position {
 pub struct Transform {
     pub translate: [f32; 2],
     pub scale: f32,
-    pub rotate: f32,  // 弧度
+    pub rotate: f32, // 弧度
 }
 
 impl Default for Transform {
@@ -127,18 +127,37 @@ pub struct Edges {
 }
 
 impl Edges {
-    pub const ZERO: Self = Self { top: 0.0, right: 0.0, bottom: 0.0, left: 0.0 };
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    };
 
     pub fn all(v: f32) -> Self {
-        Self { top: v, right: v, bottom: v, left: v }
+        Self {
+            top: v,
+            right: v,
+            bottom: v,
+            left: v,
+        }
     }
 
     pub fn symmetric(vertical: f32, horizontal: f32) -> Self {
-        Self { top: vertical, right: horizontal, bottom: vertical, left: horizontal }
+        Self {
+            top: vertical,
+            right: horizontal,
+            bottom: vertical,
+            left: horizontal,
+        }
     }
 
-    pub fn horizontal(&self) -> f32 { self.left + self.right }
-    pub fn vertical(&self) -> f32 { self.top + self.bottom }
+    pub fn horizontal(&self) -> f32 {
+        self.left + self.right
+    }
+    pub fn vertical(&self) -> f32 {
+        self.top + self.bottom
+    }
 }
 
 /// 尺寸
@@ -216,7 +235,6 @@ pub trait LayoutTree {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LeafKind {
     // ── 基础文本/图像 ──
-
     /// 文本图元。尺寸在 resolve 阶段由 TextMeasurer 解析，创建时使用 Size::Auto。
     Text {
         content: String,
@@ -236,7 +254,6 @@ pub enum LeafKind {
     },
 
     // ── 几何图形 ──
-
     /// 圆形（端口圆点、单选按钮、状态点等）。
     Circle {
         radius: f32,
@@ -260,7 +277,6 @@ pub enum LeafKind {
     Path,
 
     // ── 应用特化 ──
-
     /// 画布背景点阵。
     Grid {
         spacing: f32,
@@ -274,7 +290,6 @@ pub enum LeafKind {
     },
 
     // ── 逃生舱 ──
-
     /// 自定义绘制回调（直方图、色盘、波形图等）。
     CustomPaint(CustomPaintFn),
 }

@@ -7,5 +7,9 @@ pub fn create_window(event_loop: &ActiveEventLoop) -> Arc<Window> {
         .with_title("nodeimg")
         .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0));
 
-    Arc::new(event_loop.create_window(attrs).expect("failed to create window"))
+    Arc::new(
+        event_loop
+            .create_window(attrs)
+            .expect("failed to create window"),
+    )
 }

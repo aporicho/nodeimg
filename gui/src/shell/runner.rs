@@ -42,7 +42,12 @@ impl<A: App> ApplicationHandler for Runner<A> {
 
         let size = win.inner_size();
         let scale_factor = win.scale_factor();
-        tracing::info!("Window: {}x{}, scale_factor: {}", size.width, size.height, scale_factor);
+        tracing::info!(
+            "Window: {}x{}, scale_factor: {}",
+            size.width,
+            size.height,
+            scale_factor
+        );
         let surface_config = surface::configure(&surf, &adapter, &device, size);
 
         let renderer = Renderer::new(&device, &queue, surface_config.format, size);
@@ -115,9 +120,13 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
-            state.renderer.begin_frame(view, state.ctx.size, state.ctx.scale_factor);
+            state
+                .renderer
+                .begin_frame(view, state.ctx.size, state.ctx.scale_factor);
             state.app.render(&mut state.renderer, &state.ctx);
-            state.renderer.end_frame(&state.ctx.device, &state.ctx.queue);
+            state
+                .renderer
+                .end_frame(&state.ctx.device, &state.ctx.queue);
 
             output.present();
         }

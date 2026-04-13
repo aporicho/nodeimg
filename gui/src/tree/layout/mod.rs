@@ -1,4 +1,5 @@
 mod arrange;
+#[allow(clippy::module_inception)]
 mod layout;
 mod measure;
 mod types;

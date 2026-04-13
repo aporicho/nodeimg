@@ -20,7 +20,10 @@ impl BlurPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let bind_group_layout = Self::create_bind_group_layout(device);
         let pipeline = Self::create_pipeline(device, &bind_group_layout);
-        Self { pipeline, bind_group_layout }
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
     }
 
     pub fn run(
@@ -78,7 +81,10 @@ impl BlurPipeline {
         pass.dispatch_workgroups(workgroups_x, workgroups_y, 1);
     }
 
-    fn create_pipeline(device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> wgpu::ComputePipeline {
+    fn create_pipeline(
+        device: &wgpu::Device,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::ComputePipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gaussian_blur_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/gaussian_blur.wgsl").into()),

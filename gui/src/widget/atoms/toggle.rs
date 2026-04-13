@@ -1,7 +1,7 @@
+use crate::widget::props::{WidgetBuild, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-use crate::widget::props::{WidgetBuild, WidgetProps};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToggleProps {
@@ -11,28 +11,63 @@ pub struct ToggleProps {
 }
 
 impl WidgetProps for ToggleProps {
-    fn widget_type(&self) -> &'static str { "Toggle" }
-    fn as_any(&self) -> &dyn Any { self }
-    fn clone_box(&self) -> Box<dyn WidgetProps> { Box::new(self.clone()) }
+    fn widget_type(&self) -> &'static str {
+        "Toggle"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn WidgetProps> {
+        Box::new(self.clone())
+    }
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other.as_any().downcast_ref::<Self>().map_or(false, |o| self == o)
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |o| self == o)
     }
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str) -> WidgetBuild {
-        use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, Justify, Edges, LeafKind};
         use crate::renderer::Color;
+        use crate::tree::layout::{
+            Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size,
+        };
+        use crate::tree::Desc;
 
         // shadcn 色系
-        let white = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-        let off_bg = Color { r: 0.831, g: 0.831, b: 0.847, a: 1.0 };  // zinc-300
-        let on_bg = Color { r: 0.231, g: 0.510, b: 0.965, a: 1.0 };   // blue-500
-        let label_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };  // zinc-900
+        let white = Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        let off_bg = Color {
+            r: 0.831,
+            g: 0.831,
+            b: 0.847,
+            a: 1.0,
+        }; // zinc-300
+        let on_bg = Color {
+            r: 0.231,
+            g: 0.510,
+            b: 0.965,
+            a: 1.0,
+        }; // blue-500
+        let label_color = Color {
+            r: 0.094,
+            g: 0.094,
+            b: 0.106,
+            a: 1.0,
+        }; // zinc-900
 
         let track_bg = if self.value { on_bg } else { off_bg };
-        let thumb_justify = if self.value { Justify::End } else { Justify::Start };
+        let thumb_justify = if self.value {
+            Justify::End
+        } else {
+            Justify::Start
+        };
 
         WidgetBuild {
             style: BoxStyle {

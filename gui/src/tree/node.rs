@@ -1,7 +1,7 @@
-use std::borrow::Cow;
-use crate::widget::layout::{BoxStyle, Decoration, LeafKind};
-use crate::widget::props::WidgetProps;
+use super::layout::{BoxStyle, Decoration, LeafKind};
 use crate::renderer::Rect;
+use crate::widget::props::WidgetProps;
+use std::borrow::Cow;
 
 pub type NodeId = usize;
 
@@ -24,7 +24,12 @@ pub struct PanelNode {
 }
 
 impl PanelNode {
-    pub fn props_match(&self, style: &BoxStyle, decoration: &Option<Decoration>, kind: &NodeKind) -> bool {
+    pub fn props_match(
+        &self,
+        style: &BoxStyle,
+        decoration: &Option<Decoration>,
+        kind: &NodeKind,
+    ) -> bool {
         self.style == *style && self.decoration == *decoration && self.kind == *kind
     }
 }

@@ -97,7 +97,13 @@ impl Renderer {
         Self {
             shared_viewport: SharedViewport::new(device),
             quad_pipeline: QuadPipeline::new(device, format, ms),
-            text_pipeline: TextPipeline::new(device, queue, format, ms, &mut text_measurer.font_system),
+            text_pipeline: TextPipeline::new(
+                device,
+                queue,
+                format,
+                ms,
+                &mut text_measurer.font_system,
+            ),
             text_measurer,
             image_pipeline: ImagePipeline::new(device, format, ms),
             circle_pipeline: CirclePipeline::new(device, format, ms),
@@ -126,10 +132,19 @@ impl Renderer {
         self.clear_color = color;
     }
 
-    pub fn begin_frame(&mut self, view: wgpu::TextureView, size: PhysicalSize<u32>, scale_factor: f64) {
+    pub fn begin_frame(
+        &mut self,
+        view: wgpu::TextureView,
+        size: PhysicalSize<u32>,
+        scale_factor: f64,
+    ) {
         self.commands.clear();
         self.stencil.reset();
-        self.frame = Some(FrameState { view, size, scale_factor });
+        self.frame = Some(FrameState {
+            view,
+            size,
+            scale_factor,
+        });
     }
 
     pub fn measure_text(&mut self, text: &str, size: f32) -> (f32, f32) {
