@@ -5,8 +5,18 @@ use super::camera::Camera;
 // zinc 色系（shadcn 风格）
 const GRID_SPACING: f32 = 24.0;
 const DOT_RADIUS: f32 = 1.0;
-const DOT_COLOR: Color = Color { r: 0.831, g: 0.831, b: 0.847, a: 1.0 }; // zinc-300 #d4d4d8
-const BG_COLOR: Color = Color { r: 0.980, g: 0.980, b: 0.980, a: 1.0 }; // zinc-50 #fafafa
+const DOT_COLOR: Color = Color {
+    r: 0.831,
+    g: 0.831,
+    b: 0.847,
+    a: 1.0,
+}; // zinc-300 #d4d4d8
+const BG_COLOR: Color = Color {
+    r: 0.980,
+    g: 0.980,
+    b: 0.980,
+    a: 1.0,
+}; // zinc-50 #fafafa
 const MIN_SCREEN_SPACING: f32 = 4.0;
 
 pub fn render(renderer: &mut Renderer, camera: &Camera, viewport_w: f32, viewport_h: f32) {

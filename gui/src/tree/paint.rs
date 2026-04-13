@@ -1,23 +1,30 @@
 use super::layout::LeafKind;
 use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{
-    bezier_control_points, find_node_by_str_id, grid_cells, rect_center_left,
-    rect_center_right, PaintTransform,
+    bezier_control_points, find_node_by_str_id, grid_cells, rect_center_left, rect_center_right,
+    PaintTransform,
 };
 use super::tree::Tree;
-use crate::renderer::{Color, Point, Renderer, RectStyle, TextStyle};
+use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
 
 /// 连线宽度（local 空间像素，paint 时按 scale 缩放）
 const CONNECTION_WIDTH: f32 = 2.0;
 /// 连线颜色（中性灰）
-const CONNECTION_COLOR: Color = Color { r: 0.55, g: 0.58, b: 0.65, a: 1.0 };
+const CONNECTION_COLOR: Color = Color {
+    r: 0.55,
+    g: 0.58,
+    b: 0.65,
+    a: 1.0,
+};
 
 pub fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer) {
     paint_node(tree, root, renderer, PaintTransform::identity());
 }
 
 fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer, tf: PaintTransform) {
-    let Some(node) = tree.get(node_id) else { return };
+    let Some(node) = tree.get(node_id) else {
+        return;
+    };
 
     let screen_rect = tf.apply_rect(node.rect);
 
@@ -37,14 +44,28 @@ fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer, tf: PaintTr
     // 2. Leaf 分发
     if let NodeKind::Leaf(leaf) = &node.kind {
         match leaf {
-            LeafKind::Text { content, font_size, color } => {
+            LeafKind::Text {
+                content,
+                font_size,
+                color,
+            } => {
                 renderer.draw_text(
-                    Point { x: screen_rect.x, y: screen_rect.y },
+                    Point {
+                        x: screen_rect.x,
+                        y: screen_rect.y,
+                    },
                     content,
-                    &TextStyle { color: *color, size: *font_size * tf.scale },
+                    &TextStyle {
+                        color: *color,
+                        size: *font_size * tf.scale,
+                    },
                 );
             }
-            LeafKind::Grid { spacing, dot_color, dot_size } => {
+            LeafKind::Grid {
+                spacing,
+                dot_color,
+                dot_size,
+            } => {
                 for p in grid_cells(node.rect, *spacing) {
                     let sp = tf.apply_point(p);
                     renderer.draw_circle(sp, *dot_size * tf.scale, *dot_color);

@@ -1,21 +1,49 @@
+use crate::gesture::Gesture;
+use crate::renderer::{Border, Color};
+use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
+use crate::tree::Desc;
+use crate::widget::props::{WidgetBuild, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-use crate::gesture::Gesture;
-use crate::renderer::{Border, Color};
-use crate::tree::Desc;
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
-use crate::widget::props::{WidgetBuild, WidgetProps};
 
 /// 标题栏固定高度（像素）
 pub const TITLE_BAR_HEIGHT: f32 = 32.0;
 
 // 占位装饰（C.7 接主题系统后替换）
-fn frame_bg()     -> Color { Color { r: 0.133, g: 0.145, b: 0.196, a: 1.0 } }
-fn frame_border() -> Color { Color { r: 0.263, g: 0.278, b: 0.333, a: 1.0 } }
-fn titlebar_bg()  -> Color { Color { r: 0.180, g: 0.196, b: 0.255, a: 1.0 } }
-fn title_color()  -> Color { Color { r: 0.902, g: 0.910, b: 0.941, a: 1.0 } }
-const FRAME_RADIUS:    f32 = 6.0;
+fn frame_bg() -> Color {
+    Color {
+        r: 0.133,
+        g: 0.145,
+        b: 0.196,
+        a: 1.0,
+    }
+}
+fn frame_border() -> Color {
+    Color {
+        r: 0.263,
+        g: 0.278,
+        b: 0.333,
+        a: 1.0,
+    }
+}
+fn titlebar_bg() -> Color {
+    Color {
+        r: 0.180,
+        g: 0.196,
+        b: 0.255,
+        a: 1.0,
+    }
+}
+fn title_color() -> Color {
+    Color {
+        r: 0.902,
+        g: 0.910,
+        b: 0.941,
+        a: 1.0,
+    }
+}
+const FRAME_RADIUS: f32 = 6.0;
 const TITLE_FONT_SIZE: f32 = 13.0;
 
 /// Panel widget 的 props。
@@ -48,7 +76,12 @@ impl Clone for PanelProps {
 
 fn desc_clone(d: &Desc) -> Desc {
     match d {
-        Desc::Container { id, style, decoration, children } => Desc::Container {
+        Desc::Container {
+            id,
+            style,
+            decoration,
+            children,
+        } => Desc::Container {
             id: id.clone(),
             style: style.clone(),
             decoration: decoration.clone(),
@@ -94,17 +127,14 @@ impl WidgetProps for PanelProps {
     }
 
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|o| {
-                self.id == o.id
-                    && self.title == o.title
-                    && self.x == o.x
-                    && self.y == o.y
-                    && self.w == o.w
-                    && self.h == o.h
-            })
+        other.as_any().downcast_ref::<Self>().is_some_and(|o| {
+            self.id == o.id
+                && self.title == o.title
+                && self.x == o.x
+                && self.y == o.y
+                && self.w == o.w
+                && self.h == o.h
+        })
     }
 
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -128,21 +158,19 @@ impl WidgetProps for PanelProps {
                 radius: [FRAME_RADIUS, FRAME_RADIUS, 0.0, 0.0],
                 shadow: None,
             }),
-            children: vec![
-                Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::title")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: self.title.to_string(),
-                        font_size: TITLE_FONT_SIZE,
-                        color: title_color(),
-                    },
+            children: vec![Desc::Leaf {
+                id: Cow::Owned(format!("{id}::title")),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
                 },
-            ],
+                kind: LeafKind::Text {
+                    content: self.title.to_string(),
+                    font_size: TITLE_FONT_SIZE,
+                    color: title_color(),
+                },
+            }],
         };
 
         // 内容区（透明，事件穿透到子控件）
@@ -159,7 +187,10 @@ impl WidgetProps for PanelProps {
 
         WidgetBuild {
             style: BoxStyle {
-                position: Position::Absolute { x: self.x, y: self.y },
+                position: Position::Absolute {
+                    x: self.x,
+                    y: self.y,
+                },
                 width: Size::Fixed(self.w),
                 height: Size::Fixed(self.h),
                 direction: Direction::Column,
@@ -218,7 +249,12 @@ mod tests {
         layout(
             &mut tree,
             root,
-            Rect { x: 0.0, y: 0.0, w: 1000.0, h: 1000.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 1000.0,
+                h: 1000.0,
+            },
             &mut no_measure,
         );
 
@@ -277,7 +313,11 @@ mod tests {
     #[test]
     fn build_children_count_is_two() {
         let build = sample_props().build("test");
-        assert_eq!(build.children.len(), 2, "panel should have titlebar + content");
+        assert_eq!(
+            build.children.len(),
+            2,
+            "panel should have titlebar + content"
+        );
     }
 
     #[test]
@@ -291,7 +331,10 @@ mod tests {
                     other => panic!("expected Fixed titlebar height, got {:?}", other),
                 }
             }
-            other => panic!("first child should be Container, got {}", desc_variant_name(other)),
+            other => panic!(
+                "first child should be Container, got {}",
+                desc_variant_name(other)
+            ),
         }
     }
 
@@ -300,39 +343,59 @@ mod tests {
         let build = sample_props().build("test");
         let titlebar_children = match &build.children[0] {
             Desc::Container { children, .. } => children,
-            other => panic!("first child should be Container, got {}", desc_variant_name(other)),
+            other => panic!(
+                "first child should be Container, got {}",
+                desc_variant_name(other)
+            ),
         };
         assert_eq!(titlebar_children.len(), 1);
         match &titlebar_children[0] {
-            Desc::Leaf { kind: LeafKind::Text { content, .. }, .. } => {
+            Desc::Leaf {
+                kind: LeafKind::Text { content, .. },
+                ..
+            } => {
                 assert_eq!(content, "Title");
             }
-            other => panic!("titlebar child should be Text leaf, got {}", desc_variant_name(other)),
+            other => panic!(
+                "titlebar child should be Text leaf, got {}",
+                desc_variant_name(other)
+            ),
         }
     }
 
     #[test]
     fn build_content_flex_grow_holds_user_children() {
         let mut props = sample_props();
-        props.content = vec![
-            Desc::Leaf {
-                id: Cow::Borrowed("user_child"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "inner".to_string(),
-                    font_size: 12.0,
-                    color: Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+        props.content = vec![Desc::Leaf {
+            id: Cow::Borrowed("user_child"),
+            style: BoxStyle::default(),
+            kind: LeafKind::Text {
+                content: "inner".to_string(),
+                font_size: 12.0,
+                color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
                 },
-            }
-        ];
+            },
+        }];
         let build = props.build("test");
         match &build.children[1] {
-            Desc::Container { style, decoration, children, .. } => {
+            Desc::Container {
+                style,
+                decoration,
+                children,
+                ..
+            } => {
                 assert_eq!(style.flex_grow, 1.0);
                 assert!(decoration.is_none(), "content area should be transparent");
                 assert_eq!(children.len(), 1);
             }
-            other => panic!("second child should be Container, got {}", desc_variant_name(other)),
+            other => panic!(
+                "second child should be Container, got {}",
+                desc_variant_name(other)
+            ),
         }
     }
 
@@ -380,7 +443,10 @@ mod tests {
                 .map(|n| n.style.gestures.contains(&Gesture::Drag))
                 .unwrap_or(false)
         });
-        assert!(has_drag, "hit chain should contain a node with Drag gesture");
+        assert!(
+            has_drag,
+            "hit chain should contain a node with Drag gesture"
+        );
     }
 
     #[test]
@@ -394,6 +460,9 @@ mod tests {
                 .map(|n| n.style.gestures.contains(&Gesture::Resize))
                 .unwrap_or(false)
         });
-        assert!(has_resize, "hit chain should contain a node with Resize gesture");
+        assert!(
+            has_resize,
+            "hit chain should contain a node with Resize gesture"
+        );
     }
 }

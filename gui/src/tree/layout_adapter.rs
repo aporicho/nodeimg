@@ -11,7 +11,9 @@ impl LayoutTree for Tree {
     }
 
     fn children(&self, node: NodeId) -> Vec<NodeId> {
-        self.get(node).map(|n| n.children.clone()).unwrap_or_default()
+        self.get(node)
+            .map(|n| n.children.clone())
+            .unwrap_or_default()
     }
 
     fn set_rect(&mut self, node: NodeId, rect: Rect) {
@@ -32,7 +34,9 @@ impl LayoutTree for Tree {
 
     fn text_content(&self, node: NodeId) -> Option<(&str, f32)> {
         match &self.get(node)?.kind {
-            NodeKind::Leaf(LeafKind::Text { content, font_size, .. }) => Some((content, *font_size)),
+            NodeKind::Leaf(LeafKind::Text {
+                content, font_size, ..
+            }) => Some((content, *font_size)),
             _ => None,
         }
     }

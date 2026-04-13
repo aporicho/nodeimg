@@ -1,63 +1,242 @@
 use std::borrow::Cow;
 use std::time::Instant;
 
+use gui::canvas::camera::Camera;
+use gui::canvas::pan::PanState;
 use gui::context::Context;
-use gui::gesture::{GestureArena, TapRecognizer, DragRecognizer, GestureRecognizer};
+use gui::gesture::{arena_from_hit_chain, Gesture, GestureArena};
+use gui::renderer::{Color, Rect, Renderer};
+use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
+use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
+use gui::tree::Desc;
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
-use gui::tree::layout::{BoxStyle, Direction};
-use gui::panel::{PanelFrame, ResizeEdge, apply_drag_move, apply_resize, detect_edge, hit_test_panel};
-use gui::tree::Desc;
-use gui::renderer::{Rect, Renderer};
-use gui::shell::{App, AppContext, AppEvent, MouseButton};
+use gui::widget::frameworks::panel::PanelProps;
+use gui::widget::resize_edge::ResizeEdge;
 
-const PADDING: f32 = 16.0;
+const GRID_SPACING: f32 = 20.0;
+const GRID_DOT_SIZE: f32 = 1.5;
+const PANEL_ID: &str = "demo_panel";
 
-fn build_view(_active: Option<&str>, slider_value: f32) -> Desc {
-    Desc::Container {
-        id: Cow::Borrowed("__root"),
-        style: BoxStyle {
-            direction: Direction::Column,
-            gap: 8.0,
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children: vec![
-            Desc::Widget {
-                id: Cow::Borrowed("btn_a"),
-                props: Box::new(ButtonProps { label: "Button A".into(), icon: None, disabled: false }),
-            },
-            Desc::Widget {
-                id: Cow::Borrowed("btn_b"),
-                props: Box::new(ButtonProps { label: "Button B".into(), icon: None, disabled: false }),
-            },
-            Desc::Widget {
-                id: Cow::Borrowed("slider_radius"),
-                props: Box::new(SliderProps { label: "Radius".into(), min: 0.0, max: 10.0, step: 0.1, value: slider_value, disabled: false }),
-            },
-        ],
+#[derive(Debug, Clone, Copy)]
+struct PanelState {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    min_w: f32,
+    min_h: f32,
+}
+
+impl PanelState {
+    fn new() -> Self {
+        Self {
+            x: 100.0,
+            y: 100.0,
+            w: 300.0,
+            h: 200.0,
+            min_w: 120.0,
+            min_h: 80.0,
+        }
+    }
+
+    fn apply_drag(&mut self, x: f32, y: f32, last_x: f32, last_y: f32) {
+        self.x += x - last_x;
+        self.y += y - last_y;
+    }
+
+    fn apply_resize(&mut self, edge: ResizeEdge, x: f32, y: f32, last_x: f32, last_y: f32) {
+        let dx = x - last_x;
+        let dy = y - last_y;
+
+        match edge {
+            ResizeEdge::Right => {
+                self.w = (self.w + dx).max(self.min_w);
+            }
+            ResizeEdge::Bottom => {
+                self.h = (self.h + dy).max(self.min_h);
+            }
+            ResizeEdge::Left => {
+                let new_w = (self.w - dx).max(self.min_w);
+                self.x += self.w - new_w;
+                self.w = new_w;
+            }
+            ResizeEdge::Top => {
+                let new_h = (self.h - dy).max(self.min_h);
+                self.y += self.h - new_h;
+                self.h = new_h;
+            }
+            ResizeEdge::TopLeft => {
+                let new_w = (self.w - dx).max(self.min_w);
+                let new_h = (self.h - dy).max(self.min_h);
+                self.x += self.w - new_w;
+                self.y += self.h - new_h;
+                self.w = new_w;
+                self.h = new_h;
+            }
+            ResizeEdge::TopRight => {
+                self.w = (self.w + dx).max(self.min_w);
+                let new_h = (self.h - dy).max(self.min_h);
+                self.y += self.h - new_h;
+                self.h = new_h;
+            }
+            ResizeEdge::BottomLeft => {
+                let new_w = (self.w - dx).max(self.min_w);
+                self.x += self.w - new_w;
+                self.w = new_w;
+                self.h = (self.h + dy).max(self.min_h);
+            }
+            ResizeEdge::BottomRight => {
+                self.w = (self.w + dx).max(self.min_w);
+                self.h = (self.h + dy).max(self.min_h);
+            }
+        }
     }
 }
 
-struct PanelInteraction {
-    drag_panel: Option<&'static str>,
-    resize_panel: Option<&'static str>,
-    resize_edge: Option<ResizeEdge>,
+#[derive(Debug, Clone, Copy)]
+struct PointerSession {
     last_x: f32,
     last_y: f32,
 }
 
-impl PanelInteraction {
-    fn new() -> Self {
-        Self { drag_panel: None, resize_panel: None, resize_edge: None, last_x: 0.0, last_y: 0.0 }
+impl PointerSession {
+    fn new(x: f32, y: f32) -> Self {
+        Self {
+            last_x: x,
+            last_y: y,
+        }
+    }
+}
+
+fn build_panel_content(slider_value: f32) -> Vec<Desc> {
+    vec![
+        Desc::Widget {
+            id: Cow::Borrowed("btn_a"),
+            props: Box::new(ButtonProps {
+                label: "Button A".into(),
+                icon: None,
+                disabled: false,
+            }),
+        },
+        Desc::Widget {
+            id: Cow::Borrowed("btn_b"),
+            props: Box::new(ButtonProps {
+                label: "Button B".into(),
+                icon: None,
+                disabled: false,
+            }),
+        },
+        Desc::Widget {
+            id: Cow::Borrowed("slider_radius"),
+            props: Box::new(SliderProps {
+                label: "Radius".into(),
+                min: 0.0,
+                max: 10.0,
+                step: 0.1,
+                value: slider_value,
+                disabled: false,
+            }),
+        },
+    ]
+}
+
+fn build_demo_tree(viewport: Rect, camera: &Camera, panel: PanelState, slider_value: f32) -> Desc {
+    let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
+    let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
+    let grid_x = canvas_min_x.floor() - GRID_SPACING * 2.0;
+    let grid_y = canvas_min_y.floor() - GRID_SPACING * 2.0;
+    let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
+    let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
+
+    Desc::Container {
+        id: Cow::Borrowed("root"),
+        style: BoxStyle {
+            width: Size::Fixed(viewport.w),
+            height: Size::Fixed(viewport.h),
+            ..BoxStyle::default()
+        },
+        decoration: Some(Decoration {
+            background: Some(Color {
+                r: 0.071,
+                g: 0.078,
+                b: 0.098,
+                a: 1.0,
+            }),
+            border: None,
+            radius: [0.0; 4],
+            shadow: None,
+        }),
+        children: vec![
+            Desc::Container {
+                id: Cow::Borrowed("canvas_root"),
+                style: BoxStyle {
+                    width: Size::Fixed(viewport.w),
+                    height: Size::Fixed(viewport.h),
+                    transform: Some(Transform {
+                        translate: [camera.x, camera.y],
+                        scale: camera.zoom,
+                        rotate: 0.0,
+                    }),
+                    ..BoxStyle::default()
+                },
+                decoration: None,
+                children: vec![Desc::Leaf {
+                    id: Cow::Borrowed("canvas_grid"),
+                    style: BoxStyle {
+                        position: Position::Absolute {
+                            x: grid_x,
+                            y: grid_y,
+                        },
+                        width: Size::Fixed(grid_w.max(GRID_SPACING)),
+                        height: Size::Fixed(grid_h.max(GRID_SPACING)),
+                        ..BoxStyle::default()
+                    },
+                    kind: LeafKind::Grid {
+                        spacing: GRID_SPACING,
+                        dot_color: Color {
+                            r: 0.224,
+                            g: 0.235,
+                            b: 0.278,
+                            a: 1.0,
+                        },
+                        dot_size: GRID_DOT_SIZE,
+                    },
+                }],
+            },
+            Desc::Container {
+                id: Cow::Borrowed("panel_root"),
+                style: BoxStyle {
+                    width: Size::Fixed(viewport.w),
+                    height: Size::Fixed(viewport.h),
+                    ..BoxStyle::default()
+                },
+                decoration: None,
+                children: vec![Desc::Widget {
+                    id: Cow::Borrowed(PANEL_ID),
+                    props: Box::new(PanelProps {
+                        id: Cow::Borrowed(PANEL_ID),
+                        title: Cow::Borrowed("Demo Panel"),
+                        x: panel.x,
+                        y: panel.y,
+                        w: panel.w,
+                        h: panel.h,
+                        content: build_panel_content(slider_value),
+                    }),
+                }],
+            },
+        ],
     }
 }
 
 pub struct DemoApp {
     gui: Context,
     arena: Option<GestureArena>,
-    panel_interaction: PanelInteraction,
+    pointer_session: Option<PointerSession>,
+    panel: PanelState,
+    camera: Camera,
+    pan: PanState,
     active_button: Option<String>,
     slider_value: f32,
     last_tap_time: Option<Instant>,
@@ -67,13 +246,18 @@ pub struct DemoApp {
 
 impl App for DemoApp {
     fn init(_ctx: &mut AppContext) -> Self {
-        let mut gui = Context::new();
-        gui.layer.add(PanelFrame::new("demo", 100.0, 100.0, 300.0, 200.0));
         Self {
-            gui,
-            arena: None, panel_interaction: PanelInteraction::new(),
-            active_button: None, slider_value: 5.0, last_tap_time: None,
-            mouse_x: 0.0, mouse_y: 0.0,
+            gui: Context::new(),
+            arena: None,
+            pointer_session: None,
+            panel: PanelState::new(),
+            camera: Camera::new(),
+            pan: PanState::new(),
+            active_button: None,
+            slider_value: 5.0,
+            last_tap_time: None,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
         }
     }
 
@@ -82,148 +266,219 @@ impl App for DemoApp {
             tracing::debug!("{:?}", event);
         }
 
-        match &event {
-            AppEvent::MousePress { x, y, button } if *button == MouseButton::Left => {
-                if self.arena.is_some() { return; }
-                self.mouse_x = *x;
-                self.mouse_y = *y;
+        match event {
+            AppEvent::MousePress { x, y, button } if button == MouseButton::Left => {
+                self.mouse_x = x;
+                self.mouse_y = y;
 
-                if let Some(panel_id) = hit_test_panel(&self.gui.layer, *x, *y) {
-                    let frame = self.gui.layer.get(panel_id).unwrap();
-
-                    if let Some(edge) = detect_edge(frame, *x, *y) {
-                        let mut arena = GestureArena::new(format!("panel_resize:{panel_id}"));
-                        let mut rec = DragRecognizer::new(format!("panel_resize:{panel_id}"));
-                        rec.on_pointer_down(*x, *y);
-                        arena.add(Box::new(rec));
+                if self.arena.is_none() {
+                    let chain = self.gui.hit_test(x, y);
+                    if let Some(arena) =
+                        arena_from_hit_chain(self.gui.tree(), &chain, x, y, self.last_tap_time)
+                    {
+                        self.pointer_session = Some(PointerSession::new(x, y));
                         self.arena = Some(arena);
-                        self.panel_interaction.resize_panel = Some(panel_id);
-                        self.panel_interaction.resize_edge = Some(edge);
-                        self.panel_interaction.last_x = *x;
-                        self.panel_interaction.last_y = *y;
-                    } else if self.gui.panel.root().is_some() {
-                        if let Some(widget_id) = self.gui.panel.hit_test(*x, *y) {
-                            let mut arena = GestureArena::new(widget_id.to_string());
-                            let mut tap = TapRecognizer::new(widget_id.to_string(), self.last_tap_time);
-                            tap.on_pointer_down(*x, *y);
-                            arena.add(Box::new(tap));
-
-                            if widget_id.contains("slider") || widget_id.contains("track") || widget_id.contains("fill") || widget_id.contains("spacer") {
-                                let mut drag = DragRecognizer::new(widget_id.to_string());
-                                drag.on_pointer_down(*x, *y);
-                                arena.add(Box::new(drag));
-                            }
-                            self.arena = Some(arena);
-                        } else {
-                            let mut arena = GestureArena::new(format!("panel_drag:{panel_id}"));
-                            let mut rec = DragRecognizer::new(format!("panel_drag:{panel_id}"));
-                            rec.on_pointer_down(*x, *y);
-                            arena.add(Box::new(rec));
-                            self.arena = Some(arena);
-                            self.panel_interaction.drag_panel = Some(panel_id);
-                            self.panel_interaction.last_x = *x;
-                            self.panel_interaction.last_y = *y;
-                        }
-                    } else {
-                        let mut arena = GestureArena::new(format!("panel_drag:{panel_id}"));
-                        let mut rec = DragRecognizer::new(format!("panel_drag:{panel_id}"));
-                        rec.on_pointer_down(*x, *y);
-                        arena.add(Box::new(rec));
-                        self.arena = Some(arena);
-                        self.panel_interaction.drag_panel = Some(panel_id);
-                        self.panel_interaction.last_x = *x;
-                        self.panel_interaction.last_y = *y;
+                        return;
                     }
-                    self.gui.layer.bring_to_front(panel_id);
+                }
+            }
+            AppEvent::MousePress { x, y, button } if button == MouseButton::Middle => {
+                self.mouse_x = x;
+                self.mouse_y = y;
+                self.pan.start(x, y);
+                ctx.cursor.set(CursorStyle::Move);
+                return;
+            }
+            AppEvent::MouseMove { x, y } => {
+                self.mouse_x = x;
+                self.mouse_y = y;
+
+                if let Some(arena) = &mut self.arena {
+                    if let Some(action) = arena.pointer_move(x, y) {
+                        self.handle_action(action);
+                    }
                     return;
                 }
-                self.gui.canvas.event(&event);
-            }
 
-            AppEvent::MouseMove { x, y } => {
-                self.mouse_x = *x;
-                self.mouse_y = *y;
-                if let Some(arena) = &mut self.arena {
-                    if let Some(action) = arena.pointer_move(*x, *y) {
-                        self.handle_action(action);
-                    }
-                } else {
-                    if let Some(panel_id) = hit_test_panel(&self.gui.layer, *x, *y) {
-                        if let Some(frame) = self.gui.layer.get(panel_id) {
-                            if let Some(edge) = detect_edge(frame, *x, *y) {
-                                ctx.cursor.set(edge.cursor_style());
-                            }
-                        }
-                    }
-                    self.gui.canvas.event(&event);
+                if self.pan.is_active() {
+                    self.pan.update(x, y, &mut self.camera);
+                    ctx.cursor.set(CursorStyle::Move);
+                    return;
                 }
-            }
 
-            AppEvent::MouseRelease { x, y, button } if *button == MouseButton::Left => {
+                self.update_hover_cursor(x, y, ctx);
+            }
+            AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
+                self.mouse_x = x;
+                self.mouse_y = y;
                 if let Some(mut arena) = self.arena.take() {
-                    if let Some(action) = arena.pointer_up(*x, *y) {
+                    if let Some(action) = arena.pointer_up(x, y) {
                         self.handle_action(action);
                     }
-                    self.panel_interaction.drag_panel = None;
-                    self.panel_interaction.resize_panel = None;
-                    self.panel_interaction.resize_edge = None;
-                } else {
-                    self.gui.canvas.event(&event);
                 }
+                self.pointer_session = None;
             }
-
-            _ => { self.gui.canvas.event(&event); }
+            AppEvent::MouseRelease { button, .. } if button == MouseButton::Middle => {
+                self.pan.end();
+            }
+            AppEvent::ScrollLine { x, y, delta_y, .. } => {
+                self.camera.zoom_at(x, y, delta_y * 0.1);
+            }
+            AppEvent::ScrollPixel {
+                delta_x, delta_y, ..
+            } => {
+                self.camera.pan(delta_x, delta_y);
+            }
+            AppEvent::PinchZoom { x, y, delta } => {
+                self.camera.zoom_at(x, y, delta);
+            }
+            _ => {}
         }
     }
 
-    fn update(&mut self, _renderer: &mut Renderer, _ctx: &mut AppContext) {
+    fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
+        let viewport = viewport_rect(ctx);
+        let desc = build_demo_tree(viewport, &self.camera, self.panel, self.slider_value);
+        self.gui.update(desc, viewport, renderer.text_measurer());
+        self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
-        if let Some(frame) = self.gui.layer.get("demo") {
-            let content_rect = Rect {
-                x: frame.x + PADDING, y: frame.y + PADDING,
-                w: frame.w - PADDING * 2.0, h: frame.h - PADDING * 2.0,
-            };
-            let desc = build_view(self.active_button.as_deref(), self.slider_value);
-            self.gui.panel.update(desc, content_rect, renderer.text_measurer());
-        }
-        let viewport_w = ctx.size.width as f32 / ctx.scale_factor as f32;
-        let viewport_h = ctx.size.height as f32 / ctx.scale_factor as f32;
-        self.gui.render(renderer, viewport_w, viewport_h);
+        let viewport = viewport_rect(ctx);
+        self.gui.render(renderer, viewport.w, viewport.h);
     }
 }
 
 impl DemoApp {
     fn handle_action(&mut self, action: Action) {
         tracing::debug!("Action: {:?}", action);
-        match &action {
+        match action {
             Action::Click(id) => {
                 self.last_tap_time = Some(Instant::now());
-                self.active_button = Some(id.clone());
+                self.active_button = Some(id);
             }
             Action::DoubleClick(id) => {
                 self.last_tap_time = None;
-                if id.contains("slider") { self.slider_value = 5.0; }
-            }
-            Action::DragMove { id: _, x, y } => {
-                if let Some(panel_id) = self.panel_interaction.drag_panel {
-                    apply_drag_move(&mut self.gui.layer, panel_id, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
-                    self.panel_interaction.last_x = *x;
-                    self.panel_interaction.last_y = *y;
-                } else if let Some(panel_id) = self.panel_interaction.resize_panel {
-                    if let Some(edge) = self.panel_interaction.resize_edge {
-                        apply_resize(&mut self.gui.layer, panel_id, edge, *x, *y, self.panel_interaction.last_x, self.panel_interaction.last_y);
-                        self.panel_interaction.last_x = *x;
-                        self.panel_interaction.last_y = *y;
-                    }
-                } else {
-                    tracing::debug!("Slider drag at ({}, {})", x, y);
+                if id.contains("slider") {
+                    self.slider_value = 5.0;
                 }
             }
-            Action::DragStart { .. } | Action::DragEnd { .. } => {}
-            Action::LongPress(id) => { tracing::debug!("LongPress: {}", id); }
-            Action::ResizeStart { .. } | Action::ResizeMove { .. } | Action::ResizeEnd { .. } => {}
+            Action::DragMove { id, x, y } => {
+                if let Some(session) = &mut self.pointer_session {
+                    if id == PANEL_ID {
+                        self.panel.apply_drag(x, y, session.last_x, session.last_y);
+                    } else {
+                        tracing::debug!("Unhandled drag target: {} at ({}, {})", id, x, y);
+                    }
+                    session.last_x = x;
+                    session.last_y = y;
+                }
+            }
+            Action::ResizeMove { id, edge, x, y } => {
+                if id == PANEL_ID {
+                    if let Some(session) = &mut self.pointer_session {
+                        self.panel
+                            .apply_resize(edge, x, y, session.last_x, session.last_y);
+                        session.last_x = x;
+                        session.last_y = y;
+                    }
+                }
+            }
+            Action::LongPress(id) => {
+                tracing::debug!("LongPress: {}", id);
+            }
+            Action::DragStart { .. }
+            | Action::DragEnd { .. }
+            | Action::ResizeStart { .. }
+            | Action::ResizeEnd { .. } => {}
         }
+    }
+
+    fn update_hover_cursor(&self, x: f32, y: f32, ctx: &mut AppContext) {
+        if self.pan.is_active() {
+            ctx.cursor.set(CursorStyle::Move);
+            return;
+        }
+
+        let chain = self.gui.hit_test(x, y);
+        if chain.is_empty() {
+            return;
+        }
+
+        let mut has_drag = false;
+        let mut has_tap = false;
+        let mut resize_rect = None;
+
+        for node_id in chain.iter() {
+            let Some(node) = self.gui.tree().get(node_id) else {
+                continue;
+            };
+            if node.style.gestures.contains(&Gesture::Resize) {
+                resize_rect = Some(node.rect);
+            }
+            if node.style.gestures.contains(&Gesture::Drag) {
+                has_drag = true;
+            }
+            if node.style.gestures.contains(&Gesture::Tap)
+                || node.style.gestures.contains(&Gesture::DoubleTap)
+            {
+                has_tap = true;
+            }
+        }
+
+        if let Some(rect) = resize_rect {
+            if let Some(edge) = detect_resize_edge(rect, x, y) {
+                ctx.cursor.set(cursor_for_resize_edge(edge));
+                return;
+            }
+        }
+
+        if has_drag {
+            ctx.cursor.set(CursorStyle::Move);
+        } else if has_tap {
+            ctx.cursor.set(CursorStyle::Pointer);
+        }
+    }
+}
+
+fn viewport_rect(ctx: &AppContext) -> Rect {
+    Rect {
+        x: 0.0,
+        y: 0.0,
+        w: ctx.size.width as f32 / ctx.scale_factor as f32,
+        h: ctx.size.height as f32 / ctx.scale_factor as f32,
+    }
+}
+
+fn detect_resize_edge(rect: Rect, x: f32, y: f32) -> Option<ResizeEdge> {
+    const EDGE_THRESHOLD: f32 = 6.0;
+    let near_left = (x - rect.x).abs() < EDGE_THRESHOLD;
+    let near_right = (x - (rect.x + rect.w)).abs() < EDGE_THRESHOLD;
+    let near_top = (y - rect.y).abs() < EDGE_THRESHOLD;
+    let near_bottom = (y - (rect.y + rect.h)).abs() < EDGE_THRESHOLD;
+
+    match (near_left, near_right, near_top, near_bottom) {
+        (true, _, true, _) => Some(ResizeEdge::TopLeft),
+        (true, _, _, true) => Some(ResizeEdge::BottomLeft),
+        (_, true, true, _) => Some(ResizeEdge::TopRight),
+        (_, true, _, true) => Some(ResizeEdge::BottomRight),
+        (true, _, _, _) => Some(ResizeEdge::Left),
+        (_, true, _, _) => Some(ResizeEdge::Right),
+        (_, _, true, _) => Some(ResizeEdge::Top),
+        (_, _, _, true) => Some(ResizeEdge::Bottom),
+        _ => None,
+    }
+}
+
+fn cursor_for_resize_edge(edge: ResizeEdge) -> CursorStyle {
+    match edge {
+        ResizeEdge::Top => CursorStyle::ResizeN,
+        ResizeEdge::Bottom => CursorStyle::ResizeS,
+        ResizeEdge::Left => CursorStyle::ResizeW,
+        ResizeEdge::Right => CursorStyle::ResizeE,
+        ResizeEdge::TopLeft => CursorStyle::ResizeNW,
+        ResizeEdge::TopRight => CursorStyle::ResizeNE,
+        ResizeEdge::BottomLeft => CursorStyle::ResizeSW,
+        ResizeEdge::BottomRight => CursorStyle::ResizeSE,
     }
 }

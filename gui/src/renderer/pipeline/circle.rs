@@ -124,8 +124,18 @@ impl CirclePipeline {
         Self {
             pipeline,
             bind_group_layout,
-            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "circle_vertex_buffer", 4096),
-            index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "circle_index_buffer", 4096),
+            vertex_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::VERTEX,
+                "circle_vertex_buffer",
+                4096,
+            ),
+            index_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::INDEX,
+                "circle_index_buffer",
+                4096,
+            ),
             viewport_bind_group: None,
         }
     }
@@ -140,8 +150,10 @@ impl CirclePipeline {
         if vertices.is_empty() {
             return;
         }
-        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
-        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+        self.vertex_buf
+            .write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf
+            .write(device, queue, bytemuck::cast_slice(indices));
     }
 
     pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {
@@ -158,7 +170,10 @@ impl CirclePipeline {
     }
 
     pub fn bind<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind");
+        let bg = self
+            .viewport_bind_group
+            .as_ref()
+            .expect("call update_bind_group before bind");
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));

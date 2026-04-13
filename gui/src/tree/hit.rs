@@ -10,22 +10,36 @@ pub struct HitChain {
 }
 
 impl HitChain {
-    pub fn new(nodes: Vec<NodeId>) -> Self { Self { nodes } }
-    pub fn empty() -> Self { Self { nodes: Vec::new() } }
-    pub fn is_empty(&self) -> bool { self.nodes.is_empty() }
-    pub fn len(&self) -> usize { self.nodes.len() }
+    pub fn new(nodes: Vec<NodeId>) -> Self {
+        Self { nodes }
+    }
+    pub fn empty() -> Self {
+        Self { nodes: Vec::new() }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
 
     /// 最深的命中节点（叶子）
-    pub fn leaf(&self) -> Option<NodeId> { self.nodes.first().copied() }
+    pub fn leaf(&self) -> Option<NodeId> {
+        self.nodes.first().copied()
+    }
     /// 最外层的命中节点（root）
-    pub fn root(&self) -> Option<NodeId> { self.nodes.last().copied() }
+    pub fn root(&self) -> Option<NodeId> {
+        self.nodes.last().copied()
+    }
 
     /// 从叶子到根顺序遍历
     pub fn iter(&self) -> impl Iterator<Item = NodeId> + '_ {
         self.nodes.iter().copied()
     }
 
-    pub fn contains(&self, id: NodeId) -> bool { self.nodes.contains(&id) }
+    pub fn contains(&self, id: NodeId) -> bool {
+        self.nodes.contains(&id)
+    }
 }
 
 /// 公开入口：返回命中链。从 root 开始向下递归，返回的链从叶子到根。
@@ -36,14 +50,10 @@ pub fn hit_test(tree: &Tree, root: NodeId, x: f32, y: f32) -> HitChain {
     HitChain::new(nodes)
 }
 
-fn hit_recursive(
-    tree: &Tree,
-    node_id: NodeId,
-    x: f32,
-    y: f32,
-    chain: &mut Vec<NodeId>,
-) -> bool {
-    let Some(node) = tree.get(node_id) else { return false };
+fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<NodeId>) -> bool {
+    let Some(node) = tree.get(node_id) else {
+        return false;
+    };
 
     // 提前克隆所需数据，避免借用冲突（递归时需要重借 tree）
     let r = node.rect;
@@ -114,7 +124,11 @@ mod tests {
     use std::borrow::Cow;
 
     /// 构造一个设定好 rect 的 Container 节点
-    fn container_with_rect(style: BoxStyle, decoration: Option<Decoration>, rect: Rect) -> PanelNode {
+    fn container_with_rect(
+        style: BoxStyle,
+        decoration: Option<Decoration>,
+        rect: Rect,
+    ) -> PanelNode {
         PanelNode {
             id: Cow::Borrowed("test"),
             style,
@@ -130,7 +144,12 @@ mod tests {
     /// 默认 decoration（background 让节点可命中）
     fn decor() -> Decoration {
         Decoration {
-            background: Some(Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+            background: Some(Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
             border: None,
             radius: [0.0; 4],
             shadow: None,
@@ -143,7 +162,12 @@ mod tests {
         let root = tree.insert(container_with_rect(
             BoxStyle::default(),
             None,
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -157,7 +181,12 @@ mod tests {
         let root = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -173,13 +202,23 @@ mod tests {
         let leaf_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 20.0, y: 20.0, w: 30.0, h: 30.0 },
+            Rect {
+                x: 20.0,
+                y: 20.0,
+                w: 30.0,
+                h: 30.0,
+            },
         ));
         let middle = {
             let mut n = container_with_rect(
                 BoxStyle::default(),
                 Some(decor()),
-                Rect { x: 10.0, y: 10.0, w: 80.0, h: 80.0 },
+                Rect {
+                    x: 10.0,
+                    y: 10.0,
+                    w: 80.0,
+                    h: 80.0,
+                },
             );
             n.children = vec![leaf_id];
             n
@@ -189,7 +228,12 @@ mod tests {
             let mut n = container_with_rect(
                 BoxStyle::default(),
                 Some(decor()),
-                Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
             );
             n.children = vec![middle_id];
             n
@@ -209,18 +253,33 @@ mod tests {
         let child1_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 10.0, y: 10.0, w: 50.0, h: 50.0 },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 50.0,
+                h: 50.0,
+            },
         ));
         let child2_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 10.0, y: 10.0, w: 50.0, h: 50.0 },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 50.0,
+                h: 50.0,
+            },
         ));
         let root = {
             let mut n = container_with_rect(
                 BoxStyle::default(),
                 None,
-                Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
             );
             n.children = vec![child1_id, child2_id];
             n
@@ -241,7 +300,12 @@ mod tests {
                 ..Default::default()
             },
             Some(decor()),
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -258,7 +322,12 @@ mod tests {
                 ..Default::default()
             },
             None,
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -277,7 +346,12 @@ mod tests {
                 ..Default::default()
             },
             None,
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -291,7 +365,12 @@ mod tests {
         let root = tree.insert(container_with_rect(
             BoxStyle::default(),
             None,
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -305,7 +384,12 @@ mod tests {
         let root = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
         ));
         tree.set_root(root);
 
@@ -319,7 +403,12 @@ mod tests {
         let child_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 10.0, y: 10.0, w: 30.0, h: 30.0 },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 30.0,
+                h: 30.0,
+            },
         ));
         let root = {
             let mut n = container_with_rect(
@@ -332,7 +421,12 @@ mod tests {
                     ..Default::default()
                 },
                 None,
-                Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
             );
             n.children = vec![child_id];
             n
@@ -350,7 +444,12 @@ mod tests {
         let child_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 10.0, y: 10.0, w: 20.0, h: 20.0 },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
         ));
         let root = {
             let mut n = container_with_rect(
@@ -363,7 +462,12 @@ mod tests {
                     ..Default::default()
                 },
                 None,
-                Rect { x: 0.0, y: 0.0, w: 200.0, h: 200.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 200.0,
+                    h: 200.0,
+                },
             );
             n.children = vec![child_id];
             n
@@ -382,7 +486,12 @@ mod tests {
         let child_id = tree.insert(container_with_rect(
             BoxStyle::default(),
             Some(decor()),
-            Rect { x: 10.0, y: 10.0, w: 10.0, h: 10.0 },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 10.0,
+                h: 10.0,
+            },
         ));
         let root = {
             let mut n = container_with_rect(
@@ -395,7 +504,12 @@ mod tests {
                     ..Default::default()
                 },
                 None,
-                Rect { x: 0.0, y: 0.0, w: 200.0, h: 200.0 },
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 200.0,
+                    h: 200.0,
+                },
             );
             n.children = vec![child_id];
             n

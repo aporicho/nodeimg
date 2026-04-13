@@ -98,7 +98,9 @@ impl GestureRecognizer for ResizeRecognizer {
     }
 
     fn accept(&mut self) -> Action {
-        let edge = self.edge.expect("accept called before on_pointer_down succeeded");
+        let edge = self
+            .edge
+            .expect("accept called before on_pointer_down succeeded");
         if self.done {
             Action::ResizeEnd {
                 id: self.target_id.clone(),
@@ -132,7 +134,12 @@ mod tests {
     use super::*;
 
     fn rect_100() -> Rect {
-        Rect { x: 0.0, y: 0.0, w: 100.0, h: 100.0 }
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        }
     }
 
     #[test]
@@ -186,7 +193,10 @@ mod tests {
     fn recognizer_accept_on_sufficient_move() {
         let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
         rec.on_pointer_down(2.0, 2.0);
-        assert_eq!(rec.on_pointer_move(12.0, 12.0), GestureDisposition::Accepted);
+        assert_eq!(
+            rec.on_pointer_move(12.0, 12.0),
+            GestureDisposition::Accepted
+        );
     }
 
     #[test]
@@ -256,7 +266,12 @@ mod tests {
         ];
         for (x, y, expected_edge) in cases {
             let mut rec = ResizeRecognizer::new("p".to_string(), rect_100());
-            assert!(rec.on_pointer_down(x, y), "down at ({}, {}) should succeed", x, y);
+            assert!(
+                rec.on_pointer_down(x, y),
+                "down at ({}, {}) should succeed",
+                x,
+                y
+            );
             rec.on_pointer_move(x + 20.0, y + 20.0);
             let action = rec.accept();
             match action {

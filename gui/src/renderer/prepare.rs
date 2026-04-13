@@ -5,11 +5,12 @@ use lyon::tessellation::{
     StrokeVertex, VertexBuffers,
 };
 
-
 use super::command::DrawCommand;
 use super::pipeline::circle::{CircleRequest, CircleVertex};
 use super::pipeline::curve::{CurvePipeline, CurveRequest, CurveVertex};
-use super::pipeline::quad::{build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING};
+use super::pipeline::quad::{
+    build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING,
+};
 use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
 use super::types::Rect;
@@ -17,14 +18,32 @@ use super::types::Rect;
 // ── 绘制操作 ──
 
 pub enum DrawOp {
-    Quad { index_start: u32, index_count: u32 },
-    Circle { index_start: u32, index_count: u32 },
-    Curve { index_start: u32, index_count: u32 },
+    Quad {
+        index_start: u32,
+        index_count: u32,
+    },
+    Circle {
+        index_start: u32,
+        index_count: u32,
+    },
+    Curve {
+        index_start: u32,
+        index_count: u32,
+    },
     Shadow(ShadowRequest),
-    Image { rect: Rect, view: Arc<wgpu::TextureView> },
+    Image {
+        rect: Rect,
+        view: Arc<wgpu::TextureView>,
+    },
     Text,
-    StencilWrite { index_start: u32, index_count: u32 },
-    StencilClear { index_start: u32, index_count: u32 },
+    StencilWrite {
+        index_start: u32,
+        index_count: u32,
+    },
+    StencilClear {
+        index_start: u32,
+        index_count: u32,
+    },
 }
 
 // ── 预处理结果 ──
@@ -47,7 +66,10 @@ pub struct PreparedFrame {
 
 // ── 预处理 ──
 
-pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipeline) -> PreparedFrame {
+pub fn prepare_frame(
+    commands: &[DrawCommand],
+    curve_pipeline: &mut CurvePipeline,
+) -> PreparedFrame {
     let mut frame = PreparedFrame {
         ops: Vec::new(),
         quad_vertices: Vec::new(),
@@ -160,9 +182,11 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
                     .tessellate_path(
                         &path,
                         &StrokeOptions::default().with_line_width(req.border_width),
-                        &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| QuadVertex {
-                            position: vertex.position().to_array(),
-                            color: border_color,
+                        &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
+                            QuadVertex {
+                                position: vertex.position().to_array(),
+                                color: border_color,
+                            }
                         }),
                     )
                     .expect("failed to tessellate quad stroke");
@@ -191,7 +215,11 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
     });
 }
 
-fn flush_curve_batch(batch: &mut Vec<&CurveRequest>, frame: &mut PreparedFrame, curve_pipeline: &mut CurvePipeline) {
+fn flush_curve_batch(
+    batch: &mut Vec<&CurveRequest>,
+    frame: &mut PreparedFrame,
+    curve_pipeline: &mut CurvePipeline,
+) {
     if batch.is_empty() {
         return;
     }
@@ -247,10 +275,30 @@ fn flush_circle_batch(batch: &mut Vec<&CircleRequest>, frame: &mut PreparedFrame
         let vertex_offset = frame.circle_vertices.len() as u32;
 
         frame.circle_vertices.extend_from_slice(&[
-            CircleVertex { position: [cx - ext, cy - ext], center, radius: r, color },
-            CircleVertex { position: [cx + ext, cy - ext], center, radius: r, color },
-            CircleVertex { position: [cx + ext, cy + ext], center, radius: r, color },
-            CircleVertex { position: [cx - ext, cy + ext], center, radius: r, color },
+            CircleVertex {
+                position: [cx - ext, cy - ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx + ext, cy - ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx + ext, cy + ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx - ext, cy + ext],
+                center,
+                radius: r,
+                color,
+            },
         ]);
 
         frame.circle_indices.extend_from_slice(&[
@@ -304,8 +352,14 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
     let index_count = geometry.indices.len() as u32;
 
     if is_write {
-        frame.ops.push(DrawOp::StencilWrite { index_start, index_count });
+        frame.ops.push(DrawOp::StencilWrite {
+            index_start,
+            index_count,
+        });
     } else {
-        frame.ops.push(DrawOp::StencilClear { index_start, index_count });
+        frame.ops.push(DrawOp::StencilClear {
+            index_start,
+            index_count,
+        });
     }
 }
