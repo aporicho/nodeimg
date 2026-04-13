@@ -1,3 +1,4 @@
+use crate::gesture::Gesture;
 use crate::widget::props::{WidgetBuild, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -89,6 +90,7 @@ impl WidgetProps for ToggleProps {
                         direction: Direction::Row,
                         justify_content: thumb_justify,
                         align_items: Align::Center,
+                        gestures: vec![Gesture::Tap],
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {

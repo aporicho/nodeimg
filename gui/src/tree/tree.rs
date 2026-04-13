@@ -48,6 +48,13 @@ impl Tree {
         self.nodes.get_mut(id).and_then(|n| n.as_mut())
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (NodeId, &PanelNode)> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(id, node)| node.as_ref().map(|node| (id, node)))
+    }
+
     pub fn root(&self) -> Option<NodeId> {
         self.root
     }

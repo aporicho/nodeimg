@@ -40,6 +40,7 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
             }
         }
         Desc::Widget { id, props } => {
+            let wb = props.build(&id);
             let props_changed = tree
                 .get(node_id)
                 .map(|n| match &n.kind {
@@ -49,14 +50,13 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
                 .unwrap_or(true);
 
             if props_changed {
-                let wb = props.build(&id);
                 if let Some(node) = tree.get_mut(node_id) {
                     node.style = wb.style;
                     node.decoration = wb.decoration;
                     node.kind = NodeKind::Widget(props);
                 }
-                reconcile_children(tree, node_id, wb.children);
             }
+            reconcile_children(tree, node_id, wb.children);
         }
     }
 }

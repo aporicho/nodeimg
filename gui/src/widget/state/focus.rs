@@ -1,7 +1,9 @@
-/// 控件焦点管理。追踪当前焦点、Tab 循环。
+use crate::tree::NodeId;
+
+/// 框架级焦点状态。只跟踪哪个运行时节点拥有键盘焦点。
 pub struct FocusState {
-    focused: Option<&'static str>,
-    focusable: Vec<&'static str>,
+    focused: Option<NodeId>,
+    focusable: Vec<NodeId>,
 }
 
 impl FocusState {
@@ -12,18 +14,16 @@ impl FocusState {
         }
     }
 
-    /// 每帧更新可聚焦控件列表（按布局顺序）。
-    pub fn set_focusable(&mut self, ids: Vec<&'static str>) {
-        // 如果当前焦点不在新列表中，清除焦点
-        if let Some(f) = self.focused {
-            if !ids.contains(&f) {
+    pub fn set_focusable(&mut self, ids: Vec<NodeId>) {
+        if let Some(focused) = self.focused {
+            if !ids.contains(&focused) {
                 self.focused = None;
             }
         }
         self.focusable = ids;
     }
 
-    pub fn focus(&mut self, id: &'static str) {
+    pub fn focus(&mut self, id: NodeId) {
         self.focused = Some(id);
     }
 
@@ -31,33 +31,33 @@ impl FocusState {
         self.focused = None;
     }
 
-    pub fn is_focused(&self, id: &str) -> bool {
+    pub fn is_focused(&self, id: NodeId) -> bool {
         self.focused == Some(id)
     }
 
-    pub fn focused(&self) -> Option<&'static str> {
+    pub fn focused(&self) -> Option<NodeId> {
         self.focused
     }
 
-    /// Tab 下一个
     pub fn tab_next(&mut self) {
         self.focused = self.advance(1);
     }
 
-    /// Shift+Tab 上一个
     pub fn tab_prev(&mut self) {
         self.focused = self.advance(-1);
     }
 
-    fn advance(&self, delta: isize) -> Option<&'static str> {
+    fn advance(&self, delta: isize) -> Option<NodeId> {
         if self.focusable.is_empty() {
             return None;
         }
         let current = self
             .focused
-            .and_then(|f| self.focusable.iter().position(|&id| id == f));
+            .and_then(|id| self.focusable.iter().position(|&focusable| focusable == id));
         let next = match current {
-            Some(i) => (i as isize + delta).rem_euclid(self.focusable.len() as isize) as usize,
+            Some(index) => {
+                (index as isize + delta).rem_euclid(self.focusable.len() as isize) as usize
+            }
             None => 0,
         };
         Some(self.focusable[next])

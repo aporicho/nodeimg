@@ -1,11 +1,13 @@
 use crate::gesture::GestureArena;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, Tree};
+use crate::widget::state::InteractionStore;
 
 /// GUI 中心对象。持有统一的控件树与当前手势竞技场。
 pub struct Context {
     tree: Tree,
     gesture_arena: Option<GestureArena>,
+    interaction_state: InteractionStore,
 }
 
 impl Context {
@@ -13,6 +15,7 @@ impl Context {
         Self {
             tree: Tree::new(),
             gesture_arena: None,
+            interaction_state: InteractionStore::new(),
         }
     }
 
@@ -24,13 +27,18 @@ impl Context {
                 measurer.measure(text, size)
             });
         }
+        self.interaction_state.sync_with_tree(&self.tree);
     }
 
     /// 渲染整棵树。
     pub fn render(&self, renderer: &mut Renderer, _viewport_w: f32, _viewport_h: f32) {
         if let Some(root) = self.tree.root() {
-            paint(&self.tree, root, renderer);
+            paint(&self.tree, root, renderer, Some(&self.interaction_state));
         }
+    }
+
+    pub fn handle_event(&mut self, event: &crate::shell::AppEvent) {
+        self.interaction_state.handle_event(&self.tree, event);
     }
 
     /// 命中测试，返回从叶子到根的命中链。
@@ -51,6 +59,10 @@ impl Context {
 
     pub fn gesture_arena(&self) -> Option<&GestureArena> {
         self.gesture_arena.as_ref()
+    }
+
+    pub fn interaction_state(&self) -> &InteractionStore {
+        &self.interaction_state
     }
 
     pub fn gesture_arena_mut(&mut self) -> Option<&mut GestureArena> {

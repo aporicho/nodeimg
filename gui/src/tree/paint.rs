@@ -6,6 +6,10 @@ use super::paint_helpers::{
 };
 use super::tree::Tree;
 use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
+use crate::widget::atoms::button::ButtonProps;
+use crate::widget::atoms::slider::SliderProps;
+use crate::widget::atoms::toggle::ToggleProps;
+use crate::widget::state::{InteractionStore, WidgetVisualState};
 
 /// 连线宽度（local 空间像素，paint 时按 scale 缩放）
 const CONNECTION_WIDTH: f32 = 2.0;
@@ -17,19 +21,41 @@ const CONNECTION_COLOR: Color = Color {
     a: 1.0,
 };
 
-pub fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer) {
-    paint_node(tree, root, renderer, PaintTransform::identity());
+pub fn paint(
+    tree: &Tree,
+    root: NodeId,
+    renderer: &mut Renderer,
+    interaction: Option<&InteractionStore>,
+) {
+    paint_node(
+        tree,
+        root,
+        renderer,
+        PaintTransform::identity(),
+        interaction,
+        None,
+    );
 }
 
-fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer, tf: PaintTransform) {
+fn paint_node(
+    tree: &Tree,
+    node_id: NodeId,
+    renderer: &mut Renderer,
+    tf: PaintTransform,
+    interaction: Option<&InteractionStore>,
+    inherited_text_color: Option<Color>,
+) {
     let Some(node) = tree.get(node_id) else {
         return;
     };
 
     let screen_rect = tf.apply_rect(node.rect);
+    let mut child_text_color = inherited_text_color;
 
-    // 1. Container decoration（使用 screen_rect）
-    if let Some(dec) = &node.decoration {
+    if let Some((style, text_color)) = widget_visual_override(tree, node_id, interaction) {
+        renderer.draw_rect(screen_rect, &style);
+        child_text_color = Some(text_color);
+    } else if let Some(dec) = &node.decoration {
         renderer.draw_rect(
             screen_rect,
             &RectStyle {
@@ -56,7 +82,7 @@ fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer, tf: PaintTr
                     },
                     content,
                     &TextStyle {
-                        color: *color,
+                        color: child_text_color.unwrap_or(*color),
                         size: *font_size * tf.scale,
                     },
                 );
@@ -96,6 +122,392 @@ fn paint_node(tree: &Tree, node_id: NodeId, renderer: &mut Renderer, tf: PaintTr
         None => tf,
     };
     for child_id in children {
-        paint_node(tree, child_id, renderer, child_tf);
+        paint_node(
+            tree,
+            child_id,
+            renderer,
+            child_tf,
+            interaction,
+            child_text_color,
+        );
+    }
+}
+
+fn widget_visual_override(
+    tree: &Tree,
+    node_id: NodeId,
+    interaction: Option<&InteractionStore>,
+) -> Option<(RectStyle, Color)> {
+    let node = tree.get(node_id)?;
+    button_visual_override(node_id, &node.kind, interaction)
+        .or_else(|| toggle_visual_override(tree, node_id, interaction))
+        .or_else(|| slider_visual_override(tree, node_id, interaction))
+}
+
+fn button_visual_override(
+    node_id: NodeId,
+    kind: &NodeKind,
+    interaction: Option<&InteractionStore>,
+) -> Option<(RectStyle, Color)> {
+    let NodeKind::Widget(props) = kind else {
+        return None;
+    };
+    let button = props.as_any().downcast_ref::<ButtonProps>()?;
+    let visual = interaction
+        .map(|state| state.visual_state(node_id, button.disabled))
+        .unwrap_or(if button.disabled {
+            WidgetVisualState::Disabled
+        } else {
+            WidgetVisualState::Normal
+        });
+
+    let (bg, border, text) = match visual {
+        WidgetVisualState::Normal => (
+            Color {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            },
+            Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 1.0,
+            },
+            Color {
+                r: 0.094,
+                g: 0.094,
+                b: 0.106,
+                a: 1.0,
+            },
+        ),
+        WidgetVisualState::Hovered => (
+            Color {
+                r: 0.973,
+                g: 0.973,
+                b: 0.976,
+                a: 1.0,
+            },
+            Color {
+                r: 0.831,
+                g: 0.831,
+                b: 0.847,
+                a: 1.0,
+            },
+            Color {
+                r: 0.094,
+                g: 0.094,
+                b: 0.106,
+                a: 1.0,
+            },
+        ),
+        WidgetVisualState::Pressed => (
+            Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 1.0,
+            },
+            Color {
+                r: 0.631,
+                g: 0.631,
+                b: 0.667,
+                a: 1.0,
+            },
+            Color {
+                r: 0.094,
+                g: 0.094,
+                b: 0.106,
+                a: 1.0,
+            },
+        ),
+        WidgetVisualState::Focused => (
+            Color {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            },
+            Color {
+                r: 0.231,
+                g: 0.510,
+                b: 0.965,
+                a: 1.0,
+            },
+            Color {
+                r: 0.094,
+                g: 0.094,
+                b: 0.106,
+                a: 1.0,
+            },
+        ),
+        WidgetVisualState::Disabled => (
+            Color {
+                r: 0.973,
+                g: 0.973,
+                b: 0.976,
+                a: 1.0,
+            },
+            Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 1.0,
+            },
+            Color {
+                r: 0.631,
+                g: 0.631,
+                b: 0.667,
+                a: 1.0,
+            },
+        ),
+    };
+
+    Some((
+        RectStyle {
+            color: bg,
+            border: Some(crate::renderer::Border {
+                width: 1.0,
+                color: border,
+            }),
+            radius: [4.0; 4],
+            shadow: None,
+        },
+        text,
+    ))
+}
+
+fn toggle_visual_override(
+    tree: &Tree,
+    node_id: NodeId,
+    interaction: Option<&InteractionStore>,
+) -> Option<(RectStyle, Color)> {
+    let node = tree.get(node_id)?;
+    let node_id_str = node.id.as_ref();
+    let root_id = node_id_str.split("::").next()?;
+    let (root_node_id, root_node) = tree.iter().find(|(_, n)| n.id.as_ref() == root_id)?;
+    let NodeKind::Widget(props) = &root_node.kind else {
+        return None;
+    };
+    let toggle = props.as_any().downcast_ref::<ToggleProps>()?;
+    let root_visual = interaction
+        .map(|state| state.visual_state(root_node_id, toggle.disabled))
+        .unwrap_or(if toggle.disabled {
+            WidgetVisualState::Disabled
+        } else {
+            WidgetVisualState::Normal
+        });
+
+    if node_id_str.ends_with("::track") {
+        let bg = match (toggle.value, root_visual) {
+            (_, WidgetVisualState::Disabled) => Color {
+                r: 0.831,
+                g: 0.831,
+                b: 0.847,
+                a: 0.5,
+            },
+            (true, WidgetVisualState::Pressed) => Color {
+                r: 0.172,
+                g: 0.435,
+                b: 0.855,
+                a: 1.0,
+            },
+            (true, WidgetVisualState::Hovered) => Color {
+                r: 0.271,
+                g: 0.560,
+                b: 1.0,
+                a: 1.0,
+            },
+            (true, _) => Color {
+                r: 0.231,
+                g: 0.510,
+                b: 0.965,
+                a: 1.0,
+            },
+            (false, WidgetVisualState::Pressed) => Color {
+                r: 0.721,
+                g: 0.721,
+                b: 0.747,
+                a: 1.0,
+            },
+            (false, WidgetVisualState::Hovered) => Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 1.0,
+            },
+            (false, _) => Color {
+                r: 0.831,
+                g: 0.831,
+                b: 0.847,
+                a: 1.0,
+            },
+        };
+        let border =
+            matches!(root_visual, WidgetVisualState::Focused).then_some(crate::renderer::Border {
+                width: 1.0,
+                color: Color {
+                    r: 0.231,
+                    g: 0.510,
+                    b: 0.965,
+                    a: 1.0,
+                },
+            });
+        return Some((
+            RectStyle {
+                color: bg,
+                border,
+                radius: [9.0; 4],
+                shadow: None,
+            },
+            text_color_for_visual(root_visual),
+        ));
+    }
+
+    if node_id_str == root_id {
+        return Some((transparent_style(), text_color_for_visual(root_visual)));
+    }
+
+    None
+}
+
+fn slider_visual_override(
+    tree: &Tree,
+    node_id: NodeId,
+    interaction: Option<&InteractionStore>,
+) -> Option<(RectStyle, Color)> {
+    let node = tree.get(node_id)?;
+    let node_id_str = node.id.as_ref();
+    let root_id = node_id_str.split("::").next()?;
+    let (root_node_id, root_node) = tree.iter().find(|(_, n)| n.id.as_ref() == root_id)?;
+    let NodeKind::Widget(props) = &root_node.kind else {
+        return None;
+    };
+    let slider = props.as_any().downcast_ref::<SliderProps>()?;
+    let root_visual = interaction
+        .map(|state| state.visual_state(root_node_id, slider.disabled))
+        .unwrap_or(if slider.disabled {
+            WidgetVisualState::Disabled
+        } else {
+            WidgetVisualState::Normal
+        });
+
+    if node_id_str.ends_with("::track") {
+        let color = match root_visual {
+            WidgetVisualState::Disabled => Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 0.5,
+            },
+            WidgetVisualState::Pressed => Color {
+                r: 0.831,
+                g: 0.831,
+                b: 0.847,
+                a: 1.0,
+            },
+            WidgetVisualState::Hovered => Color {
+                r: 0.933,
+                g: 0.933,
+                b: 0.941,
+                a: 1.0,
+            },
+            _ => Color {
+                r: 0.894,
+                g: 0.894,
+                b: 0.906,
+                a: 1.0,
+            },
+        };
+        let border =
+            matches!(root_visual, WidgetVisualState::Focused).then_some(crate::renderer::Border {
+                width: 1.0,
+                color: Color {
+                    r: 0.231,
+                    g: 0.510,
+                    b: 0.965,
+                    a: 1.0,
+                },
+            });
+        return Some((
+            RectStyle {
+                color,
+                border,
+                radius: [3.0; 4],
+                shadow: None,
+            },
+            text_color_for_visual(root_visual),
+        ));
+    }
+
+    if node_id_str.ends_with("::fill") {
+        let color = match root_visual {
+            WidgetVisualState::Disabled => Color {
+                r: 0.631,
+                g: 0.631,
+                b: 0.667,
+                a: 0.5,
+            },
+            WidgetVisualState::Pressed => Color {
+                r: 0.043,
+                g: 0.043,
+                b: 0.055,
+                a: 1.0,
+            },
+            WidgetVisualState::Hovered => Color {
+                r: 0.145,
+                g: 0.145,
+                b: 0.165,
+                a: 1.0,
+            },
+            _ => Color {
+                r: 0.094,
+                g: 0.094,
+                b: 0.106,
+                a: 1.0,
+            },
+        };
+        return Some((
+            RectStyle {
+                color,
+                border: None,
+                radius: [3.0; 4],
+                shadow: None,
+            },
+            text_color_for_visual(root_visual),
+        ));
+    }
+
+    if node_id_str == root_id {
+        return Some((transparent_style(), text_color_for_visual(root_visual)));
+    }
+
+    None
+}
+
+fn text_color_for_visual(visual: WidgetVisualState) -> Color {
+    match visual {
+        WidgetVisualState::Disabled => Color {
+            r: 0.631,
+            g: 0.631,
+            b: 0.667,
+            a: 1.0,
+        },
+        _ => Color {
+            r: 0.094,
+            g: 0.094,
+            b: 0.106,
+            a: 1.0,
+        },
+    }
+}
+
+fn transparent_style() -> RectStyle {
+    RectStyle {
+        color: Color::TRANSPARENT,
+        border: None,
+        radius: [0.0; 4],
+        shadow: None,
     }
 }

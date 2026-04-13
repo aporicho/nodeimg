@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::time::Instant;
 
 use gui::canvas::camera::Camera;
-use gui::canvas::pan::PanState;
+use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::Context;
 use gui::gesture::{arena_from_hit_chain, Gesture, GestureArena};
 use gui::renderer::{Color, Rect, Renderer};
@@ -12,6 +12,7 @@ use gui::tree::Desc;
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
+use gui::widget::atoms::toggle::ToggleProps;
 use gui::widget::frameworks::panel::PanelProps;
 use gui::widget::resize_edge::ResizeEdge;
 
@@ -110,7 +111,7 @@ impl PointerSession {
     }
 }
 
-fn build_panel_content(slider_value: f32) -> Vec<Desc> {
+fn build_panel_content(slider_value: f32, toggle_value: bool) -> Vec<Desc> {
     vec![
         Desc::Widget {
             id: Cow::Borrowed("btn_a"),
@@ -139,10 +140,24 @@ fn build_panel_content(slider_value: f32) -> Vec<Desc> {
                 disabled: false,
             }),
         },
+        Desc::Widget {
+            id: Cow::Borrowed("toggle_grid"),
+            props: Box::new(ToggleProps {
+                label: "Show Grid".into(),
+                value: toggle_value,
+                disabled: false,
+            }),
+        },
     ]
 }
 
-fn build_demo_tree(viewport: Rect, camera: &Camera, panel: PanelState, slider_value: f32) -> Desc {
+fn build_demo_tree(
+    viewport: Rect,
+    camera: &Camera,
+    panel: PanelState,
+    slider_value: f32,
+    toggle_value: bool,
+) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
     let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
     let grid_x = canvas_min_x.floor() - GRID_SPACING * 2.0;
@@ -172,6 +187,7 @@ fn build_demo_tree(viewport: Rect, camera: &Camera, panel: PanelState, slider_va
             Desc::Container {
                 id: Cow::Borrowed("canvas_root"),
                 style: BoxStyle {
+                    position: Position::Absolute { x: 0.0, y: 0.0 },
                     width: Size::Fixed(viewport.w),
                     height: Size::Fixed(viewport.h),
                     transform: Some(Transform {
@@ -208,6 +224,7 @@ fn build_demo_tree(viewport: Rect, camera: &Camera, panel: PanelState, slider_va
             Desc::Container {
                 id: Cow::Borrowed("panel_root"),
                 style: BoxStyle {
+                    position: Position::Absolute { x: 0.0, y: 0.0 },
                     width: Size::Fixed(viewport.w),
                     height: Size::Fixed(viewport.h),
                     ..BoxStyle::default()
@@ -222,7 +239,7 @@ fn build_demo_tree(viewport: Rect, camera: &Camera, panel: PanelState, slider_va
                         y: panel.y,
                         w: panel.w,
                         h: panel.h,
-                        content: build_panel_content(slider_value),
+                        content: build_panel_content(slider_value, toggle_value),
                     }),
                 }],
             },
@@ -236,8 +253,9 @@ pub struct DemoApp {
     pointer_session: Option<PointerSession>,
     panel: PanelState,
     camera: Camera,
-    pan: PanState,
+    navigation: CanvasNavigationController,
     active_button: Option<String>,
+    toggle_value: bool,
     slider_value: f32,
     last_tap_time: Option<Instant>,
     mouse_x: f32,
@@ -252,8 +270,9 @@ impl App for DemoApp {
             pointer_session: None,
             panel: PanelState::new(),
             camera: Camera::new(),
-            pan: PanState::new(),
+            navigation: CanvasNavigationController::new(),
             active_button: None,
+            toggle_value: true,
             slider_value: 5.0,
             last_tap_time: None,
             mouse_x: 0.0,
@@ -263,7 +282,25 @@ impl App for DemoApp {
 
     fn event(&mut self, event: AppEvent, ctx: &mut AppContext) {
         if !matches!(event, AppEvent::MouseMove { .. }) {
-            tracing::debug!("{:?}", event);
+            tracing::info!("event: {:?}", event);
+        }
+
+        self.gui.handle_event(&event);
+
+        if self.navigation.handle_event(&event, &mut self.camera) {
+            if self.navigation.is_panning() {
+                ctx.cursor.set(CursorStyle::Move);
+            }
+            match event {
+                AppEvent::MouseMove { x, y }
+                | AppEvent::MousePress { x, y, .. }
+                | AppEvent::MouseRelease { x, y, .. } => {
+                    self.mouse_x = x;
+                    self.mouse_y = y;
+                }
+                _ => {}
+            }
+            return;
         }
 
         match event {
@@ -273,21 +310,16 @@ impl App for DemoApp {
 
                 if self.arena.is_none() {
                     let chain = self.gui.hit_test(x, y);
+                    tracing::info!("hit chain on press: {:?}", chain);
                     if let Some(arena) =
                         arena_from_hit_chain(self.gui.tree(), &chain, x, y, self.last_tap_time)
                     {
+                        tracing::info!("arena target: {}", arena.target_id());
                         self.pointer_session = Some(PointerSession::new(x, y));
                         self.arena = Some(arena);
                         return;
                     }
                 }
-            }
-            AppEvent::MousePress { x, y, button } if button == MouseButton::Middle => {
-                self.mouse_x = x;
-                self.mouse_y = y;
-                self.pan.start(x, y);
-                ctx.cursor.set(CursorStyle::Move);
-                return;
             }
             AppEvent::MouseMove { x, y } => {
                 self.mouse_x = x;
@@ -300,12 +332,6 @@ impl App for DemoApp {
                     return;
                 }
 
-                if self.pan.is_active() {
-                    self.pan.update(x, y, &mut self.camera);
-                    ctx.cursor.set(CursorStyle::Move);
-                    return;
-                }
-
                 self.update_hover_cursor(x, y, ctx);
             }
             AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
@@ -313,24 +339,13 @@ impl App for DemoApp {
                 self.mouse_y = y;
                 if let Some(mut arena) = self.arena.take() {
                     if let Some(action) = arena.pointer_up(x, y) {
+                        tracing::info!("pointer_up action: {:?}", action);
                         self.handle_action(action);
+                    } else {
+                        tracing::info!("pointer_up produced no action");
                     }
                 }
                 self.pointer_session = None;
-            }
-            AppEvent::MouseRelease { button, .. } if button == MouseButton::Middle => {
-                self.pan.end();
-            }
-            AppEvent::ScrollLine { x, y, delta_y, .. } => {
-                self.camera.zoom_at(x, y, delta_y * 0.1);
-            }
-            AppEvent::ScrollPixel {
-                delta_x, delta_y, ..
-            } => {
-                self.camera.pan(delta_x, delta_y);
-            }
-            AppEvent::PinchZoom { x, y, delta } => {
-                self.camera.zoom_at(x, y, delta);
             }
             _ => {}
         }
@@ -338,7 +353,13 @@ impl App for DemoApp {
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
-        let desc = build_demo_tree(viewport, &self.camera, self.panel, self.slider_value);
+        let desc = build_demo_tree(
+            viewport,
+            &self.camera,
+            self.panel,
+            self.slider_value,
+            self.toggle_value,
+        );
         self.gui.update(desc, viewport, renderer.text_measurer());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
@@ -351,10 +372,19 @@ impl App for DemoApp {
 
 impl DemoApp {
     fn handle_action(&mut self, action: Action) {
-        tracing::debug!("Action: {:?}", action);
+        tracing::info!("Action: {:?}", action);
         match action {
             Action::Click(id) => {
+                tracing::info!("handle click: {}", id);
                 self.last_tap_time = Some(Instant::now());
+                if is_toggle_target(&id) {
+                    self.toggle_value = !self.toggle_value;
+                    tracing::info!("toggle_value -> {}", self.toggle_value);
+                }
+                if is_slider_target(&id) {
+                    self.update_slider_from_pointer(self.mouse_x);
+                    tracing::info!("slider_value(click) -> {}", self.slider_value);
+                }
                 self.active_button = Some(id);
             }
             Action::DoubleClick(id) => {
@@ -364,14 +394,21 @@ impl DemoApp {
                 }
             }
             Action::DragMove { id, x, y } => {
+                let mut should_update_slider = false;
                 if let Some(session) = &mut self.pointer_session {
                     if id == PANEL_ID {
                         self.panel.apply_drag(x, y, session.last_x, session.last_y);
+                    } else if is_slider_target(&id) {
+                        should_update_slider = true;
                     } else {
-                        tracing::debug!("Unhandled drag target: {} at ({}, {})", id, x, y);
+                        tracing::info!("Unhandled drag target: {} at ({}, {})", id, x, y);
                     }
                     session.last_x = x;
                     session.last_y = y;
+                }
+                if should_update_slider {
+                    self.update_slider_from_pointer(x);
+                    tracing::info!("slider_value(drag) -> {}", self.slider_value);
                 }
             }
             Action::ResizeMove { id, edge, x, y } => {
@@ -385,7 +422,7 @@ impl DemoApp {
                 }
             }
             Action::LongPress(id) => {
-                tracing::debug!("LongPress: {}", id);
+                tracing::info!("LongPress: {}", id);
             }
             Action::DragStart { .. }
             | Action::DragEnd { .. }
@@ -395,7 +432,7 @@ impl DemoApp {
     }
 
     fn update_hover_cursor(&self, x: f32, y: f32, ctx: &mut AppContext) {
-        if self.pan.is_active() {
+        if self.navigation.is_panning() {
             ctx.cursor.set(CursorStyle::Move);
             return;
         }
@@ -405,40 +442,82 @@ impl DemoApp {
             return;
         }
 
-        let mut has_drag = false;
-        let mut has_tap = false;
-        let mut resize_rect = None;
-
         for node_id in chain.iter() {
             let Some(node) = self.gui.tree().get(node_id) else {
                 continue;
             };
+
             if node.style.gestures.contains(&Gesture::Resize) {
-                resize_rect = Some(node.rect);
+                if let Some(edge) = detect_resize_edge(node.rect, x, y) {
+                    ctx.cursor.set(cursor_for_resize_edge(edge));
+                    return;
+                }
             }
-            if node.style.gestures.contains(&Gesture::Drag) {
-                has_drag = true;
+
+            let id = node.id.as_ref();
+            if is_slider_target(id) && node.style.gestures.contains(&Gesture::Drag) {
+                ctx.cursor.set(CursorStyle::Pointer);
+                return;
             }
+
+            if is_toggle_target(id)
+                && (node.style.gestures.contains(&Gesture::Tap)
+                    || node.style.gestures.contains(&Gesture::DoubleTap))
+            {
+                ctx.cursor.set(CursorStyle::Pointer);
+                return;
+            }
+
+            if id.ends_with("::titlebar") && node.style.gestures.contains(&Gesture::Drag) {
+                ctx.cursor.set(CursorStyle::Move);
+                return;
+            }
+
             if node.style.gestures.contains(&Gesture::Tap)
                 || node.style.gestures.contains(&Gesture::DoubleTap)
             {
-                has_tap = true;
-            }
-        }
-
-        if let Some(rect) = resize_rect {
-            if let Some(edge) = detect_resize_edge(rect, x, y) {
-                ctx.cursor.set(cursor_for_resize_edge(edge));
+                ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
         }
+    }
 
-        if has_drag {
-            ctx.cursor.set(CursorStyle::Move);
-        } else if has_tap {
-            ctx.cursor.set(CursorStyle::Pointer);
+    fn update_slider_from_pointer(&mut self, x: f32) {
+        if let Some(value) =
+            slider_value_from_x(self.gui.tree(), "slider_radius", x, 0.0, 10.0, 0.1)
+        {
+            self.slider_value = value;
         }
     }
+}
+
+fn is_toggle_target(id: &str) -> bool {
+    id == "toggle_grid" || id.starts_with("toggle_grid::")
+}
+
+fn is_slider_target(id: &str) -> bool {
+    id == "slider_radius" || id.starts_with("slider_radius::")
+}
+
+fn slider_value_from_x(
+    tree: &gui::tree::Tree,
+    root_id: &str,
+    x: f32,
+    min: f32,
+    max: f32,
+    step: f32,
+) -> Option<f32> {
+    let track_id = format!("{root_id}::track");
+    let (_, track) = tree.iter().find(|(_, node)| node.id.as_ref() == track_id)?;
+    let width = track.rect.w.max(1.0);
+    let ratio = ((x - track.rect.x) / width).clamp(0.0, 1.0);
+    let raw = min + (max - min) * ratio;
+    let stepped = if step > 0.0 {
+        ((raw - min) / step).round() * step + min
+    } else {
+        raw
+    };
+    Some(stepped.clamp(min, max))
 }
 
 fn viewport_rect(ctx: &AppContext) -> Rect {

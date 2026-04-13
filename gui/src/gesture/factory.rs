@@ -76,11 +76,23 @@ fn default_target_id(tree: &Tree, chain: &HitChain) -> Option<String> {
 }
 
 fn resolve_drag_target_id(tree: &Tree, chain: &HitChain, fallback_node_id: usize) -> String {
-    nearest_panel_id(tree, chain).unwrap_or_else(|| {
+    if is_panel_titlebar_drag(tree, fallback_node_id) {
+        nearest_panel_id(tree, chain).unwrap_or_else(|| {
+            tree.get(fallback_node_id)
+                .map(|node| node.id.to_string())
+                .unwrap_or_default()
+        })
+    } else {
         tree.get(fallback_node_id)
             .map(|node| node.id.to_string())
             .unwrap_or_default()
-    })
+    }
+}
+
+fn is_panel_titlebar_drag(tree: &Tree, node_id: usize) -> bool {
+    tree.get(node_id)
+        .map(|node| node.id.as_ref().ends_with("::titlebar"))
+        .unwrap_or(false)
 }
 
 fn resolve_resize_target(
@@ -123,6 +135,9 @@ mod tests {
     use crate::renderer::Rect;
     use crate::tree::layout::{BoxStyle, LeafKind, Size};
     use crate::tree::{hit_test, reconcile, Desc, Tree};
+    use crate::widget::action::Action;
+    use crate::widget::atoms::slider::SliderProps;
+    use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
 
     fn test_panel_desc() -> Desc {
@@ -223,5 +238,88 @@ mod tests {
         let arena = arena_from_hit_chain(&tree, &chain, 5.0, 5.0, None);
         assert!(arena.is_some());
         assert_eq!(arena.unwrap().target_id(), "tap_target");
+    }
+
+    #[test]
+    fn toggle_track_click_emits_click_action() {
+        let desc = Desc::Widget {
+            id: Cow::Borrowed("toggle_grid"),
+            props: Box::new(ToggleProps {
+                label: Cow::Borrowed("Grid"),
+                value: true,
+                disabled: false,
+            }),
+        };
+        let mut tree = Tree::new();
+        reconcile(&mut tree, desc);
+        let root = tree.root().unwrap();
+        tree.get_mut(root).unwrap().rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 80.0,
+            h: 20.0,
+        };
+        let track_id = tree
+            .iter()
+            .find(|(_, n)| n.id.as_ref() == "toggle_grid::track")
+            .unwrap()
+            .0;
+        tree.get_mut(track_id).unwrap().rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 32.0,
+            h: 18.0,
+        };
+
+        let chain = hit_test(&tree, root, 10.0, 9.0);
+        let mut arena = arena_from_hit_chain(&tree, &chain, 10.0, 9.0, None).expect("arena");
+        let action = arena.pointer_up(10.0, 9.0).expect("click action");
+        match action {
+            Action::Click(id) => assert_eq!(id, "toggle_grid::track"),
+            other => panic!("expected click, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn slider_track_drag_emits_slider_target_not_panel() {
+        let desc = Desc::Widget {
+            id: Cow::Borrowed("slider_radius"),
+            props: Box::new(SliderProps {
+                label: Cow::Borrowed("Radius"),
+                min: 0.0,
+                max: 10.0,
+                step: 0.1,
+                value: 5.0,
+                disabled: false,
+            }),
+        };
+        let mut tree = Tree::new();
+        reconcile(&mut tree, desc);
+        let root = tree.root().unwrap();
+        tree.get_mut(root).unwrap().rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 200.0,
+            h: 24.0,
+        };
+        let track_id = tree
+            .iter()
+            .find(|(_, n)| n.id.as_ref() == "slider_radius::track")
+            .unwrap()
+            .0;
+        tree.get_mut(track_id).unwrap().rect = Rect {
+            x: 40.0,
+            y: 2.0,
+            w: 120.0,
+            h: 18.0,
+        };
+
+        let chain = hit_test(&tree, root, 100.0, 10.0);
+        let mut arena = arena_from_hit_chain(&tree, &chain, 100.0, 10.0, None).expect("arena");
+        let action = arena.pointer_move(110.0, 10.0).expect("drag start");
+        match action {
+            Action::DragMove { id, .. } => assert_eq!(id, "slider_radius::track"),
+            other => panic!("expected drag move, got {:?}", other),
+        }
     }
 }

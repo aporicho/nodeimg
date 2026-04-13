@@ -3,7 +3,6 @@ pub mod frameworks;
 pub mod props;
 
 pub mod action;
-mod focus;
 mod mapping;
 pub mod resize_edge;
 pub mod state;

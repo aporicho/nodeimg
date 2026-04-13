@@ -69,7 +69,7 @@ impl GestureArena {
         if let Some(idx) = accepted_idx {
             return Some(self.resolve_winner(idx));
         }
-        self.try_auto_resolve()
+        None
     }
 
     pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<Action> {
@@ -144,5 +144,28 @@ impl GestureArena {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gesture::{GestureRecognizer, TapRecognizer};
+    use std::time::Instant;
+
+    #[test]
+    fn tap_is_emitted_only_once_on_pointer_up() {
+        let mut arena = GestureArena::new("toggle_grid::track".to_string());
+        let mut tap = TapRecognizer::new(
+            "toggle_grid::track".to_string(),
+            Some(Instant::now() - std::time::Duration::from_secs(1)),
+        );
+        assert!(tap.on_pointer_down(10.0, 10.0));
+        arena.add(Box::new(tap));
+
+        assert!(arena.pointer_move(10.5, 10.5).is_none());
+        let action = arena.pointer_up(10.5, 10.5);
+        assert!(matches!(action, Some(Action::Click(_))));
+        assert!(arena.pointer_up(10.5, 10.5).is_none());
     }
 }

@@ -64,8 +64,9 @@ impl WidgetProps for SliderProps {
             a: 1.0,
         }; // zinc-900
         let font_size = 12.0;
-        let track_height = 6.0;
+        let track_height = 18.0;
         let track_radius = track_height / 2.0;
+        let thumb_size = 14.0;
 
         // 填充比例
         let range = self.max - self.min;
@@ -88,7 +89,6 @@ impl WidgetProps for SliderProps {
                 gap: 8.0,
                 align_items: Align::Center,
                 height: Size::Auto,
-                gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
             decoration: None,
@@ -113,8 +113,10 @@ impl WidgetProps for SliderProps {
                     style: BoxStyle {
                         flex_grow: 1.0,
                         height: Size::Fixed(track_height),
+                        padding: crate::tree::layout::Edges::all(2.0),
                         direction: Direction::Row,
                         gestures: vec![Gesture::Tap, Gesture::Drag],
+                        align_items: Align::Center,
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {
@@ -137,6 +139,28 @@ impl WidgetProps for SliderProps {
                                 background: Some(fill_color),
                                 border: None,
                                 radius: [track_radius; 4],
+                                shadow: None,
+                            }),
+                            children: vec![],
+                        },
+                        // Thumb（明确可拖拽的圆点）
+                        Desc::Container {
+                            id: Cow::Owned(format!("{id}::thumb")),
+                            style: BoxStyle {
+                                width: Size::Fixed(thumb_size),
+                                height: Size::Fixed(thumb_size),
+                                gestures: vec![Gesture::Tap, Gesture::Drag],
+                                ..BoxStyle::default()
+                            },
+                            decoration: Some(Decoration {
+                                background: Some(Color {
+                                    r: 1.0,
+                                    g: 1.0,
+                                    b: 1.0,
+                                    a: 1.0,
+                                }),
+                                border: None,
+                                radius: [thumb_size / 2.0; 4],
                                 shadow: None,
                             }),
                             children: vec![],
