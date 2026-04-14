@@ -1,8 +1,8 @@
 use crate::cache::manager::CacheManager;
 use crate::cache::model::ExecSignature;
-use crate::events::{EngineEvent, EventSubscription, ExecutionState};
+use crate::events::{EngineEvent, EventSubscription, ExecutionState, PendingExecutionId};
 use crate::execution::{CookingContextRange, ProgressSink};
-use crate::facade::{EngineError, ExecutionRequest, ExecutionTicket};
+use crate::facade::{EngineError, ExecutionRequest, ExecutionRequestResult, ExecutionTicket};
 use crate::graph;
 use crate::graph::model::events::{GraphChange, GraphChangedEvent};
 use crate::graph::model::subgraph::ExecuteTarget;
@@ -10,7 +10,7 @@ use crate::graph::query::downstream::downstream;
 use crate::graph::query::resolve_subgraph::resolve_subgraph;
 use crate::runtime::Runtime;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use types::{NodeId, Value};
 
 #[cfg(test)]
@@ -50,7 +50,11 @@ impl DirtyState {
     }
 }
 
-fn apply_graph_event(graph: &graph::Graph, dirty_state: &mut DirtyState, event: &GraphChangedEvent) {
+fn apply_graph_event(
+    graph: &graph::Graph,
+    dirty_state: &mut DirtyState,
+    event: &GraphChangedEvent,
+) {
     for change in &event.changes {
         apply_graph_change(graph, dirty_state, change);
     }
@@ -90,7 +94,9 @@ fn mark_node_and_downstream(
     for downstream_node in downstream(graph, node_id) {
         let downstream_reason = match reason {
             DirtyReason::ParamChanged => DirtyReason::UpstreamChanged,
-            DirtyReason::StructureChanged | DirtyReason::UpstreamChanged => DirtyReason::UpstreamChanged,
+            DirtyReason::StructureChanged | DirtyReason::UpstreamChanged => {
+                DirtyReason::UpstreamChanged
+            }
         };
         dirty_state.mark(downstream_node, downstream_reason);
     }
@@ -101,6 +107,8 @@ pub struct SchedulerFacade {
     cache: Arc<CacheManager>,
     cooking_range: CookingContextRange,
     dirty: Arc<Mutex<DirtyState>>,
+    committed_graph: Arc<Mutex<Option<Arc<graph::Graph>>>>,
+    self_handle: Weak<Mutex<SchedulerFacade>>,
 }
 
 #[cfg(test)]
@@ -146,6 +154,8 @@ mod tests {
             cache,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
+            committed_graph: Arc::new(Mutex::new(None)),
+            self_handle: Weak::new(),
         };
         scheduler.notify_graph_changed(
             &g,
@@ -202,6 +212,8 @@ mod tests {
             cache,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
+            committed_graph: Arc::new(Mutex::new(None)),
+            self_handle: Weak::new(),
         };
         scheduler.notify_graph_changed(
             &g,
@@ -261,13 +273,24 @@ impl SchedulerFacade {
             cache,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
+            committed_graph: Arc::new(Mutex::new(None)),
+            self_handle: Weak::new(),
         }
+    }
+
+    pub fn bind_handle(&mut self, handle: &Arc<Mutex<SchedulerFacade>>) {
+        self.self_handle = Arc::downgrade(handle);
     }
 
     pub fn notify_graph_changed(&mut self, graph: &graph::Graph, event: &GraphChangedEvent) {
         if event.changes.is_empty() {
             return;
         }
+
+        *self
+            .committed_graph
+            .lock()
+            .expect("committed graph lock poisoned") = Some(Arc::new(graph.clone()));
 
         let mut affected = DirtyState::new();
         apply_graph_event(graph, &mut affected, event);
@@ -296,48 +319,85 @@ impl SchedulerFacade {
         self.cooking_range = range;
     }
 
-    pub async fn request_execution(
+    pub fn request_execution(
         &mut self,
         graph: &graph::Graph,
         request: ExecutionRequest,
-    ) -> Result<ExecutionTicket, EngineError> {
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        self.request_execution_internal(graph, request, None)
+    }
+
+    fn request_execution_from_pending(
+        &mut self,
+        graph: &graph::Graph,
+        request: ExecutionRequest,
+        pending_id: PendingExecutionId,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        self.request_execution_internal(graph, request, Some(pending_id))
+    }
+
+    fn request_execution_internal(
+        &mut self,
+        graph: &graph::Graph,
+        request: ExecutionRequest,
+        pending_id: Option<PendingExecutionId>,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        *self
+            .committed_graph
+            .lock()
+            .expect("committed graph lock poisoned") = Some(Arc::new(graph.clone()));
         self.request_execution_in_scope_with_sink(
             graph,
             request,
             ExecutionScope::CommittedGraph,
             Arc::new(crate::execution::NoopProgressSink),
+            pending_id,
         )
-        .await
     }
 
-    pub async fn request_preview_execution(
+    pub fn request_preview_execution(
         &mut self,
         graph: &graph::Graph,
         request: ExecutionRequest,
         progress_sink: Arc<dyn ProgressSink>,
     ) -> Result<ExecutionTicket, EngineError> {
-        self.request_execution_in_scope_with_sink(
+        match self.request_execution_in_scope_with_sink(
             graph,
             request,
             ExecutionScope::PreviewSnapshot,
             progress_sink,
-        )
-        .await
+            None,
+        )? {
+            ExecutionRequestResult::Started(ticket) => Ok(ticket),
+            ExecutionRequestResult::Queued { .. } => Err(EngineError::Execution {
+                message: "preview execution unexpectedly queued".into(),
+            }),
+        }
     }
 
-    pub(crate) async fn request_execution_in_scope_with_sink(
+    pub(crate) fn request_execution_in_scope_with_sink(
         &mut self,
         graph: &graph::Graph,
         request: ExecutionRequest,
         scope: ExecutionScope,
         progress_sink: Arc<dyn ProgressSink>,
-    ) -> Result<ExecutionTicket, EngineError> {
+        pending_id: Option<PendingExecutionId>,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        let mode = request.mode.clone().unwrap_or_default();
+        let is_preview_request = matches!(
+            mode,
+            crate::execution::ExecutionMode::OneShot {
+                fidelity: crate::execution::EvaluationFidelity::Preview { .. }
+            }
+        );
         let resolved = resolve_subgraph(graph, request.target.clone()).map_err(|error| {
             EngineError::Execution {
                 message: error.to_string(),
             }
         })?;
-        let completion_hook = if matches!(scope, ExecutionScope::CommittedGraph) {
+        let completion_hook = if matches!(scope, ExecutionScope::CommittedGraph)
+            && !is_preview_request
+        {
             let dirty = Arc::clone(&self.dirty);
             let resolved_nodes = resolved.nodes.iter().copied().collect::<Vec<_>>();
             Some(Arc::new(move |status| {
@@ -349,21 +409,63 @@ impl SchedulerFacade {
                     dirty.dirty_nodes.remove(node_id);
                     dirty.dirty_reasons.remove(node_id);
                 }
-            }) as Arc<dyn Fn(crate::execution::ExecutionTerminalStatus) + Send + Sync>)
+            })
+                as Arc<
+                    dyn Fn(crate::execution::ExecutionTerminalStatus) + Send + Sync,
+                >)
+        } else if let Some(handle) = self.self_handle.upgrade() {
+            Some(Arc::new(move |status| {
+                if !matches!(status, crate::execution::ExecutionTerminalStatus::Finished) {
+                    return;
+                }
+                let mut scheduler = handle.lock().expect("scheduler lock poisoned");
+                let Some((pending_id, request)) =
+                    scheduler.runtime.take_pending_full_for_resubmit()
+                else {
+                    return;
+                };
+                let graph = scheduler
+                    .committed_graph
+                    .lock()
+                    .expect("committed graph lock poisoned")
+                    .clone();
+                let Some(graph) = graph else {
+                    return;
+                };
+                let _ =
+                    scheduler.request_execution_from_pending(graph.as_ref(), request, pending_id);
+            })
+                as Arc<
+                    dyn Fn(crate::execution::ExecutionTerminalStatus) + Send + Sync,
+                >)
         } else {
             None
         };
-        let ticket = self
-            .runtime
-            .execute_request_with_sink_and_hook(
+        match scope {
+            ExecutionScope::CommittedGraph => self.runtime.request_execution_with_sink_and_hook(
                 graph,
                 &self.cooking_range,
                 request,
                 progress_sink,
                 completion_hook,
-            )
-            .await?;
-        Ok(ticket)
+                pending_id,
+            ),
+            ExecutionScope::PreviewSnapshot => self.runtime.request_execution_with_sink_and_hook(
+                graph,
+                &self.cooking_range,
+                request,
+                progress_sink,
+                completion_hook,
+                None,
+            ),
+        }
+    }
+
+    pub fn cancel_execution(
+        &self,
+        execution_id: crate::execution::ExecutionId,
+    ) -> Result<(), EngineError> {
+        self.runtime.cancel_execution(execution_id)
     }
 
     fn query_signature_map(
@@ -371,7 +473,8 @@ impl SchedulerFacade {
         graph: &graph::Graph,
         target: &ExecuteTarget,
     ) -> Result<HashMap<NodeId, ExecSignature>, EngineError> {
-        self.runtime.query_signatures(graph, target, &self.cooking_range)
+        self.runtime
+            .query_signatures(graph, target, &self.cooking_range)
     }
 
     pub fn query_signature(
@@ -422,11 +525,7 @@ impl SchedulerFacade {
     }
 
     #[cfg(test)]
-    fn collect_dirty_nodes(
-        &self,
-        graph: &graph::Graph,
-        target: &ExecuteTarget,
-    ) -> HashSet<NodeId> {
+    fn collect_dirty_nodes(&self, graph: &graph::Graph, target: &ExecuteTarget) -> HashSet<NodeId> {
         match target {
             ExecuteTarget::Graph => self
                 .dirty
@@ -437,9 +536,11 @@ impl SchedulerFacade {
             ExecuteTarget::Node(node_id) => {
                 let target_closure = {
                     let mut set = HashSet::from([*node_id]);
-                    set.extend(resolve_subgraph(graph, ExecuteTarget::Node(*node_id))
-                        .map(|info| info.nodes)
-                        .unwrap_or_default());
+                    set.extend(
+                        resolve_subgraph(graph, ExecuteTarget::Node(*node_id))
+                            .map(|info| info.nodes)
+                            .unwrap_or_default(),
+                    );
                     set
                 };
                 self.dirty

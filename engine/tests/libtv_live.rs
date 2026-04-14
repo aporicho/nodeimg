@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use engine::facade::{EngineFacade, ExecutionRequest};
+use engine::facade::{EngineFacade, ExecutionRequest, ExecutionRequestResult};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::{
     execution::{EvaluationFidelity, ExecutionMode},
@@ -34,6 +34,10 @@ async fn test_libtv_image_gen_live() {
         })
         .await
         .unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected live image execution to start"),
+    };
     engine.await_execution(ticket.execution_id).unwrap();
     let outputs = engine
         .query_execution_outputs(ticket.execution_id, node_id)

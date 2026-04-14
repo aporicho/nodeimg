@@ -17,7 +17,9 @@ use cache::manager::CacheManager;
 use events::{EngineEvent, EventRecord, ExecutionState};
 use execution::{CookingContextRange, EvaluationFidelity, ExecutionTerminalStatus};
 use executors::image::{GpuExecutor, ImageExecutor};
-use facade::{EngineError, EngineFacade, EngineSubscription, ExecutionRequest, ExecutionTicket};
+use facade::{
+    EngineError, EngineFacade, EngineSubscription, ExecutionRequest, ExecutionRequestResult,
+};
 use graph::model::batch::{EditBatchRequest, EditBatchResult};
 use graph::model::events::{GraphChangedEvent, GraphEvent, GraphEventKind};
 use graph::model::state::GraphStateSummary;
@@ -56,18 +58,23 @@ impl Engine {
         let capability_registry = Arc::new(registry.capability_registry);
         let image_executor = ImageExecutor::new(gpu);
         let cache = Arc::new(CacheManager::new());
+        let scheduler = Arc::new(Mutex::new(scheduler_facade::SchedulerFacade::new(
+            runtime::Runtime::new(
+                Arc::clone(&node_manager),
+                Arc::clone(&capability_registry),
+                image_executor,
+                Arc::clone(&cache),
+            ),
+            cache,
+        )));
+        scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .bind_handle(&scheduler);
 
         Self {
             graph: GraphController::new(Arc::clone(&node_manager), 50),
-            scheduler: Arc::new(Mutex::new(scheduler_facade::SchedulerFacade::new(
-                runtime::Runtime::new(
-                    Arc::clone(&node_manager),
-                    Arc::clone(&capability_registry),
-                    image_executor,
-                    Arc::clone(&cache),
-                ),
-                cache,
-            ))),
+            scheduler,
             node_manager,
         }
     }
@@ -152,13 +159,13 @@ impl Engine {
     pub async fn execute_request(
         &mut self,
         request: ExecutionRequest,
-    ) -> Result<ExecutionTicket, EngineError> {
+    ) -> Result<ExecutionRequestResult, EngineError> {
         let graph = self.graph.snapshot();
-        self.scheduler
+        Ok(self
+            .scheduler
             .lock()
             .expect("scheduler lock poisoned")
-            .request_execution(&graph, request)
-            .await
+            .request_execution(&graph, request)?)
     }
 
     pub fn await_execution(
@@ -169,6 +176,16 @@ impl Engine {
             .lock()
             .expect("scheduler lock poisoned")
             .await_execution(execution_id)
+    }
+
+    pub fn cancel_execution(
+        &self,
+        execution_id: execution::ExecutionId,
+    ) -> Result<(), EngineError> {
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .cancel_execution(execution_id)
     }
 
     fn sync_scheduler_graph_events(&mut self, offset: usize) {
@@ -339,6 +356,10 @@ impl EngineFacade for Engine {
 
     fn query_state(&self) -> ExecutionState {
         Engine::execution_state(self)
+    }
+
+    fn cancel_execution(&self, execution_id: execution::ExecutionId) -> Result<(), EngineError> {
+        Engine::cancel_execution(self, execution_id)
     }
 
     fn subscribe_engine_events(&self) -> EngineSubscription {

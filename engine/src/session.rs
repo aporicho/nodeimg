@@ -5,7 +5,10 @@ use crate::cache::model::ExecSignature;
 use crate::events::{EventBus, EventRecord, EventSubscription};
 use crate::execution::ExecutionTerminalStatus;
 use crate::execution::{EvaluationFidelity, ExecutionMode, ExecutorProgressEvent, PreviewPrecision, ProgressSink};
-use crate::facade::{EngineError, EngineFacade, EngineSubscription, ExecutionRequest, ExecutionTicket};
+use crate::facade::{
+    EngineError, EngineFacade, EngineSubscription, ExecutionRequest, ExecutionRequestResult,
+    ExecutionTicket,
+};
 use crate::graph::model::batch::{EditBatchRequest, EditBatchResult, GraphEdit};
 use crate::graph::model::state::{PreviewOverlay, PreviewTarget};
 use crate::graph::model::subgraph::ExecuteTarget;
@@ -299,13 +302,15 @@ impl Session {
                     }),
                 },
                 preview_sink,
-            )
-            .await?;
+            )?;
 
         Ok(PreviewRequestStatus::Executed(ticket))
     }
 
-    pub async fn request_export(&mut self, target: ExecuteTarget) -> Result<ExecutionTicket, SessionError> {
+    pub async fn request_export(
+        &mut self,
+        target: ExecuteTarget,
+    ) -> Result<ExecutionRequestResult, SessionError> {
         let graph = self
             .engine
             .lock()
@@ -323,8 +328,15 @@ impl Session {
                         fidelity: EvaluationFidelity::Full,
                     }),
                 },
-            )
-            .await?)
+            )?)
+    }
+
+    pub fn cancel_execution(&self, execution_id: u64) -> Result<(), SessionError> {
+        Ok(self
+            .scheduler
+            .lock()
+            .expect("session scheduler lock poisoned")
+            .cancel_execution(execution_id)?)
     }
 
     pub fn graph_snapshot(&self) -> Arc<Graph> {

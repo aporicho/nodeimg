@@ -2,7 +2,7 @@ use std::path::Path;
 
 use engine::execution::{EvaluationFidelity, ExecutionMode};
 use engine::executors::video::decode_video_frames;
-use engine::facade::{EngineFacade, ExecutionRequest};
+use engine::facade::{EngineFacade, ExecutionRequest, ExecutionRequestResult};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::graph::{Connection, PinRef};
 use engine::Engine;
@@ -85,6 +85,10 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
         })
         .await
         .unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected live video execution to start"),
+    };
     engine.await_execution(ticket.execution_id).unwrap();
 
     let outputs = engine.query_execution_outputs(ticket.execution_id, save).unwrap();

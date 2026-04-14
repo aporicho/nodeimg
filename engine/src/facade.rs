@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::events::{EngineEvent, EventSubscription, ExecutionState};
+use crate::events::{
+    EngineEvent, EventSubscription, ExecutionState, PendingExecutionId, QueueReason,
+};
 use crate::execution::{CookingContextRange, ExecutionId, ExecutionMode};
 use crate::graph::model::batch::{EditBatchRequest, EditBatchResult};
 use crate::graph::model::subgraph::ExecuteTarget;
@@ -24,6 +26,15 @@ pub struct ExecutionTicket {
     pub target: ExecuteTarget,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExecutionRequestResult {
+    Started(ExecutionTicket),
+    Queued {
+        pending_id: PendingExecutionId,
+        reason: QueueReason,
+    },
+}
+
 pub type EngineSubscription = EventSubscription<EngineEvent>;
 
 #[derive(Debug)]
@@ -37,6 +48,7 @@ pub enum EngineError {
     Execution {
         message: String,
     },
+    RunInFlight,
     CapabilityUnavailable {
         cap_id: String,
     },
@@ -52,6 +64,7 @@ impl fmt::Display for EngineError {
             EngineError::Graph { message }
             | EngineError::Schema { message }
             | EngineError::Execution { message } => write!(f, "{message}"),
+            EngineError::RunInFlight => write!(f, "another full execution is already in flight"),
             EngineError::CapabilityUnavailable { cap_id } => {
                 write!(f, "no executor registered for capability '{cap_id}'")
             }
@@ -88,6 +101,7 @@ pub trait EngineFacade {
     fn replace_graph(&mut self, graph: Graph) -> Result<(), EngineError>;
     fn set_cooking_range(&mut self, range: CookingContextRange);
     fn query_state(&self) -> ExecutionState;
+    fn cancel_execution(&self, execution_id: ExecutionId) -> Result<(), EngineError>;
     fn subscribe_engine_events(&self) -> EngineSubscription;
     fn query_execution_outputs(
         &self,

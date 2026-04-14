@@ -3,14 +3,18 @@ use crate::cache::manager::CacheManager;
 use crate::capability::{CapabilityRegistry, LocalityHint};
 use crate::execution::{
     CookingContext, CookingContextRange, EvaluationFidelity, ExecutionMode, ExecutionTerminalStatus,
-    ExecutorProgressEvent, NodeExecutionRequest, NoopCancelToken, NoopProgressSink,
-    PlanLifecycleContext, PlanLifecycleNode, ProgressSink, TickSource,
+    ExecutorProgressEvent, NodeExecutionRequest, NoopProgressSink, PlanLifecycleContext,
+    PlanLifecycleNode, ProgressSink, SharedCancelToken, TickSource,
 };
-use crate::events::{EngineEvent, EventBus, EventSubscription, ExecutionState, ExecutionStatus, NodeExecutionStatus, RunningExecution};
+use crate::events::{
+    CancellationReason, CancellationSubject, EngineEvent, EventBus, EventSubscription,
+    ExecutionState, ExecutionStatus, NodeExecutionStatus, PendingExecution, PendingExecutionId,
+    QueueReason, ReplacementReason, RunningExecution,
+};
 use crate::executors;
 use crate::executors::image::ImageExecutor;
 use crate::execution::ExecutionOutputs;
-use crate::facade::{EngineError, ExecutionRequest, ExecutionTicket};
+use crate::facade::{EngineError, ExecutionRequest, ExecutionRequestResult, ExecutionTicket};
 use crate::graph;
 use crate::graph::model::subgraph::ExecuteTarget;
 use crate::graph::query::resolve_subgraph::resolve_subgraph;
@@ -30,14 +34,56 @@ pub struct Runtime {
     executor: Arc<ImageExecutor>,
     cache: Arc<CacheManager>,
     next_execution_id: crate::execution::ExecutionId,
+    next_pending_id: PendingExecutionId,
     execution_results:
         Arc<Mutex<HashMap<crate::execution::ExecutionId, HashMap<NodeId, ExecutionOutputs>>>>,
-    execution_state: Arc<Mutex<ExecutionState>>,
     completion_notifiers: Arc<Mutex<HashMap<crate::execution::ExecutionId, ExecutionCompletion>>>,
+    single_flight: Arc<Mutex<SingleFlightGuard>>,
     engine_events: EventBus<EngineEvent>,
 }
 
 type ExecutionCompletion = Arc<(Mutex<Option<ExecutionTerminalStatus>>, Condvar)>;
+
+#[derive(Clone)]
+struct CurrentRun {
+    execution_id: crate::execution::ExecutionId,
+    request: ExecutionRequest,
+    mode: ExecutionMode,
+    fidelity: EvaluationFidelity,
+    cancel_token: SharedCancelToken,
+    completion: ExecutionCompletion,
+    status: ExecutionStatus,
+    cancellation_reason: Option<CancellationReason>,
+    from_pending_id: Option<PendingExecutionId>,
+}
+
+#[derive(Clone)]
+struct PendingFull {
+    pending_id: PendingExecutionId,
+    request: ExecutionRequest,
+}
+
+#[derive(Default)]
+struct SingleFlightGuard {
+    current: Option<CurrentRun>,
+    pending_full: Option<PendingFull>,
+}
+
+enum StartDecision {
+    StartNow {
+        from_pending_id: Option<PendingExecutionId>,
+    },
+    WaitForCurrent,
+    Queued {
+        pending_id: PendingExecutionId,
+        reason: QueueReason,
+    },
+}
+
+enum RunFailure {
+    Cancelled,
+    Error(EngineError),
+}
 
 struct LifecycleExecutorBinding {
     executor: Arc<dyn executors::Executor>,
@@ -103,18 +149,45 @@ impl Runtime {
             executor: Arc::new(executor),
             cache,
             next_execution_id: 1,
+            next_pending_id: 1,
             execution_results: Arc::new(Mutex::new(HashMap::new())),
-            execution_state: Arc::new(Mutex::new(ExecutionState::default())),
             completion_notifiers: Arc::new(Mutex::new(HashMap::new())),
+            single_flight: Arc::new(Mutex::new(SingleFlightGuard::default())),
             engine_events: EventBus::new(512),
         }
     }
 
     pub fn query_state(&self) -> ExecutionState {
-        self.execution_state
+        let guard = self
+            .single_flight
             .lock()
-            .expect("execution state lock poisoned")
-            .clone()
+            .expect("single-flight lock poisoned");
+        let current = guard.current.as_ref().map(|current| RunningExecution {
+            execution_id: current.execution_id,
+            target: current.request.target.clone(),
+            mode: current.mode.clone(),
+            fidelity: current.fidelity.clone(),
+            from_pending_id: current.from_pending_id,
+        });
+        let pending_full = guard.pending_full.as_ref().map(|pending| {
+            let mode = pending.request.mode.clone().unwrap_or_default();
+            PendingExecution {
+                pending_id: pending.pending_id,
+                target: pending.request.target.clone(),
+                fidelity: fidelity_from_mode(&mode),
+                mode,
+            }
+        });
+
+        ExecutionState {
+            status: guard
+                .current
+                .as_ref()
+                .map(|current| current.status)
+                .unwrap_or(ExecutionStatus::Idle),
+            current,
+            pending_full,
+        }
     }
 
     pub fn subscribe_events(&self) -> EventSubscription<EngineEvent> {
@@ -138,6 +211,7 @@ impl Runtime {
             0,
             &CookingContext::default(),
             fidelity,
+            SharedCancelToken::new(),
             Arc::new(NoopProgressSink),
         )
             .await
@@ -147,114 +221,137 @@ impl Runtime {
                     .map(|(node_id, outputs)| (node_id, outputs.values))
                     .collect()
             })
-            .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
+            .map_err(|error| match error {
+                RunFailure::Cancelled => {
+                    Box::new(EngineError::Execution {
+                        message: "execution cancelled".into(),
+                    }) as Box<dyn std::error::Error + Send + Sync>
+                }
+                RunFailure::Error(error) => Box::new(error) as Box<dyn std::error::Error + Send + Sync>,
+            })
     }
 
-    pub async fn execute_request(
+    pub fn request_execution(
         &mut self,
         graph: &graph::Graph,
         cooking_range: &CookingContextRange,
         request: ExecutionRequest,
-    ) -> Result<ExecutionTicket, EngineError> {
-        self.execute_request_with_sink_and_hook(
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        self.request_execution_internal(
             graph,
             cooking_range,
             request,
             Arc::new(NoopProgressSink),
             None,
+            None,
         )
-        .await
     }
 
-    pub async fn execute_request_with_sink(
+    pub fn request_preview_execution(
         &mut self,
         graph: &graph::Graph,
         cooking_range: &CookingContextRange,
         request: ExecutionRequest,
         progress_sink: Arc<dyn ProgressSink>,
     ) -> Result<ExecutionTicket, EngineError> {
-        self.execute_request_with_sink_and_hook(graph, cooking_range, request, progress_sink, None)
-            .await
+        match self.request_execution_internal(
+            graph,
+            cooking_range,
+            request,
+            progress_sink,
+            None,
+            None,
+        )? {
+            ExecutionRequestResult::Started(ticket) => Ok(ticket),
+            ExecutionRequestResult::Queued { .. } => Err(EngineError::Execution {
+                message: "preview execution unexpectedly queued".into(),
+            }),
+        }
     }
 
-    pub async fn execute_request_with_sink_and_hook(
+    pub fn request_execution_with_sink_and_hook(
         &mut self,
         graph: &graph::Graph,
         cooking_range: &CookingContextRange,
         request: ExecutionRequest,
         progress_sink: Arc<dyn ProgressSink>,
         completion_hook: Option<Arc<dyn Fn(ExecutionTerminalStatus) + Send + Sync>>,
-    ) -> Result<ExecutionTicket, EngineError> {
-        let execution_id = self.next_execution_id;
-        self.next_execution_id += 1;
-        let mode = request.mode.unwrap_or_default();
-        let fidelity = match &mode {
-            ExecutionMode::OneShot { fidelity } => fidelity.clone(),
-            ExecutionMode::Continuous { .. } => EvaluationFidelity::Full,
-        };
-        let completion = Arc::new((Mutex::new(None), Condvar::new()));
-        self.completion_notifiers
-            .lock()
-            .expect("completion lock poisoned")
-            .insert(execution_id, Arc::clone(&completion));
+        pending_origin: Option<PendingExecutionId>,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        self.request_execution_internal(
+            graph,
+            cooking_range,
+            request,
+            progress_sink,
+            completion_hook,
+            pending_origin,
+        )
+    }
 
-        *self
-            .execution_state
-            .lock()
-            .expect("execution state lock poisoned") = ExecutionState {
-            status: ExecutionStatus::Running,
-            current: Some(RunningExecution {
-                execution_id,
-                target: request.target.clone(),
-                mode: mode.clone(),
-                fidelity: fidelity.clone(),
-            }),
-        };
-        let _ = self.engine_events.publish(EngineEvent::ExecutionStarted {
-            execution_id,
-            target: request.target.clone(),
-            mode: mode.clone(),
-            fidelity: fidelity.clone(),
-        });
+    pub fn request_execution_from_pending(
+        &mut self,
+        graph: &graph::Graph,
+        cooking_range: &CookingContextRange,
+        request: ExecutionRequest,
+        pending_id: PendingExecutionId,
+        completion_hook: Option<Arc<dyn Fn(ExecutionTerminalStatus) + Send + Sync>>,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        self.request_execution_internal(
+            graph,
+            cooking_range,
+            request,
+            Arc::new(NoopProgressSink),
+            completion_hook,
+            Some(pending_id),
+        )
+    }
 
-        let runtime = self.clone();
-        let graph = graph.clone();
-        let cooking_range = cooking_range.clone();
-        let request_for_task = ExecutionRequest {
-            target: request.target.clone(),
-            mode: Some(mode.clone()),
-        };
-        std::thread::spawn(move || {
-            let task_result = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime worker tokio runtime")
-                .block_on(async {
-                    runtime
-                        .run_request_in_background(
-                            execution_id,
-                            graph,
-                            cooking_range,
-                            request_for_task.clone(),
-                            Arc::clone(&progress_sink),
-                        )
-                        .await
-                });
-            runtime.finish_background_request(
-                execution_id,
-                request_for_task.target,
-                mode,
-                fidelity,
-                task_result,
-                completion,
-                completion_hook,
-            );
-        });
+    fn request_execution_internal(
+        &mut self,
+        graph: &graph::Graph,
+        cooking_range: &CookingContextRange,
+        request: ExecutionRequest,
+        progress_sink: Arc<dyn ProgressSink>,
+        completion_hook: Option<Arc<dyn Fn(ExecutionTerminalStatus) + Send + Sync>>,
+        pending_origin: Option<PendingExecutionId>,
+    ) -> Result<ExecutionRequestResult, EngineError> {
+        let mode = request.mode.clone().unwrap_or_default();
+        validate_mode(&mode)?;
 
-        Ok(ExecutionTicket {
-            execution_id,
-            target: request.target,
-        })
+        loop {
+            match self.try_start_run(&request, &mode)? {
+                StartDecision::StartNow { from_pending_id } => {
+                    return Ok(ExecutionRequestResult::Started(self.spawn_run(
+                        graph,
+                        cooking_range,
+                        request.clone(),
+                        Arc::clone(&progress_sink),
+                        completion_hook.clone(),
+                        from_pending_id.or(pending_origin),
+                    )?));
+                }
+                StartDecision::Queued { pending_id, reason } => {
+                    let _ = self.engine_events.publish(EngineEvent::ExecutionQueued {
+                        pending_id,
+                        target: request.target.clone(),
+                        mode: mode.clone(),
+                        fidelity: fidelity_from_mode(&mode),
+                        reason,
+                    });
+                    return Ok(ExecutionRequestResult::Queued { pending_id, reason });
+                }
+                StartDecision::WaitForCurrent => {
+                    let completion = self.current_completion()?;
+                    let (lock, condvar) = &*completion;
+                    let mut status = lock.lock().expect("execution completion lock poisoned");
+                    while status.is_none() {
+                        status = condvar
+                            .wait(status)
+                            .expect("execution completion wait poisoned");
+                    }
+                }
+            }
+        }
     }
 
     pub fn query_execution_outputs(
@@ -306,23 +403,230 @@ impl Runtime {
         Ok(status.expect("completion status set before notify"))
     }
 
+    pub fn cancel_execution(
+        &self,
+        execution_id: crate::execution::ExecutionId,
+    ) -> Result<(), EngineError> {
+        let mut guard = self
+            .single_flight
+            .lock()
+            .expect("single-flight lock poisoned");
+        let Some(current) = guard.current.as_mut() else {
+            return Err(EngineError::Execution {
+                message: format!("execution {execution_id} is not running"),
+            });
+        };
+        if current.execution_id != execution_id {
+            return Err(EngineError::Execution {
+                message: format!("execution {execution_id} is not the active run"),
+            });
+        }
+
+        current.status = ExecutionStatus::Cancelling;
+        current.cancellation_reason = Some(CancellationReason::UserRequested);
+        current.cancel_token.cancel();
+        Ok(())
+    }
+
+    pub fn take_pending_full_for_resubmit(&self) -> Option<(PendingExecutionId, ExecutionRequest)> {
+        self.single_flight
+            .lock()
+            .expect("single-flight lock poisoned")
+            .pending_full
+            .take()
+            .map(|pending| (pending.pending_id, pending.request))
+    }
+
+    fn current_completion(&self) -> Result<ExecutionCompletion, EngineError> {
+        self.single_flight
+            .lock()
+            .expect("single-flight lock poisoned")
+            .current
+            .as_ref()
+            .map(|current| Arc::clone(&current.completion))
+            .ok_or(EngineError::Execution {
+                message: "no active execution to wait for".into(),
+            })
+    }
+
+    fn try_start_run(
+        &mut self,
+        request: &ExecutionRequest,
+        mode: &ExecutionMode,
+    ) -> Result<StartDecision, EngineError> {
+        let fidelity = fidelity_from_mode(mode);
+        let next_pending_id = self.next_pending_id;
+        let mut guard = self
+            .single_flight
+            .lock()
+            .expect("single-flight lock poisoned");
+
+        let Some(current_snapshot) = guard.current.clone() else {
+            return Ok(StartDecision::StartNow {
+                from_pending_id: None,
+            });
+        };
+
+        match (&current_snapshot.fidelity, &fidelity) {
+            (EvaluationFidelity::Full, EvaluationFidelity::Preview { .. }) => {
+                let preempted_request = current_snapshot.request.clone();
+                let pending = PendingFull {
+                    pending_id: next_pending_id,
+                    request: preempted_request,
+                };
+                if let Some(replaced) = guard.pending_full.replace(pending.clone()) {
+                    let _ = self.engine_events.publish(EngineEvent::ExecutionReplaced {
+                        pending_id: replaced.pending_id,
+                        reason: ReplacementReason::ReplacedByNewerFull,
+                    });
+                }
+                self.next_pending_id += 1;
+                let pending_mode = pending.request.mode.clone().unwrap_or_default();
+                let _ = self.engine_events.publish(EngineEvent::ExecutionQueued {
+                    pending_id: pending.pending_id,
+                    target: pending.request.target.clone(),
+                    mode: pending_mode.clone(),
+                    fidelity: fidelity_from_mode(&pending_mode),
+                    reason: QueueReason::BehindPreview,
+                });
+                let current = guard.current.as_mut().expect("current run present");
+                current.status = ExecutionStatus::Cancelling;
+                current.cancellation_reason = Some(CancellationReason::ReplacedByPreview);
+                current.cancel_token.cancel();
+                Ok(StartDecision::WaitForCurrent)
+            }
+            (EvaluationFidelity::Preview { .. }, EvaluationFidelity::Preview { .. }) => {
+                let current = guard.current.as_mut().expect("current run present");
+                current.status = ExecutionStatus::Cancelling;
+                current.cancellation_reason = Some(CancellationReason::ReplacedByNewerPreview);
+                current.cancel_token.cancel();
+                Ok(StartDecision::WaitForCurrent)
+            }
+            (EvaluationFidelity::Preview { .. }, EvaluationFidelity::Full) => {
+                if let Some(replaced) = guard.pending_full.replace(PendingFull {
+                    pending_id: next_pending_id,
+                    request: request.clone(),
+                }) {
+                    let _ = self.engine_events.publish(EngineEvent::ExecutionReplaced {
+                        pending_id: replaced.pending_id,
+                        reason: ReplacementReason::ReplacedByNewerFull,
+                    });
+                }
+                self.next_pending_id += 1;
+                let pending_id = guard
+                    .pending_full
+                    .as_ref()
+                    .expect("pending full just inserted")
+                    .pending_id;
+                Ok(StartDecision::Queued {
+                    pending_id,
+                    reason: QueueReason::BehindPreview,
+                })
+            }
+            (EvaluationFidelity::Full, EvaluationFidelity::Full) => Err(EngineError::RunInFlight),
+        }
+    }
+
+    fn spawn_run(
+        &mut self,
+        graph: &graph::Graph,
+        cooking_range: &CookingContextRange,
+        request: ExecutionRequest,
+        progress_sink: Arc<dyn ProgressSink>,
+        completion_hook: Option<Arc<dyn Fn(ExecutionTerminalStatus) + Send + Sync>>,
+        from_pending_id: Option<PendingExecutionId>,
+    ) -> Result<ExecutionTicket, EngineError> {
+        let execution_id = self.next_execution_id;
+        self.next_execution_id += 1;
+        let mode = request.mode.clone().unwrap_or_default();
+        let fidelity = fidelity_from_mode(&mode);
+        let ticket_target = request.target.clone();
+        let completion = Arc::new((Mutex::new(None), Condvar::new()));
+        self.completion_notifiers
+            .lock()
+            .expect("completion lock poisoned")
+            .insert(execution_id, Arc::clone(&completion));
+        let cancel_token = SharedCancelToken::new();
+        {
+            let mut guard = self
+                .single_flight
+                .lock()
+                .expect("single-flight lock poisoned");
+            guard.current = Some(CurrentRun {
+                execution_id,
+                request: request.clone(),
+                mode: mode.clone(),
+                fidelity: fidelity.clone(),
+                cancel_token: cancel_token.clone(),
+                completion: Arc::clone(&completion),
+                status: ExecutionStatus::Running,
+                cancellation_reason: None,
+                from_pending_id,
+            });
+        }
+        let _ = self.engine_events.publish(EngineEvent::ExecutionStarted {
+            execution_id,
+            target: request.target.clone(),
+            mode: mode.clone(),
+            fidelity: fidelity.clone(),
+            from_pending_id,
+        });
+
+        let runtime = self.clone();
+        let graph = graph.clone();
+        let cooking_range = cooking_range.clone();
+        std::thread::spawn(move || {
+            let task_result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime worker tokio runtime")
+                .block_on(async {
+                    runtime
+                        .run_request_in_background(
+                            execution_id,
+                            graph,
+                            cooking_range,
+                            request.clone(),
+                            cancel_token,
+                            Arc::clone(&progress_sink),
+                        )
+                        .await
+                });
+            runtime.finish_background_request(
+                execution_id,
+                task_result,
+                completion,
+                completion_hook,
+            );
+        });
+
+        Ok(ExecutionTicket {
+            execution_id,
+            target: ticket_target,
+        })
+    }
+
     async fn run_request_in_background(
         &self,
         execution_id: crate::execution::ExecutionId,
         graph: graph::Graph,
         cooking_range: CookingContextRange,
         request: ExecutionRequest,
+        cancel_token: SharedCancelToken,
         progress_sink: Arc<dyn ProgressSink>,
-    ) -> Result<HashMap<NodeId, ExecutionOutputs>, EngineError> {
+    ) -> Result<HashMap<NodeId, ExecutionOutputs>, RunFailure> {
         let mode = request.mode.clone().unwrap_or_default();
         let order = resolve_subgraph(&graph, request.target.clone())
-            .map_err(|error| EngineError::Execution {
+            .map_err(|error| RunFailure::Error(EngineError::Execution {
                 message: error.to_string(),
-            })?
+            }))?
             .order;
-        let lifecycle_bindings = self.build_lifecycle_bindings(&graph, &order)?;
+        let lifecycle_bindings = self
+            .build_lifecycle_bindings(&graph, &order)
+            .map_err(RunFailure::Error)?;
         let effective_range = if cooking_range.axes.is_empty() {
-            self.infer_cooking_range(&graph, &order)?
+            self.infer_cooking_range(&graph, &order)
+                .map_err(RunFailure::Error)?
         } else {
             cooking_range
         };
@@ -336,15 +640,18 @@ impl Runtime {
             binding
                 .executor
                 .on_plan_started(&lifecycle)
-                .map_err(|error| EngineError::Execution {
+                .map_err(|error| RunFailure::Error(EngineError::Execution {
                     message: error.to_string(),
-                })?;
+                }))?;
         }
 
         let run_result = match mode.clone() {
             ExecutionMode::OneShot { fidelity } => {
                 let mut aggregated = HashMap::new();
                 for context in effective_range.enumerate() {
+                    if cancel_token.is_cancelled() {
+                        break;
+                    }
                     let frame_outputs = self
                         .evaluate_order(
                             &graph,
@@ -352,6 +659,7 @@ impl Runtime {
                             execution_id,
                             &context,
                             fidelity.clone(),
+                            cancel_token.clone(),
                             Arc::clone(&progress_sink),
                         )
                         .await?;
@@ -359,9 +667,13 @@ impl Runtime {
                         aggregated.insert(node_id, outputs);
                     }
                 }
-                Ok(aggregated)
+                if cancel_token.is_cancelled() {
+                    Err(RunFailure::Cancelled)
+                } else {
+                    Ok(aggregated)
+                }
             }
-            ExecutionMode::Continuous { tick_source, .. } => Err(EngineError::Execution {
+            ExecutionMode::Continuous { tick_source, .. } => Err(RunFailure::Error(EngineError::Execution {
                 message: match tick_source {
                     TickSource::OsClock => {
                         "Continuous mode is not implemented in the current runtime".into()
@@ -370,11 +682,13 @@ impl Runtime {
                         format!("continuous tick source '{name}' is not implemented")
                     }
                 },
-            }),
+            })),
         };
 
         let terminal_status = if run_result.is_ok() {
             ExecutionTerminalStatus::Finished
+        } else if matches!(run_result, Err(RunFailure::Cancelled)) {
+            ExecutionTerminalStatus::Cancelled
         } else {
             ExecutionTerminalStatus::Error
         };
@@ -395,34 +709,54 @@ impl Runtime {
     fn finish_background_request(
         &self,
         execution_id: crate::execution::ExecutionId,
-        target: ExecuteTarget,
-        mode: ExecutionMode,
-        fidelity: EvaluationFidelity,
-        result: Result<HashMap<NodeId, ExecutionOutputs>, EngineError>,
+        result: Result<HashMap<NodeId, ExecutionOutputs>, RunFailure>,
         completion: ExecutionCompletion,
         completion_hook: Option<Arc<dyn Fn(ExecutionTerminalStatus) + Send + Sync>>,
     ) {
-        let terminal_status = match result {
+        let (target, mode, fidelity, terminal_status, cancellation_reason) = {
+            let mut guard = self
+                .single_flight
+                .lock()
+                .expect("single-flight lock poisoned");
+            let matches_current = guard
+                .current
+                .as_ref()
+                .map(|current| current.execution_id == execution_id)
+                .unwrap_or(false);
+            if !matches_current {
+                return;
+            }
+            let current = guard.current.take().expect("current run exists when matching");
+            let terminal_status = match &result {
+                Ok(_) => ExecutionTerminalStatus::Finished,
+                Err(RunFailure::Cancelled) => ExecutionTerminalStatus::Cancelled,
+                Err(RunFailure::Error(_)) => ExecutionTerminalStatus::Error,
+            };
+            (
+                current.request.target,
+                current.mode,
+                current.fidelity,
+                terminal_status,
+                current.cancellation_reason,
+            )
+        };
+
+        match result {
             Ok(outputs) => {
                 self.execution_results
                     .lock()
                     .expect("execution results lock poisoned")
                     .insert(execution_id, outputs);
-                ExecutionTerminalStatus::Finished
             }
-            Err(error) => {
+            Err(RunFailure::Cancelled) => {
                 let _ = self.engine_events.publish(EngineEvent::ExecutionCancelled {
-                    execution_id,
-                    reason: error.to_string(),
+                    subject: CancellationSubject::Execution(execution_id),
+                    reason: cancellation_reason.unwrap_or(CancellationReason::UserRequested),
                 });
-                ExecutionTerminalStatus::Error
             }
-        };
+            Err(RunFailure::Error(_)) => {}
+        }
 
-        *self
-            .execution_state
-            .lock()
-            .expect("execution state lock poisoned") = ExecutionState::default();
         let _ = self.engine_events.publish(EngineEvent::ExecutionFinished {
             execution_id,
             target,
@@ -430,15 +764,15 @@ impl Runtime {
             fidelity,
             status: terminal_status,
         });
-        if let Some(hook) = completion_hook {
-            hook(terminal_status);
-        }
-
         let (status_lock, condvar) = &*completion;
         *status_lock
             .lock()
             .expect("execution completion lock poisoned") = Some(terminal_status);
         condvar.notify_all();
+
+        if let Some(hook) = completion_hook {
+            hook(terminal_status);
+        }
     }
 
     pub fn query_signatures(
@@ -490,14 +824,18 @@ impl Runtime {
         run_id: crate::execution::RunId,
         cooking_context: &CookingContext,
         fidelity: EvaluationFidelity,
+        cancel_token: SharedCancelToken,
         progress_sink: Arc<dyn ProgressSink>,
-    ) -> Result<HashMap<NodeId, ExecutionOutputs>, EngineError> {
+    ) -> Result<HashMap<NodeId, ExecutionOutputs>, RunFailure> {
         let ctx = self.executor.context();
         let generation = self.cache.current_generation();
         let mut results: HashMap<NodeId, ExecutionOutputs> = HashMap::new();
         let mut signatures: HashMap<NodeId, cache::model::ExecSignature> = HashMap::new();
 
         for node_id in order {
+            if cancel_token.is_cancelled() {
+                return Err(RunFailure::Cancelled);
+            }
             let _ = self.engine_events.publish(EngineEvent::NodeStarted {
                 execution_id: run_id,
                 node_id: *node_id,
@@ -505,15 +843,15 @@ impl Runtime {
             let node = graph
                 .nodes
                 .get(node_id)
-                .ok_or_else(|| EngineError::Graph {
+                .ok_or_else(|| RunFailure::Error(EngineError::Graph {
                     message: format!("Node {:?} not found in graph", node_id),
-                })?;
+                }))?;
             let def = self
                 .node_manager
                 .get_node_def(&node.type_id)
-                .ok_or_else(|| EngineError::Graph {
+                .ok_or_else(|| RunFailure::Error(EngineError::Graph {
                     message: format!("Node type '{}' not registered", node.type_id),
-                })?;
+                }))?;
 
             let mut upstream_inputs: HashMap<String, Value> = HashMap::new();
             let mut upstream_signatures = Vec::new();
@@ -533,9 +871,9 @@ impl Runtime {
             let effective_params = self
                 .node_manager
                 .resolve_effective_params(&node.type_id, &node.params)
-                .map_err(|error| EngineError::Schema {
+                .map_err(|error| RunFailure::Error(EngineError::Schema {
                     message: error.to_string(),
-                })?;
+                }))?;
             let exec_signature = compute_exec_signature(
                 self.node_manager.as_ref(),
                 def,
@@ -612,7 +950,7 @@ impl Runtime {
                                 cooking_context: cooking_context.clone(),
                                 fidelity: fidelity.clone(),
                                 timeout_ms: def.execution.timeout_ms,
-                                cancel_token: Arc::new(NoopCancelToken),
+                                cancel_token: Arc::new(cancel_token.clone()),
                                 progress_sink: Arc::new(NodeProgressSink {
                                     engine_events: self.engine_events.clone(),
                                     execution_id: run_id,
@@ -624,14 +962,24 @@ impl Runtime {
                             },
                         )
                         .await
-                        .map_err(|error| {
-                            let message = error.to_string();
-                            let _ = self.engine_events.publish(EngineEvent::NodeFailed {
-                                execution_id: run_id,
-                                node_id: *node_id,
-                                error: message.clone(),
-                            });
-                            EngineError::Execution { message }
+                        .map_err(|error| match error {
+                            crate::execution::ExecutorError::Cancelled => {
+                                let _ = self.engine_events.publish(EngineEvent::NodeFinished {
+                                    execution_id: run_id,
+                                    node_id: *node_id,
+                                    status: NodeExecutionStatus::Cancelled,
+                                });
+                                RunFailure::Cancelled
+                            }
+                            other => {
+                                let message = other.to_string();
+                                let _ = self.engine_events.publish(EngineEvent::NodeFailed {
+                                    execution_id: run_id,
+                                    node_id: *node_id,
+                                    error: message.clone(),
+                                });
+                                RunFailure::Error(EngineError::Execution { message })
+                            }
                         })?
                 }
                 None => {
@@ -640,11 +988,20 @@ impl Runtime {
                         node_id: *node_id,
                         error: def.requires.join(" + "),
                     });
-                    return Err(EngineError::CapabilityUnavailable {
+                    return Err(RunFailure::Error(EngineError::CapabilityUnavailable {
                         cap_id: def.requires.join(" + "),
-                    });
+                    }));
                 }
             };
+
+            if cancel_token.is_cancelled() {
+                let _ = self.engine_events.publish(EngineEvent::NodeFinished {
+                    execution_id: run_id,
+                    node_id: *node_id,
+                    status: NodeExecutionStatus::Cancelled,
+                });
+                return Err(RunFailure::Cancelled);
+            }
 
             if matches!(fidelity, EvaluationFidelity::Preview { .. }) {
                 for (output_pin, value) in &outputs.values {
@@ -869,6 +1226,29 @@ fn positive_int_param(params: &HashMap<String, Value>, key: &str) -> Option<u64>
         Some(Value::Int(value)) if *value > 0 => Some(*value as u64),
         Some(Value::Float(value)) if *value > 0.0 => Some(*value as u64),
         _ => None,
+    }
+}
+
+fn fidelity_from_mode(mode: &ExecutionMode) -> EvaluationFidelity {
+    match mode {
+        ExecutionMode::OneShot { fidelity } => fidelity.clone(),
+        ExecutionMode::Continuous { .. } => EvaluationFidelity::Full,
+    }
+}
+
+fn validate_mode(mode: &ExecutionMode) -> Result<(), EngineError> {
+    match mode {
+        ExecutionMode::OneShot { .. } => Ok(()),
+        ExecutionMode::Continuous { tick_source, .. } => Err(EngineError::Execution {
+            message: match tick_source {
+                TickSource::OsClock => {
+                    "Continuous mode is not implemented in the current runtime".into()
+                }
+                TickSource::External(name) | TickSource::DataPull(name) => {
+                    format!("continuous tick source '{name}' is not implemented")
+                }
+            },
+        }),
     }
 }
 

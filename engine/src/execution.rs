@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::cache::model::{ExecSignature, GenerationId};
@@ -183,6 +184,31 @@ pub struct NoopCancelToken;
 impl CancelToken for NoopCancelToken {
     fn is_cancelled(&self) -> bool {
         false
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct SharedCancelToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl SharedCancelToken {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+impl CancelToken for SharedCancelToken {
+    fn is_cancelled(&self) -> bool {
+        self.is_cancelled()
     }
 }
 

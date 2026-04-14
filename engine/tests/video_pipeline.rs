@@ -3,7 +3,7 @@ use std::path::Path;
 use engine::execution::{EvaluationFidelity, ExecutionMode};
 use engine::executors::remote_video::{providers, ProviderRegistry as VideoProviderRegistry};
 use engine::executors::video::decode_video_frames;
-use engine::facade::{EngineFacade, ExecutionRequest};
+use engine::facade::{EngineFacade, ExecutionRequest, ExecutionRequestResult};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::graph::{Connection, PinRef};
 use engine::node_registry::{sources, NodeRegistry};
@@ -94,6 +94,10 @@ async fn test_headless_video_pipeline_writes_animated_output() {
         })
         .await
         .unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected video pipeline execution to start"),
+    };
     engine.await_execution(ticket.execution_id).unwrap();
 
     let outputs = engine

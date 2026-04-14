@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use engine::capability::{Capability, CapabilityId, SideEffect};
 use engine::execution::{EvaluationFidelity, NodeExecutionRequest};
 use engine::executors::{ExecutionOutputs, Executor, ExecutorFuture, LocalityProfile};
-use engine::facade::EngineFacade;
+use engine::facade::{EngineFacade, ExecutionRequestResult};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::node_manager::{ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity};
 use engine::node_registry::{NodeRegistration, NodeRegistry, NodeSource};
@@ -248,6 +248,10 @@ async fn preview_execution_does_not_populate_formal_cache() {
 
     session.discard_preview();
     let ticket = session.request_export(ExecuteTarget::Node(node_id)).await.unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected export to start immediately"),
+    };
     session.await_execution(ticket.execution_id).unwrap();
     assert_eq!(call_count.load(Ordering::SeqCst), 2);
 

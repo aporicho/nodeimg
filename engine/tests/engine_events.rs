@@ -5,7 +5,7 @@ use engine::capability::{Capability, CapabilityId, SideEffect};
 use engine::events::{EngineEvent, ExecutionStatus, NodeExecutionStatus, PollResult};
 use engine::execution::{ExecutionOutputs, NodeExecutionRequest};
 use engine::executors::{Executor, ExecutorFuture, LocalityProfile};
-use engine::facade::{EngineFacade, ExecutionRequest};
+use engine::facade::{EngineFacade, ExecutionRequest, ExecutionRequestResult};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::node_manager::{ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity};
 use engine::node_registry::{NodeRegistration, NodeRegistry, NodeSource};
@@ -183,6 +183,10 @@ async fn engine_subscription_receives_lifecycle_events() {
         })
         .await
         .unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected immediate engine execution start"),
+    };
     engine.await_execution(ticket.execution_id).unwrap();
 
     let PollResult::Items(items) = sub.poll_pending() else {
@@ -234,6 +238,10 @@ async fn execute_request_returns_before_background_execution_finishes() {
         })
         .await
         .unwrap();
+    let ticket = match ticket {
+        ExecutionRequestResult::Started(ticket) => ticket,
+        ExecutionRequestResult::Queued { .. } => panic!("expected slow execution to start immediately"),
+    };
 
     assert_eq!(engine.query_state().status, ExecutionStatus::Running);
     assert!(engine.query_execution_outputs(ticket.execution_id, node_id).is_err());
