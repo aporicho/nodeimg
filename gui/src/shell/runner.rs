@@ -1,3 +1,4 @@
+use arboard::Clipboard;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -60,6 +61,8 @@ impl<A: App> ApplicationHandler for Runner<A> {
             size,
             scale_factor,
             cursor: super::cursor::CursorState::new(),
+            ime_allowed: false,
+            clipboard: Clipboard::new().ok(),
         };
 
         let app = A::init(&mut ctx);
@@ -96,7 +99,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         }
 
         // 翻译并分发事件
-        if let Some(app_event) = state.events.translate(&event) {
+        for app_event in state.events.translate(&event) {
             match app_event {
                 AppEvent::CloseRequested => {
                     event_loop.exit();

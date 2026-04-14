@@ -6,12 +6,13 @@ use winit::dpi::PhysicalSize;
 
 use super::super::style::TextStyle;
 use super::super::text_measurer::{TextCacheKey, TextMeasurer};
-use super::super::types::{Color, Point};
+use super::super::types::{Color, Point, Rect};
 
 pub struct TextRequest {
     pub pos: Point,
     pub text: String,
     pub style: TextStyle,
+    pub bounds: Option<Rect>,
 }
 
 pub struct TextPipeline {
@@ -88,12 +89,7 @@ impl TextPipeline {
                     left: req.pos.x * sf,
                     top: req.pos.y * sf,
                     scale: sf,
-                    bounds: TextBounds {
-                        left: 0,
-                        top: 0,
-                        right: size.width as i32,
-                        bottom: size.height as i32,
-                    },
+                    bounds: text_bounds(req.bounds, size, sf),
                     default_color: to_glyphon_color(req.style.color),
                     custom_glyphs: &[],
                 }
@@ -120,6 +116,23 @@ impl TextPipeline {
         self.text_renderer
             .render(&self.atlas, &self.viewport, pass)
             .expect("failed to render text");
+    }
+}
+
+fn text_bounds(bounds: Option<Rect>, size: PhysicalSize<u32>, scale: f32) -> TextBounds {
+    match bounds {
+        Some(rect) => TextBounds {
+            left: (rect.x * scale).floor() as i32,
+            top: (rect.y * scale).floor() as i32,
+            right: ((rect.x + rect.w) * scale).ceil() as i32,
+            bottom: ((rect.y + rect.h) * scale).ceil() as i32,
+        },
+        None => TextBounds {
+            left: 0,
+            top: 0,
+            right: size.width as i32,
+            bottom: size.height as i32,
+        },
     }
 }
 

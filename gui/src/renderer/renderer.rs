@@ -175,6 +175,19 @@ impl Renderer {
                 color: style.color,
                 size: style.size,
             },
+            bounds: None,
+        }));
+    }
+
+    pub fn draw_text_clipped(&mut self, pos: Point, text: &str, style: &TextStyle, bounds: Rect) {
+        self.commands.push(DrawCommand::Text(TextRequest {
+            pos,
+            text: text.to_string(),
+            style: TextStyle {
+                color: style.color,
+                size: style.size,
+            },
+            bounds: Some(bounds),
         }));
     }
 

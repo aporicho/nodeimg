@@ -14,6 +14,8 @@ pub enum Key {
     Enter,
     Backspace,
     Delete,
+    Home,
+    End,
     Left,
     Right,
     Up,
@@ -75,6 +77,10 @@ pub enum AppEvent {
     KeyRelease {
         key: Key,
         modifiers: Modifiers,
+    },
+    ImePreedit {
+        text: String,
+        caret: Option<(usize, usize)>,
     },
     TextInput {
         text: String,

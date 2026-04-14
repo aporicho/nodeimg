@@ -27,6 +27,8 @@ pub fn apply_event(store: &mut InteractionStore, tree: &Tree, event: &AppEvent) 
             store.set_captured(input_target);
             if let Some(target) = focus_target {
                 store.focus(target);
+            } else {
+                store.blur();
             }
         }
         AppEvent::MouseRelease { button, .. } if button == crate::shell::MouseButton::Left => {

@@ -64,6 +64,7 @@ pub fn dispatch(
                     color: r.style.color,
                     size: r.style.size,
                 },
+                bounds: r.bounds,
             })
             .collect();
         text_pipeline.prepare(

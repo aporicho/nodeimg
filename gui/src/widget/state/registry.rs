@@ -45,33 +45,36 @@ pub fn interactive_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
         }
     }
 
-    match gesture_target {
-        Some(_) => focusable_widget.or(gesture_target),
-        None => None,
-    }
+    focusable_widget.or(gesture_target)
 }
 
 pub fn input_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
-    chain.iter().find(|&node_id| {
-        tree.get(node_id)
-            .map(|node| {
-                let widget_enabled = match &node.kind {
-                    NodeKind::Widget(props) => !is_disabled(props.as_ref()),
-                    _ => true,
-                };
-                widget_enabled && !node.style.gestures.is_empty()
-            })
-            .unwrap_or(false)
-    })
-}
+    let mut gesture_target = None;
+    let mut focusable_widget = None;
 
-pub fn is_disabled_widget_node(tree: &Tree, node_id: NodeId) -> bool {
-    tree.get(node_id)
-        .and_then(|node| match &node.kind {
-            NodeKind::Widget(props) => Some(is_disabled(props.as_ref())),
-            _ => None,
-        })
-        .unwrap_or(false)
+    for node_id in chain.iter() {
+        let Some(node) = tree.get(node_id) else {
+            continue;
+        };
+
+        let widget_enabled = match &node.kind {
+            NodeKind::Widget(props) => !is_disabled(props.as_ref()),
+            _ => true,
+        };
+        if !widget_enabled {
+            continue;
+        }
+
+        if gesture_target.is_none() && !node.style.gestures.is_empty() {
+            gesture_target = Some(node_id);
+        }
+
+        if focusable_widget.is_none() && is_focusable_node_kind(&node.kind) {
+            focusable_widget = Some(node_id);
+        }
+    }
+
+    focusable_widget.or(gesture_target)
 }
 
 fn is_focusable_node_kind(kind: &NodeKind) -> bool {

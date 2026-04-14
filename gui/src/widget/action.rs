@@ -5,6 +5,10 @@ use super::resize_edge::ResizeEdge;
 pub enum Action {
     Click(String),
     DoubleClick(String),
+    TextChange {
+        id: String,
+        value: String,
+    },
     DragStart {
         id: String,
         x: f32,

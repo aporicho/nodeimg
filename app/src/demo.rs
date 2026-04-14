@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
-use gui::context::Context;
+use gui::context::{ClipboardRequest, Context};
 use gui::gesture::{arena_from_hit_chain, Gesture, GestureArena};
 use gui::renderer::{Color, Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
@@ -12,6 +12,7 @@ use gui::tree::Desc;
 use gui::widget::action::Action;
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::slider::SliderProps;
+use gui::widget::atoms::text_input::TextInputProps;
 use gui::widget::atoms::toggle::ToggleProps;
 use gui::widget::frameworks::panel::PanelProps;
 use gui::widget::resize_edge::ResizeEdge;
@@ -111,7 +112,7 @@ impl PointerSession {
     }
 }
 
-fn build_panel_content(slider_value: f32, toggle_value: bool) -> Vec<Desc> {
+fn build_panel_content(text_value: &str, slider_value: f32, toggle_value: bool) -> Vec<Desc> {
     vec![
         Desc::Widget {
             id: Cow::Borrowed("btn_a"),
@@ -126,6 +127,14 @@ fn build_panel_content(slider_value: f32, toggle_value: bool) -> Vec<Desc> {
             props: Box::new(ButtonProps {
                 label: "Button B".into(),
                 icon: None,
+                disabled: false,
+            }),
+        },
+        Desc::Widget {
+            id: Cow::Borrowed("text_prompt"),
+            props: Box::new(TextInputProps {
+                label: "Prompt".into(),
+                value: Cow::Owned(text_value.to_string()),
                 disabled: false,
             }),
         },
@@ -155,6 +164,7 @@ fn build_demo_tree(
     viewport: Rect,
     camera: &Camera,
     panel: PanelState,
+    text_value: &str,
     slider_value: f32,
     toggle_value: bool,
 ) -> Desc {
@@ -239,7 +249,7 @@ fn build_demo_tree(
                         y: panel.y,
                         w: panel.w,
                         h: panel.h,
-                        content: build_panel_content(slider_value, toggle_value),
+                        content: build_panel_content(text_value, slider_value, toggle_value),
                     }),
                 }],
             },
@@ -255,6 +265,7 @@ pub struct DemoApp {
     camera: Camera,
     navigation: CanvasNavigationController,
     active_button: Option<String>,
+    text_value: String,
     toggle_value: bool,
     slider_value: f32,
     last_tap_time: Option<Instant>,
@@ -272,6 +283,7 @@ impl App for DemoApp {
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             active_button: None,
+            text_value: "Hello nodeimg".to_string(),
             toggle_value: true,
             slider_value: 5.0,
             last_tap_time: None,
@@ -285,7 +297,8 @@ impl App for DemoApp {
             tracing::info!("event: {:?}", event);
         }
 
-        self.gui.handle_event(&event);
+        let outcome = self.gui.handle_event(&event);
+        self.handle_context_outcome(outcome, ctx);
 
         if self.navigation.handle_event(&event, &mut self.camera) {
             if self.navigation.is_panning() {
@@ -357,10 +370,12 @@ impl App for DemoApp {
             viewport,
             &self.camera,
             self.panel,
+            &self.text_value,
             self.slider_value,
             self.toggle_value,
         );
         self.gui.update(desc, viewport, renderer.text_measurer());
+        ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
 
@@ -371,6 +386,30 @@ impl App for DemoApp {
 }
 
 impl DemoApp {
+    fn handle_context_outcome(
+        &mut self,
+        outcome: gui::context::EventOutcome,
+        ctx: &mut AppContext,
+    ) {
+        for action in outcome.actions {
+            self.handle_action(action);
+        }
+
+        match outcome.clipboard {
+            Some(ClipboardRequest::Copy(text)) | Some(ClipboardRequest::Cut(text)) => {
+                let _ = ctx.clipboard_write_text(&text);
+            }
+            Some(ClipboardRequest::Paste) => {
+                if let Some(text) = ctx.clipboard_read_text() {
+                    for action in self.gui.paste_focused_text(&text) {
+                        self.handle_action(action);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+
     fn handle_action(&mut self, action: Action) {
         tracing::info!("Action: {:?}", action);
         match action {
@@ -391,6 +430,11 @@ impl DemoApp {
                 self.last_tap_time = None;
                 if id.contains("slider") {
                     self.slider_value = 5.0;
+                }
+            }
+            Action::TextChange { id, value } => {
+                if id == "text_prompt" {
+                    self.text_value = value;
                 }
             }
             Action::DragMove { id, x, y } => {
@@ -460,6 +504,11 @@ impl DemoApp {
                 return;
             }
 
+            if is_text_input_field(self.gui.tree(), node_id) {
+                ctx.cursor.set(CursorStyle::Text);
+                return;
+            }
+
             if is_toggle_target(id)
                 && (node.style.gestures.contains(&Gesture::Tap)
                     || node.style.gestures.contains(&Gesture::DoubleTap))
@@ -497,6 +546,30 @@ fn is_toggle_target(id: &str) -> bool {
 
 fn is_slider_target(id: &str) -> bool {
     id == "slider_radius" || id.starts_with("slider_radius::")
+}
+
+fn is_text_input_field(tree: &gui::tree::Tree, node_id: usize) -> bool {
+    let Some(node) = tree.get(node_id) else {
+        return false;
+    };
+    let node_id_str = node.id.as_ref();
+    if !node_id_str.ends_with("::field") {
+        return false;
+    }
+
+    let Some(root_id) = node_id_str.split("::").next() else {
+        return false;
+    };
+    let Some((_, root_node)) = tree
+        .iter()
+        .find(|(_, candidate)| candidate.id.as_ref() == root_id)
+    else {
+        return false;
+    };
+    let gui::tree::NodeKind::Widget(props) = &root_node.kind else {
+        return false;
+    };
+    props.widget_type() == "TextInput"
 }
 
 fn slider_value_from_x(

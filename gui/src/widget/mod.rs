@@ -6,4 +6,6 @@ pub mod action;
 mod mapping;
 pub mod resize_edge;
 pub mod state;
-mod text_edit;
+pub(crate) mod text_edit;
+
+pub(crate) use text_edit::TextEditState;
