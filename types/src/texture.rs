@@ -1,5 +1,5 @@
-use std::fmt;
 use image::DynamicImage;
+use std::fmt;
 
 /// A GPU-resident RGBA image backed by a `wgpu::Texture`.
 pub struct GpuTexture {
@@ -27,7 +27,11 @@ impl GpuTexture {
     pub fn create_empty(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("GpuTexture::empty"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -36,10 +40,19 @@ impl GpuTexture {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        Self { texture, view, width, height }
+        Self {
+            texture,
+            view,
+            width,
+            height,
+        }
     }
 
-    pub fn from_dynamic_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &DynamicImage) -> Self {
+    pub fn from_dynamic_image(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        img: &DynamicImage,
+    ) -> Self {
         let rgba = img.to_rgba8();
         let (width, height) = rgba.dimensions();
         let tex = Self::create_empty(device, width, height);
@@ -56,7 +69,11 @@ impl GpuTexture {
                 bytes_per_row: Some(4 * width),
                 rows_per_image: Some(height),
             },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
         tex
     }
@@ -82,7 +99,8 @@ impl GpuTexture {
             mapped_at_creation: false,
         });
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
@@ -98,15 +116,25 @@ impl GpuTexture {
                     rows_per_image: Some(self.height),
                 },
             },
-            wgpu::Extent3d { width: self.width, height: self.height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
         );
         queue.submit(std::iter::once(encoder.finish()));
 
         let slice = staging.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| { tx.send(result).unwrap(); });
-        device.poll(wgpu::PollType::wait_indefinitely()).expect("GPU poll failed");
-        rx.recv().expect("GPU readback channel closed").expect("GPU readback failed");
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).unwrap();
+        });
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed");
+        rx.recv()
+            .expect("GPU readback channel closed")
+            .expect("GPU readback failed");
 
         let mapped = slice.get_mapped_range();
         let mut result = Vec::with_capacity((unpadded_bytes_per_row * self.height) as usize);

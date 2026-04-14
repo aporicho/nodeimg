@@ -4,8 +4,8 @@ pub mod inventory_collect;
 pub use def::*;
 pub use inventory_collect::NodeDefEntry;
 
-use types::{DataType, Value};
 use std::collections::HashMap;
+use types::{DataType, Value};
 
 /// 节点管理器，存储和查询所有已注册的节点类型定义。
 pub struct NodeManager {

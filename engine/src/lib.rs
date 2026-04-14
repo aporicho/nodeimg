@@ -1,16 +1,16 @@
+pub mod builtins;
+pub mod executors;
 pub mod graph;
 pub mod graph_controller;
 pub mod registry;
-pub mod executors;
-pub mod builtins;
 
-use graph_controller::GraphController;
+use executors::image::{GpuExecutor, ImageExecutor};
 use graph::topology::topo_sort;
+use graph_controller::GraphController;
 use registry::NodeManager;
-use executors::image::{ImageExecutor, GpuExecutor};
-use types::{NodeId, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use types::{NodeId, Value};
 
 pub struct Engine {
     pub graph: GraphController,
@@ -31,16 +31,21 @@ impl Engine {
     pub async fn evaluate(
         &self,
         target: NodeId,
-    ) -> Result<HashMap<NodeId, HashMap<String, Value>>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<HashMap<NodeId, HashMap<String, Value>>, Box<dyn std::error::Error + Send + Sync>>
+    {
         let graph = self.graph.snapshot();
         let order = topo_sort(&graph, target)?;
         let ctx = self.executor.context();
         let mut results: HashMap<NodeId, HashMap<String, Value>> = HashMap::new();
 
         for node_id in order {
-            let node = graph.nodes.get(&node_id)
+            let node = graph
+                .nodes
+                .get(&node_id)
                 .ok_or_else(|| format!("Node {:?} not found in graph", node_id))?;
-            let def = self.node_manager.get(&node.type_id)
+            let def = self
+                .node_manager
+                .get(&node.type_id)
                 .ok_or_else(|| format!("Node type '{}' not registered", node.type_id))?;
 
             // Collect upstream inputs from results
@@ -58,7 +63,9 @@ impl Engine {
             // Merge param defaults + user values
             for param_def in &def.params {
                 if !inputs.contains_key(&param_def.name) {
-                    let val = node.params.get(&param_def.name)
+                    let val = node
+                        .params
+                        .get(&param_def.name)
                         .cloned()
                         .unwrap_or_else(|| param_def.default_value.clone());
                     inputs.insert(param_def.name.clone(), val);

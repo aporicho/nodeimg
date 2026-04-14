@@ -1,7 +1,7 @@
 pub mod editor;
-pub mod version;
-pub mod validate;
 pub mod topology;
+pub mod validate;
+pub mod version;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -46,7 +46,9 @@ impl Graph {
 }
 
 impl Default for Graph {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -76,8 +78,10 @@ mod tests {
         let (g, a) = g.add_node("a", Vec2::default(), Default::default());
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
         let g = g.connect(Connection {
-            from_node: a, from_pin: "out".into(),
-            to_node: b, to_pin: "in".into(),
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: b,
+            to_pin: "in".into(),
         });
         assert_eq!(g.connections.len(), 1);
         let g = g.remove_node(a);
@@ -92,12 +96,16 @@ mod tests {
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
         let (g, c) = g.add_node("c", Vec2::default(), Default::default());
         let g = g.connect(Connection {
-            from_node: a, from_pin: "out".into(),
-            to_node: c, to_pin: "in".into(),
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: c,
+            to_pin: "in".into(),
         });
         let g = g.connect(Connection {
-            from_node: b, from_pin: "out".into(),
-            to_node: c, to_pin: "in".into(),
+            from_node: b,
+            from_pin: "out".into(),
+            to_node: c,
+            to_pin: "in".into(),
         });
         assert_eq!(g.connections.len(), 1);
         assert_eq!(g.connections[0].from_node, b);

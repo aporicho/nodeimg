@@ -1,6 +1,6 @@
 use super::Graph;
-use types::NodeId;
 use std::collections::{HashMap, HashSet, VecDeque};
+use types::NodeId;
 
 #[derive(Debug)]
 pub struct CycleError;
@@ -21,7 +21,9 @@ pub fn topo_sort(graph: &Graph, target: NodeId) -> Result<Vec<NodeId>, CycleErro
     let mut visited = HashSet::new();
 
     while let Some(node) = to_visit.pop_front() {
-        if !visited.insert(node) { continue; }
+        if !visited.insert(node) {
+            continue;
+        }
         all_nodes.insert(node);
         for conn in &graph.connections {
             if conn.to_node == node {
@@ -38,7 +40,8 @@ pub fn topo_sort(graph: &Graph, target: NodeId) -> Result<Vec<NodeId>, CycleErro
         in_degree.insert(n, deg);
     }
 
-    let mut queue: VecDeque<NodeId> = in_degree.iter()
+    let mut queue: VecDeque<NodeId> = in_degree
+        .iter()
         .filter(|(_, &deg)| deg == 0)
         .map(|(&n, _)| n)
         .collect();
@@ -50,7 +53,9 @@ pub fn topo_sort(graph: &Graph, target: NodeId) -> Result<Vec<NodeId>, CycleErro
             if node_deps.contains(&n) {
                 let deg = in_degree.get_mut(&node).unwrap();
                 *deg -= 1;
-                if *deg == 0 { queue.push_back(node); }
+                if *deg == 0 {
+                    queue.push_back(node);
+                }
             }
         }
     }
@@ -94,7 +99,7 @@ pub fn downstream(graph: &Graph, id: NodeId) -> HashSet<NodeId> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{Graph, Connection};
+    use crate::graph::{Connection, Graph};
     use types::Vec2;
 
     #[test]
@@ -103,8 +108,18 @@ mod tests {
         let (g, a) = g.add_node("a", Vec2::default(), Default::default());
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
         let (g, c) = g.add_node("c", Vec2::default(), Default::default());
-        let g = g.connect(Connection { from_node: a, from_pin: "out".into(), to_node: b, to_pin: "in".into() });
-        let g = g.connect(Connection { from_node: b, from_pin: "out".into(), to_node: c, to_pin: "in".into() });
+        let g = g.connect(Connection {
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: b,
+            to_pin: "in".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: b,
+            from_pin: "out".into(),
+            to_node: c,
+            to_pin: "in".into(),
+        });
         let order = topo_sort(&g, c).unwrap();
         assert_eq!(order, vec![a, b, c]);
     }
@@ -114,8 +129,18 @@ mod tests {
         let g = Graph::new();
         let (g, a) = g.add_node("a", Vec2::default(), Default::default());
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
-        let g = g.connect(Connection { from_node: a, from_pin: "out".into(), to_node: b, to_pin: "in".into() });
-        let g = g.connect(Connection { from_node: b, from_pin: "out".into(), to_node: a, to_pin: "in".into() });
+        let g = g.connect(Connection {
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: b,
+            to_pin: "in".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: b,
+            from_pin: "out".into(),
+            to_node: a,
+            to_pin: "in".into(),
+        });
         assert!(topo_sort(&g, a).is_err());
     }
 
@@ -134,10 +159,30 @@ mod tests {
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
         let (g, c) = g.add_node("c", Vec2::default(), Default::default());
         let (g, d) = g.add_node("d", Vec2::default(), Default::default());
-        let g = g.connect(Connection { from_node: a, from_pin: "out".into(), to_node: b, to_pin: "in".into() });
-        let g = g.connect(Connection { from_node: a, from_pin: "out".into(), to_node: c, to_pin: "in".into() });
-        let g = g.connect(Connection { from_node: b, from_pin: "out".into(), to_node: d, to_pin: "in1".into() });
-        let g = g.connect(Connection { from_node: c, from_pin: "out".into(), to_node: d, to_pin: "in2".into() });
+        let g = g.connect(Connection {
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: b,
+            to_pin: "in".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: c,
+            to_pin: "in".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: b,
+            from_pin: "out".into(),
+            to_node: d,
+            to_pin: "in1".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: c,
+            from_pin: "out".into(),
+            to_node: d,
+            to_pin: "in2".into(),
+        });
         let order = topo_sort(&g, d).unwrap();
         assert_eq!(order[0], a); // a must be first
         assert_eq!(*order.last().unwrap(), d); // d must be last
@@ -149,8 +194,18 @@ mod tests {
         let (g, a) = g.add_node("a", Vec2::default(), Default::default());
         let (g, b) = g.add_node("b", Vec2::default(), Default::default());
         let (g, c) = g.add_node("c", Vec2::default(), Default::default());
-        let g = g.connect(Connection { from_node: a, from_pin: "out".into(), to_node: b, to_pin: "in".into() });
-        let g = g.connect(Connection { from_node: b, from_pin: "out".into(), to_node: c, to_pin: "in".into() });
+        let g = g.connect(Connection {
+            from_node: a,
+            from_pin: "out".into(),
+            to_node: b,
+            to_pin: "in".into(),
+        });
+        let g = g.connect(Connection {
+            from_node: b,
+            from_pin: "out".into(),
+            to_node: c,
+            to_pin: "in".into(),
+        });
         assert_eq!(upstream(&g, c), [a, b].into_iter().collect());
         assert_eq!(downstream(&g, a), [b, c].into_iter().collect());
     }
