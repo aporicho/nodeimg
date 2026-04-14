@@ -1,4 +1,5 @@
 pub mod api;
+pub mod builtin;
 pub mod contract;
 pub mod image;
 pub mod raster;

@@ -59,6 +59,15 @@ impl GraphController {
         self.events.clone()
     }
 
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn events_since(&self, offset: usize) -> &[GraphEvent] {
+        let start = offset.min(self.events.len());
+        &self.events[start..]
+    }
+
     pub fn validate_graph(&self) -> ValidationReport {
         validate_graph(self.state.current(), &self.node_manager)
     }
@@ -132,12 +141,28 @@ impl GraphController {
         if !self.state.current().nodes.contains_key(&id) {
             return Err(format!("Node {:?} not found", id));
         }
+        let removed_connections: Vec<_> = self
+            .state
+            .current()
+            .connections
+            .iter()
+            .filter(|conn| conn.from.node == id || conn.to.node == id)
+            .cloned()
+            .collect();
         let graph = self.state.current().remove_node(id);
         self.state.commit(graph);
+        let mut changes = Vec::with_capacity(removed_connections.len() + 1);
+        for conn in removed_connections {
+            changes.push(GraphChange::ConnectionRemoved {
+                from: conn.from,
+                to: conn.to,
+            });
+        }
+        changes.push(GraphChange::NodeRemoved { node_id: id });
         self.record_event(GraphEventKind::GraphChanged(GraphChangedEvent {
             graph_version: self.state.graph_version(),
             dirty: self.state.is_dirty(),
-            changes: vec![GraphChange::NodeRemoved { node_id: id }],
+            changes,
         }));
         Ok(())
     }
@@ -351,7 +376,19 @@ impl GraphController {
                     if !graph.nodes.contains_key(&node_id) {
                         return Err(ApplyBatchError::NodeNotFound { node_id });
                     }
+                    let removed_connections: Vec<_> = graph
+                        .connections
+                        .iter()
+                        .filter(|conn| conn.from.node == node_id || conn.to.node == node_id)
+                        .cloned()
+                        .collect();
                     graph = graph.remove_node(node_id);
+                    for conn in removed_connections {
+                        changes.push(GraphChange::ConnectionRemoved {
+                            from: conn.from,
+                            to: conn.to,
+                        });
+                    }
                     changes.push(GraphChange::NodeRemoved { node_id });
                 }
                 GraphEdit::Connect { from, to } => {

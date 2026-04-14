@@ -12,10 +12,9 @@ use types::{DataType, Value};
 #[test]
 fn test_add_node_and_connect() {
     let mut engine = Engine::new(None);
-    let load = engine.graph.add_node("load_image").unwrap();
-    let brightness = engine.graph.add_node("brightness").unwrap();
+    let load = engine.add_node("load_image").unwrap();
+    let brightness = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: load,
@@ -27,23 +26,22 @@ fn test_add_node_and_connect() {
             },
         })
         .unwrap();
-    assert_eq!(engine.graph.current().connections.len(), 1);
+    assert_eq!(engine.query_graph_snapshot().connections.len(), 1);
 }
 
 #[test]
 fn test_unknown_node_type_rejected() {
     let mut engine = Engine::new(None);
-    let result = engine.graph.add_node("nonexistent_node_type");
+    let result = engine.add_node("nonexistent_node_type");
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cycle_detection() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("brightness").unwrap();
-    let b = engine.graph.add_node("brightness").unwrap();
+    let a = engine.add_node("brightness").unwrap();
+    let b = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: a,
@@ -55,7 +53,7 @@ fn test_cycle_detection() {
             },
         })
         .unwrap();
-    let result = engine.graph.connect(Connection {
+    let result = engine.connect(Connection {
         from: PinRef {
             node: b,
             interface: "image".into(),
@@ -71,8 +69,8 @@ fn test_cycle_detection() {
 #[test]
 fn test_self_connection_rejected() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("brightness").unwrap();
-    let result = engine.graph.connect(Connection {
+    let a = engine.add_node("brightness").unwrap();
+    let result = engine.connect(Connection {
         from: PinRef {
             node: a,
             interface: "image".into(),
@@ -90,32 +88,30 @@ fn test_self_connection_rejected() {
 #[test]
 fn test_undo_redo() {
     let mut engine = Engine::new(None);
-    engine.graph.add_node("load_image").unwrap();
-    assert_eq!(engine.graph.current().nodes.len(), 1);
-    engine.graph.undo();
-    assert_eq!(engine.graph.current().nodes.len(), 0);
-    engine.graph.redo();
-    assert_eq!(engine.graph.current().nodes.len(), 1);
+    engine.add_node("load_image").unwrap();
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 1);
+    engine.undo();
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 0);
+    engine.redo();
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 1);
 }
 
 #[test]
 fn test_preview_does_not_affect_undo() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true); // preview
-    engine.graph.undo(); // should undo add_node, not set_param
-    assert_eq!(engine.graph.current().nodes.len(), 0);
+    engine.undo(); // should undo add_node, not set_param
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 0);
 }
 
 #[test]
 fn test_multiple_undo_redo() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("load_image").unwrap();
-    let b = engine.graph.add_node("brightness").unwrap();
+    let a = engine.add_node("load_image").unwrap();
+    let b = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: a,
@@ -127,35 +123,33 @@ fn test_multiple_undo_redo() {
             },
         })
         .unwrap();
-    assert_eq!(engine.graph.current().nodes.len(), 2);
-    assert_eq!(engine.graph.current().connections.len(), 1);
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 2);
+    assert_eq!(engine.query_graph_snapshot().connections.len(), 1);
 
-    engine.graph.undo(); // undo connect
-    assert_eq!(engine.graph.current().connections.len(), 0);
+    engine.undo(); // undo connect
+    assert_eq!(engine.query_graph_snapshot().connections.len(), 0);
 
-    engine.graph.undo(); // undo add brightness
-    assert_eq!(engine.graph.current().nodes.len(), 1);
+    engine.undo(); // undo add brightness
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 1);
 
-    engine.graph.undo(); // undo add load_image
-    assert_eq!(engine.graph.current().nodes.len(), 0);
+    engine.undo(); // undo add load_image
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 0);
 
-    engine.graph.redo(); // redo add load_image
-    assert_eq!(engine.graph.current().nodes.len(), 1);
+    engine.redo(); // redo add load_image
+    assert_eq!(engine.query_graph_snapshot().nodes.len(), 1);
 }
 
 #[test]
 fn test_preview_sets_has_preview_in_summary() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
 
-    let before = engine.graph.state_summary();
+    let before = engine.graph_state_summary();
     assert!(!before.has_preview);
 
-    engine
-        .graph
-        .set_param(id, "brightness", Value::Float(0.5), true);
+    engine.set_param(id, "brightness", Value::Float(0.5), true);
 
-    let after = engine.graph.state_summary();
+    let after = engine.graph_state_summary();
     assert!(after.has_preview);
     assert!(after.dirty);
 }
@@ -163,30 +157,27 @@ fn test_preview_sets_has_preview_in_summary() {
 #[test]
 fn test_discard_preview_clears_has_preview() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true);
-    assert!(engine.graph.state_summary().has_preview);
+    assert!(engine.graph_state_summary().has_preview);
 
-    assert!(engine.graph.discard_preview());
-    assert!(!engine.graph.state_summary().has_preview);
+    assert!(engine.discard_preview());
+    assert!(!engine.graph_state_summary().has_preview);
 }
 
 #[test]
 fn test_commit_clears_preview() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true);
-    assert!(engine.graph.state_summary().has_preview);
+    assert!(engine.graph_state_summary().has_preview);
 
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.75), false);
 
-    let summary = engine.graph.state_summary();
+    let summary = engine.graph_state_summary();
     assert!(!summary.has_preview);
     assert!(summary.dirty);
 }
@@ -194,36 +185,33 @@ fn test_commit_clears_preview() {
 #[test]
 fn test_undo_and_redo_clear_preview() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true);
-    assert!(engine.graph.state_summary().has_preview);
+    assert!(engine.graph_state_summary().has_preview);
 
-    engine.graph.undo();
-    assert!(!engine.graph.state_summary().has_preview);
+    engine.undo();
+    assert!(!engine.graph_state_summary().has_preview);
 
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.25), true);
-    assert!(engine.graph.state_summary().has_preview);
+    assert!(engine.graph_state_summary().has_preview);
 
-    engine.graph.redo();
-    assert!(!engine.graph.state_summary().has_preview);
+    engine.redo();
+    assert!(!engine.graph_state_summary().has_preview);
 }
 
 #[test]
 fn test_replace_clears_preview_and_sets_dirty() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true);
-    assert!(engine.graph.state_summary().has_preview);
+    assert!(engine.graph_state_summary().has_preview);
 
-    engine.graph.replace(engine::graph::Graph::new());
+    engine.replace_graph(engine::graph::Graph::new()).unwrap();
 
-    let summary = engine.graph.state_summary();
+    let summary = engine.graph_state_summary();
     assert!(!summary.has_preview);
     assert!(summary.dirty);
 }
@@ -231,21 +219,21 @@ fn test_replace_clears_preview_and_sets_dirty() {
 #[test]
 fn test_mark_saved_updates_summary() {
     let mut engine = Engine::new(None);
-    engine.graph.add_node("brightness").unwrap();
-    assert!(engine.graph.state_summary().dirty);
+    engine.add_node("brightness").unwrap();
+    assert!(engine.graph_state_summary().dirty);
 
-    engine.graph.mark_saved();
+    engine.mark_saved();
 
-    let summary = engine.graph.state_summary();
+    let summary = engine.graph_state_summary();
     assert!(!summary.dirty);
-    assert_eq!(summary.graph_version, engine.graph.graph_version());
+    assert_eq!(summary.graph_version, engine.graph_version());
 }
 
 #[test]
 fn test_add_node_emits_graph_changed() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
-    let events = engine.graph.events_snapshot();
+    let id = engine.add_node("brightness").unwrap();
+    let events = engine.graph_events_snapshot();
     let last = events.last().expect("missing event");
 
     match &last.kind {
@@ -261,13 +249,12 @@ fn test_add_node_emits_graph_changed() {
 #[test]
 fn test_preview_and_discard_emit_preview_events() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .set_param(id, "brightness", Value::Float(0.5), true);
-    engine.graph.discard_preview();
+    engine.discard_preview();
 
-    let events = engine.graph.events_snapshot();
+    let events = engine.graph_events_snapshot();
     match &events[1].kind {
         GraphEventKind::PreviewChanged(event) => {
             assert_eq!(event.node_id, id);
@@ -289,10 +276,10 @@ fn test_preview_and_discard_emit_preview_events() {
 #[test]
 fn test_mark_saved_emits_empty_graph_changed() {
     let mut engine = Engine::new(None);
-    engine.graph.add_node("brightness").unwrap();
-    engine.graph.mark_saved();
+    engine.add_node("brightness").unwrap();
+    engine.mark_saved();
 
-    let events = engine.graph.events_snapshot();
+    let events = engine.graph_events_snapshot();
     let last = events.last().expect("missing event");
     match &last.kind {
         GraphEventKind::GraphChanged(event) => {
@@ -306,12 +293,11 @@ fn test_mark_saved_emits_empty_graph_changed() {
 #[test]
 fn test_connect_replacing_input_emits_remove_and_add() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("load_image").unwrap();
-    let b = engine.graph.add_node("load_image").unwrap();
-    let c = engine.graph.add_node("brightness").unwrap();
+    let a = engine.add_node("load_image").unwrap();
+    let b = engine.add_node("load_image").unwrap();
+    let c = engine.add_node("brightness").unwrap();
 
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: a,
@@ -325,7 +311,6 @@ fn test_connect_replacing_input_emits_remove_and_add() {
         .unwrap();
 
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: b,
@@ -338,7 +323,7 @@ fn test_connect_replacing_input_emits_remove_and_add() {
         })
         .unwrap();
 
-    let events = engine.graph.events_snapshot();
+    let events = engine.graph_events_snapshot();
     let last = events.last().expect("missing event");
     match &last.kind {
         GraphEventKind::GraphChanged(event) => {
@@ -376,8 +361,9 @@ fn test_inventory_collects_all_builtins() {
 #[test]
 fn test_node_default_params() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("brightness").unwrap();
-    let node = engine.graph.current().nodes.get(&id).unwrap();
+    let id = engine.add_node("brightness").unwrap();
+    let graph = engine.query_graph_snapshot();
+    let node = graph.nodes.get(&id).unwrap();
     match node.params.get("brightness") {
         Some(Value::Float(v)) => assert_eq!(*v, 0.0),
         other => panic!("Expected Float(0.0), got {:?}", other),
@@ -407,7 +393,7 @@ fn test_image_gen_schema_exposes_provider_and_model_params() {
 #[tokio::test]
 async fn test_evaluate_gpu_node_without_gpu_returns_error() {
     let mut engine = Engine::new(None); // 无 GPU
-    let id = engine.graph.add_node("brightness").unwrap();
+    let id = engine.add_node("brightness").unwrap();
     let result = engine.evaluate(id).await;
     assert!(result.is_err(), "GPU node should fail without GPU");
 }
@@ -415,7 +401,7 @@ async fn test_evaluate_gpu_node_without_gpu_returns_error() {
 #[tokio::test]
 async fn test_evaluate_load_image_empty_path() {
     let mut engine = Engine::new(None);
-    let id = engine.graph.add_node("load_image").unwrap();
+    let id = engine.add_node("load_image").unwrap();
     // path is empty string (default), should return empty outputs
     let result = engine.evaluate(id).await;
     assert!(result.is_ok());
@@ -500,10 +486,9 @@ fn test_type_incompatible_connection_rejected() {
 #[test]
 fn test_disconnect() {
     let mut engine = Engine::new(None);
-    let a = engine.graph.add_node("load_image").unwrap();
-    let b = engine.graph.add_node("brightness").unwrap();
+    let a = engine.add_node("load_image").unwrap();
+    let b = engine.add_node("brightness").unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: a,
@@ -515,9 +500,9 @@ fn test_disconnect() {
             },
         })
         .unwrap();
-    assert_eq!(engine.graph.current().connections.len(), 1);
+    assert_eq!(engine.query_graph_snapshot().connections.len(), 1);
 
-    let _ = engine.graph.disconnect(
+    let _ = engine.disconnect(
         PinRef {
             node: a,
             interface: "image".into(),
@@ -527,5 +512,5 @@ fn test_disconnect() {
             interface: "image".into(),
         },
     );
-    assert_eq!(engine.graph.current().connections.len(), 0);
+    assert_eq!(engine.query_graph_snapshot().connections.len(), 0);
 }

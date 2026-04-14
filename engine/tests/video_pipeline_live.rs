@@ -2,7 +2,7 @@ use std::path::Path;
 
 use engine::execution::{EvaluationFidelity, ExecutionMode};
 use engine::executors::video::decode_video_frames;
-use engine::facade::{EngineFacade, ExecuteRequest};
+use engine::facade::{EngineFacade, ExecutionRequest};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::graph::{Connection, PinRef};
 use engine::Engine;
@@ -21,7 +21,6 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
     let save = engine.add_node("save_video").unwrap();
 
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: gen,
@@ -34,7 +33,6 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
         })
         .unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: grade,
@@ -47,7 +45,6 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
         })
         .unwrap();
     engine
-        .graph
         .connect(Connection {
             from: PinRef {
                 node: gen,
@@ -80,7 +77,7 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
     engine.set_param(save, "path", Value::String(output_path.into()), false);
 
     let ticket = engine
-        .execute_request(ExecuteRequest {
+        .execute_request(ExecutionRequest {
             target: ExecuteTarget::Graph,
             mode: Some(ExecutionMode::OneShot {
                 fidelity: EvaluationFidelity::Full,
@@ -88,8 +85,9 @@ async fn test_headless_libtv_video_pipeline_writes_mp4() {
         })
         .await
         .unwrap();
+    engine.await_execution(ticket.execution_id).unwrap();
 
-    let outputs = engine.get_execution_outputs(ticket.execution_id, save).unwrap();
+    let outputs = engine.query_execution_outputs(ticket.execution_id, save).unwrap();
     assert!(matches!(
         outputs.get("path"),
         Some(Value::String(path)) if path == output_path

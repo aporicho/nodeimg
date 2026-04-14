@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use engine::facade::{EngineFacade, ExecuteRequest};
+use engine::facade::{EngineFacade, ExecutionRequest};
 use engine::graph::model::subgraph::ExecuteTarget;
 use engine::{
     execution::{EvaluationFidelity, ExecutionMode},
@@ -26,7 +26,7 @@ async fn test_libtv_image_gen_live() {
     );
 
     let ticket = engine
-        .execute_request(ExecuteRequest {
+        .execute_request(ExecutionRequest {
             target: ExecuteTarget::Node(node_id),
             mode: Some(ExecutionMode::OneShot {
                 fidelity: EvaluationFidelity::Full,
@@ -34,8 +34,9 @@ async fn test_libtv_image_gen_live() {
         })
         .await
         .unwrap();
+    engine.await_execution(ticket.execution_id).unwrap();
     let outputs = engine
-        .get_execution_outputs(ticket.execution_id, node_id)
+        .query_execution_outputs(ticket.execution_id, node_id)
         .unwrap();
     let image = match outputs.get("image") {
         Some(Value::Image(image)) => image,

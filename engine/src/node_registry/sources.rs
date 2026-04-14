@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::executors::builtin::{capability_from_node_def, InventoryBuiltinExecutor};
 use crate::executors::raster::ColorAdjustExecutor;
 use crate::executors::remote_image::{
     providers, ImageGenerationMode, ImageGenerationSchemaProvider, ProviderRegistry,
@@ -21,13 +22,27 @@ pub struct InventoryNodeSource;
 
 impl NodeSource for InventoryNodeSource {
     fn collect(&self) -> Vec<NodeRegistration> {
-        crate::node_manager::collect::collect_inventory_defs::collect_inventory_defs()
-            .into_iter()
-            .map(|static_def| NodeRegistration {
-                static_def,
-                schema_provider: None,
-                presentation_provider: None,
-                capability_bindings: Vec::new(),
+        let defs = crate::node_manager::collect::collect_inventory_defs::collect_inventory_defs();
+        let executor = Arc::new(InventoryBuiltinExecutor::new(
+            defs.iter().filter_map(capability_from_node_def).collect(),
+        ));
+
+        defs.into_iter()
+            .map(|static_def| {
+                let capability_id = static_def
+                    .requires
+                    .first()
+                    .expect("inventory builtin must declare a capability")
+                    .clone();
+                NodeRegistration {
+                    static_def,
+                    schema_provider: None,
+                    presentation_provider: None,
+                    capability_bindings: vec![(
+                        capability_id,
+                        Arc::clone(&executor) as Arc<dyn crate::executors::Executor>,
+                    )],
+                }
             })
             .collect()
     }

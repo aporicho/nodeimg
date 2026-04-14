@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::cache::model::{ExecSignature, GenerationId};
+use crate::executors::image::ExecContext;
 use crate::node_manager::NodeDef;
 use types::{NodeId, Value};
 
@@ -33,7 +34,7 @@ impl ExecutionOutputs {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EvaluationFidelity {
     Preview {
         max_side: Option<u32>,
@@ -42,7 +43,7 @@ pub enum EvaluationFidelity {
     Full,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PreviewPrecision {
     Float32,
     Float16,
@@ -198,9 +199,24 @@ impl ProgressSink for NoopProgressSink {
 
 #[derive(Clone, Debug)]
 pub enum ExecutorProgressEvent {
-    Message { text: String },
-    Fraction { current: u32, total: u32 },
-    Preview { output: String, value: Value },
+    Message {
+        text: String,
+    },
+    Fraction {
+        current: u32,
+        total: u32,
+    },
+    Preview {
+        output: String,
+        value: Value,
+    },
+    PreviewReady {
+        node_id: NodeId,
+        output: String,
+        value: Value,
+        exec_signature: ExecSignature,
+        fidelity: EvaluationFidelity,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -220,6 +236,7 @@ pub struct NodeExecutionRequest<'a> {
     pub run_id: RunId,
     pub node_id: NodeId,
     pub node_def: &'a NodeDef,
+    pub exec_context: ExecContext<'a>,
     pub inputs: ExecutionInputs,
     pub exec_signature: ExecSignature,
     pub generation: GenerationId,
