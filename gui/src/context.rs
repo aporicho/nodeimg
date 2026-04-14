@@ -1,9 +1,11 @@
 use crate::gesture::GestureArena;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
+use crate::theme::Theme;
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, Tree};
 use crate::widget::action::Action;
 use crate::widget::atoms::text_input::TextInputProps;
+use crate::widget::props::WidgetBuildCx;
 use crate::widget::state::{InteractionStore, TextInputStore};
 
 /// GUI 中心对象。持有统一的控件树与当前手势竞技场。
@@ -13,6 +15,7 @@ pub struct Context {
     interaction_state: InteractionStore,
     text_input_state: TextInputStore,
     active_drag_text_input: Option<String>,
+    last_theme_revision: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -42,24 +45,44 @@ impl Context {
             interaction_state: InteractionStore::new(),
             text_input_state: TextInputStore::new(),
             active_drag_text_input: None,
+            last_theme_revision: None,
         }
     }
 
     /// 更新整棵树并重新布局。
-    pub fn update(&mut self, desc: Desc, root_rect: Rect, measurer: &mut TextMeasurer) {
-        reconcile(&mut self.tree, desc);
+    pub fn update(
+        &mut self,
+        desc: Desc,
+        root_rect: Rect,
+        measurer: &mut TextMeasurer,
+        theme: &Theme,
+    ) {
+        let force_rebuild = self.last_theme_revision != Some(theme.revision);
+        let build_cx = WidgetBuildCx {
+            theme,
+            force_rebuild,
+        };
+        reconcile(&mut self.tree, desc, build_cx);
+        self.last_theme_revision = Some(theme.revision);
         if let Some(root) = self.tree.root() {
             layout(&mut self.tree, root, root_rect, &mut |text, size| {
                 measurer.measure(text, size)
             });
         }
         self.interaction_state.sync_with_tree(&self.tree);
-        self.text_input_state.sync_with_tree(&self.tree, measurer);
+        self.text_input_state
+            .sync_with_tree(&self.tree, measurer, theme);
         self.sync_text_input_sessions();
     }
 
     /// 渲染整棵树。
-    pub fn render(&self, renderer: &mut Renderer, _viewport_w: f32, _viewport_h: f32) {
+    pub fn render(
+        &self,
+        renderer: &mut Renderer,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        theme: &Theme,
+    ) {
         if let Some(root) = self.tree.root() {
             paint(
                 &self.tree,
@@ -67,6 +90,7 @@ impl Context {
                 renderer,
                 Some(&self.interaction_state),
                 Some(&self.text_input_state),
+                theme,
             );
         }
     }
@@ -405,30 +429,36 @@ mod tests {
     use super::*;
     use crate::renderer::TextMeasurer;
     use crate::shell::Modifiers;
+    use crate::theme::dark_theme;
     use crate::tree::layout::{BoxStyle, Size};
     use std::borrow::Cow;
+
+    fn test_desc(value: &str) -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(320.0),
+                height: Size::Fixed(120.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![Desc::Widget {
+                id: Cow::Borrowed("input"),
+                props: Box::new(TextInputProps {
+                    label: Cow::Borrowed("Prompt"),
+                    value: Cow::Owned(value.to_string()),
+                    disabled: false,
+                }),
+            }],
+        }
+    }
 
     fn test_context(value: &str) -> Context {
         let mut ctx = Context::new();
         let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
         ctx.update(
-            Desc::Container {
-                id: Cow::Borrowed("root"),
-                style: BoxStyle {
-                    width: Size::Fixed(320.0),
-                    height: Size::Fixed(120.0),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children: vec![Desc::Widget {
-                    id: Cow::Borrowed("input"),
-                    props: Box::new(TextInputProps {
-                        label: Cow::Borrowed("Prompt"),
-                        value: Cow::Owned(value.to_string()),
-                        disabled: false,
-                    }),
-                }],
-            },
+            test_desc(value),
             Rect {
                 x: 0.0,
                 y: 0.0,
@@ -436,6 +466,7 @@ mod tests {
                 h: 120.0,
             },
             &mut measurer,
+            &theme,
         );
         ctx
     }
@@ -550,5 +581,54 @@ mod tests {
             outcome.clipboard,
             Some(ClipboardRequest::Copy(text)) if !text.is_empty()
         ));
+    }
+
+    #[test]
+    fn theme_revision_forces_widget_rebuild() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let dark = dark_theme();
+        let mut updated = dark_theme();
+        updated.revision = 99;
+        updated.components.text_input.field_height = 52.0;
+
+        ctx.update(
+            test_desc("hello"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &dark,
+        );
+
+        let before_height = ctx
+            .tree()
+            .iter()
+            .find_map(|(_, node)| (node.id.as_ref() == "input::field").then_some(node.rect.h))
+            .expect("text input field");
+
+        ctx.update(
+            test_desc("hello"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &updated,
+        );
+
+        let after_height = ctx
+            .tree()
+            .iter()
+            .find_map(|(_, node)| (node.id.as_ref() == "input::field").then_some(node.rect.h))
+            .expect("text input field");
+
+        assert_eq!(before_height, dark.components.text_input.field_height);
+        assert_eq!(after_height, updated.components.text_input.field_height);
     }
 }

@@ -1,5 +1,5 @@
 use crate::gesture::Gesture;
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
@@ -30,40 +30,22 @@ impl WidgetProps for ToggleProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::renderer::Color;
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::tree::layout::{
             Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size,
         };
         use crate::tree::Desc;
 
-        // shadcn 色系
-        let white = Color {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 1.0,
-        };
-        let off_bg = Color {
-            r: 0.831,
-            g: 0.831,
-            b: 0.847,
-            a: 1.0,
-        }; // zinc-300
-        let on_bg = Color {
-            r: 0.231,
-            g: 0.510,
-            b: 0.965,
-            a: 1.0,
-        }; // blue-500
-        let label_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
-
-        let track_bg = if self.value { on_bg } else { off_bg };
+        let theme = cx.theme;
+        let tokens = theme.components.toggle;
+        let visual = theme.toggle_visual(
+            self.value,
+            if self.disabled {
+                crate::widget::state::WidgetVisualState::Disabled
+            } else {
+                crate::widget::state::WidgetVisualState::Normal
+            },
+        );
         let thumb_justify = if self.value {
             Justify::End
         } else {
@@ -73,7 +55,7 @@ impl WidgetProps for ToggleProps {
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
-                gap: 8.0,
+                gap: tokens.gap,
                 align_items: Align::Center,
                 height: Size::Auto,
                 ..BoxStyle::default()
@@ -84,9 +66,9 @@ impl WidgetProps for ToggleProps {
                 Desc::Container {
                     id: Cow::Owned(format!("{id}::track")),
                     style: BoxStyle {
-                        width: Size::Fixed(32.0),
-                        height: Size::Fixed(18.0),
-                        padding: Edges::all(2.0),
+                        width: Size::Fixed(tokens.track_width),
+                        height: Size::Fixed(tokens.track_height),
+                        padding: Edges::all(tokens.track_padding),
                         direction: Direction::Row,
                         justify_content: thumb_justify,
                         align_items: Align::Center,
@@ -94,9 +76,9 @@ impl WidgetProps for ToggleProps {
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {
-                        background: Some(track_bg),
+                        background: Some(visual.track_background),
                         border: None,
-                        radius: [9.0; 4],
+                        radius: [tokens.track_radius; 4],
                         shadow: None,
                     }),
                     children: vec![
@@ -104,14 +86,14 @@ impl WidgetProps for ToggleProps {
                         Desc::Container {
                             id: Cow::Owned(format!("{id}::thumb")),
                             style: BoxStyle {
-                                width: Size::Fixed(14.0),
-                                height: Size::Fixed(14.0),
+                                width: Size::Fixed(tokens.thumb_size),
+                                height: Size::Fixed(tokens.thumb_size),
                                 ..BoxStyle::default()
                             },
                             decoration: Some(Decoration {
-                                background: Some(white),
+                                background: Some(visual.thumb),
                                 border: None,
-                                radius: [7.0; 4],
+                                radius: [tokens.thumb_size / 2.0; 4],
                                 shadow: None,
                             }),
                             children: vec![],
@@ -128,8 +110,8 @@ impl WidgetProps for ToggleProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: 12.0,
-                        color: label_color,
+                        font_size: tokens.font_size,
+                        color: visual.text,
                     },
                 },
             ],

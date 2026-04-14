@@ -1,5 +1,5 @@
 use crate::gesture::Gesture;
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
@@ -30,33 +30,20 @@ impl WidgetProps for ButtonProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::renderer::{Border, Color};
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::renderer::Border;
         use crate::tree::layout::{
             Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size,
         };
         use crate::tree::Desc;
 
-        // shadcn zinc 色系
-        let bg_color = Color {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 1.0,
-        }; // white
-        let border_color = Color {
-            r: 0.894,
-            g: 0.894,
-            b: 0.906,
-            a: 1.0,
-        }; // zinc-200
-        let text_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
-        let font_size = 12.0;
+        let theme = cx.theme;
+        let tokens = theme.components.button;
+        let visual = theme.button_visual(if self.disabled {
+            crate::widget::state::WidgetVisualState::Disabled
+        } else {
+            crate::widget::state::WidgetVisualState::Normal
+        });
 
         WidgetBuild {
             style: BoxStyle {
@@ -64,17 +51,17 @@ impl WidgetProps for ButtonProps {
                 direction: Direction::Row,
                 align_items: Align::Center,
                 justify_content: Justify::Center,
-                padding: Edges::symmetric(8.0, 16.0),
+                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
-                background: Some(bg_color),
+                background: Some(visual.background),
                 border: Some(Border {
-                    width: 1.0,
-                    color: border_color,
+                    width: tokens.border_width,
+                    color: visual.border.unwrap_or(theme.colors.border),
                 }),
-                radius: [4.0; 4],
+                radius: [tokens.radius; 4],
                 shadow: None,
             }),
             children: vec![Desc::Leaf {
@@ -86,8 +73,8 @@ impl WidgetProps for ButtonProps {
                 },
                 kind: LeafKind::Text {
                     content: self.label.to_string(),
-                    font_size,
-                    color: text_color,
+                    font_size: tokens.font_size,
+                    color: visual.text,
                 },
             }],
         }

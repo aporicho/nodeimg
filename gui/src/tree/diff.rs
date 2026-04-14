@@ -2,17 +2,18 @@ use super::desc::Desc;
 use super::node::{NodeId, NodeKind, PanelNode};
 use super::tree::Tree;
 use crate::renderer::Rect;
+use crate::widget::props::WidgetBuildCx;
 
-pub fn reconcile(tree: &mut Tree, desc: Desc) {
+pub fn reconcile(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) {
     if let Some(root_id) = tree.root() {
-        reconcile_node(tree, root_id, desc);
+        reconcile_node(tree, root_id, desc, cx);
     } else {
-        let root_id = create_from_desc(tree, desc);
+        let root_id = create_from_desc(tree, desc, cx);
         tree.set_root(root_id);
     }
 }
 
-fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
+fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc, cx: WidgetBuildCx<'_>) {
     match desc {
         Desc::Container {
             id: _,
@@ -27,7 +28,7 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
                     node.kind = NodeKind::Container;
                 }
             }
-            reconcile_children(tree, node_id, children);
+            reconcile_children(tree, node_id, children, cx);
         }
         Desc::Leaf { id: _, style, kind } => {
             let new_kind = NodeKind::Leaf(kind);
@@ -40,14 +41,15 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
             }
         }
         Desc::Widget { id, props } => {
-            let wb = props.build(&id);
+            let wb = props.build(&id, &cx);
             let props_changed = tree
                 .get(node_id)
                 .map(|n| match &n.kind {
                     NodeKind::Widget(old) => !old.props_eq(props.as_ref()),
                     _ => true,
                 })
-                .unwrap_or(true);
+                .unwrap_or(true)
+                || cx.force_rebuild;
 
             if props_changed {
                 if let Some(node) = tree.get_mut(node_id) {
@@ -56,12 +58,17 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc) {
                     node.kind = NodeKind::Widget(props);
                 }
             }
-            reconcile_children(tree, node_id, wb.children);
+            reconcile_children(tree, node_id, wb.children, cx);
         }
     }
 }
 
-fn reconcile_children(tree: &mut Tree, node_id: NodeId, desc_children: Vec<Desc>) {
+fn reconcile_children(
+    tree: &mut Tree,
+    node_id: NodeId,
+    desc_children: Vec<Desc>,
+    cx: WidgetBuildCx<'_>,
+) {
     let old_children: Vec<NodeId> = tree
         .get(node_id)
         .map(|n| n.children.clone())
@@ -77,10 +84,10 @@ fn reconcile_children(tree: &mut Tree, node_id: NodeId, desc_children: Vec<Desc>
         let child_id_str = child_desc.id();
         if let Some(pos) = old_map.iter().position(|(_, id)| id == child_id_str) {
             let (existing_id, _) = old_map.remove(pos);
-            reconcile_node(tree, existing_id, child_desc);
+            reconcile_node(tree, existing_id, child_desc, cx);
             new_children.push(existing_id);
         } else {
-            let new_id = create_from_desc(tree, child_desc);
+            let new_id = create_from_desc(tree, child_desc, cx);
             new_children.push(new_id);
         }
     }
@@ -94,7 +101,7 @@ fn reconcile_children(tree: &mut Tree, node_id: NodeId, desc_children: Vec<Desc>
     }
 }
 
-fn create_from_desc(tree: &mut Tree, desc: Desc) -> NodeId {
+fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeId {
     let (id, style, decoration, kind, child_descs) = match desc {
         Desc::Container {
             id,
@@ -106,7 +113,7 @@ fn create_from_desc(tree: &mut Tree, desc: Desc) -> NodeId {
             (id, style, None, NodeKind::Leaf(kind), Vec::<Desc>::new())
         }
         Desc::Widget { id, props } => {
-            let wb = props.build(&id);
+            let wb = props.build(&id, &cx);
             (
                 id,
                 wb.style,
@@ -135,7 +142,7 @@ fn create_from_desc(tree: &mut Tree, desc: Desc) -> NodeId {
 
     let child_ids: Vec<NodeId> = child_descs
         .into_iter()
-        .map(|d| create_from_desc(tree, d))
+        .map(|d| create_from_desc(tree, d, cx))
         .collect();
 
     if let Some(node) = tree.get_mut(node_id) {

@@ -1,14 +1,7 @@
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-
-pub const TEXT_INPUT_LABEL_FONT_SIZE: f32 = 11.0;
-pub const TEXT_INPUT_VALUE_FONT_SIZE: f32 = 12.0;
-pub const TEXT_INPUT_FIELD_HEIGHT: f32 = 36.0;
-pub const TEXT_INPUT_FIELD_PADDING_X: f32 = 12.0;
-pub const TEXT_INPUT_FIELD_PADDING_Y: f32 = 8.0;
-pub const TEXT_INPUT_FIELD_RADIUS: f32 = 4.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextInputProps {
@@ -36,34 +29,23 @@ impl WidgetProps for TextInputProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::renderer::{Border, Color};
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::renderer::Border;
         use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
         use crate::tree::Desc;
 
-        let border_color = Color {
-            r: 0.894,
-            g: 0.894,
-            b: 0.906,
-            a: 1.0,
-        }; // zinc-200
-        let label_color = Color {
-            r: 0.443,
-            g: 0.443,
-            b: 0.478,
-            a: 1.0,
-        }; // zinc-500
-        let value_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
+        let theme = cx.theme;
+        let tokens = theme.components.text_input;
+        let visual = theme.text_input_visual(if self.disabled {
+            crate::widget::state::WidgetVisualState::Disabled
+        } else {
+            crate::widget::state::WidgetVisualState::Normal
+        });
 
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Column,
-                gap: 4.0,
+                gap: tokens.gap,
                 height: Size::Auto,
                 ..BoxStyle::default()
             },
@@ -79,36 +61,28 @@ impl WidgetProps for TextInputProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: TEXT_INPUT_LABEL_FONT_SIZE,
-                        color: label_color,
+                        font_size: tokens.label_size,
+                        color: theme.colors.text_muted,
                     },
                 },
                 // field
                 Desc::Container {
                     id: Cow::Owned(format!("{id}::field")),
                     style: BoxStyle {
-                        height: Size::Fixed(TEXT_INPUT_FIELD_HEIGHT),
-                        padding: Edges::symmetric(
-                            TEXT_INPUT_FIELD_PADDING_Y,
-                            TEXT_INPUT_FIELD_PADDING_X,
-                        ),
+                        height: Size::Fixed(tokens.field_height),
+                        padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
                         direction: Direction::Row,
                         align_items: Align::Center,
                         hittable: Some(true),
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {
-                        background: Some(Color {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            a: 1.0,
-                        }),
+                        background: Some(visual.background),
                         border: Some(Border {
-                            width: 1.0,
-                            color: border_color,
+                            width: tokens.border_width,
+                            color: visual.border.unwrap_or(theme.colors.border),
                         }),
-                        radius: [TEXT_INPUT_FIELD_RADIUS; 4],
+                        radius: [tokens.radius; 4],
                         shadow: None,
                     }),
                     children: vec![Desc::Leaf {
@@ -120,8 +94,8 @@ impl WidgetProps for TextInputProps {
                         },
                         kind: LeafKind::Text {
                             content: self.value.to_string(),
-                            font_size: TEXT_INPUT_VALUE_FONT_SIZE,
-                            color: value_color,
+                            font_size: tokens.value_size,
+                            color: visual.text,
                         },
                     }],
                 },

@@ -1,0 +1,131 @@
+use crate::renderer::Color;
+
+use super::tokens::*;
+
+pub fn build_theme() -> Theme {
+    Theme {
+        revision: 1,
+        mode: ThemeMode::Dark,
+        colors: ThemeColors {
+            canvas_bg: color(18, 20, 25),
+            canvas_grid: color(57, 60, 71),
+            surface: Color::WHITE,
+            surface_hover: color(248, 248, 249),
+            surface_pressed: color(228, 228, 231),
+            surface_disabled: color(248, 248, 249),
+            border: color(228, 228, 231),
+            border_hover: color(212, 212, 216),
+            border_pressed: color(161, 161, 170),
+            border_focus: color(59, 130, 246),
+            border_disabled: color(228, 228, 231),
+            text: color(24, 24, 27),
+            text_muted: color(113, 113, 122),
+            text_disabled: color(161, 161, 170),
+            accent: color(59, 130, 246),
+            accent_hover: color(69, 143, 255),
+            accent_pressed: color(44, 111, 218),
+            accent_disabled: color_alpha(59, 130, 246, 0.5),
+            accent_soft: color_alpha(59, 130, 246, 0.25),
+            caret: color(59, 130, 246),
+            connection: Color {
+                r: 0.55,
+                g: 0.58,
+                b: 0.65,
+                a: 1.0,
+            },
+        },
+        text: ThemeText {
+            label_sm: 11.0,
+            body_sm: 12.0,
+            body_md: 13.0,
+            title_sm: 13.0,
+        },
+        radii: ThemeRadii {
+            sm: 4.0,
+            md: 6.0,
+            pill: 999.0,
+        },
+        spacing: ThemeSpacing {
+            xs: 4.0,
+            sm: 8.0,
+            md: 12.0,
+            lg: 16.0,
+        },
+        components: ThemeComponents {
+            button: ButtonTheme {
+                padding_x: 16.0,
+                padding_y: 8.0,
+                border_width: 1.0,
+                radius: 4.0,
+                font_size: 12.0,
+            },
+            dropdown: DropdownTheme {
+                gap: 8.0,
+                padding_x: 12.0,
+                padding_y: 8.0,
+                border_width: 1.0,
+                radius: 4.0,
+                font_size: 12.0,
+            },
+            slider: SliderTheme {
+                gap: 8.0,
+                track_height: 18.0,
+                track_padding: 2.0,
+                track_radius: 3.0,
+                thumb_size: 14.0,
+                font_size: 12.0,
+            },
+            toggle: ToggleTheme {
+                gap: 8.0,
+                track_width: 32.0,
+                track_height: 18.0,
+                track_padding: 2.0,
+                track_radius: 9.0,
+                thumb_size: 14.0,
+                font_size: 12.0,
+            },
+            text_input: TextInputTheme {
+                gap: 4.0,
+                label_size: 11.0,
+                value_size: 12.0,
+                field_height: 36.0,
+                padding_x: 12.0,
+                padding_y: 8.0,
+                border_width: 1.0,
+                radius: 4.0,
+                selection_radius: 2.0,
+            },
+            panel: PanelTheme {
+                title_bar_height: 32.0,
+                title_padding_x: 10.0,
+                title_padding_y: 6.0,
+                content_padding: 8.0,
+                border_width: 1.0,
+                radius: 6.0,
+                title_font_size: 13.0,
+                frame_background: color(34, 37, 50),
+                frame_border: color(67, 71, 85),
+                titlebar_background: color(46, 50, 65),
+                title_text: color(230, 232, 240),
+            },
+        },
+    }
+}
+
+fn color(r: u8, g: u8, b: u8) -> Color {
+    Color {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a: 1.0,
+    }
+}
+
+fn color_alpha(r: u8, g: u8, b: u8, a: f32) -> Color {
+    Color {
+        r: r as f32 / 255.0,
+        g: g as f32 / 255.0,
+        b: b as f32 / 255.0,
+        a,
+    }
+}

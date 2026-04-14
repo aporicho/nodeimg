@@ -1,4 +1,4 @@
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
@@ -30,36 +30,18 @@ impl WidgetProps for DropdownProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::renderer::{Border, Color};
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::renderer::Border;
         use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
         use crate::tree::Desc;
 
-        // shadcn zinc 色系
-        let bg = Color {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: 1.0,
-        };
-        let border_color = Color {
-            r: 0.894,
-            g: 0.894,
-            b: 0.906,
-            a: 1.0,
-        }; // zinc-200
-        let text_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
-        let arrow_color = Color {
-            r: 0.443,
-            g: 0.443,
-            b: 0.478,
-            a: 1.0,
-        }; // zinc-500
+        let theme = cx.theme;
+        let tokens = theme.components.dropdown;
+        let visual = theme.dropdown_visual(if self.disabled {
+            crate::widget::state::WidgetVisualState::Disabled
+        } else {
+            crate::widget::state::WidgetVisualState::Normal
+        });
 
         let selected_text = self
             .options
@@ -70,19 +52,19 @@ impl WidgetProps for DropdownProps {
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
-                gap: 8.0,
+                gap: tokens.gap,
                 align_items: Align::Center,
-                padding: Edges::symmetric(8.0, 12.0),
+                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
                 height: Size::Auto,
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
-                background: Some(bg),
+                background: Some(visual.background),
                 border: Some(Border {
-                    width: 1.0,
-                    color: border_color,
+                    width: tokens.border_width,
+                    color: visual.border.unwrap_or(theme.colors.border),
                 }),
-                radius: [4.0; 4],
+                radius: [tokens.radius; 4],
                 shadow: None,
             }),
             children: vec![
@@ -96,8 +78,8 @@ impl WidgetProps for DropdownProps {
                     },
                     kind: LeafKind::Text {
                         content: selected_text,
-                        font_size: 12.0,
-                        color: text_color,
+                        font_size: tokens.font_size,
+                        color: visual.text,
                     },
                 },
                 // 弹性占位，把箭头推到右边
@@ -120,8 +102,8 @@ impl WidgetProps for DropdownProps {
                     },
                     kind: LeafKind::Text {
                         content: "▾".to_string(),
-                        font_size: 12.0,
-                        color: arrow_color,
+                        font_size: tokens.font_size,
+                        color: theme.colors.text_muted,
                     },
                 },
             ],

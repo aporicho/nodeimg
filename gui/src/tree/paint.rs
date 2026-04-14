@@ -6,28 +6,22 @@ use super::paint_helpers::{
 };
 use super::tree::Tree;
 use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
+use crate::theme::Theme;
 use crate::widget::atoms::button::ButtonProps;
 use crate::widget::atoms::slider::SliderProps;
-use crate::widget::atoms::text_input::{TextInputProps, TEXT_INPUT_FIELD_RADIUS};
+use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::state::{InteractionStore, TextInputStore, WidgetVisualState};
 
 /// 连线宽度（local 空间像素，paint 时按 scale 缩放）
 const CONNECTION_WIDTH: f32 = 2.0;
-/// 连线颜色（中性灰）
-const CONNECTION_COLOR: Color = Color {
-    r: 0.55,
-    g: 0.58,
-    b: 0.65,
-    a: 1.0,
-};
-
 pub fn paint(
     tree: &Tree,
     root: NodeId,
     renderer: &mut Renderer,
     interaction: Option<&InteractionStore>,
     text_inputs: Option<&TextInputStore>,
+    theme: &Theme,
 ) {
     paint_node(
         tree,
@@ -36,6 +30,7 @@ pub fn paint(
         PaintTransform::identity(),
         interaction,
         text_inputs,
+        theme,
         None,
     );
 }
@@ -47,6 +42,7 @@ fn paint_node(
     tf: PaintTransform,
     interaction: Option<&InteractionStore>,
     text_inputs: Option<&TextInputStore>,
+    theme: &Theme,
     inherited_text_color: Option<Color>,
 ) {
     let Some(node) = tree.get(node_id) else {
@@ -56,7 +52,7 @@ fn paint_node(
     let screen_rect = tf.apply_rect(node.rect);
     let mut child_text_color = inherited_text_color;
 
-    if let Some((style, text_color)) = widget_visual_override(tree, node_id, interaction) {
+    if let Some((style, text_color)) = widget_visual_override(tree, node_id, interaction, theme) {
         renderer.draw_rect(screen_rect, &style);
         child_text_color = Some(text_color);
     } else if let Some(dec) = &node.decoration {
@@ -86,6 +82,7 @@ fn paint_node(
                     tf,
                     interaction,
                     text_inputs,
+                    theme,
                     content,
                     *font_size,
                     child_text_color.unwrap_or(*color),
@@ -99,14 +96,9 @@ fn paint_node(
                     renderer.draw_rect(
                         selection_rect,
                         &RectStyle {
-                            color: Color {
-                                r: 0.231,
-                                g: 0.510,
-                                b: 0.965,
-                                a: 0.25,
-                            },
+                            color: theme.selection_color(),
                             border: None,
-                            radius: [2.0; 4],
+                            radius: [theme.components.text_input.selection_radius; 4],
                             shadow: None,
                         },
                     );
@@ -128,12 +120,7 @@ fn paint_node(
                     renderer.draw_rect(
                         caret_rect,
                         &RectStyle {
-                            color: Color {
-                                r: 0.231,
-                                g: 0.510,
-                                b: 0.965,
-                                a: 1.0,
-                            },
+                            color: theme.caret_color(),
                             border: None,
                             radius: [0.0; 4],
                             shadow: None,
@@ -161,7 +148,7 @@ fn paint_node(
                 let from_p = tf.apply_point(rect_center_right(from_rect));
                 let to_p = tf.apply_point(rect_center_left(to_rect));
                 let ctrl = bezier_control_points(from_p, to_p);
-                renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, CONNECTION_COLOR);
+                renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.connection);
             }
             _ => {}
         }
@@ -183,6 +170,7 @@ fn paint_node(
             child_tf,
             interaction,
             text_inputs,
+            theme,
             child_text_color,
         );
     }
@@ -196,6 +184,7 @@ fn paint_text_input_value_leaf(
     tf: PaintTransform,
     interaction: Option<&InteractionStore>,
     text_inputs: Option<&TextInputStore>,
+    theme: &Theme,
     content: &str,
     font_size: f32,
     text_color: Color,
@@ -219,14 +208,9 @@ fn paint_text_input_value_leaf(
         renderer.draw_rect(
             selection_rect,
             &RectStyle {
-                color: Color {
-                    r: 0.231,
-                    g: 0.510,
-                    b: 0.965,
-                    a: 0.25,
-                },
+                color: theme.selection_color(),
                 border: None,
-                radius: [2.0; 4],
+                radius: [theme.components.text_input.selection_radius; 4],
                 shadow: None,
             },
         );
@@ -301,12 +285,7 @@ fn paint_text_input_value_leaf(
             renderer.draw_rect(
                 underline_rect,
                 &RectStyle {
-                    color: Color {
-                        r: 0.231,
-                        g: 0.510,
-                        b: 0.965,
-                        a: 0.9,
-                    },
+                    color: theme.preedit_underline_color(),
                     border: None,
                     radius: [0.0; 4],
                     shadow: None,
@@ -334,12 +313,7 @@ fn paint_text_input_value_leaf(
         renderer.draw_rect(
             caret_rect,
             &RectStyle {
-                color: Color {
-                    r: 0.231,
-                    g: 0.510,
-                    b: 0.965,
-                    a: 1.0,
-                },
+                color: theme.caret_color(),
                 border: None,
                 radius: [0.0; 4],
                 shadow: None,
@@ -356,18 +330,20 @@ fn widget_visual_override(
     tree: &Tree,
     node_id: NodeId,
     interaction: Option<&InteractionStore>,
+    theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
-    button_visual_override(node_id, &node.kind, interaction)
-        .or_else(|| toggle_visual_override(tree, node_id, interaction))
-        .or_else(|| slider_visual_override(tree, node_id, interaction))
-        .or_else(|| text_input_visual_override(tree, node_id, interaction))
+    button_visual_override(node_id, &node.kind, interaction, theme)
+        .or_else(|| toggle_visual_override(tree, node_id, interaction, theme))
+        .or_else(|| slider_visual_override(tree, node_id, interaction, theme))
+        .or_else(|| text_input_visual_override(tree, node_id, interaction, theme))
 }
 
 fn button_visual_override(
     node_id: NodeId,
     kind: &NodeKind,
     interaction: Option<&InteractionStore>,
+    theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let NodeKind::Widget(props) = kind else {
         return None;
@@ -381,120 +357,20 @@ fn button_visual_override(
             WidgetVisualState::Normal
         });
 
-    let (bg, border, text) = match visual {
-        WidgetVisualState::Normal => (
-            Color {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            },
-            Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 1.0,
-            },
-            Color {
-                r: 0.094,
-                g: 0.094,
-                b: 0.106,
-                a: 1.0,
-            },
-        ),
-        WidgetVisualState::Hovered => (
-            Color {
-                r: 0.973,
-                g: 0.973,
-                b: 0.976,
-                a: 1.0,
-            },
-            Color {
-                r: 0.831,
-                g: 0.831,
-                b: 0.847,
-                a: 1.0,
-            },
-            Color {
-                r: 0.094,
-                g: 0.094,
-                b: 0.106,
-                a: 1.0,
-            },
-        ),
-        WidgetVisualState::Pressed => (
-            Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 1.0,
-            },
-            Color {
-                r: 0.631,
-                g: 0.631,
-                b: 0.667,
-                a: 1.0,
-            },
-            Color {
-                r: 0.094,
-                g: 0.094,
-                b: 0.106,
-                a: 1.0,
-            },
-        ),
-        WidgetVisualState::Focused => (
-            Color {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            },
-            Color {
-                r: 0.231,
-                g: 0.510,
-                b: 0.965,
-                a: 1.0,
-            },
-            Color {
-                r: 0.094,
-                g: 0.094,
-                b: 0.106,
-                a: 1.0,
-            },
-        ),
-        WidgetVisualState::Disabled => (
-            Color {
-                r: 0.973,
-                g: 0.973,
-                b: 0.976,
-                a: 1.0,
-            },
-            Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 1.0,
-            },
-            Color {
-                r: 0.631,
-                g: 0.631,
-                b: 0.667,
-                a: 1.0,
-            },
-        ),
-    };
+    let button_visual = theme.button_visual(visual);
+    let tokens = theme.components.button;
 
     Some((
         RectStyle {
-            color: bg,
-            border: Some(crate::renderer::Border {
-                width: 1.0,
-                color: border,
+            color: button_visual.background,
+            border: button_visual.border.map(|color| crate::renderer::Border {
+                width: tokens.border_width,
+                color,
             }),
-            radius: [4.0; 4],
+            radius: [tokens.radius; 4],
             shadow: None,
         },
-        text,
+        button_visual.text,
     ))
 }
 
@@ -502,6 +378,7 @@ fn toggle_visual_override(
     tree: &Tree,
     node_id: NodeId,
     interaction: Option<&InteractionStore>,
+    theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
     let node_id_str = node.id.as_ref();
@@ -520,73 +397,26 @@ fn toggle_visual_override(
         });
 
     if node_id_str.ends_with("::track") {
-        let bg = match (toggle.value, root_visual) {
-            (_, WidgetVisualState::Disabled) => Color {
-                r: 0.831,
-                g: 0.831,
-                b: 0.847,
-                a: 0.5,
-            },
-            (true, WidgetVisualState::Pressed) => Color {
-                r: 0.172,
-                g: 0.435,
-                b: 0.855,
-                a: 1.0,
-            },
-            (true, WidgetVisualState::Hovered) => Color {
-                r: 0.271,
-                g: 0.560,
-                b: 1.0,
-                a: 1.0,
-            },
-            (true, _) => Color {
-                r: 0.231,
-                g: 0.510,
-                b: 0.965,
-                a: 1.0,
-            },
-            (false, WidgetVisualState::Pressed) => Color {
-                r: 0.721,
-                g: 0.721,
-                b: 0.747,
-                a: 1.0,
-            },
-            (false, WidgetVisualState::Hovered) => Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 1.0,
-            },
-            (false, _) => Color {
-                r: 0.831,
-                g: 0.831,
-                b: 0.847,
-                a: 1.0,
-            },
-        };
-        let border =
-            matches!(root_visual, WidgetVisualState::Focused).then_some(crate::renderer::Border {
-                width: 1.0,
-                color: Color {
-                    r: 0.231,
-                    g: 0.510,
-                    b: 0.965,
-                    a: 1.0,
-                },
-            });
+        let toggle_visual = theme.toggle_visual(toggle.value, root_visual);
+        let tokens = theme.components.toggle;
         return Some((
             RectStyle {
-                color: bg,
-                border,
-                radius: [9.0; 4],
+                color: toggle_visual.track_background,
+                border: toggle_visual
+                    .track_border
+                    .map(|color| crate::renderer::Border { width: 1.0, color }),
+                radius: [tokens.track_radius; 4],
                 shadow: None,
             },
-            text_color_for_visual(root_visual),
+            toggle_visual.text,
         ));
     }
 
     if node_id_str == root_id {
-        return Some((transparent_style(), text_color_for_visual(root_visual)));
+        return Some((
+            transparent_style(),
+            theme.text_color_for_visual(root_visual),
+        ));
     }
 
     None
@@ -596,6 +426,7 @@ fn slider_visual_override(
     tree: &Tree,
     node_id: NodeId,
     interaction: Option<&InteractionStore>,
+    theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
     let node_id_str = node.id.as_ref();
@@ -614,93 +445,40 @@ fn slider_visual_override(
         });
 
     if node_id_str.ends_with("::track") {
-        let color = match root_visual {
-            WidgetVisualState::Disabled => Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 0.5,
-            },
-            WidgetVisualState::Pressed => Color {
-                r: 0.831,
-                g: 0.831,
-                b: 0.847,
-                a: 1.0,
-            },
-            WidgetVisualState::Hovered => Color {
-                r: 0.933,
-                g: 0.933,
-                b: 0.941,
-                a: 1.0,
-            },
-            _ => Color {
-                r: 0.894,
-                g: 0.894,
-                b: 0.906,
-                a: 1.0,
-            },
-        };
-        let border =
-            matches!(root_visual, WidgetVisualState::Focused).then_some(crate::renderer::Border {
-                width: 1.0,
-                color: Color {
-                    r: 0.231,
-                    g: 0.510,
-                    b: 0.965,
-                    a: 1.0,
-                },
-            });
+        let slider_visual = theme.slider_visual(root_visual);
+        let tokens = theme.components.slider;
         return Some((
             RectStyle {
-                color,
-                border,
-                radius: [3.0; 4],
+                color: slider_visual.track_background,
+                border: slider_visual
+                    .track_border
+                    .map(|color| crate::renderer::Border { width: 1.0, color }),
+                radius: [tokens.track_radius; 4],
                 shadow: None,
             },
-            text_color_for_visual(root_visual),
+            slider_visual.text,
         ));
     }
 
     if node_id_str.ends_with("::fill") {
-        let color = match root_visual {
-            WidgetVisualState::Disabled => Color {
-                r: 0.631,
-                g: 0.631,
-                b: 0.667,
-                a: 0.5,
-            },
-            WidgetVisualState::Pressed => Color {
-                r: 0.043,
-                g: 0.043,
-                b: 0.055,
-                a: 1.0,
-            },
-            WidgetVisualState::Hovered => Color {
-                r: 0.145,
-                g: 0.145,
-                b: 0.165,
-                a: 1.0,
-            },
-            _ => Color {
-                r: 0.094,
-                g: 0.094,
-                b: 0.106,
-                a: 1.0,
-            },
-        };
+        let slider_visual = theme.slider_visual(root_visual);
+        let tokens = theme.components.slider;
         return Some((
             RectStyle {
-                color,
+                color: slider_visual.fill,
                 border: None,
-                radius: [3.0; 4],
+                radius: [tokens.track_radius; 4],
                 shadow: None,
             },
-            text_color_for_visual(root_visual),
+            slider_visual.text,
         ));
     }
 
     if node_id_str == root_id {
-        return Some((transparent_style(), text_color_for_visual(root_visual)));
+        return Some((
+            transparent_style(),
+            theme.text_color_for_visual(root_visual),
+        ));
     }
 
     None
@@ -710,6 +488,7 @@ fn text_input_visual_override(
     tree: &Tree,
     node_id: NodeId,
     interaction: Option<&InteractionStore>,
+    theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
     let node_id_str = node.id.as_ref();
@@ -728,94 +507,27 @@ fn text_input_visual_override(
         });
 
     if node_id_str == root_id {
-        return Some((transparent_style(), text_color_for_visual(root_visual)));
+        return Some((
+            transparent_style(),
+            theme.text_color_for_visual(root_visual),
+        ));
     }
 
     if node_id_str.ends_with("::field") {
-        let (bg, border) = match root_visual {
-            WidgetVisualState::Disabled => (
-                Color {
-                    r: 0.973,
-                    g: 0.973,
-                    b: 0.976,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.894,
-                    g: 0.894,
-                    b: 0.906,
-                    a: 1.0,
-                },
-            ),
-            WidgetVisualState::Pressed => (
-                Color {
-                    r: 0.973,
-                    g: 0.973,
-                    b: 0.976,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.631,
-                    g: 0.631,
-                    b: 0.667,
-                    a: 1.0,
-                },
-            ),
-            WidgetVisualState::Hovered => (
-                Color {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.831,
-                    g: 0.831,
-                    b: 0.847,
-                    a: 1.0,
-                },
-            ),
-            WidgetVisualState::Focused => (
-                Color {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.231,
-                    g: 0.510,
-                    b: 0.965,
-                    a: 1.0,
-                },
-            ),
-            WidgetVisualState::Normal => (
-                Color {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.894,
-                    g: 0.894,
-                    b: 0.906,
-                    a: 1.0,
-                },
-            ),
-        };
+        let field_visual = theme.text_input_visual(root_visual);
+        let tokens = theme.components.text_input;
 
         return Some((
             RectStyle {
-                color: bg,
-                border: Some(crate::renderer::Border {
-                    width: 1.0,
-                    color: border,
+                color: field_visual.background,
+                border: field_visual.border.map(|color| crate::renderer::Border {
+                    width: tokens.border_width,
+                    color,
                 }),
-                radius: [TEXT_INPUT_FIELD_RADIUS; 4],
+                radius: [tokens.radius; 4],
                 shadow: None,
             },
-            text_color_for_visual(root_visual),
+            field_visual.text,
         ));
     }
 
@@ -873,23 +585,6 @@ fn text_input_widget_id(
         .map(|state| state.focused() == Some(root_node_id))
         .unwrap_or(false);
     Some((root_id, focused))
-}
-
-fn text_color_for_visual(visual: WidgetVisualState) -> Color {
-    match visual {
-        WidgetVisualState::Disabled => Color {
-            r: 0.631,
-            g: 0.631,
-            b: 0.667,
-            a: 1.0,
-        },
-        _ => Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        },
-    }
 }
 
 fn transparent_style() -> RectStyle {

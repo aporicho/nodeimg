@@ -1,50 +1,11 @@
 use crate::gesture::Gesture;
-use crate::renderer::{Border, Color};
+use crate::renderer::Border;
 use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
 use crate::tree::Desc;
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-
-/// 标题栏固定高度（像素）
-pub const TITLE_BAR_HEIGHT: f32 = 32.0;
-
-// 占位装饰（C.7 接主题系统后替换）
-fn frame_bg() -> Color {
-    Color {
-        r: 0.133,
-        g: 0.145,
-        b: 0.196,
-        a: 1.0,
-    }
-}
-fn frame_border() -> Color {
-    Color {
-        r: 0.263,
-        g: 0.278,
-        b: 0.333,
-        a: 1.0,
-    }
-}
-fn titlebar_bg() -> Color {
-    Color {
-        r: 0.180,
-        g: 0.196,
-        b: 0.255,
-        a: 1.0,
-    }
-}
-fn title_color() -> Color {
-    Color {
-        r: 0.902,
-        g: 0.910,
-        b: 0.941,
-        a: 1.0,
-    }
-}
-const FRAME_RADIUS: f32 = 6.0;
-const TITLE_FONT_SIZE: f32 = 13.0;
 
 /// Panel widget 的 props。
 ///
@@ -141,21 +102,25 @@ impl WidgetProps for PanelProps {
         fmt::Debug::fmt(self, f)
     }
 
-    fn build(&self, id: &str) -> WidgetBuild {
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        let theme = cx.theme;
+        let tokens = theme.components.panel;
+        let visual = theme.panel_visual();
+
         // 标题栏
         let titlebar = Desc::Container {
             id: Cow::Owned(format!("{id}::titlebar")),
             style: BoxStyle {
-                height: Size::Fixed(TITLE_BAR_HEIGHT),
-                padding: Edges::symmetric(6.0, 10.0),
+                height: Size::Fixed(tokens.title_bar_height),
+                padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
                 direction: Direction::Row,
                 gestures: vec![Gesture::Drag],
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
-                background: Some(titlebar_bg()),
+                background: Some(visual.titlebar_background),
                 border: None,
-                radius: [FRAME_RADIUS, FRAME_RADIUS, 0.0, 0.0],
+                radius: [tokens.radius, tokens.radius, 0.0, 0.0],
                 shadow: None,
             }),
             children: vec![Desc::Leaf {
@@ -167,8 +132,8 @@ impl WidgetProps for PanelProps {
                 },
                 kind: LeafKind::Text {
                     content: self.title.to_string(),
-                    font_size: TITLE_FONT_SIZE,
-                    color: title_color(),
+                    font_size: tokens.title_font_size,
+                    color: visual.title_text,
                 },
             }],
         };
@@ -178,7 +143,7 @@ impl WidgetProps for PanelProps {
             id: Cow::Owned(format!("{id}::content")),
             style: BoxStyle {
                 flex_grow: 1.0,
-                padding: Edges::all(8.0),
+                padding: Edges::all(tokens.content_padding),
                 ..BoxStyle::default()
             },
             decoration: None,
@@ -198,12 +163,12 @@ impl WidgetProps for PanelProps {
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
-                background: Some(frame_bg()),
+                background: Some(visual.frame_background),
                 border: Some(Border {
-                    width: 1.0,
-                    color: frame_border(),
+                    width: tokens.border_width,
+                    color: visual.frame_border,
                 }),
-                radius: [FRAME_RADIUS; 4],
+                radius: [tokens.radius; 4],
                 shadow: None,
             }),
             children: vec![titlebar, content_area],
@@ -216,8 +181,17 @@ mod tests {
     use super::*;
     use crate::gesture::Gesture;
     use crate::renderer::{Color, Rect};
+    use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{LeafKind, Position, Size};
     use crate::tree::{hit_test, layout, reconcile, NodeId, Tree};
+    use crate::widget::props::WidgetBuildCx;
+
+    fn build_cx<'a>(theme: &'a Theme) -> WidgetBuildCx<'a> {
+        WidgetBuildCx {
+            theme,
+            force_rebuild: false,
+        }
+    }
 
     /// 标准 props：x=10, y=20, w=300, h=200，空 content。
     fn sample_props() -> PanelProps {
@@ -235,13 +209,14 @@ mod tests {
     /// 集成测试 helper：把 PanelProps 装进树，走 reconcile + layout，
     /// 返回可直接 hit_test 的 Tree + root NodeId。
     fn build_tree_for_hit(props: PanelProps) -> (Tree, NodeId) {
+        let theme = dark_theme();
         let desc = Desc::Widget {
             id: Cow::Borrowed("test_panel"),
             props: Box::new(props),
         };
 
         let mut tree = Tree::new();
-        reconcile(&mut tree, desc);
+        reconcile(&mut tree, desc, build_cx(&theme));
 
         let root = tree.root().expect("tree should have root after reconcile");
 
@@ -278,7 +253,8 @@ mod tests {
 
     #[test]
     fn build_outer_is_absolute() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         match build.style.position {
             Position::Absolute { x, y } => {
                 assert_eq!(x, 10.0);
@@ -298,13 +274,15 @@ mod tests {
 
     #[test]
     fn build_outer_has_resize_gesture() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         assert_eq!(build.style.gestures, vec![Gesture::Resize]);
     }
 
     #[test]
     fn build_outer_has_frame_decoration() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         let dec = build.decoration.expect("outer should have decoration");
         assert!(dec.background.is_some(), "outer should have background");
         assert!(dec.border.is_some(), "outer should have border");
@@ -312,7 +290,8 @@ mod tests {
 
     #[test]
     fn build_children_count_is_two() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         assert_eq!(
             build.children.len(),
             2,
@@ -322,12 +301,13 @@ mod tests {
 
     #[test]
     fn build_titlebar_has_drag_gesture() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         match &build.children[0] {
             Desc::Container { style, .. } => {
                 assert_eq!(style.gestures, vec![Gesture::Drag]);
                 match style.height {
-                    Size::Fixed(h) => assert_eq!(h, TITLE_BAR_HEIGHT),
+                    Size::Fixed(h) => assert_eq!(h, theme.components.panel.title_bar_height),
                     other => panic!("expected Fixed titlebar height, got {:?}", other),
                 }
             }
@@ -340,7 +320,8 @@ mod tests {
 
     #[test]
     fn build_titlebar_contains_title_text() {
-        let build = sample_props().build("test");
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
         let titlebar_children = match &build.children[0] {
             Desc::Container { children, .. } => children,
             other => panic!(
@@ -365,6 +346,7 @@ mod tests {
 
     #[test]
     fn build_content_flex_grow_holds_user_children() {
+        let theme = dark_theme();
         let mut props = sample_props();
         props.content = vec![Desc::Leaf {
             id: Cow::Borrowed("user_child"),
@@ -380,7 +362,7 @@ mod tests {
                 },
             },
         }];
-        let build = props.build("test");
+        let build = props.build("test", &build_cx(&theme));
         match &build.children[1] {
             Desc::Container {
                 style,

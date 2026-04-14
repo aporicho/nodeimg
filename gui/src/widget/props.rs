@@ -1,3 +1,4 @@
+use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, Decoration};
 use crate::tree::Desc;
 use std::any::Any;
@@ -10,6 +11,12 @@ pub struct WidgetBuild {
     pub children: Vec<Desc>,
 }
 
+#[derive(Clone, Copy)]
+pub struct WidgetBuildCx<'a> {
+    pub theme: &'a Theme,
+    pub force_rebuild: bool,
+}
+
 /// 控件配置 trait。每种控件实现此 trait。
 pub trait WidgetProps: 'static {
     fn widget_type(&self) -> &'static str;
@@ -17,7 +24,7 @@ pub trait WidgetProps: 'static {
     fn clone_box(&self) -> Box<dyn WidgetProps>;
     fn props_eq(&self, other: &dyn WidgetProps) -> bool;
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result;
-    fn build(&self, id: &str) -> WidgetBuild;
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild;
 }
 
 impl Clone for Box<dyn WidgetProps> {

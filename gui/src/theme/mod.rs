@@ -1,3 +1,40 @@
-//! 主题系统 (2.7.0)
-//! 三层 token：Primitive → Semantic → Component。
-//! 所有组件从主题查询颜色，不硬编码。
+mod dark;
+mod light;
+mod tokens;
+
+pub use tokens::{
+    ButtonTheme, DropdownTheme, PanelTheme, PanelVisual, SliderTheme, SliderVisual, SurfaceVisual,
+    TextInputTheme, Theme, ThemeColors, ThemeComponents, ThemeMode, ThemeRadii, ThemeSpacing,
+    ThemeText, ToggleTheme, ToggleVisual,
+};
+
+impl Theme {
+    pub fn dark() -> Self {
+        dark_theme()
+    }
+
+    pub fn light() -> Self {
+        light_theme()
+    }
+
+    pub fn from_mode(mode: ThemeMode) -> Self {
+        match mode {
+            ThemeMode::Dark => dark_theme(),
+            ThemeMode::Light => light_theme(),
+        }
+    }
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        dark_theme()
+    }
+}
+
+pub fn dark_theme() -> Theme {
+    dark::build_theme()
+}
+
+pub fn light_theme() -> Theme {
+    light::build_theme()
+}

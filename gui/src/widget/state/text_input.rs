@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
 use crate::renderer::{Point, Rect, TextMeasurer};
+use crate::theme::Theme;
 use crate::tree::{NodeId, NodeKind, Tree};
-use crate::widget::atoms::text_input::{
-    TextInputProps, TEXT_INPUT_FIELD_HEIGHT, TEXT_INPUT_FIELD_PADDING_X, TEXT_INPUT_VALUE_FONT_SIZE,
-};
+use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::TextEditState;
 
 #[derive(Clone, Debug)]
@@ -34,23 +33,24 @@ pub struct TextInputRuntime {
 }
 
 impl TextInputRuntime {
-    fn new(value: &str) -> Self {
+    fn new(value: &str, theme: &Theme) -> Self {
+        let tokens = theme.components.text_input;
         Self {
             editor: TextEditState::new(value),
             field_rect: Rect {
                 x: 0.0,
                 y: 0.0,
                 w: 0.0,
-                h: TEXT_INPUT_FIELD_HEIGHT,
+                h: tokens.field_height,
             },
             content_rect: Rect {
                 x: 0.0,
                 y: 0.0,
                 w: 0.0,
-                h: TEXT_INPUT_FIELD_HEIGHT,
+                h: tokens.field_height,
             },
             text_origin: Point { x: 0.0, y: 0.0 },
-            text_height: TEXT_INPUT_VALUE_FONT_SIZE,
+            text_height: tokens.value_size,
             scroll_x: 0.0,
             caret_stops: vec![(0, 0.0)],
             preedit: None,
@@ -178,16 +178,18 @@ impl TextInputRuntime {
         field_rect: Rect,
         value_rect: Option<Rect>,
         measurer: &mut TextMeasurer,
+        theme: &Theme,
     ) {
+        let tokens = theme.components.text_input;
         self.field_rect = field_rect;
         self.text_height = measurer
-            .measure("Mg", TEXT_INPUT_VALUE_FONT_SIZE)
+            .measure("Mg", tokens.value_size)
             .1
-            .max(TEXT_INPUT_VALUE_FONT_SIZE);
+            .max(tokens.value_size);
         self.content_rect = Rect {
-            x: field_rect.x + TEXT_INPUT_FIELD_PADDING_X,
+            x: field_rect.x + tokens.padding_x,
             y: field_rect.y,
-            w: (field_rect.w - TEXT_INPUT_FIELD_PADDING_X * 2.0).max(1.0),
+            w: (field_rect.w - tokens.padding_x * 2.0).max(1.0),
             h: field_rect.h,
         };
         self.text_origin = Point {
@@ -196,11 +198,11 @@ impl TextInputRuntime {
                 .map(|rect| rect.y)
                 .unwrap_or(field_rect.y + (field_rect.h - self.text_height) * 0.5),
         };
-        self.caret_stops = caret_stops(&self.editor, measurer);
+        self.caret_stops = caret_stops(&self.editor, measurer, theme);
         self.preedit_layout = self
             .preedit
             .as_ref()
-            .map(|preedit| preedit_layout(preedit, self, measurer));
+            .map(|preedit| preedit_layout(preedit, self, measurer, theme));
         self.clamp_scroll();
         self.ensure_cursor_visible();
     }
@@ -277,7 +279,8 @@ impl TextInputStore {
         }
     }
 
-    pub fn sync_with_tree(&mut self, tree: &Tree, measurer: &mut TextMeasurer) {
+    pub fn sync_with_tree(&mut self, tree: &Tree, measurer: &mut TextMeasurer, theme: &Theme) {
+        let tokens = theme.components.text_input;
         let mut next = HashMap::new();
 
         for (_, node) in tree.iter() {
@@ -292,7 +295,7 @@ impl TextInputStore {
             let mut runtime = self
                 .runtimes
                 .remove(&widget_id)
-                .unwrap_or_else(|| TextInputRuntime::new(text_input.value.as_ref()));
+                .unwrap_or_else(|| TextInputRuntime::new(text_input.value.as_ref(), theme));
 
             if runtime.editor.text() != text_input.value.as_ref() {
                 runtime.clear_preedit();
@@ -303,10 +306,10 @@ impl TextInputStore {
                 x: node.rect.x,
                 y: node.rect.y,
                 w: node.rect.w,
-                h: TEXT_INPUT_FIELD_HEIGHT,
+                h: tokens.field_height,
             });
             let value_rect = find_rect(tree, &format!("{}::value", widget_id));
-            runtime.sync_layout(field_rect, value_rect, measurer);
+            runtime.sync_layout(field_rect, value_rect, measurer, theme);
             next.insert(widget_id, runtime);
         }
 
@@ -353,15 +356,18 @@ fn find_rect(tree: &Tree, node_id: &str) -> Option<Rect> {
         .find_map(|(_, node)| (node.id.as_ref() == node_id).then_some(node.rect))
 }
 
-fn caret_stops(editor: &TextEditState, measurer: &mut TextMeasurer) -> Vec<(usize, f32)> {
+fn caret_stops(
+    editor: &TextEditState,
+    measurer: &mut TextMeasurer,
+    theme: &Theme,
+) -> Vec<(usize, f32)> {
+    let font_size = theme.components.text_input.value_size;
     let text = editor.text();
     let mut stops = Vec::with_capacity(text.chars().count() + 1);
     stops.push((0, 0.0));
 
     for (byte_index, _) in text.char_indices().skip(1) {
-        let width = measurer
-            .measure(&text[..byte_index], TEXT_INPUT_VALUE_FONT_SIZE)
-            .0;
+        let width = measurer.measure(&text[..byte_index], font_size).0;
         stops.push((byte_index, width));
     }
 
@@ -369,7 +375,7 @@ fn caret_stops(editor: &TextEditState, measurer: &mut TextMeasurer) -> Vec<(usiz
         return stops;
     }
 
-    let width = measurer.measure(text, TEXT_INPUT_VALUE_FONT_SIZE).0;
+    let width = measurer.measure(text, font_size).0;
     if stops.last().map(|(idx, _)| *idx) != Some(text.len()) {
         stops.push((text.len(), width));
     }
@@ -380,18 +386,18 @@ fn preedit_layout(
     preedit: &PreeditState,
     runtime: &TextInputRuntime,
     measurer: &mut TextMeasurer,
+    theme: &Theme,
 ) -> PreeditLayout {
+    let font_size = theme.components.text_input.value_size;
     let start = clamp_text_index(runtime.editor.text(), preedit.range.0);
     let start_x = runtime.caret_offset(start);
-    let width = measurer
-        .measure(&preedit.text, TEXT_INPUT_VALUE_FONT_SIZE)
-        .0;
+    let width = measurer.measure(&preedit.text, font_size).0;
     let caret_byte = preedit
         .caret
         .map(|(_, end)| clamp_text_index(&preedit.text, end))
         .unwrap_or(preedit.text.len());
     let caret_prefix = &preedit.text[..caret_byte];
-    let caret_x = start_x + measurer.measure(caret_prefix, TEXT_INPUT_VALUE_FONT_SIZE).0;
+    let caret_x = start_x + measurer.measure(caret_prefix, font_size).0;
 
     PreeditLayout {
         start_x,
@@ -411,11 +417,13 @@ fn clamp_text_index(text: &str, mut index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::theme::dark_theme;
     use crate::widget::TextEditState;
 
     #[test]
     fn caret_moves_to_nearest_click_position() {
-        let mut runtime = TextInputRuntime::new("hello");
+        let theme = dark_theme();
+        let mut runtime = TextInputRuntime::new("hello", &theme);
         runtime.text_origin = Point { x: 10.0, y: 5.0 };
         runtime.caret_stops = vec![(0, 0.0), (1, 8.0), (2, 16.0), (3, 24.0)];
         runtime.editor = TextEditState::new("hey");
@@ -427,7 +435,8 @@ mod tests {
 
     #[test]
     fn selection_rect_uses_current_selection_range() {
-        let mut runtime = TextInputRuntime::new("hello");
+        let theme = dark_theme();
+        let mut runtime = TextInputRuntime::new("hello", &theme);
         runtime.text_origin = Point { x: 10.0, y: 5.0 };
         runtime.text_height = 12.0;
         runtime.caret_stops = vec![(0, 0.0), (1, 8.0), (2, 16.0), (3, 24.0), (5, 40.0)];
@@ -444,7 +453,8 @@ mod tests {
 
     #[test]
     fn preedit_reuses_selection_range_until_commit() {
-        let mut runtime = TextInputRuntime::new("hello");
+        let theme = dark_theme();
+        let mut runtime = TextInputRuntime::new("hello", &theme);
         runtime.editor.move_home();
         runtime.editor.select_right();
         runtime.editor.select_right();
@@ -458,13 +468,14 @@ mod tests {
 
     #[test]
     fn clear_unfocused_preedit_only_keeps_focused_runtime() {
+        let theme = dark_theme();
         let mut store = TextInputStore::new();
         store
             .runtimes
-            .insert("a".into(), TextInputRuntime::new("hello"));
+            .insert("a".into(), TextInputRuntime::new("hello", &theme));
         store
             .runtimes
-            .insert("b".into(), TextInputRuntime::new("world"));
+            .insert("b".into(), TextInputRuntime::new("world", &theme));
         store.runtimes.get_mut("a").unwrap().set_preedit("ni", None);
         store
             .runtimes
@@ -480,7 +491,8 @@ mod tests {
 
     #[test]
     fn long_text_scrolls_to_keep_caret_visible() {
-        let mut runtime = TextInputRuntime::new("hello");
+        let theme = dark_theme();
+        let mut runtime = TextInputRuntime::new("hello", &theme);
         runtime.content_rect = Rect {
             x: 10.0,
             y: 5.0,
@@ -507,7 +519,8 @@ mod tests {
 
     #[test]
     fn hit_testing_accounts_for_scroll_offset() {
-        let mut runtime = TextInputRuntime::new("hello");
+        let theme = dark_theme();
+        let mut runtime = TextInputRuntime::new("hello", &theme);
         runtime.content_rect = Rect {
             x: 10.0,
             y: 5.0,

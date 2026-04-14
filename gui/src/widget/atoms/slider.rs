@@ -1,5 +1,5 @@
 use crate::gesture::Gesture;
-use crate::widget::props::{WidgetBuild, WidgetProps};
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
@@ -33,40 +33,17 @@ impl WidgetProps for SliderProps {
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::renderer::Color;
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
         use crate::tree::Desc;
 
-        // shadcn zinc 色系
-        let label_color = Color {
-            r: 0.443,
-            g: 0.443,
-            b: 0.478,
-            a: 1.0,
-        }; // zinc-500
-        let value_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
-        let track_color = Color {
-            r: 0.894,
-            g: 0.894,
-            b: 0.906,
-            a: 1.0,
-        }; // zinc-200
-        let fill_color = Color {
-            r: 0.094,
-            g: 0.094,
-            b: 0.106,
-            a: 1.0,
-        }; // zinc-900
-        let font_size = 12.0;
-        let track_height = 18.0;
-        let track_radius = track_height / 2.0;
-        let thumb_size = 14.0;
+        let theme = cx.theme;
+        let tokens = theme.components.slider;
+        let visual = theme.slider_visual(if self.disabled {
+            crate::widget::state::WidgetVisualState::Disabled
+        } else {
+            crate::widget::state::WidgetVisualState::Normal
+        });
 
         // 填充比例
         let range = self.max - self.min;
@@ -86,7 +63,7 @@ impl WidgetProps for SliderProps {
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
-                gap: 8.0,
+                gap: tokens.gap,
                 align_items: Align::Center,
                 height: Size::Auto,
                 ..BoxStyle::default()
@@ -103,8 +80,8 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size,
-                        color: label_color,
+                        font_size: tokens.font_size,
+                        color: theme.colors.text_muted,
                     },
                 },
                 // 轨道
@@ -112,17 +89,17 @@ impl WidgetProps for SliderProps {
                     id: Cow::Owned(format!("{id}::track")),
                     style: BoxStyle {
                         flex_grow: 1.0,
-                        height: Size::Fixed(track_height),
-                        padding: crate::tree::layout::Edges::all(2.0),
+                        height: Size::Fixed(tokens.track_height),
+                        padding: crate::tree::layout::Edges::all(tokens.track_padding),
                         direction: Direction::Row,
                         gestures: vec![Gesture::Tap, Gesture::Drag],
                         align_items: Align::Center,
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {
-                        background: Some(track_color),
+                        background: Some(visual.track_background),
                         border: None,
-                        radius: [track_radius; 4],
+                        radius: [tokens.track_radius; 4],
                         shadow: None,
                     }),
                     children: vec![
@@ -136,9 +113,9 @@ impl WidgetProps for SliderProps {
                                 ..BoxStyle::default()
                             },
                             decoration: Some(Decoration {
-                                background: Some(fill_color),
+                                background: Some(visual.fill),
                                 border: None,
-                                radius: [track_radius; 4],
+                                radius: [tokens.track_radius; 4],
                                 shadow: None,
                             }),
                             children: vec![],
@@ -147,20 +124,15 @@ impl WidgetProps for SliderProps {
                         Desc::Container {
                             id: Cow::Owned(format!("{id}::thumb")),
                             style: BoxStyle {
-                                width: Size::Fixed(thumb_size),
-                                height: Size::Fixed(thumb_size),
+                                width: Size::Fixed(tokens.thumb_size),
+                                height: Size::Fixed(tokens.thumb_size),
                                 gestures: vec![Gesture::Tap, Gesture::Drag],
                                 ..BoxStyle::default()
                             },
                             decoration: Some(Decoration {
-                                background: Some(Color {
-                                    r: 1.0,
-                                    g: 1.0,
-                                    b: 1.0,
-                                    a: 1.0,
-                                }),
+                                background: Some(visual.thumb),
                                 border: None,
-                                radius: [thumb_size / 2.0; 4],
+                                radius: [tokens.thumb_size / 2.0; 4],
                                 shadow: None,
                             }),
                             children: vec![],
@@ -189,8 +161,8 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: value_text,
-                        font_size,
-                        color: value_color,
+                        font_size: tokens.font_size,
+                        color: visual.text,
                     },
                 },
             ],

@@ -133,12 +133,21 @@ mod tests {
     use super::*;
     use crate::gesture::Gesture;
     use crate::renderer::Rect;
+    use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{BoxStyle, LeafKind, Size};
     use crate::tree::{hit_test, reconcile, Desc, Tree};
     use crate::widget::action::Action;
     use crate::widget::atoms::slider::SliderProps;
     use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
+    use crate::widget::props::WidgetBuildCx;
+
+    fn build_cx<'a>(theme: &'a Theme) -> WidgetBuildCx<'a> {
+        WidgetBuildCx {
+            theme,
+            force_rebuild: false,
+        }
+    }
 
     fn test_panel_desc() -> Desc {
         Desc::Widget {
@@ -164,8 +173,9 @@ mod tests {
 
     #[test]
     fn drag_and_resize_bind_to_panel_widget() {
+        let theme = dark_theme();
         let mut tree = Tree::new();
-        reconcile(&mut tree, test_panel_desc());
+        reconcile(&mut tree, test_panel_desc(), build_cx(&theme));
 
         let root = tree.root().unwrap();
         let root_node = tree.get_mut(root).unwrap();
@@ -192,8 +202,9 @@ mod tests {
 
     #[test]
     fn resize_uses_panel_rect_and_survives_titlebar_hit() {
+        let theme = dark_theme();
         let mut tree = Tree::new();
-        reconcile(&mut tree, test_panel_desc());
+        reconcile(&mut tree, test_panel_desc(), build_cx(&theme));
 
         let root = tree.root().unwrap();
         tree.get_mut(root).unwrap().rect = Rect {
@@ -209,6 +220,7 @@ mod tests {
 
     #[test]
     fn tap_declared_leaf_creates_arena() {
+        let theme = dark_theme();
         let mut tree = Tree::new();
         let desc = Desc::Leaf {
             id: Cow::Borrowed("tap_target"),
@@ -225,7 +237,7 @@ mod tests {
                 color: crate::renderer::Color::WHITE,
             },
         };
-        reconcile(&mut tree, desc);
+        reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
         tree.get_mut(root).unwrap().rect = Rect {
             x: 0.0,
@@ -242,6 +254,7 @@ mod tests {
 
     #[test]
     fn toggle_track_click_emits_click_action() {
+        let theme = dark_theme();
         let desc = Desc::Widget {
             id: Cow::Borrowed("toggle_grid"),
             props: Box::new(ToggleProps {
@@ -251,7 +264,7 @@ mod tests {
             }),
         };
         let mut tree = Tree::new();
-        reconcile(&mut tree, desc);
+        reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
         tree.get_mut(root).unwrap().rect = Rect {
             x: 0.0,
@@ -282,6 +295,7 @@ mod tests {
 
     #[test]
     fn slider_track_drag_emits_slider_target_not_panel() {
+        let theme = dark_theme();
         let desc = Desc::Widget {
             id: Cow::Borrowed("slider_radius"),
             props: Box::new(SliderProps {
@@ -294,7 +308,7 @@ mod tests {
             }),
         };
         let mut tree = Tree::new();
-        reconcile(&mut tree, desc);
+        reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
         tree.get_mut(root).unwrap().rect = Rect {
             x: 0.0,

@@ -5,8 +5,9 @@ use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{ClipboardRequest, Context};
 use gui::gesture::{arena_from_hit_chain, Gesture, GestureArena};
-use gui::renderer::{Color, Rect, Renderer};
+use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
+use gui::theme::{dark_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
 use gui::tree::Desc;
 use gui::widget::action::Action;
@@ -163,6 +164,7 @@ fn build_panel_content(text_value: &str, slider_value: f32, toggle_value: bool) 
 fn build_demo_tree(
     viewport: Rect,
     camera: &Camera,
+    theme: &Theme,
     panel: PanelState,
     text_value: &str,
     slider_value: f32,
@@ -183,12 +185,7 @@ fn build_demo_tree(
             ..BoxStyle::default()
         },
         decoration: Some(Decoration {
-            background: Some(Color {
-                r: 0.071,
-                g: 0.078,
-                b: 0.098,
-                a: 1.0,
-            }),
+            background: Some(theme.colors.canvas_bg),
             border: None,
             radius: [0.0; 4],
             shadow: None,
@@ -221,12 +218,7 @@ fn build_demo_tree(
                     },
                     kind: LeafKind::Grid {
                         spacing: GRID_SPACING,
-                        dot_color: Color {
-                            r: 0.224,
-                            g: 0.235,
-                            b: 0.278,
-                            a: 1.0,
-                        },
+                        dot_color: theme.colors.canvas_grid,
                         dot_size: GRID_DOT_SIZE,
                     },
                 }],
@@ -271,6 +263,7 @@ pub struct DemoApp {
     last_tap_time: Option<Instant>,
     mouse_x: f32,
     mouse_y: f32,
+    theme: Theme,
 }
 
 impl App for DemoApp {
@@ -289,6 +282,7 @@ impl App for DemoApp {
             last_tap_time: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
+            theme: dark_theme(),
         }
     }
 
@@ -369,19 +363,22 @@ impl App for DemoApp {
         let desc = build_demo_tree(
             viewport,
             &self.camera,
+            &self.theme,
             self.panel,
             &self.text_value,
             self.slider_value,
             self.toggle_value,
         );
-        self.gui.update(desc, viewport, renderer.text_measurer());
+        self.gui
+            .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
         let viewport = viewport_rect(ctx);
-        self.gui.render(renderer, viewport.w, viewport.h);
+        self.gui
+            .render(renderer, viewport.w, viewport.h, &self.theme);
     }
 }
 
