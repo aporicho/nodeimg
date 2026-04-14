@@ -7,7 +7,7 @@ use gui::context::{ClipboardRequest, Context};
 use gui::gesture::{arena_from_hit_chain, Gesture, GestureArena};
 use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
-use gui::theme::{dark_theme, Theme};
+use gui::theme::{light_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
 use gui::tree::Desc;
 use gui::widget::action::Action;
@@ -21,6 +21,10 @@ use gui::widget::resize_edge::ResizeEdge;
 const GRID_SPACING: f32 = 20.0;
 const GRID_DOT_SIZE: f32 = 1.5;
 const PANEL_ID: &str = "demo_panel";
+
+fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
+    (min_canvas / spacing).floor() * spacing - spacing * 2.0
+}
 
 #[derive(Debug, Clone, Copy)]
 struct PanelState {
@@ -172,8 +176,8 @@ fn build_demo_tree(
 ) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
     let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
-    let grid_x = canvas_min_x.floor() - GRID_SPACING * 2.0;
-    let grid_y = canvas_min_y.floor() - GRID_SPACING * 2.0;
+    let grid_x = align_grid_start(canvas_min_x, GRID_SPACING);
+    let grid_y = align_grid_start(canvas_min_y, GRID_SPACING);
     let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
     let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
 
@@ -282,7 +286,7 @@ impl App for DemoApp {
             last_tap_time: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
-            theme: dark_theme(),
+            theme: light_theme(),
         }
     }
 
@@ -291,30 +295,20 @@ impl App for DemoApp {
             tracing::info!("event: {:?}", event);
         }
 
-        let outcome = self.gui.handle_event(&event);
-        self.handle_context_outcome(outcome, ctx);
+        self.update_mouse_position_from_event(&event);
 
         if self.navigation.handle_event(&event, &mut self.camera) {
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
             }
-            match event {
-                AppEvent::MouseMove { x, y }
-                | AppEvent::MousePress { x, y, .. }
-                | AppEvent::MouseRelease { x, y, .. } => {
-                    self.mouse_x = x;
-                    self.mouse_y = y;
-                }
-                _ => {}
-            }
             return;
         }
 
+        let outcome = self.gui.handle_event(&event);
+        self.handle_context_outcome(outcome, ctx);
+
         match event {
             AppEvent::MousePress { x, y, button } if button == MouseButton::Left => {
-                self.mouse_x = x;
-                self.mouse_y = y;
-
                 if self.arena.is_none() {
                     let chain = self.gui.hit_test(x, y);
                     tracing::info!("hit chain on press: {:?}", chain);
@@ -329,9 +323,6 @@ impl App for DemoApp {
                 }
             }
             AppEvent::MouseMove { x, y } => {
-                self.mouse_x = x;
-                self.mouse_y = y;
-
                 if let Some(arena) = &mut self.arena {
                     if let Some(action) = arena.pointer_move(x, y) {
                         self.handle_action(action);
@@ -342,8 +333,6 @@ impl App for DemoApp {
                 self.update_hover_cursor(x, y, ctx);
             }
             AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
-                self.mouse_x = x;
-                self.mouse_y = y;
                 if let Some(mut arena) = self.arena.take() {
                     if let Some(action) = arena.pointer_up(x, y) {
                         tracing::info!("pointer_up action: {:?}", action);
@@ -383,6 +372,21 @@ impl App for DemoApp {
 }
 
 impl DemoApp {
+    fn update_mouse_position_from_event(&mut self, event: &AppEvent) {
+        match *event {
+            AppEvent::MouseMove { x, y }
+            | AppEvent::MousePress { x, y, .. }
+            | AppEvent::MouseRelease { x, y, .. }
+            | AppEvent::ScrollLine { x, y, .. }
+            | AppEvent::ScrollPixel { x, y, .. }
+            | AppEvent::PinchZoom { x, y, .. } => {
+                self.mouse_x = x;
+                self.mouse_y = y;
+            }
+            _ => {}
+        }
+    }
+
     fn handle_context_outcome(
         &mut self,
         outcome: gui::context::EventOutcome,
@@ -596,6 +600,18 @@ fn viewport_rect(ctx: &AppContext) -> Rect {
         y: 0.0,
         w: ctx.size.width as f32 / ctx.scale_factor as f32,
         h: ctx.size.height as f32 / ctx.scale_factor as f32,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::align_grid_start;
+
+    #[test]
+    fn grid_alignment_snaps_to_spacing_not_single_units() {
+        assert_eq!(align_grid_start(3.0, 20.0), -40.0);
+        assert_eq!(align_grid_start(21.0, 20.0), -20.0);
+        assert_eq!(align_grid_start(-1.0, 20.0), -60.0);
     }
 }
 
