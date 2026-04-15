@@ -59,7 +59,11 @@ impl Executor for RemoteVideoGenerationExecutor {
         vec![Capability::new(
             "ai.video_generate",
             vec![],
-            vec![types::DataType::image()],
+            vec![
+                types::DataType::video(),
+                types::DataType::image(),
+                types::DataType::int(),
+            ],
             vec![SideEffect::NetworkCall("*".into())],
         )]
     }
@@ -170,6 +174,10 @@ impl Executor for RemoteVideoGenerationExecutor {
             let output_fps = animation.fps.unwrap_or(fps) as i64;
 
             Ok(ExecutionOutputs::full(HashMap::from([
+                (
+                    String::from("video"),
+                    Value::String(animation.video_path.display().to_string()),
+                ),
                 (
                     String::from("image"),
                     Value::Image(types::Image::from_cpu(image)),

@@ -889,7 +889,8 @@ impl Runtime {
                 &upstream_signatures,
                 cooking_context,
             );
-            let artifact_identity = artifacts::build_artifact_identity(exec_signature, &effective_params);
+            let artifact_identity =
+                artifacts::build_artifact_identity(def.type_id.as_str(), exec_signature, &effective_params);
 
             let mut inputs = upstream_inputs.clone();
             for (name, value) in effective_params {
@@ -940,52 +941,33 @@ impl Runtime {
                 }
             }
 
-            if matches!(fidelity, EvaluationFidelity::Full) {
+            if artifacts::should_restore_artifact(def, &fidelity) {
                 if let Some(artifact_manager) = self.artifacts.as_ref() {
-                    let mut restored_outputs = HashMap::new();
-                    let mut restored_any = false;
-                    let mut missing_required = false;
+                    let restored = artifact_manager
+                        .lock()
+                        .expect("artifact manager lock poisoned");
+                    let restored_outputs = artifacts::restore_artifact_outputs(
+                        &restored,
+                        def,
+                        *node_id,
+                        &artifact_identity,
+                        cooking_context,
+                    )
+                    .map_err(|error| RunFailure::Error(EngineError::Artifact {
+                        message: error.to_string(),
+                    }))?;
+                    drop(restored);
 
-                    for output in &def.outputs {
-                        if !artifacts::should_restore_artifact(def, output, &fidelity) {
-                            continue;
+                    if let Some(restored_outputs) = restored_outputs {
+                        for (output_name, value) in &restored_outputs {
+                            let _ = self.cache.put_result(
+                                *node_id,
+                                output_name,
+                                exec_signature,
+                                generation,
+                                value.clone(),
+                            );
                         }
-
-                        let restored = artifact_manager
-                            .lock()
-                            .expect("artifact manager lock poisoned");
-                        let restored_value = artifacts::restore_selected_artifact(
-                            &restored,
-                            *node_id,
-                            &output.name,
-                            &artifact_identity,
-                        )
-                        .map_err(|error| RunFailure::Error(EngineError::Artifact {
-                            message: error.to_string(),
-                        }))?;
-                        drop(restored);
-
-                        match restored_value {
-                            Some(value) => {
-                                let _ = self.cache.put_result(
-                                    *node_id,
-                                    &output.name,
-                                    exec_signature,
-                                    generation,
-                                    value.clone(),
-                                );
-                                restored_outputs.insert(output.name.clone(), value);
-                                restored_any = true;
-                            }
-                            None if !output.optional => {
-                                missing_required = true;
-                                break;
-                            }
-                            None => {}
-                        }
-                    }
-
-                    if restored_any && !missing_required {
                         results.insert(*node_id, ExecutionOutputs::full(restored_outputs));
                         signatures.insert(*node_id, exec_signature);
                         let _ = self.engine_events.publish(EngineEvent::NodeFinished {
@@ -1094,24 +1076,18 @@ impl Runtime {
                     );
                 }
 
-                if let Some(artifact_manager) = self.artifacts.as_ref() {
+                if artifacts::should_persist_artifact(def, &fidelity) {
+                    if let Some(artifact_manager) = self.artifacts.as_ref() {
                     let mut artifact_manager = artifact_manager
                         .lock()
                         .expect("artifact manager lock poisoned");
-                    for output in &def.outputs {
-                        if !artifacts::should_persist_artifact(def, output, &fidelity) {
-                            continue;
-                        }
-                        let Some(value) = outputs.values.get(&output.name).cloned() else {
-                            continue;
-                        };
-                        artifacts::persist_restorable_image_artifact(
-                            &mut artifact_manager,
-                            *node_id,
-                            &output.name,
-                            value,
-                            &artifact_identity,
-                        )
+                    artifacts::persist_artifact_output(
+                        &mut artifact_manager,
+                        def,
+                        *node_id,
+                        &outputs.values,
+                        &artifact_identity,
+                    )
                         .map_err(|error| RunFailure::Error(EngineError::Artifact {
                             message: error.to_string(),
                         }))?;

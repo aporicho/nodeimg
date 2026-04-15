@@ -5,6 +5,7 @@ use types::DataType;
 
 use crate::artifact::handler::handler::ArtifactHandler;
 use crate::artifact::handler::image::ImageArtifactHandler;
+use crate::artifact::handler::video::VideoArtifactHandler;
 use crate::artifact::model::ArtifactError;
 
 #[derive(Default)]
@@ -20,6 +21,7 @@ impl ArtifactRegistry {
     pub fn with_defaults() -> Self {
         let mut registry = Self::new();
         registry.register(ImageArtifactHandler::new());
+        registry.register(VideoArtifactHandler::new());
         registry
     }
 
@@ -80,6 +82,7 @@ mod tests {
     fn test_registry_defaults_include_image_handler() {
         let registry = ArtifactRegistry::with_defaults();
         assert!(registry.contains(&DataType::image()));
+        assert!(registry.contains(&DataType::video()));
     }
 
     #[test]

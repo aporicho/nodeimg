@@ -25,6 +25,9 @@ impl DataType {
     pub fn string() -> Self {
         Self("string".into())
     }
+    pub fn video() -> Self {
+        Self("video".into())
+    }
     pub fn handle() -> Self {
         Self("handle".into())
     }

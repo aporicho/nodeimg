@@ -359,13 +359,18 @@ fn build_api_video_generation_registrations(
             realtime_capable: false,
             execution: ExecutionPolicy {
                 timeout_ms: Some(300_000),
-                artifact_policy: Some(ArtifactPolicy::None),
+                artifact_policy: Some(ArtifactPolicy::Persist),
                 trigger_policy: TriggerPolicy::ManualOnly,
                 ..ExecutionPolicy::default()
             },
             api: None,
             inputs: vec![],
             outputs: vec![
+                PinDef {
+                    name: "video".into(),
+                    data_type: types::DataType::video(),
+                    optional: false,
+                },
                 PinDef {
                     name: "image".into(),
                     data_type: types::DataType::image(),
