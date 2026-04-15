@@ -9,6 +9,14 @@ pub enum Action {
         id: String,
         value: String,
     },
+    NumberChange {
+        id: String,
+        value: f32,
+    },
+    SelectChange {
+        id: String,
+        selected: usize,
+    },
     DragStart {
         id: String,
         x: f32,

@@ -10,6 +10,7 @@ pub struct DragRecognizer {
     current_x: f32,
     current_y: f32,
     dragging: bool,
+    started: bool,
     done: bool,
 }
 
@@ -22,6 +23,7 @@ impl DragRecognizer {
             current_x: 0.0,
             current_y: 0.0,
             dragging: false,
+            started: false,
             done: false,
         }
     }
@@ -67,14 +69,14 @@ impl GestureRecognizer for DragRecognizer {
                 x: self.current_x,
                 y: self.current_y,
             }
-        } else if self.dragging {
+        } else if self.started {
             Action::DragMove {
                 id: self.target_id.clone(),
                 x: self.current_x,
                 y: self.current_y,
             }
         } else {
-            self.dragging = true;
+            self.started = true;
             Action::DragStart {
                 id: self.target_id.clone(),
                 x: self.current_x,

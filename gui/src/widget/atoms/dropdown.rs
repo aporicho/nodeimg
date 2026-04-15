@@ -31,6 +31,7 @@ impl WidgetProps for DropdownProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::gesture::Gesture;
         use crate::renderer::Border;
         use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
         use crate::tree::Desc;
@@ -51,60 +52,83 @@ impl WidgetProps for DropdownProps {
 
         WidgetBuild {
             style: BoxStyle {
-                direction: Direction::Row,
+                direction: Direction::Column,
                 gap: tokens.gap,
-                align_items: Align::Center,
-                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
                 height: Size::Auto,
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(visual.background),
-                border: Some(Border {
-                    width: tokens.border_width,
-                    color: visual.border.unwrap_or(theme.colors.border),
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
+            decoration: None,
             children: vec![
-                // 显示选中项
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::selected")),
+                    id: Cow::Owned(format!("{id}::label")),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
                         ..BoxStyle::default()
                     },
                     kind: LeafKind::Text {
-                        content: selected_text,
-                        font_size: tokens.font_size,
-                        color: visual.text,
-                    },
-                },
-                // 弹性占位，把箭头推到右边
-                Desc::Container {
-                    id: Cow::Owned(format!("{id}::spacer")),
-                    style: BoxStyle {
-                        flex_grow: 1.0,
-                        ..BoxStyle::default()
-                    },
-                    decoration: None,
-                    children: vec![],
-                },
-                // 箭头
-                Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::arrow")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: "▾".to_string(),
-                        font_size: tokens.font_size,
+                        content: self.label.to_string(),
+                        font_size: tokens.font_size - 1.0,
                         color: theme.colors.text_muted,
                     },
+                },
+                Desc::Container {
+                    id: Cow::Owned(format!("{id}::field")),
+                    style: BoxStyle {
+                        direction: Direction::Row,
+                        gap: tokens.gap,
+                        align_items: Align::Center,
+                        padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
+                        gestures: vec![Gesture::Tap],
+                        hittable: Some(true),
+                        ..BoxStyle::default()
+                    },
+                    decoration: Some(Decoration {
+                        background: Some(visual.background),
+                        border: Some(Border {
+                            width: tokens.border_width,
+                            color: visual.border.unwrap_or(theme.colors.border),
+                        }),
+                        radius: [tokens.radius; 4],
+                        shadow: None,
+                    }),
+                    children: vec![
+                        Desc::Leaf {
+                            id: Cow::Owned(format!("{id}::selected")),
+                            style: BoxStyle {
+                                width: Size::Auto,
+                                height: Size::Auto,
+                                ..BoxStyle::default()
+                            },
+                            kind: LeafKind::Text {
+                                content: selected_text,
+                                font_size: tokens.font_size,
+                                color: visual.text,
+                            },
+                        },
+                        Desc::Container {
+                            id: Cow::Owned(format!("{id}::spacer")),
+                            style: BoxStyle {
+                                flex_grow: 1.0,
+                                ..BoxStyle::default()
+                            },
+                            decoration: None,
+                            children: vec![],
+                        },
+                        Desc::Leaf {
+                            id: Cow::Owned(format!("{id}::arrow")),
+                            style: BoxStyle {
+                                width: Size::Auto,
+                                height: Size::Auto,
+                                ..BoxStyle::default()
+                            },
+                            kind: LeafKind::Text {
+                                content: "▾".to_string(),
+                                font_size: tokens.font_size,
+                                color: theme.colors.text_muted,
+                            },
+                        },
+                    ],
                 },
             ],
         }

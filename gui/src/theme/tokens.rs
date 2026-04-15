@@ -69,7 +69,16 @@ pub struct ThemeSpacing {
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeComponents {
     pub button: ButtonTheme,
+    pub checkbox: CheckboxTheme,
+    pub collapsible: CollapsibleTheme,
     pub dropdown: DropdownTheme,
+    pub group: GroupTheme,
+    pub image_viewer: ImageViewerTheme,
+    pub list_view: ListViewTheme,
+    pub number_input: TextInputTheme,
+    pub radio: RadioTheme,
+    pub scroll_area: ScrollAreaTheme,
+    pub separator: SeparatorTheme,
     pub slider: SliderTheme,
     pub toggle: ToggleTheme,
     pub text_input: TextInputTheme,
@@ -86,12 +95,89 @@ pub struct ButtonTheme {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct CheckboxTheme {
+    pub gap: f32,
+    pub box_size: f32,
+    pub border_width: f32,
+    pub radius: f32,
+    pub font_size: f32,
+    pub check_font_size: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CollapsibleTheme {
+    pub gap: f32,
+    pub header_padding_x: f32,
+    pub header_padding_y: f32,
+    pub content_padding: f32,
+    pub border_width: f32,
+    pub radius: f32,
+    pub title_font_size: f32,
+    pub background: Color,
+    pub border: Color,
+    pub header_background: Color,
+    pub title_text: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct DropdownTheme {
     pub gap: f32,
     pub padding_x: f32,
     pub padding_y: f32,
     pub border_width: f32,
     pub radius: f32,
+    pub font_size: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GroupTheme {
+    pub gap: f32,
+    pub padding: f32,
+    pub border_width: f32,
+    pub radius: f32,
+    pub title_font_size: f32,
+    pub title_padding_x: f32,
+    pub title_padding_y: f32,
+    pub title_gap: f32,
+    pub background: Color,
+    pub border: Color,
+    pub title_text: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SeparatorTheme {
+    pub thickness: f32,
+    pub color: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollAreaTheme {
+    pub padding: f32,
+    pub border_width: f32,
+    pub radius: f32,
+    pub background: Color,
+    pub border: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ListViewTheme {
+    pub item_gap: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ImageViewerTheme {
+    pub border_width: f32,
+    pub radius: f32,
+    pub background: Color,
+    pub border: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RadioTheme {
+    pub gap: f32,
+    pub ring_size: f32,
+    pub border_width: f32,
+    pub dot_size: f32,
     pub font_size: f32,
 }
 
@@ -160,6 +246,22 @@ pub struct ToggleVisual {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct CheckboxVisual {
+    pub box_background: Color,
+    pub box_border: Option<Color>,
+    pub check: Color,
+    pub text: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RadioVisual {
+    pub ring_background: Color,
+    pub ring_border: Option<Color>,
+    pub dot: Color,
+    pub text: Color,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct SliderVisual {
     pub track_background: Color,
     pub track_border: Option<Color>,
@@ -218,6 +320,73 @@ impl Theme {
         self.button_visual(visual)
     }
 
+    pub fn checkbox_visual(&self, checked: bool, visual: WidgetVisualState) -> CheckboxVisual {
+        match visual {
+            WidgetVisualState::Disabled => CheckboxVisual {
+                box_background: if checked {
+                    self.colors.accent_disabled
+                } else {
+                    self.colors.surface_disabled
+                },
+                box_border: Some(self.colors.border_disabled),
+                check: self.colors.surface,
+                text: self.colors.text_disabled,
+            },
+            WidgetVisualState::Focused => CheckboxVisual {
+                box_background: if checked {
+                    self.colors.accent
+                } else {
+                    self.colors.surface
+                },
+                box_border: Some(self.colors.border_focus),
+                check: self.colors.surface,
+                text: self.colors.text,
+            },
+            WidgetVisualState::Hovered => CheckboxVisual {
+                box_background: if checked {
+                    self.colors.accent_hover
+                } else {
+                    self.colors.surface_hover
+                },
+                box_border: Some(if checked {
+                    self.colors.accent_hover
+                } else {
+                    self.colors.border_hover
+                }),
+                check: self.colors.surface,
+                text: self.colors.text,
+            },
+            WidgetVisualState::Pressed => CheckboxVisual {
+                box_background: if checked {
+                    self.colors.accent_pressed
+                } else {
+                    self.colors.surface_pressed
+                },
+                box_border: Some(if checked {
+                    self.colors.accent_pressed
+                } else {
+                    self.colors.border_pressed
+                }),
+                check: self.colors.surface,
+                text: self.colors.text,
+            },
+            WidgetVisualState::Normal => CheckboxVisual {
+                box_background: if checked {
+                    self.colors.accent
+                } else {
+                    self.colors.surface
+                },
+                box_border: Some(if checked {
+                    self.colors.accent
+                } else {
+                    self.colors.border
+                }),
+                check: self.colors.surface,
+                text: self.colors.text,
+            },
+        }
+    }
+
     pub fn toggle_visual(&self, on: bool, visual: WidgetVisualState) -> ToggleVisual {
         let track_background = match (on, visual) {
             (_, WidgetVisualState::Disabled) => self.colors.accent_disabled,
@@ -259,6 +428,61 @@ impl Theme {
             fill,
             thumb: self.colors.surface,
             text: self.text_color_for_visual(visual),
+        }
+    }
+
+    pub fn radio_visual(&self, selected: bool, visual: WidgetVisualState) -> RadioVisual {
+        match visual {
+            WidgetVisualState::Disabled => RadioVisual {
+                ring_background: self.colors.surface_disabled,
+                ring_border: Some(self.colors.border_disabled),
+                dot: if selected {
+                    self.colors.accent_disabled
+                } else {
+                    Color::TRANSPARENT
+                },
+                text: self.colors.text_disabled,
+            },
+            WidgetVisualState::Focused => RadioVisual {
+                ring_background: self.colors.surface,
+                ring_border: Some(self.colors.border_focus),
+                dot: if selected {
+                    self.colors.accent
+                } else {
+                    Color::TRANSPARENT
+                },
+                text: self.colors.text,
+            },
+            WidgetVisualState::Hovered => RadioVisual {
+                ring_background: self.colors.surface_hover,
+                ring_border: Some(self.colors.border_hover),
+                dot: if selected {
+                    self.colors.accent_hover
+                } else {
+                    Color::TRANSPARENT
+                },
+                text: self.colors.text,
+            },
+            WidgetVisualState::Pressed => RadioVisual {
+                ring_background: self.colors.surface_pressed,
+                ring_border: Some(self.colors.border_pressed),
+                dot: if selected {
+                    self.colors.accent_pressed
+                } else {
+                    Color::TRANSPARENT
+                },
+                text: self.colors.text,
+            },
+            WidgetVisualState::Normal => RadioVisual {
+                ring_background: self.colors.surface,
+                ring_border: Some(self.colors.border),
+                dot: if selected {
+                    self.colors.accent
+                } else {
+                    Color::TRANSPARENT
+                },
+                text: self.colors.text,
+            },
         }
     }
 

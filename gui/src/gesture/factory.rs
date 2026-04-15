@@ -332,6 +332,12 @@ mod tests {
         let mut arena = arena_from_hit_chain(&tree, &chain, 100.0, 10.0, None).expect("arena");
         let action = arena.pointer_move(110.0, 10.0).expect("drag start");
         match action {
+            Action::DragStart { id, .. } => assert_eq!(id, "slider_radius::track"),
+            other => panic!("expected drag start, got {:?}", other),
+        }
+
+        let action = arena.pointer_move(120.0, 10.0).expect("drag move");
+        match action {
             Action::DragMove { id, .. } => assert_eq!(id, "slider_radius::track"),
             other => panic!("expected drag move, got {:?}", other),
         }

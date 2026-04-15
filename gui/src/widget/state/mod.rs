@@ -6,5 +6,5 @@ mod text_input;
 mod visual;
 
 pub use interaction::InteractionStore;
-pub use text_input::TextInputStore;
+pub use text_input::{TextFieldKind, TextInputStore};
 pub use visual::WidgetVisualState;

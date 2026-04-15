@@ -1,10 +1,24 @@
 use std::collections::HashMap;
 
 use crate::renderer::{Point, Rect, TextMeasurer};
-use crate::theme::Theme;
+use crate::theme::{TextInputTheme, Theme};
 use crate::tree::{NodeId, NodeKind, Tree};
+use crate::widget::atoms::number_input::{format_number, NumberInputProps};
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::TextEditState;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextFieldKind {
+    TextInput,
+    NumberInput,
+}
+
+#[derive(Clone, Debug)]
+struct TextFieldSpec {
+    external_text: String,
+    kind: TextFieldKind,
+    tokens: TextInputTheme,
+}
 
 #[derive(Clone, Debug)]
 struct PreeditState {
@@ -22,6 +36,8 @@ struct PreeditLayout {
 
 pub struct TextInputRuntime {
     editor: TextEditState,
+    last_external_text: String,
+    kind: TextFieldKind,
     field_rect: Rect,
     content_rect: Rect,
     text_origin: Point,
@@ -33,10 +49,11 @@ pub struct TextInputRuntime {
 }
 
 impl TextInputRuntime {
-    fn new(value: &str, theme: &Theme) -> Self {
-        let tokens = theme.components.text_input;
+    fn new(value: &str, kind: TextFieldKind, tokens: TextInputTheme) -> Self {
         Self {
             editor: TextEditState::new(value),
+            last_external_text: value.to_string(),
+            kind,
             field_rect: Rect {
                 x: 0.0,
                 y: 0.0,
@@ -56,6 +73,32 @@ impl TextInputRuntime {
             preedit: None,
             preedit_layout: None,
         }
+    }
+
+    pub fn kind(&self) -> TextFieldKind {
+        self.kind
+    }
+
+    pub fn set_kind(&mut self, kind: TextFieldKind) {
+        self.kind = kind;
+    }
+
+    pub fn external_text(&self) -> &str {
+        &self.last_external_text
+    }
+
+    pub fn sync_external_text(&mut self, text: &str) {
+        if text != self.last_external_text {
+            self.clear_preedit();
+            self.editor.set_text(text);
+            self.last_external_text = text.to_string();
+        }
+    }
+
+    pub fn revert_to_external(&mut self) {
+        let external = self.last_external_text.clone();
+        self.clear_preedit();
+        self.editor.set_text(&external);
     }
 
     pub fn editor(&self) -> &TextEditState {
@@ -178,9 +221,8 @@ impl TextInputRuntime {
         field_rect: Rect,
         value_rect: Option<Rect>,
         measurer: &mut TextMeasurer,
-        theme: &Theme,
+        tokens: TextInputTheme,
     ) {
-        let tokens = theme.components.text_input;
         self.field_rect = field_rect;
         self.text_height = measurer
             .measure("Mg", tokens.value_size)
@@ -198,11 +240,11 @@ impl TextInputRuntime {
                 .map(|rect| rect.y)
                 .unwrap_or(field_rect.y + (field_rect.h - self.text_height) * 0.5),
         };
-        self.caret_stops = caret_stops(&self.editor, measurer, theme);
+        self.caret_stops = caret_stops(&self.editor, measurer, tokens.value_size);
         self.preedit_layout = self
             .preedit
             .as_ref()
-            .map(|preedit| preedit_layout(preedit, self, measurer, theme));
+            .map(|preedit| preedit_layout(preedit, self, measurer, tokens.value_size));
         self.clamp_scroll();
         self.ensure_cursor_visible();
     }
@@ -280,36 +322,32 @@ impl TextInputStore {
     }
 
     pub fn sync_with_tree(&mut self, tree: &Tree, measurer: &mut TextMeasurer, theme: &Theme) {
-        let tokens = theme.components.text_input;
         let mut next = HashMap::new();
 
         for (_, node) in tree.iter() {
             let NodeKind::Widget(props) = &node.kind else {
                 continue;
             };
-            let Some(text_input) = props.as_any().downcast_ref::<TextInputProps>() else {
+            let Some(spec) = text_field_spec(props.as_ref(), theme) else {
                 continue;
             };
 
             let widget_id = node.id.to_string();
-            let mut runtime = self
-                .runtimes
-                .remove(&widget_id)
-                .unwrap_or_else(|| TextInputRuntime::new(text_input.value.as_ref(), theme));
+            let mut runtime = self.runtimes.remove(&widget_id).unwrap_or_else(|| {
+                TextInputRuntime::new(&spec.external_text, spec.kind, spec.tokens)
+            });
 
-            if runtime.editor.text() != text_input.value.as_ref() {
-                runtime.clear_preedit();
-                runtime.editor.set_text(text_input.value.as_ref());
-            }
+            runtime.set_kind(spec.kind);
+            runtime.sync_external_text(&spec.external_text);
 
             let field_rect = find_rect(tree, &format!("{}::field", widget_id)).unwrap_or(Rect {
                 x: node.rect.x,
                 y: node.rect.y,
                 w: node.rect.w,
-                h: tokens.field_height,
+                h: spec.tokens.field_height,
             });
             let value_rect = find_rect(tree, &format!("{}::value", widget_id));
-            runtime.sync_layout(field_rect, value_rect, measurer, theme);
+            runtime.sync_layout(field_rect, value_rect, measurer, spec.tokens);
             next.insert(widget_id, runtime);
         }
 
@@ -332,16 +370,24 @@ impl TextInputStore {
         }
     }
 
+    pub fn revert_unfocused_numbers(&mut self, focused_widget_id: Option<&str>) {
+        for (widget_id, runtime) in &mut self.runtimes {
+            if Some(widget_id.as_str()) != focused_widget_id
+                && runtime.kind() == TextFieldKind::NumberInput
+                && runtime.editor().text() != runtime.external_text()
+            {
+                runtime.revert_to_external();
+            }
+        }
+    }
+
     pub fn focused_widget_id(&self, tree: &Tree, focused: Option<NodeId>) -> Option<String> {
         let focused = focused?;
         let node = tree.get(focused)?;
         let NodeKind::Widget(props) = &node.kind else {
             return None;
         };
-        props
-            .as_any()
-            .downcast_ref::<TextInputProps>()
-            .map(|_| node.id.to_string())
+        is_text_field_props(props.as_ref()).then(|| node.id.to_string())
     }
 }
 
@@ -359,9 +405,8 @@ fn find_rect(tree: &Tree, node_id: &str) -> Option<Rect> {
 fn caret_stops(
     editor: &TextEditState,
     measurer: &mut TextMeasurer,
-    theme: &Theme,
+    font_size: f32,
 ) -> Vec<(usize, f32)> {
-    let font_size = theme.components.text_input.value_size;
     let text = editor.text();
     let mut stops = Vec::with_capacity(text.chars().count() + 1);
     stops.push((0, 0.0));
@@ -386,9 +431,8 @@ fn preedit_layout(
     preedit: &PreeditState,
     runtime: &TextInputRuntime,
     measurer: &mut TextMeasurer,
-    theme: &Theme,
+    font_size: f32,
 ) -> PreeditLayout {
-    let font_size = theme.components.text_input.value_size;
     let start = clamp_text_index(runtime.editor.text(), preedit.range.0);
     let start_x = runtime.caret_offset(start);
     let width = measurer.measure(&preedit.text, font_size).0;
@@ -414,6 +458,33 @@ fn clamp_text_index(text: &str, mut index: usize) -> usize {
     index
 }
 
+fn text_field_spec(
+    props: &dyn crate::widget::props::WidgetProps,
+    theme: &Theme,
+) -> Option<TextFieldSpec> {
+    if let Some(text_input) = props.as_any().downcast_ref::<TextInputProps>() {
+        return Some(TextFieldSpec {
+            external_text: text_input.value.to_string(),
+            kind: TextFieldKind::TextInput,
+            tokens: theme.components.text_input,
+        });
+    }
+
+    props
+        .as_any()
+        .downcast_ref::<NumberInputProps>()
+        .map(|number_input| TextFieldSpec {
+            external_text: format_number(number_input.value, number_input.precision),
+            kind: TextFieldKind::NumberInput,
+            tokens: theme.components.number_input,
+        })
+}
+
+fn is_text_field_props(props: &dyn crate::widget::props::WidgetProps) -> bool {
+    props.as_any().downcast_ref::<TextInputProps>().is_some()
+        || props.as_any().downcast_ref::<NumberInputProps>().is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,7 +494,11 @@ mod tests {
     #[test]
     fn caret_moves_to_nearest_click_position() {
         let theme = dark_theme();
-        let mut runtime = TextInputRuntime::new("hello", &theme);
+        let mut runtime = TextInputRuntime::new(
+            "hello",
+            TextFieldKind::TextInput,
+            theme.components.text_input,
+        );
         runtime.text_origin = Point { x: 10.0, y: 5.0 };
         runtime.caret_stops = vec![(0, 0.0), (1, 8.0), (2, 16.0), (3, 24.0)];
         runtime.editor = TextEditState::new("hey");
@@ -436,7 +511,11 @@ mod tests {
     #[test]
     fn selection_rect_uses_current_selection_range() {
         let theme = dark_theme();
-        let mut runtime = TextInputRuntime::new("hello", &theme);
+        let mut runtime = TextInputRuntime::new(
+            "hello",
+            TextFieldKind::TextInput,
+            theme.components.text_input,
+        );
         runtime.text_origin = Point { x: 10.0, y: 5.0 };
         runtime.text_height = 12.0;
         runtime.caret_stops = vec![(0, 0.0), (1, 8.0), (2, 16.0), (3, 24.0), (5, 40.0)];
@@ -454,7 +533,11 @@ mod tests {
     #[test]
     fn preedit_reuses_selection_range_until_commit() {
         let theme = dark_theme();
-        let mut runtime = TextInputRuntime::new("hello", &theme);
+        let mut runtime = TextInputRuntime::new(
+            "hello",
+            TextFieldKind::TextInput,
+            theme.components.text_input,
+        );
         runtime.editor.move_home();
         runtime.editor.select_right();
         runtime.editor.select_right();
@@ -470,12 +553,22 @@ mod tests {
     fn clear_unfocused_preedit_only_keeps_focused_runtime() {
         let theme = dark_theme();
         let mut store = TextInputStore::new();
-        store
-            .runtimes
-            .insert("a".into(), TextInputRuntime::new("hello", &theme));
-        store
-            .runtimes
-            .insert("b".into(), TextInputRuntime::new("world", &theme));
+        store.runtimes.insert(
+            "a".into(),
+            TextInputRuntime::new(
+                "hello",
+                TextFieldKind::TextInput,
+                theme.components.text_input,
+            ),
+        );
+        store.runtimes.insert(
+            "b".into(),
+            TextInputRuntime::new(
+                "world",
+                TextFieldKind::TextInput,
+                theme.components.text_input,
+            ),
+        );
         store.runtimes.get_mut("a").unwrap().set_preedit("ni", None);
         store
             .runtimes
@@ -492,7 +585,11 @@ mod tests {
     #[test]
     fn long_text_scrolls_to_keep_caret_visible() {
         let theme = dark_theme();
-        let mut runtime = TextInputRuntime::new("hello", &theme);
+        let mut runtime = TextInputRuntime::new(
+            "hello",
+            TextFieldKind::TextInput,
+            theme.components.text_input,
+        );
         runtime.content_rect = Rect {
             x: 10.0,
             y: 5.0,
@@ -520,7 +617,11 @@ mod tests {
     #[test]
     fn hit_testing_accounts_for_scroll_offset() {
         let theme = dark_theme();
-        let mut runtime = TextInputRuntime::new("hello", &theme);
+        let mut runtime = TextInputRuntime::new(
+            "hello",
+            TextFieldKind::TextInput,
+            theme.components.text_input,
+        );
         runtime.content_rect = Rect {
             x: 10.0,
             y: 5.0,
