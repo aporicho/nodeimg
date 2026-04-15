@@ -87,11 +87,7 @@ fn paint_node(
     // 2. Leaf 分发
     if let NodeKind::Leaf(leaf) = &node.kind {
         match leaf {
-            LeafKind::Text {
-                content,
-                font_size,
-                color,
-            } => {
+            LeafKind::Text { content, style } => {
                 if paint_widget_text_leaf_override(
                     tree,
                     node_id,
@@ -101,8 +97,7 @@ fn paint_node(
                     text_inputs,
                     theme,
                     content,
-                    *font_size,
-                    child_text_color.unwrap_or(*color),
+                    &with_inherited_text_color(*style, child_text_color),
                 ) {
                     return;
                 }
@@ -112,10 +107,10 @@ fn paint_node(
                         y: screen_rect.y,
                     },
                     content,
-                    &TextStyle {
-                        color: child_text_color.unwrap_or(*color),
-                        size: *font_size * tf.scale,
-                    },
+                    &scaled_text_style(
+                        with_inherited_text_color(*style, child_text_color),
+                        tf.scale,
+                    ),
                 );
             }
             LeafKind::Grid {
@@ -174,4 +169,16 @@ fn paint_node(
     if should_clip_children {
         renderer.pop_clip();
     }
+}
+
+fn with_inherited_text_color(mut style: TextStyle, inherited: Option<Color>) -> TextStyle {
+    if let Some(color) = inherited {
+        style.color = color;
+    }
+    style
+}
+
+fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
+    style.size *= scale;
+    style
 }

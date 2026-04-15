@@ -12,7 +12,7 @@ pub fn layout<T: LayoutTree>(
     tree: &mut T,
     root: T::NodeId,
     available: Rect,
-    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+    measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
 ) {
     let effective_available = match tree.style(root).position {
         // 注意：仅调整起点 x/y，w/h 仍以调用方传入为准。

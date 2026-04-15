@@ -1,3 +1,4 @@
+use crate::renderer::TextStyle;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -61,8 +62,11 @@ impl WidgetProps for TextInputProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.label_size,
-                        color: theme.colors.text_muted,
+                        style: TextStyle {
+                            color: theme.colors.text_muted,
+                            size: tokens.label_size,
+                            ..theme.text_style_label_sm()
+                        },
                     },
                 },
                 // field
@@ -94,8 +98,11 @@ impl WidgetProps for TextInputProps {
                         },
                         kind: LeafKind::Text {
                             content: self.value.to_string(),
-                            font_size: tokens.value_size,
-                            color: visual.text,
+                            style: TextStyle {
+                                color: visual.text,
+                                size: tokens.value_size,
+                                ..theme.text_style_body_sm()
+                            },
                         },
                     }],
                 },

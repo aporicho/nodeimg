@@ -1,4 +1,4 @@
-use crate::renderer::Color;
+use crate::renderer::{Color, TextFamily, TextStyle, TextWeight};
 use crate::widget::state::WidgetVisualState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +49,9 @@ pub struct ThemeText {
     pub body_sm: f32,
     pub body_md: f32,
     pub title_sm: f32,
+    pub default_line_height: f32,
+    pub body_family: TextFamily,
+    pub mono_family: TextFamily,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -279,6 +282,41 @@ pub struct PanelVisual {
 }
 
 impl Theme {
+    pub fn text_style_body_sm(&self) -> TextStyle {
+        TextStyle::new(self.colors.text, self.text.body_sm)
+            .with_family(self.text.body_family)
+            .with_line_height(self.text.default_line_height)
+            .with_weight(TextWeight::Normal)
+    }
+
+    pub fn text_style_body_md(&self) -> TextStyle {
+        TextStyle::new(self.colors.text, self.text.body_md)
+            .with_family(self.text.body_family)
+            .with_line_height(self.text.default_line_height)
+            .with_weight(TextWeight::Normal)
+    }
+
+    pub fn text_style_label_sm(&self) -> TextStyle {
+        TextStyle::new(self.colors.text_muted, self.text.label_sm)
+            .with_family(self.text.body_family)
+            .with_line_height(self.text.default_line_height)
+            .with_weight(TextWeight::Medium)
+    }
+
+    pub fn text_style_title_sm(&self) -> TextStyle {
+        TextStyle::new(self.colors.text, self.text.title_sm)
+            .with_family(self.text.body_family)
+            .with_line_height(self.text.default_line_height)
+            .with_weight(TextWeight::Semibold)
+    }
+
+    pub fn text_style_mono_md(&self) -> TextStyle {
+        TextStyle::new(self.colors.text, self.text.body_md)
+            .with_family(self.text.mono_family)
+            .with_line_height(self.text.default_line_height)
+            .with_weight(TextWeight::Medium)
+    }
+
     pub fn text_color_for_visual(&self, visual: WidgetVisualState) -> Color {
         match visual {
             WidgetVisualState::Disabled => self.colors.text_disabled,

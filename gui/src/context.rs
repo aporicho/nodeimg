@@ -77,8 +77,8 @@ impl Context {
         reconcile(&mut self.tree, desc, build_cx);
         self.last_theme_revision = Some(theme.revision);
         if let Some(root) = self.tree.root() {
-            layout(&mut self.tree, root, root_rect, &mut |text, size| {
-                measurer.measure(text, size)
+            layout(&mut self.tree, root, root_rect, &mut |text, style| {
+                measurer.measure_with_style(text, style)
             });
         }
         self.interaction_state.sync_with_tree(&self.tree);

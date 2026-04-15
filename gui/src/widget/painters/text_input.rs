@@ -67,8 +67,7 @@ pub(super) fn paint_text_leaf(
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
     content: &str,
-    font_size: f32,
-    text_color: Color,
+    text_style: &TextStyle,
 ) -> bool {
     let Some((widget_id, focused)) = text_input_widget_id(tree, node_id, interaction) else {
         return false;
@@ -120,10 +119,7 @@ pub(super) fn paint_text_leaf(
             renderer.draw_text_clipped(
                 screen_text_origin,
                 prefix,
-                &TextStyle {
-                    color: text_color,
-                    size: font_size * tf.scale,
-                },
+                &scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
@@ -135,10 +131,7 @@ pub(super) fn paint_text_leaf(
                     y: screen_text_origin.y,
                 },
                 preedit_text,
-                &TextStyle {
-                    color: text_color,
-                    size: font_size * tf.scale,
-                },
+                &scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
@@ -150,10 +143,7 @@ pub(super) fn paint_text_leaf(
                     y: screen_text_origin.y,
                 },
                 suffix,
-                &TextStyle {
-                    color: text_color,
-                    size: font_size * tf.scale,
-                },
+                &scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
@@ -178,10 +168,7 @@ pub(super) fn paint_text_leaf(
         renderer.draw_text_clipped(
             screen_text_origin,
             content,
-            &TextStyle {
-                color: text_color,
-                size: font_size * tf.scale,
-            },
+            &scaled_text_style(*text_style, tf.scale),
             clip_rect,
         );
     }
@@ -233,6 +220,11 @@ fn is_text_field_props(props: &dyn crate::widget::props::WidgetProps) -> Option<
     (props.as_any().downcast_ref::<TextInputProps>().is_some()
         || props.as_any().downcast_ref::<NumberInputProps>().is_some())
     .then_some(())
+}
+
+fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
+    style.size *= scale;
+    style
 }
 
 fn text_field_visual_spec(

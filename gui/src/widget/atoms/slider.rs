@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -80,8 +81,11 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.font_size,
-                        color: theme.colors.text_muted,
+                        style: TextStyle {
+                            color: theme.colors.text_muted,
+                            size: tokens.font_size,
+                            ..theme.text_style_body_sm()
+                        },
                     },
                 },
                 // 轨道
@@ -161,8 +165,11 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: value_text,
-                        font_size: tokens.font_size,
-                        color: visual.text,
+                        style: TextStyle {
+                            color: visual.text,
+                            size: tokens.font_size,
+                            ..theme.text_style_mono_md()
+                        },
                     },
                 },
             ],

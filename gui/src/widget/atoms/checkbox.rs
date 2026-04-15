@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -79,8 +80,11 @@ impl WidgetProps for CheckboxProps {
                         style: BoxStyle::default(),
                         kind: LeafKind::Text {
                             content: if self.checked { "✓" } else { "" }.to_string(),
-                            font_size: tokens.check_font_size,
-                            color: visual.check,
+                            style: TextStyle {
+                                color: visual.check,
+                                size: tokens.check_font_size,
+                                ..theme.text_style_body_sm()
+                            },
                         },
                     }],
                 },
@@ -89,8 +93,11 @@ impl WidgetProps for CheckboxProps {
                     style: BoxStyle::default(),
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.font_size,
-                        color: visual.text,
+                        style: TextStyle {
+                            color: visual.text,
+                            size: tokens.font_size,
+                            ..theme.text_style_body_sm()
+                        },
                     },
                 },
             ],

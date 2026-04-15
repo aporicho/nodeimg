@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -73,8 +74,11 @@ impl WidgetProps for ButtonProps {
                 },
                 kind: LeafKind::Text {
                     content: self.label.to_string(),
-                    font_size: tokens.font_size,
-                    color: visual.text,
+                    style: TextStyle {
+                        color: visual.text,
+                        size: tokens.font_size,
+                        ..theme.text_style_body_sm()
+                    },
                 },
             }],
         }

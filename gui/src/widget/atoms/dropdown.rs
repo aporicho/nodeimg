@@ -1,3 +1,4 @@
+use crate::renderer::TextStyle;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -68,8 +69,11 @@ impl WidgetProps for DropdownProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.font_size - 1.0,
-                        color: theme.colors.text_muted,
+                        style: TextStyle {
+                            color: theme.colors.text_muted,
+                            size: tokens.font_size - 1.0,
+                            ..theme.text_style_label_sm()
+                        },
                     },
                 },
                 Desc::Container {
@@ -102,8 +106,11 @@ impl WidgetProps for DropdownProps {
                             },
                             kind: LeafKind::Text {
                                 content: selected_text,
-                                font_size: tokens.font_size,
-                                color: visual.text,
+                                style: TextStyle {
+                                    color: visual.text,
+                                    size: tokens.font_size,
+                                    ..theme.text_style_body_sm()
+                                },
                             },
                         },
                         Desc::Container {
@@ -124,8 +131,11 @@ impl WidgetProps for DropdownProps {
                             },
                             kind: LeafKind::Text {
                                 content: "▾".to_string(),
-                                font_size: tokens.font_size,
-                                color: theme.colors.text_muted,
+                                style: TextStyle {
+                                    color: theme.colors.text_muted,
+                                    size: tokens.font_size,
+                                    ..theme.text_style_body_sm()
+                                },
                             },
                         },
                     ],

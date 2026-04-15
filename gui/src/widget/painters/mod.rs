@@ -7,7 +7,7 @@ mod slider;
 mod text_input;
 mod toggle;
 
-use crate::renderer::{Color, RectStyle, Renderer};
+use crate::renderer::{Color, RectStyle, Renderer, TextStyle};
 use crate::theme::Theme;
 use crate::tree::{NodeId, Tree};
 use crate::widget::state::{InteractionStore, TextInputStore};
@@ -39,8 +39,7 @@ pub(crate) fn paint_text_leaf_override(
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
     content: &str,
-    font_size: f32,
-    text_color: Color,
+    text_style: &TextStyle,
 ) -> bool {
     text_input::paint_text_leaf(
         tree,
@@ -51,8 +50,7 @@ pub(crate) fn paint_text_leaf_override(
         text_inputs,
         theme,
         content,
-        font_size,
-        text_color,
+        text_style,
     )
 }
 

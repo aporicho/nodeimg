@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::renderer::{Point, Rect, TextMeasurer};
+use crate::renderer::{Point, Rect, TextMeasurer, TextStyle};
 use crate::theme::{TextInputTheme, Theme};
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::{format_number, NumberInputProps};
@@ -227,10 +227,11 @@ impl TextInputRuntime {
         value_rect: Option<Rect>,
         measurer: &mut TextMeasurer,
         tokens: TextInputTheme,
+        value_style: TextStyle,
     ) {
         self.field_rect = field_rect;
         self.text_height = measurer
-            .measure("Mg", tokens.value_size)
+            .measure_with_style("Mg", &value_style)
             .1
             .max(tokens.value_size);
         self.content_rect = Rect {
@@ -245,11 +246,11 @@ impl TextInputRuntime {
                 .map(|rect| rect.y)
                 .unwrap_or(field_rect.y + (field_rect.h - self.text_height) * 0.5),
         };
-        self.caret_stops = caret_stops(&self.editor, measurer, tokens.value_size);
+        self.caret_stops = caret_stops(&self.editor, measurer, &value_style);
         self.preedit_layout = self
             .preedit
             .as_ref()
-            .map(|preedit| preedit_layout(preedit, self, measurer, tokens.value_size));
+            .map(|preedit| preedit_layout(preedit, self, measurer, &value_style));
         self.clamp_scroll();
         self.ensure_cursor_visible();
     }
@@ -359,7 +360,13 @@ impl TextInputStore {
                 h: spec.tokens.field_height,
             });
             let value_rect = find_rect(tree, &format!("{}::value", widget_id));
-            runtime.sync_layout(field_rect, value_rect, measurer, spec.tokens);
+            runtime.sync_layout(
+                field_rect,
+                value_rect,
+                measurer,
+                spec.tokens,
+                text_field_value_style(spec.kind, theme, spec.tokens),
+            );
             next.insert(widget_id, runtime);
         }
 
@@ -417,14 +424,14 @@ fn find_rect(tree: &Tree, node_id: &str) -> Option<Rect> {
 fn caret_stops(
     editor: &TextEditState,
     measurer: &mut TextMeasurer,
-    font_size: f32,
+    style: &TextStyle,
 ) -> Vec<(usize, f32)> {
     let text = editor.text();
     let mut stops = Vec::with_capacity(text.chars().count() + 1);
     stops.push((0, 0.0));
 
     for (byte_index, _) in text.char_indices().skip(1) {
-        let width = measurer.measure(&text[..byte_index], font_size).0;
+        let width = measurer.measure_with_style(&text[..byte_index], style).0;
         stops.push((byte_index, width));
     }
 
@@ -432,7 +439,7 @@ fn caret_stops(
         return stops;
     }
 
-    let width = measurer.measure(text, font_size).0;
+    let width = measurer.measure_with_style(text, style).0;
     if stops.last().map(|(idx, _)| *idx) != Some(text.len()) {
         stops.push((text.len(), width));
     }
@@ -443,17 +450,17 @@ fn preedit_layout(
     preedit: &PreeditState,
     runtime: &TextInputRuntime,
     measurer: &mut TextMeasurer,
-    font_size: f32,
+    style: &TextStyle,
 ) -> PreeditLayout {
     let start = clamp_text_index(runtime.editor.text(), preedit.range.0);
     let start_x = runtime.caret_offset(start);
-    let width = measurer.measure(&preedit.text, font_size).0;
+    let width = measurer.measure_with_style(&preedit.text, style).0;
     let caret_byte = preedit
         .caret
         .map(|(_, end)| clamp_text_index(&preedit.text, end))
         .unwrap_or(preedit.text.len());
     let caret_prefix = &preedit.text[..caret_byte];
-    let caret_x = start_x + measurer.measure(caret_prefix, font_size).0;
+    let caret_x = start_x + measurer.measure_with_style(caret_prefix, style).0;
 
     PreeditLayout {
         start_x,
@@ -495,6 +502,17 @@ fn text_field_spec(
 fn is_text_field_props(props: &dyn crate::widget::props::WidgetProps) -> bool {
     props.as_any().downcast_ref::<TextInputProps>().is_some()
         || props.as_any().downcast_ref::<NumberInputProps>().is_some()
+}
+
+fn text_field_value_style(kind: TextFieldKind, theme: &Theme, tokens: TextInputTheme) -> TextStyle {
+    let base = match kind {
+        TextFieldKind::TextInput => theme.text_style_body_sm(),
+        TextFieldKind::NumberInput => theme.text_style_mono_md(),
+    };
+    TextStyle {
+        size: tokens.value_size,
+        ..base
+    }
 }
 
 #[cfg(test)]

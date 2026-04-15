@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
 use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -84,8 +85,11 @@ impl WidgetProps for CollapsibleProps {
                     style: BoxStyle::default(),
                     kind: crate::tree::layout::LeafKind::Text {
                         content: chevron.to_string(),
-                        font_size: tokens.title_font_size,
-                        color: tokens.title_text,
+                        style: TextStyle {
+                            color: tokens.title_text,
+                            size: tokens.title_font_size,
+                            ..cx.theme.text_style_label_sm()
+                        },
                     },
                 },
                 Desc::Leaf {
@@ -93,8 +97,11 @@ impl WidgetProps for CollapsibleProps {
                     style: BoxStyle::default(),
                     kind: crate::tree::layout::LeafKind::Text {
                         content: self.title.to_string(),
-                        font_size: tokens.title_font_size,
-                        color: tokens.title_text,
+                        style: TextStyle {
+                            color: tokens.title_text,
+                            size: tokens.title_font_size,
+                            ..cx.theme.text_style_label_sm()
+                        },
                     },
                 },
             ],

@@ -1,3 +1,4 @@
+use crate::renderer::TextStyle;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -62,8 +63,11 @@ impl WidgetProps for NumberInputProps {
                     style: BoxStyle::default(),
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.label_size,
-                        color: theme.colors.text_muted,
+                        style: TextStyle {
+                            color: theme.colors.text_muted,
+                            size: tokens.label_size,
+                            ..theme.text_style_label_sm()
+                        },
                     },
                 },
                 Desc::Container {
@@ -90,8 +94,11 @@ impl WidgetProps for NumberInputProps {
                         style: BoxStyle::default(),
                         kind: LeafKind::Text {
                             content: format_number(self.value, self.precision),
-                            font_size: tokens.value_size,
-                            color: visual.text,
+                            style: TextStyle {
+                                color: visual.text,
+                                size: tokens.value_size,
+                                ..theme.text_style_mono_md()
+                            },
                         },
                     }],
                 },

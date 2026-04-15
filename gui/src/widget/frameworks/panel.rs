@@ -1,5 +1,5 @@
 use crate::gesture::Gesture;
-use crate::renderer::Border;
+use crate::renderer::{Border, TextStyle};
 use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -132,8 +132,11 @@ impl WidgetProps for PanelProps {
                 },
                 kind: LeafKind::Text {
                     content: self.title.to_string(),
-                    font_size: tokens.title_font_size,
-                    color: visual.title_text,
+                    style: TextStyle {
+                        color: visual.title_text,
+                        size: tokens.title_font_size,
+                        ..theme.text_style_title_sm()
+                    },
                 },
             }],
         };
@@ -184,7 +187,7 @@ impl WidgetProps for PanelProps {
 mod tests {
     use super::*;
     use crate::gesture::Gesture;
-    use crate::renderer::{Color, Rect};
+    use crate::renderer::{Color, Rect, TextStyle};
     use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{LeafKind, Position, Size};
     use crate::tree::{hit_test, layout, reconcile, NodeId, Tree};
@@ -224,7 +227,7 @@ mod tests {
 
         let root = tree.root().expect("tree should have root after reconcile");
 
-        let mut no_measure = |_text: &str, _size: f32| -> (f32, f32) { (0.0, 0.0) };
+        let mut no_measure = |_text: &str, _style: &TextStyle| -> (f32, f32) { (0.0, 0.0) };
         layout(
             &mut tree,
             root,
@@ -357,13 +360,15 @@ mod tests {
             style: BoxStyle::default(),
             kind: LeafKind::Text {
                 content: "inner".to_string(),
-                font_size: 12.0,
-                color: Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
+                style: TextStyle::new(
+                    Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    12.0,
+                ),
             },
         }];
         let build = props.build("test", &build_cx(&theme));

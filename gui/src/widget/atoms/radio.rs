@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Size};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -95,8 +96,11 @@ impl WidgetProps for RadioProps {
                     style: BoxStyle::default(),
                     kind: crate::tree::layout::LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size: tokens.font_size,
-                        color: visual.text,
+                        style: TextStyle {
+                            color: visual.text,
+                            size: tokens.font_size,
+                            ..theme.text_style_body_sm()
+                        },
                     },
                 },
             ],

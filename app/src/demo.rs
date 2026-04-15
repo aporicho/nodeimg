@@ -2,7 +2,7 @@ use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{Context, FrameworkOutput, OverlayPlacement, OverlayRequest, PlatformEffect};
 use gui::gesture::Gesture;
-use gui::renderer::{Rect, Renderer};
+use gui::renderer::{Rect, Renderer, TextStyle, TextWeight};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, TextureHandle, Transform};
@@ -135,6 +135,7 @@ impl PointerSession {
 }
 
 fn build_panel_content(
+    theme: &Theme,
     text_value: &str,
     slider_value: f32,
     toggle_value: bool,
@@ -203,6 +204,7 @@ fn build_panel_content(
                 disabled: false,
             }),
         },
+        build_text_style_showcase(theme),
         Desc::Widget {
             id: Cow::Borrowed("controls_group"),
             props: Box::new(GroupProps {
@@ -358,6 +360,60 @@ fn build_panel_content(
     ]
 }
 
+fn build_text_style_showcase(theme: &Theme) -> Desc {
+    Desc::Widget {
+        id: Cow::Borrowed("text_style_showcase"),
+        props: Box::new(GroupProps {
+            title: Cow::Borrowed("Text Style Showcase"),
+            content: vec![
+                Desc::Leaf {
+                    id: Cow::Borrowed("text_style_body"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "Body / Sans / Regular".to_string(),
+                        style: theme.text_style_body_md(),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("text_style_title"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "Title / Sans / Semibold".to_string(),
+                        style: theme.text_style_title_sm(),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("text_style_italic"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "Caption / Sans / Italic".to_string(),
+                        style: theme.text_style_label_sm().with_italic(true),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("text_style_mono"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "Mono / Medium / Value 42.00".to_string(),
+                        style: theme.text_style_mono_md(),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("text_style_bold"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "Body / Sans / Bold override".to_string(),
+                        style: TextStyle {
+                            color: theme.colors.text,
+                            ..theme.text_style_body_md().with_weight(TextWeight::Bold)
+                        },
+                    },
+                },
+            ],
+        }),
+    }
+}
+
 fn build_demo_popup() -> Desc {
     Desc::Widget {
         id: Cow::Borrowed("demo_popup_group"),
@@ -478,6 +534,7 @@ fn build_demo_tree(
                         w: panel.w,
                         h: panel.h,
                         content: build_panel_content(
+                            theme,
                             text_value,
                             slider_value,
                             toggle_value,

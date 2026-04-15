@@ -1,3 +1,4 @@
+use crate::renderer::TextStyle;
 use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, LeafKind, Size};
 use crate::tree::Desc;
@@ -42,7 +43,7 @@ impl WidgetProps for LabelProps {
     }
 
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        let (font_size, color) = label_style(cx.theme, self.variant, self.muted);
+        let style = label_style(cx.theme, self.variant, self.muted);
 
         WidgetBuild {
             style: BoxStyle {
@@ -60,26 +61,27 @@ impl WidgetProps for LabelProps {
                 },
                 kind: LeafKind::Text {
                     content: self.text.to_string(),
-                    font_size,
-                    color,
+                    style,
                 },
             }],
         }
     }
 }
 
-fn label_style(theme: &Theme, variant: LabelVariant, muted: bool) -> (f32, crate::renderer::Color) {
-    let font_size = match variant {
-        LabelVariant::Body => theme.text.body_md,
-        LabelVariant::Caption => theme.text.label_sm,
-        LabelVariant::Title => theme.text.title_sm,
+fn label_style(theme: &Theme, variant: LabelVariant, muted: bool) -> TextStyle {
+    let base = match variant {
+        LabelVariant::Body => theme.text_style_body_md(),
+        LabelVariant::Caption => theme.text_style_label_sm(),
+        LabelVariant::Title => theme.text_style_title_sm(),
     };
-    let color = if muted {
-        theme.colors.text_muted
-    } else {
-        theme.colors.text
-    };
-    (font_size, color)
+    TextStyle {
+        color: if muted {
+            theme.colors.text_muted
+        } else {
+            theme.colors.text
+        },
+        ..base
+    }
 }
 
 #[cfg(test)]
@@ -106,10 +108,10 @@ mod tests {
 
         match &build.children[0] {
             Desc::Leaf {
-                kind: LeafKind::Text { font_size, .. },
+                kind: LeafKind::Text { style, .. },
                 ..
             } => {
-                assert_eq!(*font_size, theme.text.title_sm);
+                assert_eq!(style.size, theme.text.title_sm);
             }
             _ => panic!("expected text leaf"),
         }

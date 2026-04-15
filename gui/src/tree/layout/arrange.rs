@@ -8,7 +8,7 @@ pub(crate) fn arrange<T: LayoutTree>(
     tree: &mut T,
     node: T::NodeId,
     available: Rect,
-    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+    measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
 ) {
     let style = tree.style(node).clone();
     let desired_size = matches!(style.position, Position::Absolute { .. })
@@ -276,7 +276,7 @@ mod tests {
     }
 
     /// 不依赖字体的 measure 回调
-    fn no_measure(_text: &str, _size: f32) -> (f32, f32) {
+    fn no_measure(_text: &str, _style: &crate::renderer::TextStyle) -> (f32, f32) {
         (0.0, 0.0)
     }
 

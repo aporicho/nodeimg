@@ -1,4 +1,4 @@
-use crate::renderer::{Border, Color, Point, Rect, Renderer};
+use crate::renderer::{Border, Color, Point, Rect, Renderer, TextStyle};
 use std::sync::Arc;
 
 /// 纹理句柄：不透明封装。widget 层无需依赖 wgpu。
@@ -228,7 +228,7 @@ pub trait LayoutTree {
     fn set_content_height(&mut self, node: Self::NodeId, height: f32);
 
     /// 如果节点是文字叶子，返回 (文字内容, 字号)。layout 引擎在 measure 阶段调用。
-    fn text_content(&self, node: Self::NodeId) -> Option<(&str, f32)>;
+    fn text_content(&self, node: Self::NodeId) -> Option<(&str, &TextStyle)>;
 }
 
 /// 渲染图元类型。叶子节点的具体内容。
@@ -236,11 +236,7 @@ pub trait LayoutTree {
 pub enum LeafKind {
     // ── 基础文本/图像 ──
     /// 文本图元。尺寸在 resolve 阶段由 TextMeasurer 解析，创建时使用 Size::Auto。
-    Text {
-        content: String,
-        font_size: f32,
-        color: Color,
-    },
+    Text { content: String, style: TextStyle },
     /// 位图图像。
     Image {
         texture: TextureHandle,

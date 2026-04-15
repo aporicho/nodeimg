@@ -60,10 +60,7 @@ pub fn dispatch(
             .map(|r| TextRequest {
                 pos: r.pos,
                 text: r.text.clone(),
-                style: super::style::TextStyle {
-                    color: r.style.color,
-                    size: r.style.size,
-                },
+                style: r.style,
                 bounds: r.bounds,
             })
             .collect();

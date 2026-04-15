@@ -1,4 +1,5 @@
 use crate::renderer::Color;
+use crate::renderer::TextFamily;
 
 use super::tokens::*;
 
@@ -39,6 +40,9 @@ pub fn build_theme() -> Theme {
             body_sm: 12.0,
             body_md: 13.0,
             title_sm: 13.0,
+            default_line_height: 1.2,
+            body_family: TextFamily::Sans,
+            mono_family: TextFamily::Monospace,
         },
         radii: ThemeRadii {
             sm: 4.0,

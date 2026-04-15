@@ -4,7 +4,7 @@ use super::types::*;
 pub(crate) fn measure<T: LayoutTree>(
     tree: &T,
     node: T::NodeId,
-    measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
+    measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
 ) -> DesiredSize {
     let children = tree.children(node);
     let style = tree.style(node);
@@ -12,7 +12,7 @@ pub(crate) fn measure<T: LayoutTree>(
     if children.is_empty() {
         let (intrinsic_w, intrinsic_h) = tree
             .text_content(node)
-            .map(|(text, size)| measure_text(text, size))
+            .map(|(text, style)| measure_text(text, style))
             .unwrap_or((0.0, 0.0));
 
         return DesiredSize {

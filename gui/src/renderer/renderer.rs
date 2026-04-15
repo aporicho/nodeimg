@@ -171,10 +171,7 @@ impl Renderer {
         self.commands.push(DrawCommand::Text(TextRequest {
             pos,
             text: text.to_string(),
-            style: TextStyle {
-                color: style.color,
-                size: style.size,
-            },
+            style: *style,
             bounds: None,
         }));
     }
@@ -183,10 +180,7 @@ impl Renderer {
         self.commands.push(DrawCommand::Text(TextRequest {
             pos,
             text: text.to_string(),
-            style: TextStyle {
-                color: style.color,
-                size: style.size,
-            },
+            style: *style,
             bounds: Some(bounds),
         }));
     }

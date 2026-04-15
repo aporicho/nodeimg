@@ -73,7 +73,7 @@ impl TextPipeline {
         text_measurer.mark_all_unused();
 
         for req in texts {
-            text_measurer.ensure_buffer(&req.text, req.style.size);
+            text_measurer.ensure_buffer(&req.text, &req.style);
         }
 
         // Phase 2 (immutable borrow of buffer_cache): build TextArea references
@@ -82,7 +82,7 @@ impl TextPipeline {
         let text_areas: Vec<TextArea<'_>> = texts
             .iter()
             .map(|req| {
-                let key = TextCacheKey::new(&req.text, req.style.size);
+                let key = TextCacheKey::new(&req.text, &req.style);
                 let buffer = &text_measurer.buffer_cache[&key].buffer;
                 TextArea {
                     buffer,

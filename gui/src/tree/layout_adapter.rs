@@ -32,11 +32,9 @@ impl LayoutTree for Tree {
         }
     }
 
-    fn text_content(&self, node: NodeId) -> Option<(&str, f32)> {
+    fn text_content(&self, node: NodeId) -> Option<(&str, &crate::renderer::TextStyle)> {
         match &self.get(node)?.kind {
-            NodeKind::Leaf(LeafKind::Text {
-                content, font_size, ..
-            }) => Some((content, *font_size)),
+            NodeKind::Leaf(LeafKind::Text { content, style }) => Some((content, style)),
             _ => None,
         }
     }

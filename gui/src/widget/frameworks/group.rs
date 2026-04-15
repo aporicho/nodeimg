@@ -1,3 +1,4 @@
+use crate::renderer::TextStyle;
 use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -69,8 +70,11 @@ impl WidgetProps for GroupProps {
                 style: BoxStyle::default(),
                 kind: LeafKind::Text {
                     content: self.title.to_string(),
-                    font_size: tokens.title_font_size,
-                    color: tokens.title_text,
+                    style: TextStyle {
+                        color: tokens.title_text,
+                        size: tokens.title_font_size,
+                        ..theme.text_style_label_sm()
+                    },
                 },
             }],
         };
