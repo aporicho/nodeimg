@@ -157,7 +157,11 @@ impl WidgetProps for PanelProps {
                     y: self.y,
                 },
                 width: Size::Fixed(self.w),
-                height: Size::Fixed(self.h),
+                height: if self.h > 0.0 {
+                    Size::Fixed(self.h)
+                } else {
+                    Size::Auto
+                },
                 direction: Direction::Column,
                 gestures: vec![Gesture::Resize],
                 ..BoxStyle::default()

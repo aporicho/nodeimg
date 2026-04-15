@@ -776,6 +776,7 @@ mod tests {
         ctx.open_overlay(OverlayRequest {
             id: "test_popup".to_string(),
             anchor_id: "button".to_string(),
+            restore_focus_id: Some("button".to_string()),
             placement: OverlayPlacement::BelowStart,
             content: popup_content_desc(),
             offset_x: 0.0,
@@ -825,6 +826,7 @@ mod tests {
         ctx.open_overlay(OverlayRequest {
             id: "test_popup".to_string(),
             anchor_id: "button".to_string(),
+            restore_focus_id: Some("button".to_string()),
             placement: OverlayPlacement::BelowStart,
             content: popup_content_desc(),
             offset_x: 0.0,
@@ -874,6 +876,7 @@ mod tests {
         ctx.open_overlay(OverlayRequest {
             id: "test_popup".to_string(),
             anchor_id: "button".to_string(),
+            restore_focus_id: Some("button".to_string()),
             placement: OverlayPlacement::BelowStart,
             content: popup_content_desc(),
             offset_x: 0.0,
@@ -1029,6 +1032,79 @@ mod tests {
                 .editor()
                 .text(),
             "1.50"
+        );
+    }
+
+    #[test]
+    fn number_input_step_uses_current_edited_value() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let viewport = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 320.0,
+            h: 120.0,
+        };
+        ctx.update(number_desc(1.5), viewport, &mut measurer, &theme);
+        focus_number(&mut ctx);
+        let _ = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::Char('A'),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        });
+        let _ = ctx.handle_event(&AppEvent::TextInput {
+            text: "2.5".to_string(),
+        });
+
+        let output = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::Up,
+            modifiers: Modifiers::default(),
+        });
+
+        assert!(matches!(
+            output.actions.as_slice(),
+            [Action::NumberChange { id, value }] if id == "number" && (*value - 3.0).abs() < 0.0001
+        ));
+    }
+
+    #[test]
+    fn focused_number_input_does_not_clobber_dirty_editor_on_external_sync() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let viewport = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 320.0,
+            h: 120.0,
+        };
+        ctx.update(number_desc(1.5), viewport, &mut measurer, &theme);
+        focus_number(&mut ctx);
+        let _ = ctx.handle_event(&AppEvent::TextInput {
+            text: "a".to_string(),
+        });
+
+        ctx.update(number_desc(2.0), viewport, &mut measurer, &theme);
+
+        assert_eq!(
+            ctx.text_input_system
+                .store()
+                .runtime("number")
+                .unwrap()
+                .editor()
+                .text(),
+            "a1.50"
+        );
+        assert_eq!(
+            ctx.text_input_system
+                .store()
+                .runtime("number")
+                .unwrap()
+                .external_text(),
+            "2.00"
         );
     }
 

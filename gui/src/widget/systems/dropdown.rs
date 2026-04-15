@@ -206,6 +206,7 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
     OverlayRequest {
         id: format!("dropdown::{}", dropdown_id),
         anchor_id: format!("{}::field", dropdown_id),
+        restore_focus_id: Some(dropdown_id.to_string()),
         placement: OverlayPlacement::BelowStart,
         content: crate::tree::Desc::Widget {
             id: Cow::Owned(format!("{}::popup_group", dropdown_id)),

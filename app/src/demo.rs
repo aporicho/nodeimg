@@ -47,6 +47,7 @@ struct PanelState {
     y: f32,
     w: f32,
     h: f32,
+    auto_h: bool,
     min_w: f32,
     min_h: f32,
 }
@@ -57,7 +58,8 @@ impl PanelState {
             x: 100.0,
             y: 100.0,
             w: 300.0,
-            h: 200.0,
+            h: 0.0,
+            auto_h: true,
             min_w: 120.0,
             min_h: 80.0,
         }
@@ -566,11 +568,15 @@ impl App for DemoApp {
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
+        let mut panel = self.panel;
+        if panel.auto_h {
+            panel.h = 0.0;
+        }
         let desc = build_demo_tree(
             viewport,
             &self.camera,
             &self.theme,
-            self.panel,
+            panel,
             &self.text_value,
             self.slider_value,
             self.toggle_value,
@@ -581,6 +587,7 @@ impl App for DemoApp {
         );
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
+        self.auto_grow_panel_to_fit_content();
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
@@ -653,6 +660,22 @@ fn create_demo_texture(
 }
 
 impl DemoApp {
+    fn current_panel_height(&self) -> Option<f32> {
+        self.gui
+            .tree()
+            .iter()
+            .find_map(|(_, node)| (node.id.as_ref() == PANEL_ID).then_some(node.rect.h))
+    }
+
+    fn auto_grow_panel_to_fit_content(&mut self) {
+        if !self.panel.auto_h {
+            return;
+        }
+        if let Some(height) = self.current_panel_height() {
+            self.panel.h = height.max(self.panel.min_h);
+        }
+    }
+
     fn update_mouse_position_from_event(&mut self, event: &AppEvent) {
         match *event {
             AppEvent::MouseMove { x, y }
@@ -720,6 +743,7 @@ impl DemoApp {
                         self.gui.open_overlay(OverlayRequest {
                             id: "demo_popup".to_string(),
                             anchor_id: "popup_trigger".to_string(),
+                            restore_focus_id: Some("popup_trigger".to_string()),
                             placement: OverlayPlacement::BelowStart,
                             content: build_demo_popup(),
                             offset_x: 0.0,
@@ -788,7 +812,16 @@ impl DemoApp {
                     }
                 }
             }
-            Action::DragStart { x, y, .. } | Action::ResizeStart { x, y, .. } => {
+            Action::DragStart { x, y, .. } => {
+                self.pointer_session = Some(PointerSession::new(x, y));
+            }
+            Action::ResizeStart { id, x, y, .. } => {
+                if id == PANEL_ID && self.panel.auto_h {
+                    if let Some(height) = self.current_panel_height() {
+                        self.panel.h = height.max(self.panel.min_h);
+                    }
+                    self.panel.auto_h = false;
+                }
                 self.pointer_session = Some(PointerSession::new(x, y));
             }
             Action::DragEnd { .. } | Action::ResizeEnd { .. } => {

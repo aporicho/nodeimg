@@ -87,12 +87,17 @@ impl TextInputRuntime {
         &self.last_external_text
     }
 
-    pub fn sync_external_text(&mut self, text: &str) {
-        if text != self.last_external_text {
+    pub fn sync_external_text(&mut self, text: &str, allow_override: bool) {
+        if text == self.last_external_text {
+            return;
+        }
+
+        let current_matches_external = self.editor.text() == self.last_external_text;
+        if allow_override || current_matches_external || self.editor.text() == text {
             self.clear_preedit();
             self.editor.set_text(text);
-            self.last_external_text = text.to_string();
         }
+        self.last_external_text = text.to_string();
     }
 
     pub fn revert_to_external(&mut self) {
@@ -321,7 +326,13 @@ impl TextInputStore {
         }
     }
 
-    pub fn sync_with_tree(&mut self, tree: &Tree, measurer: &mut TextMeasurer, theme: &Theme) {
+    pub fn sync_with_tree(
+        &mut self,
+        tree: &Tree,
+        measurer: &mut TextMeasurer,
+        theme: &Theme,
+        focused_widget_id: Option<&str>,
+    ) {
         let mut next = HashMap::new();
 
         for (_, node) in tree.iter() {
@@ -338,7 +349,8 @@ impl TextInputStore {
             });
 
             runtime.set_kind(spec.kind);
-            runtime.sync_external_text(&spec.external_text);
+            let allow_override = Some(widget_id.as_str()) != focused_widget_id;
+            runtime.sync_external_text(&spec.external_text, allow_override);
 
             let field_rect = find_rect(tree, &format!("{}::field", widget_id)).unwrap_or(Rect {
                 x: node.rect.x,

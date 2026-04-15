@@ -29,7 +29,9 @@ impl TextInputSystem {
         focused: Option<NodeId>,
         captured: Option<NodeId>,
     ) {
-        self.store.sync_with_tree(tree, measurer, theme);
+        let focused_widget_id = self.focused_widget_id(tree, focused);
+        self.store
+            .sync_with_tree(tree, measurer, theme, focused_widget_id.as_deref());
         self.sync_sessions(tree, focused, captured);
     }
 
@@ -350,7 +352,8 @@ impl TextInputSystem {
             return FrameworkOutput::default();
         };
 
-        let next = (props.value + props.step * direction).clamp(props.min, props.max);
+        let current = parse_number_text(runtime.editor().text()).unwrap_or(props.value);
+        let next = (current + props.step * direction).clamp(props.min, props.max);
         runtime.clear_preedit();
         runtime
             .editor_mut()

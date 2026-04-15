@@ -14,6 +14,7 @@ pub enum OverlayPlacement {
 pub struct OverlayRequest {
     pub id: String,
     pub anchor_id: String,
+    pub restore_focus_id: Option<String>,
     pub placement: OverlayPlacement,
     pub content: Desc,
     pub offset_x: f32,
@@ -59,7 +60,12 @@ impl PopupSystem {
             return;
         };
         if state.request.restore_focus_to_anchor {
-            if let Some(node_id) = find_node_id_by_str(tree, &state.request.anchor_id) {
+            let restore_id = state
+                .request
+                .restore_focus_id
+                .as_deref()
+                .unwrap_or(&state.request.anchor_id);
+            if let Some(node_id) = find_node_id_by_str(tree, restore_id) {
                 interaction.focus(node_id);
             }
         }
@@ -113,7 +119,7 @@ impl PopupSystem {
                 if button == MouseButton::Left && state.request.dismiss_on_outside_click =>
             {
                 if !self.hit_overlay(tree, x, y) {
-                    self.close(tree, interaction);
+                    self.close_no_focus_restore();
                 }
                 false
             }

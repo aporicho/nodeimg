@@ -11,6 +11,8 @@ pub(crate) fn arrange<T: LayoutTree>(
     measure_text: &mut dyn FnMut(&str, f32) -> (f32, f32),
 ) {
     let style = tree.style(node).clone();
+    let desired_size = matches!(style.position, Position::Absolute { .. })
+        .then(|| measure(&*tree, node, measure_text));
 
     // 扣除 margin
     let after_margin = Rect {
@@ -26,11 +28,17 @@ pub(crate) fn arrange<T: LayoutTree>(
         y: after_margin.y,
         w: match style.width {
             Size::Fixed(w) => w,
+            _ if matches!(style.position, Position::Absolute { .. }) => desired_size
+                .map(|size| size.width)
+                .unwrap_or(after_margin.w),
             _ => after_margin.w,
         }
         .clamp(style.min_width, style.max_width),
         h: match style.height {
             Size::Fixed(h) => h,
+            _ if matches!(style.position, Position::Absolute { .. }) => desired_size
+                .map(|size| size.height)
+                .unwrap_or(after_margin.h),
             _ => after_margin.h,
         }
         .clamp(style.min_height, style.max_height),
