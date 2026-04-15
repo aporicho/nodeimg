@@ -1,3 +1,7 @@
+#[path = "runtime/artifacts/mod.rs"]
+mod artifacts;
+
+use crate::artifact::manager::ArtifactManager;
 use crate::cache;
 use crate::cache::manager::CacheManager;
 use crate::capability::{CapabilityRegistry, LocalityHint};
@@ -33,6 +37,7 @@ pub struct Runtime {
     capability_registry: Arc<CapabilityRegistry>,
     executor: Arc<ImageExecutor>,
     cache: Arc<CacheManager>,
+    artifacts: Option<Arc<Mutex<ArtifactManager>>>,
     next_execution_id: crate::execution::ExecutionId,
     next_pending_id: PendingExecutionId,
     execution_results:
@@ -142,12 +147,14 @@ impl Runtime {
         capability_registry: Arc<CapabilityRegistry>,
         executor: ImageExecutor,
         cache: Arc<CacheManager>,
+        artifacts: Option<Arc<Mutex<ArtifactManager>>>,
     ) -> Self {
         Self {
             node_manager,
             capability_registry,
             executor: Arc::new(executor),
             cache,
+            artifacts,
             next_execution_id: 1,
             next_pending_id: 1,
             execution_results: Arc::new(Mutex::new(HashMap::new())),
@@ -882,6 +889,7 @@ impl Runtime {
                 &upstream_signatures,
                 cooking_context,
             );
+            let artifact_identity = artifacts::build_artifact_identity(exec_signature, &effective_params);
 
             let mut inputs = upstream_inputs.clone();
             for (name, value) in effective_params {
@@ -901,8 +909,10 @@ impl Runtime {
                             cached_outputs.insert(output.name.clone(), value.as_ref().clone());
                         }
                         None => {
-                            all_cached = false;
-                            break;
+                            if !output.optional {
+                                all_cached = false;
+                                break;
+                            }
                         }
                     }
                 }
@@ -927,6 +937,64 @@ impl Runtime {
                         status: NodeExecutionStatus::Finished,
                     });
                     continue;
+                }
+            }
+
+            if matches!(fidelity, EvaluationFidelity::Full) {
+                if let Some(artifact_manager) = self.artifacts.as_ref() {
+                    let mut restored_outputs = HashMap::new();
+                    let mut restored_any = false;
+                    let mut missing_required = false;
+
+                    for output in &def.outputs {
+                        if !artifacts::should_restore_artifact(def, output, &fidelity) {
+                            continue;
+                        }
+
+                        let restored = artifact_manager
+                            .lock()
+                            .expect("artifact manager lock poisoned");
+                        let restored_value = artifacts::restore_selected_artifact(
+                            &restored,
+                            *node_id,
+                            &output.name,
+                            &artifact_identity,
+                        )
+                        .map_err(|error| RunFailure::Error(EngineError::Artifact {
+                            message: error.to_string(),
+                        }))?;
+                        drop(restored);
+
+                        match restored_value {
+                            Some(value) => {
+                                let _ = self.cache.put_result(
+                                    *node_id,
+                                    &output.name,
+                                    exec_signature,
+                                    generation,
+                                    value.clone(),
+                                );
+                                restored_outputs.insert(output.name.clone(), value);
+                                restored_any = true;
+                            }
+                            None if !output.optional => {
+                                missing_required = true;
+                                break;
+                            }
+                            None => {}
+                        }
+                    }
+
+                    if restored_any && !missing_required {
+                        results.insert(*node_id, ExecutionOutputs::full(restored_outputs));
+                        signatures.insert(*node_id, exec_signature);
+                        let _ = self.engine_events.publish(EngineEvent::NodeFinished {
+                            execution_id: run_id,
+                            node_id: *node_id,
+                            status: NodeExecutionStatus::Finished,
+                        });
+                        continue;
+                    }
                 }
             }
 
@@ -1024,6 +1092,30 @@ impl Runtime {
                         generation,
                         value.clone(),
                     );
+                }
+
+                if let Some(artifact_manager) = self.artifacts.as_ref() {
+                    let mut artifact_manager = artifact_manager
+                        .lock()
+                        .expect("artifact manager lock poisoned");
+                    for output in &def.outputs {
+                        if !artifacts::should_persist_artifact(def, output, &fidelity) {
+                            continue;
+                        }
+                        let Some(value) = outputs.values.get(&output.name).cloned() else {
+                            continue;
+                        };
+                        artifacts::persist_restorable_image_artifact(
+                            &mut artifact_manager,
+                            *node_id,
+                            &output.name,
+                            value,
+                            &artifact_identity,
+                        )
+                        .map_err(|error| RunFailure::Error(EngineError::Artifact {
+                            message: error.to_string(),
+                        }))?;
+                    }
                 }
             }
 

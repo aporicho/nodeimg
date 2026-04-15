@@ -236,6 +236,7 @@ impl From<&ArtifactRecord> for ArtifactRecordFile {
             path: value.path.to_string_lossy().into_owned(),
             param_signature: value.param_signature.clone(),
             input_signature: value.input_signature.clone(),
+            params_snapshot: value.params_snapshot.clone(),
             kind: match value.kind {
                 ArtifactKind::Restorable => ArtifactHistoryFile::Restorable,
                 ArtifactKind::Exported => ArtifactHistoryFile::Exported,
@@ -260,6 +261,7 @@ impl TryFrom<ArtifactRecordFile> for ArtifactRecord {
             path: PathBuf::from(value.path),
             param_signature: value.param_signature,
             input_signature: value.input_signature,
+            params_snapshot: value.params_snapshot,
             kind: match value.kind {
                 ArtifactHistoryFile::Restorable => ArtifactKind::Restorable,
                 ArtifactHistoryFile::Exported => ArtifactKind::Exported,
@@ -299,6 +301,10 @@ mod tests {
             path: PathBuf::from(format!("artifacts/42/image/{version:06}.png")),
             param_signature: format!("param-{version}"),
             input_signature: format!("input-{version}"),
+            params_snapshot: std::collections::BTreeMap::from([(
+                String::from("prompt"),
+                format!("variant-{version}"),
+            )]),
             kind: ArtifactKind::Restorable,
             orphaned: false,
         }

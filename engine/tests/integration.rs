@@ -391,11 +391,12 @@ fn test_image_gen_schema_exposes_provider_and_model_params() {
 // === 执行测试 ===
 
 #[tokio::test]
-async fn test_evaluate_gpu_node_without_gpu_returns_error() {
-    let mut engine = Engine::new(None); // 无 GPU
+async fn test_evaluate_legacy_brightness_without_input_returns_empty_outputs() {
+    let mut engine = Engine::new(None);
     let id = engine.add_node("brightness").unwrap();
-    let result = engine.evaluate(id).await;
-    assert!(result.is_err(), "GPU node should fail without GPU");
+    let result = engine.evaluate(id).await.unwrap();
+    let node_output = result.get(&id).expect("brightness outputs should exist");
+    assert!(node_output.is_empty());
 }
 
 #[tokio::test]

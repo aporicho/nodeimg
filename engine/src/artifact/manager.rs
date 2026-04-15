@@ -114,6 +114,7 @@ impl ArtifactManager {
             path,
             param_signature: req.param_signature.clone(),
             input_signature: req.input_signature.clone(),
+            params_snapshot: req.params_snapshot.clone(),
             kind: req.kind.clone(),
             orphaned: false,
         };
@@ -122,6 +123,15 @@ impl ArtifactManager {
         self.store.write(&record, &req.value, handler)?;
         self.index.upsert(record.clone(), true);
 
+        Ok(record)
+    }
+
+    pub fn create_artifact_and_save(
+        &mut self,
+        req: CreateArtifactRequest,
+    ) -> Result<ArtifactRecord, ArtifactError> {
+        let record = self.create_artifact(req)?;
+        self.save_index()?;
         Ok(record)
     }
 
@@ -143,6 +153,11 @@ impl ArtifactManager {
 
     pub fn select_artifact(&mut self, artifact_id: &str) -> Result<(), ArtifactError> {
         ArtifactSelector::select(&mut self.index, artifact_id)
+    }
+
+    pub fn select_artifact_and_save(&mut self, artifact_id: &str) -> Result<(), ArtifactError> {
+        self.select_artifact(artifact_id)?;
+        self.save_index()
     }
 
     pub fn read_artifact(&self, artifact_id: &str) -> Result<Value, ArtifactError> {
@@ -229,6 +244,10 @@ mod tests {
             value: Value::Image(types::Image::from_cpu(DynamicImage::ImageRgba8(rgba))),
             param_signature: param_signature.into(),
             input_signature: "input-1".into(),
+            params_snapshot: std::collections::BTreeMap::from([(
+                String::from("prompt"),
+                String::from("cat"),
+            )]),
             kind: ArtifactKind::Restorable,
         }
     }

@@ -9,6 +9,7 @@ pub struct ArtifactSinkRequest {
     pub value: Value,
     pub param_signature: String,
     pub input_signature: String,
+    pub params_snapshot: crate::artifact::model::ArtifactParamsSnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +34,7 @@ pub fn persist_if_needed(
         value: request.value,
         param_signature: request.param_signature,
         input_signature: request.input_signature,
+        params_snapshot: request.params_snapshot,
         kind: ArtifactKind::Restorable,
     })?;
 

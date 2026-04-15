@@ -18,7 +18,8 @@ use events::{EngineEvent, EventRecord, ExecutionState};
 use execution::{CookingContextRange, EvaluationFidelity, ExecutionTerminalStatus};
 use executors::image::{GpuExecutor, ImageExecutor};
 use facade::{
-    EngineError, EngineFacade, EngineSubscription, ExecutionRequest, ExecutionRequestResult,
+    EngineError, EngineFacade, EngineResourceConfig, EngineSubscription, ExecutionRequest,
+    ExecutionRequestResult,
 };
 use graph::model::batch::{EditBatchRequest, EditBatchResult};
 use graph::model::events::{GraphChangedEvent, GraphEvent, GraphEventKind};
@@ -26,7 +27,9 @@ use graph::model::state::GraphStateSummary;
 use graph::{Connection, Graph, GraphController, PinRef};
 use node_manager::NodeManager;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use types::{NodeId, Value};
 
 /// Engine：顶层门面与装配根。
@@ -38,6 +41,10 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(gpu: Option<GpuExecutor>) -> Self {
+        Self::new_with_resources(gpu, EngineResourceConfig::default())
+    }
+
+    pub fn new_with_resources(gpu: Option<GpuExecutor>, resources: EngineResourceConfig) -> Self {
         let registry = {
             let mut registry = node_registry::NodeRegistry::new();
             registry.register(node_registry::sources::InventoryNodeSource);
@@ -47,25 +54,44 @@ impl Engine {
             registry.register(node_registry::sources::SaveVideoSource);
             registry.build()
         };
-        Self::from_registry_bundle(registry, gpu)
+        Self::from_registry_bundle_with_resources(registry, gpu, resources)
     }
 
     pub fn from_registry_bundle(
         registry: node_registry::RegistryBundle,
         gpu: Option<GpuExecutor>,
     ) -> Self {
+        Self::from_registry_bundle_with_resources(registry, gpu, EngineResourceConfig::default())
+    }
+
+    pub fn from_registry_bundle_with_resources(
+        registry: node_registry::RegistryBundle,
+        gpu: Option<GpuExecutor>,
+        resources: EngineResourceConfig,
+    ) -> Self {
         let node_manager = Arc::new(registry.node_manager);
         let capability_registry = Arc::new(registry.capability_registry);
         let image_executor = ImageExecutor::new(gpu);
         let cache = Arc::new(CacheManager::new());
+        let artifacts = resources
+            .artifact_root
+            .or_else(default_artifact_root)
+            .map(|root| {
+                let mut manager = crate::artifact::manager::ArtifactManager::new(root);
+                let _ = manager.load_index();
+                manager
+            })
+            .map(|manager| Arc::new(Mutex::new(manager)));
         let scheduler = Arc::new(Mutex::new(scheduler_facade::SchedulerFacade::new(
             runtime::Runtime::new(
                 Arc::clone(&node_manager),
                 Arc::clone(&capability_registry),
                 image_executor,
                 Arc::clone(&cache),
+                artifacts.clone(),
             ),
             cache,
+            artifacts,
         )));
         scheduler
             .lock()
@@ -119,6 +145,49 @@ impl Engine {
             .lock()
             .expect("scheduler lock poisoned")
             .subscribe_engine_events()
+    }
+
+    pub fn query_artifact_history(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Vec<crate::artifact::model::ArtifactRecord>, EngineError> {
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .query_artifact_history(node_id, output_key)
+    }
+
+    pub fn query_selected_artifact(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Option<crate::artifact::model::ArtifactRecord>, EngineError> {
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .query_selected_artifact(node_id, output_key)
+    }
+
+    pub fn select_artifact_version(
+        &mut self,
+        node_id: NodeId,
+        output_key: &str,
+        artifact_id: &str,
+    ) -> Result<(), EngineError> {
+        let record = self
+            .query_artifact_history(node_id, output_key)?
+            .into_iter()
+            .find(|record| record.artifact_id == artifact_id)
+            .ok_or_else(|| EngineError::Artifact {
+                message: format!("artifact not found: {artifact_id}"),
+            })?;
+        self.apply_artifact_params_snapshot(node_id, &record.params_snapshot)?;
+        let graph = self.graph.snapshot();
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .select_artifact_version(&graph, node_id, output_key, artifact_id)
     }
 
     pub fn discard_preview(&mut self) -> bool {
@@ -220,6 +289,89 @@ impl Engine {
             .collect::<Vec<_>>()
             .join("; ")
     }
+
+    fn apply_artifact_params_snapshot(
+        &mut self,
+        node_id: NodeId,
+        params_snapshot: &crate::artifact::model::ArtifactParamsSnapshot,
+    ) -> Result<(), EngineError> {
+        let graph = self.graph.snapshot();
+        let node = graph.nodes.get(&node_id).ok_or_else(|| EngineError::Graph {
+            message: format!("Node {:?} not found", node_id),
+        })?;
+        let param_defs = self
+            .node_manager
+            .get_node_def(&node.type_id)
+            .ok_or_else(|| EngineError::Graph {
+                message: format!("Node type '{}' not registered", node.type_id),
+            })?
+            .params
+            .iter()
+            .map(|param| (param.name.clone(), param.data_type.clone()))
+            .collect::<Vec<_>>();
+
+        for (param_name, data_type) in param_defs {
+            let Some(raw_value) = params_snapshot.get(&param_name) else {
+                continue;
+            };
+            let value = parse_param_snapshot_value(&data_type, raw_value)?;
+            self.set_param(node_id, &param_name, value, false);
+        }
+
+        Ok(())
+    }
+}
+
+fn parse_param_snapshot_value(
+    data_type: &types::DataType,
+    raw: &str,
+) -> Result<Value, EngineError> {
+    if *data_type == types::DataType::string() {
+        return Ok(Value::String(raw.to_owned()));
+    }
+    if *data_type == types::DataType::int() {
+        return raw
+            .parse::<i64>()
+            .map(Value::Int)
+            .map_err(|error| EngineError::Artifact {
+                message: format!("failed to parse int parameter snapshot '{raw}': {error}"),
+            });
+    }
+    if *data_type == types::DataType::float() {
+        return raw
+            .parse::<f32>()
+            .map(Value::Float)
+            .map_err(|error| EngineError::Artifact {
+                message: format!("failed to parse float parameter snapshot '{raw}': {error}"),
+            });
+    }
+    if *data_type == types::DataType::bool() {
+        return raw
+            .parse::<bool>()
+            .map(Value::Bool)
+            .map_err(|error| EngineError::Artifact {
+                message: format!("failed to parse bool parameter snapshot '{raw}': {error}"),
+            });
+    }
+
+    Err(EngineError::Artifact {
+        message: format!(
+            "parameter snapshot restore does not support data type '{}'",
+            data_type
+        ),
+    })
+}
+
+fn default_artifact_root() -> Option<PathBuf> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    let seq = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    Some(
+        std::env::temp_dir().join(format!("nodeimg-engine-artifacts-{unique}-{seq}")),
+    )
 }
 
 impl EngineFacade for Engine {
@@ -364,6 +516,41 @@ impl EngineFacade for Engine {
 
     fn subscribe_engine_events(&self) -> EngineSubscription {
         Engine::subscribe_engine_events(self)
+    }
+
+    fn query_artifact_history(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Vec<crate::artifact::model::ArtifactRecord>, EngineError> {
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .query_artifact_history(node_id, output_key)
+    }
+
+    fn query_selected_artifact(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Option<crate::artifact::model::ArtifactRecord>, EngineError> {
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .query_selected_artifact(node_id, output_key)
+    }
+
+    fn select_artifact_version(
+        &mut self,
+        node_id: NodeId,
+        output_key: &str,
+        artifact_id: &str,
+    ) -> Result<(), EngineError> {
+        let graph = self.graph.snapshot();
+        self.scheduler
+            .lock()
+            .expect("scheduler lock poisoned")
+            .select_artifact_version(&graph, node_id, output_key, artifact_id)
     }
 
     fn query_execution_outputs(

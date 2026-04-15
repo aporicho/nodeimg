@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -5,6 +6,7 @@ use types::{DataType, NodeId};
 
 pub type ArtifactId = String;
 pub type OutputKey = String;
+pub type ArtifactParamsSnapshot = BTreeMap<String, String>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ArtifactKind {
@@ -24,6 +26,7 @@ pub struct ArtifactRecord {
     pub path: PathBuf,
     pub param_signature: String,
     pub input_signature: String,
+    pub params_snapshot: ArtifactParamsSnapshot,
     pub kind: ArtifactKind,
     pub orphaned: bool,
 }

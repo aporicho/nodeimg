@@ -190,6 +190,7 @@ mod tests {
             path,
             param_signature: "param-1".into(),
             input_signature: "input-1".into(),
+            params_snapshot: std::collections::BTreeMap::new(),
             kind: ArtifactKind::Restorable,
             orphaned: false,
         }

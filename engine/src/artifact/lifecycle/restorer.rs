@@ -72,6 +72,7 @@ mod tests {
             path: PathBuf::from("artifacts/42/image/000001.png"),
             param_signature: "param-1".into(),
             input_signature: "input-1".into(),
+            params_snapshot: std::collections::BTreeMap::new(),
             kind: ArtifactKind::Restorable,
             orphaned: false,
         }

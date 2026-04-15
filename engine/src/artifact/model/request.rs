@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use types::{DataType, NodeId, Value};
 
-use super::record::{ArtifactId, ArtifactKind, OutputKey};
+use super::record::{ArtifactId, ArtifactKind, ArtifactParamsSnapshot, OutputKey};
 
 #[derive(Clone, Debug)]
 pub struct CreateArtifactRequest {
@@ -13,6 +13,7 @@ pub struct CreateArtifactRequest {
     pub value: Value,
     pub param_signature: String,
     pub input_signature: String,
+    pub params_snapshot: ArtifactParamsSnapshot,
     pub kind: ArtifactKind,
 }
 

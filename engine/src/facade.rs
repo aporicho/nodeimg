@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::artifact::model::ArtifactRecord;
 use crate::events::{
     EngineEvent, EventSubscription, ExecutionState, PendingExecutionId, QueueReason,
 };
@@ -48,6 +50,9 @@ pub enum EngineError {
     Execution {
         message: String,
     },
+    Artifact {
+        message: String,
+    },
     RunInFlight,
     CapabilityUnavailable {
         cap_id: String,
@@ -63,7 +68,8 @@ impl fmt::Display for EngineError {
         match self {
             EngineError::Graph { message }
             | EngineError::Schema { message }
-            | EngineError::Execution { message } => write!(f, "{message}"),
+            | EngineError::Execution { message }
+            | EngineError::Artifact { message } => write!(f, "{message}"),
             EngineError::RunInFlight => write!(f, "another full execution is already in flight"),
             EngineError::CapabilityUnavailable { cap_id } => {
                 write!(f, "no executor registered for capability '{cap_id}'")
@@ -103,9 +109,38 @@ pub trait EngineFacade {
     fn query_state(&self) -> ExecutionState;
     fn cancel_execution(&self, execution_id: ExecutionId) -> Result<(), EngineError>;
     fn subscribe_engine_events(&self) -> EngineSubscription;
+    fn query_artifact_history(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Vec<ArtifactRecord>, EngineError>;
+    fn query_selected_artifact(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Option<ArtifactRecord>, EngineError>;
+    fn select_artifact_version(
+        &mut self,
+        node_id: NodeId,
+        output_key: &str,
+        artifact_id: &str,
+    ) -> Result<(), EngineError>;
     fn query_execution_outputs(
         &self,
         execution_id: ExecutionId,
         node_id: NodeId,
     ) -> Result<HashMap<String, Value>, EngineError>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineResourceConfig {
+    pub artifact_root: Option<PathBuf>,
+}
+
+impl Default for EngineResourceConfig {
+    fn default() -> Self {
+        Self {
+            artifact_root: None,
+        }
+    }
 }

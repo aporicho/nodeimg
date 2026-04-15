@@ -60,6 +60,7 @@ mod tests {
             path: PathBuf::from(format!("artifacts/42/image/{version:06}.png")),
             param_signature: format!("param-{version}"),
             input_signature: format!("input-{version}"),
+            params_snapshot: std::collections::BTreeMap::new(),
             kind: ArtifactKind::Restorable,
             orphaned: false,
         }

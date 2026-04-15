@@ -12,7 +12,8 @@ use crate::executors::remote_video::{
 };
 use crate::executors::video::SaveVideoExecutor;
 use crate::node_manager::{
-    ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity, TriggerPolicy,
+    ArtifactPolicy, ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef,
+    Purity, TriggerPolicy,
 };
 use types::Value;
 
@@ -77,6 +78,7 @@ impl NodeSource for GenericImageGenerationSource {
                 realtime_capable: false,
                 execution: ExecutionPolicy {
                     timeout_ms: Some(180_000),
+                    artifact_policy: Some(ArtifactPolicy::Persist),
                     trigger_policy: TriggerPolicy::ManualOnly,
                     ..ExecutionPolicy::default()
                 },
@@ -357,6 +359,7 @@ fn build_api_video_generation_registrations(
             realtime_capable: false,
             execution: ExecutionPolicy {
                 timeout_ms: Some(300_000),
+                artifact_policy: Some(ArtifactPolicy::None),
                 trigger_policy: TriggerPolicy::ManualOnly,
                 ..ExecutionPolicy::default()
             },

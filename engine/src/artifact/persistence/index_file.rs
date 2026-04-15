@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,6 +38,8 @@ pub struct ArtifactRecordFile {
     pub path: String,
     pub param_signature: String,
     pub input_signature: String,
+    #[serde(default)]
+    pub params_snapshot: BTreeMap<String, String>,
     pub kind: ArtifactHistoryFile,
     pub orphaned: bool,
 }
@@ -78,6 +82,10 @@ mod tests {
                     path: "artifacts/42/image/000001.png".into(),
                     param_signature: "sha256:param".into(),
                     input_signature: "sha256:input".into(),
+                    params_snapshot: BTreeMap::from([(
+                        String::from("prompt"),
+                        String::from("cat"),
+                    )]),
                     kind: ArtifactHistoryFile::Restorable,
                     orphaned: false,
                 }],

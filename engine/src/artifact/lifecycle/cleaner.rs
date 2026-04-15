@@ -177,6 +177,7 @@ mod tests {
             path: store.artifact_path(NodeId(42), "image", version, "png"),
             param_signature: format!("param-{version}"),
             input_signature: format!("input-{version}"),
+            params_snapshot: std::collections::BTreeMap::new(),
             kind: ArtifactKind::Restorable,
             orphaned: false,
         }

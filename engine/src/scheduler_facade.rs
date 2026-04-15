@@ -1,3 +1,5 @@
+use crate::artifact::manager::ArtifactManager;
+use crate::artifact::model::ArtifactRecord;
 use crate::cache::manager::CacheManager;
 use crate::cache::model::ExecSignature;
 use crate::events::{EngineEvent, EventSubscription, ExecutionState, PendingExecutionId};
@@ -27,6 +29,7 @@ enum DirtyReason {
     ParamChanged,
     UpstreamChanged,
     StructureChanged,
+    ArtifactSelectionChanged,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -94,9 +97,9 @@ fn mark_node_and_downstream(
     for downstream_node in downstream(graph, node_id) {
         let downstream_reason = match reason {
             DirtyReason::ParamChanged => DirtyReason::UpstreamChanged,
-            DirtyReason::StructureChanged | DirtyReason::UpstreamChanged => {
-                DirtyReason::UpstreamChanged
-            }
+            DirtyReason::StructureChanged
+            | DirtyReason::UpstreamChanged
+            | DirtyReason::ArtifactSelectionChanged => DirtyReason::UpstreamChanged,
         };
         dirty_state.mark(downstream_node, downstream_reason);
     }
@@ -105,6 +108,7 @@ fn mark_node_and_downstream(
 pub struct SchedulerFacade {
     runtime: Runtime,
     cache: Arc<CacheManager>,
+    artifacts: Option<Arc<Mutex<ArtifactManager>>>,
     cooking_range: CookingContextRange,
     dirty: Arc<Mutex<DirtyState>>,
     committed_graph: Arc<Mutex<Option<Arc<graph::Graph>>>>,
@@ -150,8 +154,10 @@ mod tests {
                 std::sync::Arc::new(crate::capability::CapabilityRegistry::new()),
                 crate::executors::image::ImageExecutor::new(None),
                 std::sync::Arc::clone(&cache),
+                None,
             ),
             cache,
+            artifacts: None,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
             committed_graph: Arc::new(Mutex::new(None)),
@@ -208,8 +214,10 @@ mod tests {
                 std::sync::Arc::new(crate::capability::CapabilityRegistry::new()),
                 crate::executors::image::ImageExecutor::new(None),
                 std::sync::Arc::clone(&cache),
+                None,
             ),
             cache,
+            artifacts: None,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
             committed_graph: Arc::new(Mutex::new(None)),
@@ -247,8 +255,10 @@ mod tests {
                 std::sync::Arc::new(crate::capability::CapabilityRegistry::new()),
                 crate::executors::image::ImageExecutor::new(None),
                 std::sync::Arc::clone(&cache),
+                None,
             ),
             std::sync::Arc::clone(&cache),
+            None,
         );
 
         let graph = Graph::new();
@@ -267,10 +277,15 @@ mod tests {
 }
 
 impl SchedulerFacade {
-    pub fn new(runtime: Runtime, cache: Arc<CacheManager>) -> Self {
+    pub fn new(
+        runtime: Runtime,
+        cache: Arc<CacheManager>,
+        artifacts: Option<Arc<Mutex<ArtifactManager>>>,
+    ) -> Self {
         Self {
             runtime,
             cache,
+            artifacts,
             cooking_range: CookingContextRange::default(),
             dirty: Arc::new(Mutex::new(DirtyState::default())),
             committed_graph: Arc::new(Mutex::new(None)),
@@ -313,6 +328,100 @@ impl SchedulerFacade {
             let affected_nodes = affected.dirty_nodes.iter().copied().collect::<Vec<_>>();
             self.cache.invalidate_subgraph(&affected_nodes);
         }
+    }
+
+    pub fn query_artifact_history(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Vec<ArtifactRecord>, EngineError> {
+        let Some(artifacts) = self.artifacts.as_ref() else {
+            return Err(EngineError::Artifact {
+                message: "artifact history is not configured".into(),
+            });
+        };
+
+        Ok(artifacts
+            .lock()
+            .expect("artifact manager lock poisoned")
+            .list_artifacts(node_id, output_key))
+    }
+
+    pub fn query_selected_artifact(
+        &self,
+        node_id: NodeId,
+        output_key: &str,
+    ) -> Result<Option<ArtifactRecord>, EngineError> {
+        let Some(artifacts) = self.artifacts.as_ref() else {
+            return Err(EngineError::Artifact {
+                message: "artifact history is not configured".into(),
+            });
+        };
+        let artifacts = artifacts.lock().expect("artifact manager lock poisoned");
+        match artifacts.get_selected_artifact(node_id, output_key) {
+            Ok(record) => Ok(Some(record.clone())),
+            Err(crate::artifact::model::ArtifactError::SelectedArtifactNotFound { .. }) => Ok(None),
+            Err(error) => Err(EngineError::Artifact {
+                message: error.to_string(),
+            }),
+        }
+    }
+
+    pub fn select_artifact_version(
+        &mut self,
+        graph: &graph::Graph,
+        node_id: NodeId,
+        output_key: &str,
+        artifact_id: &str,
+    ) -> Result<(), EngineError> {
+        let Some(artifacts) = self.artifacts.as_ref() else {
+            return Err(EngineError::Artifact {
+                message: "artifact history is not configured".into(),
+            });
+        };
+
+        {
+            let mut manager = artifacts.lock().expect("artifact manager lock poisoned");
+            let record = manager.get_artifact(artifact_id).cloned().ok_or_else(|| {
+                EngineError::Artifact {
+                    message: format!("artifact not found: {artifact_id}"),
+                }
+            })?;
+            if record.node_id != node_id || record.output_key != output_key {
+                return Err(EngineError::Artifact {
+                    message: format!(
+                        "artifact '{artifact_id}' does not belong to node {:?} output '{output_key}'",
+                        node_id
+                    ),
+                });
+            }
+            manager
+                .select_artifact_and_save(artifact_id)
+                .map_err(|error| EngineError::Artifact {
+                    message: error.to_string(),
+                })?;
+        }
+
+        *self
+            .committed_graph
+            .lock()
+            .expect("committed graph lock poisoned") = Some(Arc::new(graph.clone()));
+
+        let mut affected_nodes = vec![node_id];
+        affected_nodes.extend(downstream(graph, node_id));
+        {
+            let mut dirty = self.dirty.lock().expect("dirty state lock poisoned");
+            for affected in &affected_nodes {
+                let reason = if *affected == node_id {
+                    DirtyReason::ArtifactSelectionChanged
+                } else {
+                    DirtyReason::UpstreamChanged
+                };
+                dirty.mark(*affected, reason);
+            }
+        }
+        self.cache.invalidate_subgraph(&affected_nodes);
+        Ok(())
     }
 
     pub fn set_cooking_range(&mut self, range: CookingContextRange) {
