@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::cache::model::{ExecSignature, GenerationId};
+use crate::capability::CapabilityId;
 use crate::executors::image::ExecContext;
-use crate::node_manager::NodeDef;
+use crate::graph::model::subgraph::ExecuteTarget;
+use crate::node_manager::{ArtifactPolicy, NodeDef};
 use types::{NodeId, Value};
 
 pub type RunId = u64;
@@ -243,6 +245,45 @@ pub enum ExecutorProgressEvent {
         exec_signature: ExecSignature,
         fidelity: EvaluationFidelity,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct ExecutionPlan {
+    pub target: ExecuteTarget,
+    pub mode: ExecutionMode,
+    pub subtasks: Vec<PlanSubtask>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlanSubtask {
+    pub cooking_context: CookingContext,
+    pub order: Vec<PlannedNode>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlannedNode {
+    pub node_id: NodeId,
+    pub type_id: String,
+    pub params: HashMap<String, Value>,
+    pub inputs: HashMap<String, PinSource>,
+    pub exec_signature: ExecSignature,
+    pub outputs: Vec<PlannedOutput>,
+    pub requires: Vec<CapabilityId>,
+    pub timeout_ms: Option<u64>,
+    pub realtime_capable: bool,
+    pub artifact_policy: ArtifactPolicy,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlannedOutput {
+    pub name: String,
+    pub optional: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum PinSource {
+    UpstreamOutput { node_id: NodeId, output_pin: String },
+    Value(Value),
 }
 
 #[derive(Clone, Debug)]
