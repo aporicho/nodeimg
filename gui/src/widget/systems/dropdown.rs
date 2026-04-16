@@ -1,5 +1,4 @@
 use crate::context::{OverlayPlacement, OverlayRequest};
-use crate::interaction::InteractionState;
 use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
@@ -8,7 +7,7 @@ use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
 use crate::widget::frameworks::group::GroupProps;
 use crate::widget::frameworks::list_view::ListViewProps;
-use crate::widget::systems::PopupSystem;
+use crate::widget::systems::{OverlaySystemCx, PopupSystem};
 use std::borrow::Cow;
 
 struct OpenDropdown {
@@ -38,57 +37,50 @@ impl DropdownSystem {
 
     pub fn handle_event(
         &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
-        popup_system: &mut PopupSystem,
+        mut cx: OverlaySystemCx<'_>,
         event: &AppEvent,
     ) -> FrameworkOutput {
-        if !popup_system.is_open() {
+        if !cx.popup_open() {
             self.open = None;
         }
 
         match *event {
             AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
-                if let Some((dropdown_id, index)) = overlay_option_hit(tree, x, y) {
-                    popup_system.close(tree, interaction);
+                if let Some((dropdown_id, index)) = overlay_option_hit(cx.tree(), x, y) {
+                    cx.close_overlay();
                     self.open = None;
                     return selection_output(dropdown_id, index);
                 }
 
-                if let Some(dropdown_id) = dropdown_field_hit(tree, x, y) {
-                    self.toggle_dropdown(tree, interaction, popup_system, &dropdown_id);
+                if let Some(dropdown_id) = dropdown_field_hit(cx.tree(), x, y) {
+                    self.toggle_dropdown(&mut cx, &dropdown_id);
                     return FrameworkOutput::consumed();
                 }
                 FrameworkOutput::default()
             }
-            AppEvent::KeyPress { key, .. } => self.handle_key(tree, interaction, popup_system, key),
+            AppEvent::KeyPress { key, .. } => self.handle_key(&mut cx, key),
             AppEvent::Unfocused => {
                 self.open = None;
-                popup_system.close_no_focus_restore();
+                cx.close_overlay_no_focus_restore();
                 FrameworkOutput::default()
             }
             _ => FrameworkOutput::default(),
         }
     }
 
-    fn handle_key(
-        &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
-        popup_system: &mut PopupSystem,
-        key: Key,
-    ) -> FrameworkOutput {
+    fn handle_key(&mut self, cx: &mut OverlaySystemCx<'_>, key: Key) -> FrameworkOutput {
         if self.open.is_none() {
-            let Some(dropdown_id) = focused_dropdown_id(tree, interaction.focused()) else {
+            let Some(dropdown_id) = focused_dropdown_id(cx.tree(), cx.focused_node()) else {
                 return FrameworkOutput::default();
             };
-            let Some(props) = dropdown_props(tree, &dropdown_id) else {
+            let Some(props) = dropdown_props(cx.tree(), &dropdown_id) else {
                 return FrameworkOutput::default();
             };
             let highlighted = props.selected.min(props.options.len().saturating_sub(1));
             match key {
                 Key::Enter | Key::Space | Key::Down => {
-                    popup_system.open(tree, build_request(&dropdown_id, highlighted, props));
+                    let request = build_request(&dropdown_id, highlighted, props);
+                    cx.open_overlay(request);
                     self.open = Some(OpenDropdown {
                         id: dropdown_id,
                         highlighted,
@@ -103,7 +95,7 @@ impl DropdownSystem {
         let Some(open) = &mut self.open else {
             return FrameworkOutput::default();
         };
-        let Some(props) = dropdown_props(tree, &open.id) else {
+        let Some(props) = dropdown_props(cx.tree(), &open.id) else {
             return FrameworkOutput::default();
         };
 
@@ -111,21 +103,23 @@ impl DropdownSystem {
             Key::Up => {
                 if open.highlighted > 0 {
                     open.highlighted -= 1;
-                    reopen_popup(tree, popup_system, &open.id, open.highlighted, props);
+                    let request = build_request(&open.id, open.highlighted, props);
+                    cx.open_overlay(request);
                 }
                 FrameworkOutput::consumed()
             }
             Key::Down => {
                 if open.highlighted + 1 < props.options.len() {
                     open.highlighted += 1;
-                    reopen_popup(tree, popup_system, &open.id, open.highlighted, props);
+                    let request = build_request(&open.id, open.highlighted, props);
+                    cx.open_overlay(request);
                 }
                 FrameworkOutput::consumed()
             }
             Key::Enter | Key::Space => {
                 let selected = open.highlighted;
                 let id = open.id.clone();
-                popup_system.close(tree, interaction);
+                cx.close_overlay();
                 self.open = None;
                 selection_output(id, selected)
             }
@@ -133,28 +127,23 @@ impl DropdownSystem {
         }
     }
 
-    fn toggle_dropdown(
-        &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
-        popup_system: &mut PopupSystem,
-        dropdown_id: &str,
-    ) {
+    fn toggle_dropdown(&mut self, cx: &mut OverlaySystemCx<'_>, dropdown_id: &str) {
         if self
             .open
             .as_ref()
             .is_some_and(|open| open.id == dropdown_id)
         {
-            popup_system.close(tree, interaction);
+            cx.close_overlay();
             self.open = None;
             return;
         }
 
-        let Some(props) = dropdown_props(tree, dropdown_id) else {
+        let Some(props) = dropdown_props(cx.tree(), dropdown_id) else {
             return;
         };
         let highlighted = props.selected.min(props.options.len().saturating_sub(1));
-        popup_system.open(tree, build_request(dropdown_id, highlighted, props));
+        let request = build_request(dropdown_id, highlighted, props);
+        cx.open_overlay(request);
         self.open = Some(OpenDropdown {
             id: dropdown_id.to_string(),
             highlighted,
@@ -166,16 +155,6 @@ impl Default for DropdownSystem {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn reopen_popup(
-    tree: &Tree,
-    popup_system: &mut PopupSystem,
-    dropdown_id: &str,
-    highlighted: usize,
-    props: &DropdownProps,
-) {
-    popup_system.open(tree, build_request(dropdown_id, highlighted, props));
 }
 
 fn selection_output(id: String, selected: usize) -> FrameworkOutput {

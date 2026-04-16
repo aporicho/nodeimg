@@ -1,5 +1,4 @@
 use crate::context::ImeRequest;
-use crate::interaction::InteractionState;
 use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent};
 use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
@@ -8,6 +7,7 @@ use crate::tree::{hit_test, NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::{format_number, NumberInputProps};
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::state::{TextFieldKind, TextInputStore};
+use crate::widget::systems::SystemCx;
 
 pub struct TextInputSystem {
     store: TextInputStore,
@@ -36,16 +36,11 @@ impl TextInputSystem {
         self.sync_sessions(tree, focused, captured);
     }
 
-    pub fn handle_event(
-        &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
-        event: &AppEvent,
-    ) -> FrameworkOutput {
+    pub fn handle_event(&mut self, mut cx: SystemCx<'_>, event: &AppEvent) -> FrameworkOutput {
         let outcome = match event {
             AppEvent::MousePress { x, y, button } if *button == MouseButton::Left => {
                 self.active_drag_text_input = None;
-                if let Some(widget_id) = self.text_input_id_at(tree, *x, *y) {
+                if let Some(widget_id) = self.text_input_id_at(cx.tree(), *x, *y) {
                     if let Some(runtime) = self.store.runtime_mut(&widget_id) {
                         runtime.clear_preedit();
                         runtime.set_caret_from_x(*x);
@@ -58,7 +53,7 @@ impl TextInputSystem {
             AppEvent::MouseMove { x, .. } => {
                 if let Some(widget_id) = self.active_drag_text_input.clone() {
                     if self
-                        .captured_widget_id(tree, interaction.captured())
+                        .captured_widget_id(cx.tree(), cx.captured_node())
                         .as_deref()
                         == Some(widget_id.as_str())
                     {
@@ -76,13 +71,13 @@ impl TextInputSystem {
                 FrameworkOutput::default().with_consumed(consumed)
             }
             AppEvent::ImePreedit { text, caret } => {
-                self.handle_ime_preedit(tree, interaction.focused(), text, *caret)
+                self.handle_ime_preedit(cx.tree(), cx.focused_node(), text, *caret)
             }
             AppEvent::TextInput { text } => {
-                self.commit_text_input(tree, interaction.focused(), text)
+                self.commit_text_input(cx.tree(), cx.focused_node(), text)
             }
             AppEvent::KeyPress { key, modifiers } => {
-                self.handle_key_press(tree, interaction, *key, *modifiers)
+                self.handle_key_press(&mut cx, *key, *modifiers)
             }
             AppEvent::Unfocused => {
                 self.active_drag_text_input = None;
@@ -91,7 +86,7 @@ impl TextInputSystem {
             _ => FrameworkOutput::default(),
         };
 
-        self.sync_sessions(tree, interaction.focused(), interaction.captured());
+        self.sync_sessions(cx.tree(), cx.focused_node(), cx.captured_node());
         outcome
     }
 
@@ -175,13 +170,12 @@ impl TextInputSystem {
 
     fn handle_key_press(
         &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
+        cx: &mut SystemCx<'_>,
         key: Key,
         modifiers: Modifiers,
     ) -> FrameworkOutput {
         if key == Key::Escape {
-            if let Some(widget_id) = self.focused_widget_id(tree, interaction.focused()) {
+            if let Some(widget_id) = self.focused_widget_id(cx.tree(), cx.focused_node()) {
                 if let Some(runtime) = self.store.runtime_mut(&widget_id) {
                     if runtime.has_preedit() {
                         runtime.clear_preedit();
@@ -192,12 +186,12 @@ impl TextInputSystem {
                     }
                 }
             }
-            interaction.blur();
+            cx.blur();
             self.active_drag_text_input = None;
             return FrameworkOutput::consumed();
         }
 
-        let Some(widget_id) = self.focused_widget_id(tree, interaction.focused()) else {
+        let Some(widget_id) = self.focused_widget_id(cx.tree(), cx.focused_node()) else {
             return FrameworkOutput::default();
         };
         let Some(runtime) = self.store.runtime_mut(&widget_id) else {
@@ -216,11 +210,13 @@ impl TextInputSystem {
         match key {
             Key::Backspace => {
                 runtime.editor_mut().backspace();
-                self.output_for_editor(tree, &widget_id).with_consumed(true)
+                self.output_for_editor(cx.tree(), &widget_id)
+                    .with_consumed(true)
             }
             Key::Delete => {
                 runtime.editor_mut().delete();
-                self.output_for_editor(tree, &widget_id).with_consumed(true)
+                self.output_for_editor(cx.tree(), &widget_id)
+                    .with_consumed(true)
             }
             Key::Left => {
                 if modifiers.shift {
@@ -255,9 +251,9 @@ impl TextInputSystem {
                 }
                 FrameworkOutput::consumed()
             }
-            Key::Up => self.step_number_input(tree, &widget_id, 1.0),
-            Key::Down => self.step_number_input(tree, &widget_id, -1.0),
-            Key::Enter => self.finalize_number_input(tree, &widget_id),
+            Key::Up => self.step_number_input(cx.tree(), &widget_id, 1.0),
+            Key::Down => self.step_number_input(cx.tree(), &widget_id, -1.0),
+            Key::Enter => self.finalize_number_input(cx.tree(), &widget_id),
             Key::Char('A') if modifiers.ctrl || modifiers.meta => {
                 runtime.editor_mut().select_all();
                 FrameworkOutput::consumed()
@@ -277,7 +273,7 @@ impl TextInputSystem {
                     .cut()
                     .map(|text| vec![PlatformEffect::WriteClipboard(text)])
                     .unwrap_or_default();
-                let mut output = self.output_for_editor(tree, &widget_id);
+                let mut output = self.output_for_editor(cx.tree(), &widget_id);
                 output.effects = effects;
                 output.with_consumed(true)
             }

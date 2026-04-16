@@ -10,7 +10,9 @@ use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, NodeKind, Tree};
 use crate::widget::props::WidgetBuildCx;
-use crate::widget::systems::{DropdownSystem, PopupSystem, TextInputSystem};
+use crate::widget::systems::{
+    DropdownSystem, OverlaySystemCx, PopupSystem, SystemCx, TextInputSystem,
+};
 
 pub use crate::output::{
     FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
@@ -112,7 +114,8 @@ impl Context {
     }
 
     pub fn close_overlay(&mut self) {
-        self.popup_system.close(&self.tree, &mut self.interaction);
+        let cx = SystemCx::new(&self.tree, &mut self.interaction);
+        self.popup_system.close(cx);
     }
 
     pub fn overlay_open(&self) -> bool {
@@ -235,22 +238,18 @@ impl Context {
     }
 
     pub(crate) fn handle_popup_event(&mut self, event: &AppEvent) -> bool {
-        self.popup_system
-            .handle_event(&self.tree, &mut self.interaction, event)
+        let cx = SystemCx::new(&self.tree, &mut self.interaction);
+        self.popup_system.handle_event(cx, event)
     }
 
     pub(crate) fn handle_dropdown_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        self.dropdown_system.handle_event(
-            &self.tree,
-            &mut self.interaction,
-            &mut self.popup_system,
-            event,
-        )
+        let cx = OverlaySystemCx::new(&self.tree, &mut self.interaction, &mut self.popup_system);
+        self.dropdown_system.handle_event(cx, event)
     }
 
     pub(crate) fn handle_text_input_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        self.text_input_system
-            .handle_event(&self.tree, &mut self.interaction, event)
+        let cx = SystemCx::new(&self.tree, &mut self.interaction);
+        self.text_input_system.handle_event(cx, event)
     }
 
     pub(crate) fn handle_gesture_event(&mut self, event: &AppEvent) -> FrameworkOutput {

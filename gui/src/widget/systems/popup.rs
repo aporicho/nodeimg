@@ -1,7 +1,7 @@
-use crate::interaction::InteractionState;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::layout::{BoxStyle, Position, Size};
 use crate::tree::{Desc, Tree};
+use crate::widget::systems::SystemCx;
 use std::borrow::Cow;
 
 const OVERLAY_ROOT_ID: &str = "__overlay_root";
@@ -55,19 +55,22 @@ impl PopupSystem {
         });
     }
 
-    pub fn close(&mut self, tree: &Tree, interaction: &mut InteractionState) {
+    pub fn close(&mut self, mut cx: SystemCx<'_>) {
         let Some(state) = self.current.take() else {
             return;
         };
-        if state.request.restore_focus_to_anchor {
+        let restore_node_id = if state.request.restore_focus_to_anchor {
             let restore_id = state
                 .request
                 .restore_focus_id
                 .as_deref()
                 .unwrap_or(&state.request.anchor_id);
-            if let Some(node_id) = find_node_id_by_str(tree, restore_id) {
-                interaction.focus(node_id);
-            }
+            find_node_id_by_str(cx.tree(), restore_id)
+        } else {
+            None
+        };
+        if let Some(node_id) = restore_node_id {
+            cx.focus(node_id);
         }
     }
 
@@ -97,28 +100,25 @@ impl PopupSystem {
         }
     }
 
-    pub fn handle_event(
-        &mut self,
-        tree: &Tree,
-        interaction: &mut InteractionState,
-        event: &AppEvent,
-    ) -> bool {
+    pub fn handle_event(&mut self, cx: SystemCx<'_>, event: &AppEvent) -> bool {
         let Some(state) = &self.current else {
             return false;
         };
+        let dismiss_on_escape = state.request.dismiss_on_escape;
+        let dismiss_on_outside_click = state.request.dismiss_on_outside_click;
 
         match *event {
             AppEvent::KeyPress {
                 key: crate::shell::Key::Escape,
                 ..
-            } if state.request.dismiss_on_escape => {
-                self.close(tree, interaction);
+            } if dismiss_on_escape => {
+                self.close(cx);
                 true
             }
             AppEvent::MousePress { x, y, button }
-                if button == MouseButton::Left && state.request.dismiss_on_outside_click =>
+                if button == MouseButton::Left && dismiss_on_outside_click =>
             {
-                if !self.hit_overlay(tree, x, y) {
+                if !self.hit_overlay(cx.tree(), x, y) {
                     self.close_no_focus_restore();
                 }
                 false
