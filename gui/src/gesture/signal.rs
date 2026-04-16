@@ -1,22 +1,10 @@
-use super::resize_edge::ResizeEdge;
+use crate::widget::resize_edge::ResizeEdge;
 
-/// 手势识别后产出的动作。
+/// 手势识别后产出的内部信号。
 #[derive(Debug, Clone)]
-pub enum Action {
+pub(crate) enum GestureSignal {
     Click(String),
     DoubleClick(String),
-    TextChange {
-        id: String,
-        value: String,
-    },
-    NumberChange {
-        id: String,
-        value: f32,
-    },
-    SelectChange {
-        id: String,
-        selected: usize,
-    },
     DragStart {
         id: String,
         x: f32,

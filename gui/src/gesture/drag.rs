@@ -1,5 +1,5 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
-use crate::widget::action::Action;
+use super::signal::GestureSignal;
 
 const MOVE_THRESHOLD: f32 = 3.0;
 
@@ -62,22 +62,22 @@ impl GestureRecognizer for DragRecognizer {
             GestureDisposition::Rejected
         }
     }
-    fn accept(&mut self) -> Action {
+    fn accept(&mut self) -> GestureSignal {
         if self.done {
-            Action::DragEnd {
+            GestureSignal::DragEnd {
                 id: self.target_id.clone(),
                 x: self.current_x,
                 y: self.current_y,
             }
         } else if self.started {
-            Action::DragMove {
+            GestureSignal::DragMove {
                 id: self.target_id.clone(),
                 x: self.current_x,
                 y: self.current_y,
             }
         } else {
             self.started = true;
-            Action::DragStart {
+            GestureSignal::DragStart {
                 id: self.target_id.clone(),
                 x: self.current_x,
                 y: self.current_y,

@@ -80,7 +80,7 @@ impl GalleryState {
                 self.quality_mode = QualityMode::Balanced;
                 true
             }
-            id if id == format!("{ADVANCED_SECTION_ID}::header") => {
+            ADVANCED_SECTION_ID => {
                 self.advanced_open = !self.advanced_open;
                 true
             }

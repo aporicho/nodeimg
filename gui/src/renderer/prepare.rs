@@ -379,29 +379,17 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::test_support::try_test_device;
     use crate::renderer::{Color, Point, Rect, RectStyle, TextStyle};
 
-    fn test_curve_pipeline() -> CurvePipeline {
-        let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: None,
-            force_fallback_adapter: true,
-        }))
-        .expect("failed to create test adapter");
-        let (device, _queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("prepare-test-device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        }))
-        .expect("failed to create test device");
+    fn test_curve_pipeline() -> Option<CurvePipeline> {
+        let (device, _queue) = try_test_device("prepare-test-device")?;
 
-        CurvePipeline::new(
+        Some(CurvePipeline::new(
             &device,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             wgpu::MultisampleState::default(),
-        )
+        ))
     }
 
     fn rect_command(x: f32) -> DrawCommand {
@@ -432,7 +420,9 @@ mod tests {
 
     #[test]
     fn prepare_frame_preserves_text_indices_in_order() {
-        let mut curve_pipeline = test_curve_pipeline();
+        let Some(mut curve_pipeline) = test_curve_pipeline() else {
+            return;
+        };
         let frame = prepare_frame(
             &[
                 rect_command(0.0),
@@ -452,4 +442,3 @@ mod tests {
         assert_eq!(frame.text_requests[1].text, "second");
     }
 }
-

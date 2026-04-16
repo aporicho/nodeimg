@@ -1,11 +1,11 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
-use crate::widget::action::Action;
+use super::signal::GestureSignal;
 
 pub struct GestureArena {
     members: Vec<Box<dyn GestureRecognizer>>,
     target_id: String,
     resolved: bool,
-    winner_action: Option<Action>,
+    winner_signal: Option<GestureSignal>,
 }
 
 impl GestureArena {
@@ -14,7 +14,7 @@ impl GestureArena {
             members: Vec::new(),
             target_id,
             resolved: false,
-            winner_action: None,
+            winner_signal: None,
         }
     }
 
@@ -28,17 +28,17 @@ impl GestureArena {
         self.resolved
     }
 
-    pub fn add(&mut self, recognizer: Box<dyn GestureRecognizer>) {
+    pub(crate) fn add(&mut self, recognizer: Box<dyn GestureRecognizer>) {
         self.members.push(recognizer);
     }
 
-    pub fn pointer_move(&mut self, x: f32, y: f32) -> Option<Action> {
+    pub(crate) fn pointer_move(&mut self, x: f32, y: f32) -> Option<GestureSignal> {
         if self.resolved {
             return None;
         }
 
-        // 已有赢家持续产出 Action
-        if self.winner_action.is_some() {
+        // 已有赢家持续产出 GestureSignal
+        if self.winner_signal.is_some() {
             if let Some(member) = self.members.first_mut() {
                 let disp = member.on_pointer_move(x, y);
                 if disp == GestureDisposition::Accepted {
@@ -72,17 +72,17 @@ impl GestureArena {
         None
     }
 
-    pub fn pointer_up(&mut self, x: f32, y: f32) -> Option<Action> {
+    pub(crate) fn pointer_up(&mut self, x: f32, y: f32) -> Option<GestureSignal> {
         if self.resolved {
             return None;
         }
 
-        if self.winner_action.is_some() {
+        if self.winner_signal.is_some() {
             if let Some(member) = self.members.first_mut() {
                 member.on_pointer_up(x, y);
-                let action = member.accept();
+                let signal = member.accept();
                 self.resolved = true;
-                return Some(action);
+                return Some(signal);
             }
             return None;
         }
@@ -106,14 +106,14 @@ impl GestureArena {
         }
 
         if let Some(idx) = accepted_idx {
-            let action = self.resolve_winner(idx);
+            let signal = self.resolve_winner(idx);
             self.resolved = true;
-            return Some(action);
+            return Some(signal);
         }
 
-        if let Some(action) = self.try_auto_resolve() {
+        if let Some(signal) = self.try_auto_resolve() {
             self.resolved = true;
-            return Some(action);
+            return Some(signal);
         }
 
         if self.members.is_empty() {
@@ -122,7 +122,7 @@ impl GestureArena {
         None
     }
 
-    fn resolve_winner(&mut self, winner_idx: usize) -> Action {
+    fn resolve_winner(&mut self, winner_idx: usize) -> GestureSignal {
         for (i, member) in self.members.iter_mut().enumerate() {
             if i != winner_idx {
                 member.reject();
@@ -131,16 +131,16 @@ impl GestureArena {
         let winner = self.members.swap_remove(winner_idx);
         self.members.clear();
         self.members.push(winner);
-        let action = self.members[0].accept();
-        self.winner_action = Some(action.clone());
-        action
+        let signal = self.members[0].accept();
+        self.winner_signal = Some(signal.clone());
+        signal
     }
 
-    fn try_auto_resolve(&mut self) -> Option<Action> {
+    fn try_auto_resolve(&mut self) -> Option<GestureSignal> {
         if self.members.len() == 1 {
-            let action = self.members[0].accept();
-            self.winner_action = Some(action.clone());
-            Some(action)
+            let signal = self.members[0].accept();
+            self.winner_signal = Some(signal.clone());
+            Some(signal)
         } else {
             None
         }
@@ -164,8 +164,8 @@ mod tests {
         arena.add(Box::new(tap));
 
         assert!(arena.pointer_move(10.5, 10.5).is_none());
-        let action = arena.pointer_up(10.5, 10.5);
-        assert!(matches!(action, Some(Action::Click(_))));
+        let signal = arena.pointer_up(10.5, 10.5);
+        assert!(matches!(signal, Some(GestureSignal::Click(_))));
         assert!(arena.pointer_up(10.5, 10.5).is_none());
     }
 }

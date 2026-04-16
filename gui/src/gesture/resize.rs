@@ -1,6 +1,6 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
+use super::signal::GestureSignal;
 use crate::renderer::Rect;
-use crate::widget::action::Action;
 use crate::widget::resize_edge::ResizeEdge;
 
 const EDGE_THRESHOLD: f32 = 6.0;
@@ -97,19 +97,19 @@ impl GestureRecognizer for ResizeRecognizer {
         }
     }
 
-    fn accept(&mut self) -> Action {
+    fn accept(&mut self) -> GestureSignal {
         let edge = self
             .edge
             .expect("accept called before on_pointer_down succeeded");
         if self.done {
-            Action::ResizeEnd {
+            GestureSignal::ResizeEnd {
                 id: self.target_id.clone(),
                 edge,
                 x: self.current_x,
                 y: self.current_y,
             }
         } else if self.started {
-            Action::ResizeMove {
+            GestureSignal::ResizeMove {
                 id: self.target_id.clone(),
                 edge,
                 x: self.current_x,
@@ -117,7 +117,7 @@ impl GestureRecognizer for ResizeRecognizer {
             }
         } else {
             self.started = true;
-            Action::ResizeStart {
+            GestureSignal::ResizeStart {
                 id: self.target_id.clone(),
                 edge,
                 x: self.current_x,
@@ -207,12 +207,12 @@ mod tests {
     }
 
     #[test]
-    fn resize_start_action() {
+    fn resize_start_signal() {
         let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         match rec.accept() {
-            Action::ResizeStart { id, edge, .. } => {
+            GestureSignal::ResizeStart { id, edge, .. } => {
                 assert_eq!(id, "panel_1");
                 assert_eq!(edge, ResizeEdge::TopLeft);
             }
@@ -221,13 +221,13 @@ mod tests {
     }
 
     #[test]
-    fn resize_move_action() {
+    fn resize_move_signal() {
         let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         let _ = rec.accept();
         match rec.accept() {
-            Action::ResizeMove { id, edge, .. } => {
+            GestureSignal::ResizeMove { id, edge, .. } => {
                 assert_eq!(id, "panel_1");
                 assert_eq!(edge, ResizeEdge::TopLeft);
             }
@@ -236,13 +236,13 @@ mod tests {
     }
 
     #[test]
-    fn resize_end_action() {
+    fn resize_end_signal() {
         let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         rec.on_pointer_up(12.0, 12.0);
         match rec.accept() {
-            Action::ResizeEnd { id, edge, x, y } => {
+            GestureSignal::ResizeEnd { id, edge, x, y } => {
                 assert_eq!(id, "panel_1");
                 assert_eq!(edge, ResizeEdge::TopLeft);
                 assert_eq!(x, 12.0);
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn all_eight_edges_action_variants() {
+    fn all_eight_edges_signal_variants() {
         let cases = [
             (2.0, 2.0, ResizeEdge::TopLeft),
             (98.0, 2.0, ResizeEdge::TopRight),
@@ -273,9 +273,9 @@ mod tests {
                 y
             );
             rec.on_pointer_move(x + 20.0, y + 20.0);
-            let action = rec.accept();
-            match action {
-                Action::ResizeStart { edge, .. } => {
+            let signal = rec.accept();
+            match signal {
+                GestureSignal::ResizeStart { edge, .. } => {
                     assert_eq!(edge, expected_edge, "edge mismatch at ({}, {})", x, y);
                 }
                 other => panic!("期望 ResizeStart，实际 {:?}", other),

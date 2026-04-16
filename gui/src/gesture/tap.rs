@@ -1,5 +1,5 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
-use crate::widget::action::Action;
+use super::signal::GestureSignal;
 use std::time::Instant;
 
 const MOVE_THRESHOLD: f32 = 3.0;
@@ -51,13 +51,13 @@ impl GestureRecognizer for TapRecognizer {
             GestureDisposition::Accepted
         }
     }
-    fn accept(&mut self) -> Action {
+    fn accept(&mut self) -> GestureSignal {
         if let Some(last) = self.last_tap_time {
             if self.down_time.duration_since(last).as_millis() < DOUBLE_TAP_TIMEOUT_MS {
-                return Action::DoubleClick(self.target_id.clone());
+                return GestureSignal::DoubleClick(self.target_id.clone());
             }
         }
-        Action::Click(self.target_id.clone())
+        GestureSignal::Click(self.target_id.clone())
     }
     fn reject(&mut self) {
         self.rejected = true;

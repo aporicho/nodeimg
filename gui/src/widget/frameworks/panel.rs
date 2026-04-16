@@ -12,7 +12,7 @@ use std::fmt;
 /// Panel widget 的 props。
 ///
 /// Controlled 模型：x/y/w/h 每帧由调用方传入，widget 本身不持任何状态。
-/// 拖拽/resize 手势产生的 Action 由调用方处理并更新 props。
+/// 拖拽/resize 手势产生的 PanelEvent 由调用方处理并更新 props。
 pub struct PanelProps {
     pub id: Cow<'static, str>,
     pub title: Cow<'static, str>,

@@ -131,12 +131,11 @@ mod tests {
     use std::borrow::Cow;
 
     use super::*;
-    use crate::gesture::Gesture;
+    use crate::gesture::{Gesture, GestureSignal};
     use crate::renderer::Rect;
     use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{BoxStyle, LeafKind, Size};
     use crate::tree::{hit_test, reconcile, Desc, Tree};
-    use crate::widget::action::Action;
     use crate::widget::atoms::slider::SliderProps;
     use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
@@ -252,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn toggle_track_click_emits_click_action() {
+    fn toggle_track_click_emits_click_signal() {
         let theme = dark_theme();
         let desc = Desc::Widget {
             id: Cow::Borrowed("toggle_grid"),
@@ -285,9 +284,9 @@ mod tests {
 
         let chain = hit_test(&tree, root, 10.0, 9.0);
         let mut arena = arena_from_hit_chain(&tree, &chain, 10.0, 9.0, None).expect("arena");
-        let action = arena.pointer_up(10.0, 9.0).expect("click action");
-        match action {
-            Action::Click(id) => assert_eq!(id, "toggle_grid::track"),
+        let signal = arena.pointer_up(10.0, 9.0).expect("click signal");
+        match signal {
+            GestureSignal::Click(id) => assert_eq!(id, "toggle_grid::track"),
             other => panic!("expected click, got {:?}", other),
         }
     }
@@ -329,15 +328,15 @@ mod tests {
 
         let chain = hit_test(&tree, root, 100.0, 10.0);
         let mut arena = arena_from_hit_chain(&tree, &chain, 100.0, 10.0, None).expect("arena");
-        let action = arena.pointer_move(110.0, 10.0).expect("drag start");
-        match action {
-            Action::DragStart { id, .. } => assert_eq!(id, "slider_radius::track"),
+        let signal = arena.pointer_move(110.0, 10.0).expect("drag start");
+        match signal {
+            GestureSignal::DragStart { id, .. } => assert_eq!(id, "slider_radius::track"),
             other => panic!("expected drag start, got {:?}", other),
         }
 
-        let action = arena.pointer_move(120.0, 10.0).expect("drag move");
-        match action {
-            Action::DragMove { id, .. } => assert_eq!(id, "slider_radius::track"),
+        let signal = arena.pointer_move(120.0, 10.0).expect("drag move");
+        match signal {
+            GestureSignal::DragMove { id, .. } => assert_eq!(id, "slider_radius::track"),
             other => panic!("expected drag move, got {:?}", other),
         }
     }

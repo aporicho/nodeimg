@@ -144,7 +144,9 @@ impl TextPipeline {
 
     #[cfg(test)]
     fn prepared_request_count_for_test(&self, index: usize) -> Option<usize> {
-        self.prepared_batches.get(index).map(|batch| batch.request_count)
+        self.prepared_batches
+            .get(index)
+            .map(|batch| batch.request_count)
     }
 }
 
@@ -177,27 +179,17 @@ fn to_glyphon_color(c: Color) -> GlyphonColor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::test_support::try_test_device;
 
-    fn test_device() -> (wgpu::Device, wgpu::Queue) {
-        let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: None,
-            force_fallback_adapter: true,
-        }))
-        .expect("failed to create test adapter");
-        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("text-pipeline-test-device"),
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::default(),
-            ..Default::default()
-        }))
-        .expect("failed to create test device")
+    fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        try_test_device("text-pipeline-test-device")
     }
 
     #[test]
     fn pipeline_keeps_multiple_prepared_batches() {
-        let (device, queue) = test_device();
+        let Some((device, queue)) = test_device() else {
+            return;
+        };
         let mut font_system = glyphon::FontSystem::new();
         let mut pipeline = TextPipeline::new(
             &device,

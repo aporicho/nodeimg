@@ -1,9 +1,9 @@
-use crate::context::{FrameworkOutput, ImeRequest, PlatformEffect};
+use crate::context::ImeRequest;
+use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent};
 use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
 use crate::theme::Theme;
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
-use crate::widget::action::Action;
 use crate::widget::atoms::number_input::{format_number, NumberInputProps};
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::state::{InteractionStore, TextFieldKind, TextInputStore};
@@ -49,6 +49,7 @@ impl TextInputSystem {
                         runtime.clear_preedit();
                         runtime.set_caret_from_x(*x);
                         self.active_drag_text_input = Some(widget_id);
+                        return FrameworkOutput::consumed();
                     }
                 }
                 FrameworkOutput::default()
@@ -62,14 +63,16 @@ impl TextInputSystem {
                     {
                         if let Some(runtime) = self.store.runtime_mut(&widget_id) {
                             runtime.select_to_x(*x);
+                            return FrameworkOutput::consumed();
                         }
                     }
                 }
                 FrameworkOutput::default()
             }
             AppEvent::MouseRelease { button, .. } if *button == MouseButton::Left => {
+                let consumed = self.active_drag_text_input.is_some();
                 self.active_drag_text_input = None;
-                FrameworkOutput::default()
+                FrameworkOutput::default().with_consumed(consumed)
             }
             AppEvent::ImePreedit { text, caret } => {
                 self.handle_ime_preedit(tree, interaction.focused(), text, *caret)
@@ -108,16 +111,16 @@ impl TextInputSystem {
         tree: &Tree,
         focused: Option<NodeId>,
         text: &str,
-    ) -> Vec<Action> {
+    ) -> FrameworkOutput {
         if text.is_empty() {
-            return Vec::new();
+            return FrameworkOutput::default();
         }
 
         let Some(widget_id) = self.focused_widget_id(tree, focused) else {
-            return Vec::new();
+            return FrameworkOutput::default();
         };
         let Some(runtime) = self.store.runtime_mut(&widget_id) else {
-            return Vec::new();
+            return FrameworkOutput::default();
         };
 
         runtime.clear_preedit();
@@ -148,7 +151,7 @@ impl TextInputSystem {
 
         runtime.clear_preedit();
         runtime.editor_mut().insert_str(text);
-        FrameworkOutput::from_actions(self.output_for_editor(tree, &widget_id))
+        self.output_for_editor(tree, &widget_id).with_consumed(true)
     }
 
     fn handle_ime_preedit(
@@ -166,7 +169,7 @@ impl TextInputSystem {
         };
 
         runtime.set_preedit(text, caret);
-        FrameworkOutput::default()
+        FrameworkOutput::consumed()
     }
 
     fn handle_key_press(
@@ -181,7 +184,7 @@ impl TextInputSystem {
                 if let Some(runtime) = self.store.runtime_mut(&widget_id) {
                     if runtime.has_preedit() {
                         runtime.clear_preedit();
-                        return FrameworkOutput::default();
+                        return FrameworkOutput::consumed();
                     }
                     if runtime.kind() == TextFieldKind::NumberInput {
                         runtime.revert_to_external();
@@ -190,7 +193,7 @@ impl TextInputSystem {
             }
             interaction.blur();
             self.active_drag_text_input = None;
-            return FrameworkOutput::default();
+            return FrameworkOutput::consumed();
         }
 
         let Some(widget_id) = self.focused_widget_id(tree, interaction.focused()) else {
@@ -212,11 +215,11 @@ impl TextInputSystem {
         match key {
             Key::Backspace => {
                 runtime.editor_mut().backspace();
-                FrameworkOutput::from_actions(self.output_for_editor(tree, &widget_id))
+                self.output_for_editor(tree, &widget_id).with_consumed(true)
             }
             Key::Delete => {
                 runtime.editor_mut().delete();
-                FrameworkOutput::from_actions(self.output_for_editor(tree, &widget_id))
+                self.output_for_editor(tree, &widget_id).with_consumed(true)
             }
             Key::Left => {
                 if modifiers.shift {
@@ -224,7 +227,7 @@ impl TextInputSystem {
                 } else {
                     runtime.editor_mut().move_left();
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Right => {
                 if modifiers.shift {
@@ -232,7 +235,7 @@ impl TextInputSystem {
                 } else {
                     runtime.editor_mut().move_right();
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Home => {
                 if modifiers.shift {
@@ -240,7 +243,7 @@ impl TextInputSystem {
                 } else {
                     runtime.editor_mut().move_home();
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::End => {
                 let text_end = runtime.editor().text().len();
@@ -249,21 +252,22 @@ impl TextInputSystem {
                 } else {
                     runtime.editor_mut().move_end();
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Up => self.step_number_input(tree, &widget_id, 1.0),
             Key::Down => self.step_number_input(tree, &widget_id, -1.0),
             Key::Enter => self.finalize_number_input(tree, &widget_id),
             Key::Char('A') if modifiers.ctrl || modifiers.meta => {
                 runtime.editor_mut().select_all();
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Char('C') if modifiers.ctrl || modifiers.meta => runtime
                 .editor()
                 .copy()
-                .map(|text| FrameworkOutput {
-                    actions: Vec::new(),
-                    effects: vec![PlatformEffect::WriteClipboard(text)],
+                .map(|text| {
+                    OutputBuilder::new()
+                        .effect(PlatformEffect::WriteClipboard(text))
+                        .finish()
                 })
                 .unwrap_or_default(),
             Key::Char('X') if modifiers.ctrl || modifiers.meta => {
@@ -272,15 +276,13 @@ impl TextInputSystem {
                     .cut()
                     .map(|text| vec![PlatformEffect::WriteClipboard(text)])
                     .unwrap_or_default();
-                FrameworkOutput {
-                    actions: self.output_for_editor(tree, &widget_id),
-                    effects,
-                }
+                let mut output = self.output_for_editor(tree, &widget_id);
+                output.effects = effects;
+                output.with_consumed(true)
             }
-            Key::Char('V') if modifiers.ctrl || modifiers.meta => FrameworkOutput {
-                actions: Vec::new(),
-                effects: vec![PlatformEffect::RequestClipboardPaste],
-            },
+            Key::Char('V') if modifiers.ctrl || modifiers.meta => OutputBuilder::new()
+                .effect(PlatformEffect::RequestClipboardPaste)
+                .finish(),
             _ => FrameworkOutput::default(),
         }
     }
@@ -323,19 +325,19 @@ impl TextInputSystem {
         }
     }
 
-    fn output_for_editor(&self, tree: &Tree, widget_id: &str) -> Vec<Action> {
+    fn output_for_editor(&self, tree: &Tree, widget_id: &str) -> FrameworkOutput {
         let Some(runtime) = self.store.runtime(widget_id) else {
-            return Vec::new();
+            return FrameworkOutput::default();
         };
 
         match text_field_props(tree, widget_id) {
             Some(TextFieldProps::TextInput) => {
-                changed_text_action(widget_id, runtime.editor().text())
+                changed_text_output(widget_id, runtime.editor().text())
             }
             Some(TextFieldProps::NumberInput(props)) => {
-                live_number_action(widget_id, runtime.editor().text(), props)
+                live_number_output(widget_id, runtime.editor().text(), props)
             }
-            None => Vec::new(),
+            None => FrameworkOutput::default(),
         }
     }
 
@@ -358,7 +360,7 @@ impl TextInputSystem {
         runtime
             .editor_mut()
             .set_text(&format_number(next, props.precision));
-        FrameworkOutput::from_actions(changed_number_action(widget_id, next, props.value))
+        changed_number_output(widget_id, next, props.value).with_consumed(true)
     }
 
     fn finalize_number_input(&mut self, tree: &Tree, widget_id: &str) -> FrameworkOutput {
@@ -371,15 +373,15 @@ impl TextInputSystem {
 
         match parse_number_text(runtime.editor().text()) {
             Some(parsed) if parsed >= props.min && parsed <= props.max => {
-                let actions = changed_number_action(widget_id, parsed, props.value);
-                if actions.is_empty() {
+                let output = changed_number_output(widget_id, parsed, props.value);
+                if output.events.is_empty() {
                     runtime.revert_to_external();
                 }
-                FrameworkOutput::from_actions(actions)
+                output.with_consumed(true)
             }
             _ => {
                 runtime.revert_to_external();
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
         }
     }
@@ -426,28 +428,32 @@ fn text_field_kind(props: &dyn crate::widget::props::WidgetProps) -> Option<Text
         .map(|_| TextFieldKind::NumberInput)
 }
 
-fn changed_text_action(widget_id: &str, value: &str) -> Vec<Action> {
-    vec![Action::TextChange {
-        id: widget_id.to_string(),
-        value: value.to_string(),
-    }]
+fn changed_text_output(widget_id: &str, value: &str) -> FrameworkOutput {
+    OutputBuilder::new()
+        .widget(WidgetEvent::TextChanged {
+            id: widget_id.to_string(),
+            value: value.to_string(),
+        })
+        .finish()
 }
 
-fn changed_number_action(widget_id: &str, value: f32, external_value: f32) -> Vec<Action> {
+fn changed_number_output(widget_id: &str, value: f32, external_value: f32) -> FrameworkOutput {
     if (value - external_value).abs() < f32::EPSILON {
-        Vec::new()
+        FrameworkOutput::default()
     } else {
-        vec![Action::NumberChange {
-            id: widget_id.to_string(),
-            value,
-        }]
+        OutputBuilder::new()
+            .widget(WidgetEvent::NumberChanged {
+                id: widget_id.to_string(),
+                value,
+            })
+            .finish()
     }
 }
 
-fn live_number_action(widget_id: &str, text: &str, props: &NumberInputProps) -> Vec<Action> {
+fn live_number_output(widget_id: &str, text: &str, props: &NumberInputProps) -> FrameworkOutput {
     parse_number_text(text)
         .filter(|value| *value >= props.min && *value <= props.max)
-        .map(|value| changed_number_action(widget_id, value, props.value))
+        .map(|value| changed_number_output(widget_id, value, props.value))
         .unwrap_or_default()
 }
 

@@ -4,14 +4,16 @@ use crate::demo_gallery::{
 };
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
-use gui::context::{Context, FrameworkOutput, OverlayPlacement, OverlayRequest, PlatformEffect};
+use gui::context::{
+    Context, FrameworkOutput, GuiEvent, OverlayPlacement, OverlayRequest, PanelEvent,
+    PlatformEffect, WidgetEvent,
+};
 use gui::gesture::Gesture;
 use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, TextureHandle, Transform};
 use gui::tree::Desc;
-use gui::widget::action::Action;
 use gui::widget::frameworks::panel::PanelProps;
 use gui::widget::resize_edge::ResizeEdge;
 use std::borrow::Cow;
@@ -200,15 +202,16 @@ impl App for DemoApp {
 
         self.update_mouse_position_from_event(&event);
 
-        if self.navigation.handle_event(&event, &mut self.camera) {
+        let output = self.gui.handle_event(&event);
+        let consumed = output.consumed;
+        self.handle_framework_output(output, ctx);
+
+        if !consumed && self.navigation.handle_event(&event, &mut self.camera) {
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
             }
             return;
         }
-
-        let output = self.gui.handle_event(&event);
-        self.handle_framework_output(output, ctx);
 
         match event {
             AppEvent::MouseMove { x, y } => {
@@ -318,8 +321,8 @@ impl DemoApp {
     }
 
     fn handle_framework_output(&mut self, output: FrameworkOutput, ctx: &mut AppContext) {
-        for action in output.actions {
-            self.handle_action(action);
+        for event in output.events {
+            self.handle_gui_event(event);
         }
 
         for effect in output.effects {
@@ -329,20 +332,26 @@ impl DemoApp {
                 }
                 PlatformEffect::RequestClipboardPaste => {
                     if let Some(text) = ctx.clipboard_read_text() {
-                        for action in self.gui.paste_focused_text(&text) {
-                            self.handle_action(action);
-                        }
+                        let paste_output = self.gui.paste_focused_text(&text);
+                        self.handle_framework_output(paste_output, ctx);
                     }
                 }
             }
         }
     }
 
-    fn handle_action(&mut self, action: Action) {
-        tracing::info!("Action: {:?}", action);
-        match action {
-            Action::Click(id) => {
-                tracing::info!("handle click: {}", id);
+    fn handle_gui_event(&mut self, event: GuiEvent) {
+        tracing::info!("GuiEvent: {:?}", event);
+        match event {
+            GuiEvent::Widget(event) => self.handle_widget_event(event),
+            GuiEvent::Panel(event) => self.handle_panel_event(event),
+            GuiEvent::Overlay(_) => {}
+        }
+    }
+
+    fn handle_widget_event(&mut self, event: WidgetEvent) {
+        match event {
+            WidgetEvent::Click { id } => {
                 let _ = self.gallery.apply_click(&id);
                 if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
@@ -372,49 +381,72 @@ impl DemoApp {
                 }
                 self.active_button = Some(id);
             }
-            Action::DoubleClick(id) => {
-                if id.contains("slider") {
+            WidgetEvent::DoubleClick { id } => {
+                if id == SLIDER_RADIUS_ID {
                     self.gallery.slider_value = 5.0;
                 }
             }
-            Action::TextChange { id, value } => {
+            WidgetEvent::TextChanged { id, value } => {
                 let _ = self.gallery.apply_text_change(&id, value);
             }
-            Action::NumberChange { id, value } => {
+            WidgetEvent::NumberChanged { id, value } => {
                 let _ = self.gallery.apply_number_change(&id, value);
             }
-            Action::SelectChange { id, selected } => {
+            WidgetEvent::SelectionChanged { id, selected } => {
                 let _ = self.gallery.apply_select_change(&id, selected);
             }
-            Action::DragMove { id, x, y } => {
-                let mut should_update_slider = false;
-                if let Some(session) = &mut self.pointer_session {
-                    if is_slider_target(&id) {
-                        should_update_slider = true;
-                    } else if is_gallery_panel_node(&id) {
-                        let entry = self.panel_positions.entry(id.clone()).or_insert_with(|| {
-                            self.gui
-                                .tree()
-                                .iter()
-                                .find_map(|(_, node)| {
-                                    (node.id.as_ref() == id).then_some((node.rect.x, node.rect.y))
-                                })
-                                .unwrap_or((0.0, 0.0))
-                        });
-                        entry.0 += x - session.last_x;
-                        entry.1 += y - session.last_y;
-                    } else {
-                        tracing::info!("Unhandled drag target: {} at ({}, {})", id, x, y);
-                    }
-                    session.last_x = x;
-                    session.last_y = y;
+            WidgetEvent::DragStart { id, x, y } => {
+                if is_slider_target(&id) {
+                    self.pointer_session = Some(PointerSession::new(x, y));
                 }
-                if should_update_slider {
+            }
+            WidgetEvent::DragMove { id, x, .. } => {
+                if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
                     tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
                 }
             }
-            Action::ResizeMove { id, edge, x, y } => {
+            WidgetEvent::DragEnd { .. } => {
+                self.pointer_session = None;
+            }
+            WidgetEvent::LongPress { id } => {
+                tracing::info!("LongPress: {}", id);
+            }
+        }
+    }
+
+    fn handle_panel_event(&mut self, event: PanelEvent) {
+        match event {
+            PanelEvent::DragStart { id, x, y } => {
+                if is_gallery_panel_node(&id) {
+                    self.pointer_session = Some(PointerSession::new(x, y));
+                }
+            }
+            PanelEvent::DragMove { id, x, y } => {
+                if !is_gallery_panel_node(&id) {
+                    return;
+                }
+                if let Some(session) = &mut self.pointer_session {
+                    let entry = self.panel_positions.entry(id.clone()).or_insert_with(|| {
+                        self.gui
+                            .tree()
+                            .iter()
+                            .find_map(|(_, node)| {
+                                (node.id.as_ref() == id).then_some((node.rect.x, node.rect.y))
+                            })
+                            .unwrap_or((0.0, 0.0))
+                    });
+                    entry.0 += x - session.last_x;
+                    entry.1 += y - session.last_y;
+                    session.last_x = x;
+                    session.last_y = y;
+                }
+            }
+            PanelEvent::DragEnd { .. } => {
+                self.pointer_session = None;
+            }
+            PanelEvent::ResizeStart { .. } => {}
+            PanelEvent::ResizeMove { id, edge, x, y } => {
                 tracing::info!(
                     "Ignoring gallery panel resize: {} {:?} {} {}",
                     id,
@@ -423,18 +455,7 @@ impl DemoApp {
                     y
                 );
             }
-            Action::DragStart { id, x, y } => {
-                if is_slider_target(&id) || is_gallery_panel_node(&id) {
-                    self.pointer_session = Some(PointerSession::new(x, y));
-                }
-            }
-            Action::ResizeStart { .. } => {}
-            Action::DragEnd { .. } | Action::ResizeEnd { .. } => {
-                self.pointer_session = None;
-            }
-            Action::LongPress(id) => {
-                tracing::info!("LongPress: {}", id);
-            }
+            PanelEvent::ResizeEnd { .. } => {}
         }
     }
 

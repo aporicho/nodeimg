@@ -1,5 +1,5 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
-use crate::widget::action::Action;
+use super::signal::GestureSignal;
 use std::time::Instant;
 
 const MOVE_THRESHOLD: f32 = 3.0;
@@ -54,8 +54,8 @@ impl GestureRecognizer for LongPressRecognizer {
             GestureDisposition::Rejected
         }
     }
-    fn accept(&mut self) -> Action {
-        Action::LongPress(self.target_id.clone())
+    fn accept(&mut self) -> GestureSignal {
+        GestureSignal::LongPress(self.target_id.clone())
     }
     fn reject(&mut self) {
         self.rejected = true;

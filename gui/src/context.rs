@@ -1,48 +1,39 @@
 use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
+use crate::event::router;
 use crate::gesture::GestureArena;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::shell::AppEvent;
 use crate::theme::Theme;
-use crate::tree::layout::{Overflow, TextureHandle};
+use crate::tree::layout::TextureHandle;
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, Tree};
-use crate::widget::action::Action;
 use crate::widget::props::WidgetBuildCx;
 use crate::widget::state::InteractionStore;
 use crate::widget::systems::{DropdownSystem, PopupSystem, TextInputSystem};
 
+pub use crate::output::{
+    FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
+};
 pub use crate::widget::systems::{OverlayPlacement, OverlayRequest};
 
 /// GUI 中心对象。持有统一的控件树与当前手势竞技场。
 pub struct Context {
-    tree: Tree,
-    gesture_arena: Option<GestureArena>,
-    interaction_state: InteractionStore,
-    dropdown_system: DropdownSystem,
-    popup_system: PopupSystem,
-    text_input_system: TextInputSystem,
-    last_theme_revision: Option<u64>,
-    last_tap_time: Option<Instant>,
-    textures: HashMap<TextureHandle, Arc<wgpu::TextureView>>,
+    pub(crate) tree: Tree,
+    pub(crate) gesture_arena: Option<GestureArena>,
+    pub(crate) interaction_state: InteractionStore,
+    pub(crate) dropdown_system: DropdownSystem,
+    pub(crate) popup_system: PopupSystem,
+    pub(crate) text_input_system: TextInputSystem,
+    pub(crate) last_theme_revision: Option<u64>,
+    pub(crate) last_tap_time: Option<Instant>,
+    pub(crate) textures: HashMap<TextureHandle, Arc<wgpu::TextureView>>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ImeRequest {
     pub allowed: bool,
     pub cursor_area: Option<Rect>,
-}
-
-#[derive(Debug, Clone)]
-pub enum PlatformEffect {
-    WriteClipboard(String),
-    RequestClipboardPaste,
-}
-
-#[derive(Debug, Default)]
-pub struct FrameworkOutput {
-    pub actions: Vec<Action>,
-    pub effects: Vec<PlatformEffect>,
 }
 
 impl Context {
@@ -132,29 +123,7 @@ impl Context {
     }
 
     pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        self.interaction_state.handle_event(&self.tree, event);
-        self.handle_scroll_event(event);
-        if self
-            .popup_system
-            .handle_event(&self.tree, &mut self.interaction_state, event)
-        {
-            return FrameworkOutput::default();
-        }
-        let dropdown_output = self.dropdown_system.handle_event(
-            &self.tree,
-            &mut self.interaction_state,
-            &mut self.popup_system,
-            event,
-        );
-        let text_output =
-            self.text_input_system
-                .handle_event(&self.tree, &mut self.interaction_state, event);
-        if !dropdown_output.actions.is_empty() || !dropdown_output.effects.is_empty() {
-            self.clear_gesture_arena();
-            return dropdown_output.merge(text_output);
-        }
-        let gesture_output = self.handle_gesture_event(event);
-        dropdown_output.merge(text_output).merge(gesture_output)
+        router::handle_event(self, event)
     }
 
     pub fn ime_request(&self) -> ImeRequest {
@@ -162,7 +131,7 @@ impl Context {
             .ime_request(&self.tree, self.interaction_state.focused())
     }
 
-    pub fn paste_focused_text(&mut self, text: &str) -> Vec<crate::widget::action::Action> {
+    pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
         self.text_input_system.paste_focused_text(
             &self.tree,
             self.interaction_state.focused(),
@@ -186,136 +155,14 @@ impl Context {
         &self.tree
     }
 
-    pub fn gesture_arena(&self) -> Option<&GestureArena> {
-        self.gesture_arena.as_ref()
-    }
-
     pub fn interaction_state(&self) -> &InteractionStore {
         &self.interaction_state
-    }
-
-    pub fn gesture_arena_mut(&mut self) -> Option<&mut GestureArena> {
-        self.gesture_arena.as_mut()
-    }
-
-    pub fn set_gesture_arena(&mut self, arena: GestureArena) {
-        self.gesture_arena = Some(arena);
-    }
-
-    pub fn clear_gesture_arena(&mut self) {
-        self.gesture_arena = None;
-    }
-
-    pub fn take_gesture_arena(&mut self) -> Option<GestureArena> {
-        self.gesture_arena.take()
     }
 }
 
 impl Default for Context {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl FrameworkOutput {
-    pub(crate) fn from_actions(actions: Vec<crate::widget::action::Action>) -> Self {
-        Self {
-            actions,
-            effects: Vec::new(),
-        }
-    }
-
-    pub(crate) fn merge(mut self, other: Self) -> Self {
-        self.actions.extend(other.actions);
-        self.effects.extend(other.effects);
-        self
-    }
-}
-
-impl Context {
-    fn handle_gesture_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        match *event {
-            AppEvent::MousePress { x, y, button }
-                if button == crate::shell::MouseButton::Left && self.gesture_arena.is_none() =>
-            {
-                let chain = self.hit_test(x, y);
-                if let Some(arena) = crate::gesture::arena_from_hit_chain(
-                    &self.tree,
-                    &chain,
-                    x,
-                    y,
-                    self.last_tap_time,
-                ) {
-                    self.set_gesture_arena(arena);
-                }
-                FrameworkOutput::default()
-            }
-            AppEvent::MouseMove { x, y } => {
-                let Some(arena) = self.gesture_arena_mut() else {
-                    return FrameworkOutput::default();
-                };
-                arena
-                    .pointer_move(x, y)
-                    .map(|action| self.record_gesture_action(action))
-                    .unwrap_or_default()
-            }
-            AppEvent::MouseRelease { x, y, button }
-                if button == crate::shell::MouseButton::Left =>
-            {
-                let Some(mut arena) = self.take_gesture_arena() else {
-                    return FrameworkOutput::default();
-                };
-                arena
-                    .pointer_up(x, y)
-                    .map(|action| self.record_gesture_action(action))
-                    .unwrap_or_default()
-            }
-            AppEvent::Unfocused => {
-                self.clear_gesture_arena();
-                FrameworkOutput::default()
-            }
-            _ => FrameworkOutput::default(),
-        }
-    }
-
-    fn record_gesture_action(&mut self, action: Action) -> FrameworkOutput {
-        match &action {
-            Action::Click(_) => {
-                self.last_tap_time = Some(Instant::now());
-            }
-            Action::DoubleClick(_) => {
-                self.last_tap_time = None;
-            }
-            _ => {}
-        }
-        FrameworkOutput::from_actions(vec![action])
-    }
-
-    fn handle_scroll_event(&mut self, event: &AppEvent) {
-        let Some((x, y, delta)) = scroll_event_delta(event) else {
-            return;
-        };
-        let Some(node_id) = self.scroll_target_at(x, y) else {
-            return;
-        };
-        self.tree.scroll(node_id, delta);
-    }
-
-    fn scroll_target_at(&self, x: f32, y: f32) -> Option<NodeId> {
-        self.hit_test(x, y).iter().find(|&node_id| {
-            self.tree
-                .get(node_id)
-                .map(|node| node.style.overflow == Overflow::Scroll)
-                .unwrap_or(false)
-        })
-    }
-}
-
-fn scroll_event_delta(event: &AppEvent) -> Option<(f32, f32, f32)> {
-    match *event {
-        AppEvent::ScrollLine { x, y, delta_y, .. } => Some((x, y, -delta_y * 32.0)),
-        AppEvent::ScrollPixel { x, y, delta_y, .. } => Some((x, y, -delta_y)),
-        _ => None,
     }
 }
 
@@ -330,7 +177,10 @@ mod tests {
     use crate::widget::atoms::dropdown::DropdownProps;
     use crate::widget::atoms::label::{LabelProps, LabelVariant};
     use crate::widget::atoms::number_input::NumberInputProps;
+    use crate::widget::atoms::slider::SliderProps;
     use crate::widget::atoms::text_input::TextInputProps;
+    use crate::widget::atoms::toggle::ToggleProps;
+    use crate::widget::frameworks::panel::PanelProps;
     use crate::widget::frameworks::scroll_area::ScrollAreaProps;
     use std::borrow::Cow;
 
@@ -369,6 +219,73 @@ mod tests {
                     label: Cow::Borrowed("Run"),
                     icon: None,
                     disabled: false,
+                }),
+            }],
+        }
+    }
+
+    fn toggle_desc() -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(320.0),
+                height: Size::Fixed(120.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![Desc::Widget {
+                id: Cow::Borrowed("toggle"),
+                props: Box::new(ToggleProps {
+                    label: Cow::Borrowed("Grid"),
+                    value: true,
+                    disabled: false,
+                }),
+            }],
+        }
+    }
+
+    fn slider_desc() -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(320.0),
+                height: Size::Fixed(120.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![Desc::Widget {
+                id: Cow::Borrowed("slider"),
+                props: Box::new(SliderProps {
+                    label: Cow::Borrowed("Radius"),
+                    min: 0.0,
+                    max: 10.0,
+                    step: 1.0,
+                    value: 5.0,
+                    disabled: false,
+                }),
+            }],
+        }
+    }
+
+    fn panel_desc() -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(320.0),
+                height: Size::Fixed(180.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![Desc::Widget {
+                id: Cow::Borrowed("panel"),
+                props: Box::new(PanelProps {
+                    id: Cow::Borrowed("panel"),
+                    title: Cow::Borrowed("Panel"),
+                    x: 20.0,
+                    y: 20.0,
+                    w: 180.0,
+                    h: 100.0,
+                    content: vec![],
                 }),
             }],
         }
@@ -555,7 +472,6 @@ mod tests {
             },
         });
 
-        assert!(outcome.actions.is_empty());
         assert!(matches!(
             outcome.effects.as_slice(),
             [PlatformEffect::WriteClipboard(text)] if text == "hello"
@@ -587,9 +503,11 @@ mod tests {
             [PlatformEffect::WriteClipboard(text)] if text == "hello"
         ));
         assert!(matches!(
-            outcome.actions.as_slice(),
-            [Action::TextChange { id, value }] if id == "input" && value.is_empty()
+            outcome.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::TextChanged { id, value })]
+                if id == "input" && value.is_empty()
         ));
+        assert!(outcome.consumed);
     }
 
     #[test]
@@ -705,9 +623,10 @@ mod tests {
         });
 
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::Click(id)] if id == "button"
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::Click { id })] if id == "button"
         ));
+        assert!(output.consumed);
     }
 
     #[test]
@@ -752,8 +671,197 @@ mod tests {
         });
 
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::DoubleClick(id)] if id == "button"
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::DoubleClick { id })] if id == "button"
+        ));
+        assert!(output.consumed);
+    }
+
+    #[test]
+    fn widget_event_canonicalizes_child_target_to_widget_id() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            toggle_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = node_rect(&ctx, "toggle::track");
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: rect.x + rect.w * 0.5,
+            y: rect.y + rect.h * 0.5,
+            button: MouseButton::Left,
+        });
+        let output = ctx.handle_event(&AppEvent::MouseRelease {
+            x: rect.x + rect.w * 0.5,
+            y: rect.y + rect.h * 0.5,
+            button: MouseButton::Left,
+        });
+
+        assert!(matches!(
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::Click { id })] if id == "toggle"
+        ));
+    }
+
+    #[test]
+    fn context_emits_widget_drag_events_from_gesture_signal() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            slider_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = node_rect(&ctx, "slider::track");
+        let x = rect.x + rect.w * 0.5;
+        let y = rect.y + rect.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let start = ctx.handle_event(&AppEvent::MouseMove { x: x + 20.0, y });
+        let move_output = ctx.handle_event(&AppEvent::MouseMove { x: x + 30.0, y });
+        let end = ctx.handle_event(&AppEvent::MouseRelease {
+            x: x + 30.0,
+            y,
+            button: MouseButton::Left,
+        });
+
+        assert!(matches!(
+            start.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::DragStart { id, .. })] if id == "slider"
+        ));
+        assert!(matches!(
+            move_output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::DragMove { id, .. })] if id == "slider"
+        ));
+        assert!(matches!(
+            end.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::DragEnd { id, .. })] if id == "slider"
+        ));
+    }
+
+    #[test]
+    fn context_emits_panel_drag_events_from_gesture_signal() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            panel_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 180.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = node_rect(&ctx, "panel::titlebar");
+        let x = rect.x + rect.w * 0.5;
+        let y = rect.y + rect.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let start = ctx.handle_event(&AppEvent::MouseMove {
+            x: x + 20.0,
+            y: y + 4.0,
+        });
+        let move_output = ctx.handle_event(&AppEvent::MouseMove {
+            x: x + 30.0,
+            y: y + 8.0,
+        });
+        let end = ctx.handle_event(&AppEvent::MouseRelease {
+            x: x + 30.0,
+            y: y + 8.0,
+            button: MouseButton::Left,
+        });
+
+        assert!(matches!(
+            start.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::DragStart { id, .. })] if id == "panel"
+        ));
+        assert!(matches!(
+            move_output.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::DragMove { id, .. })] if id == "panel"
+        ));
+        assert!(matches!(
+            end.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::DragEnd { id, .. })] if id == "panel"
+        ));
+    }
+
+    #[test]
+    fn context_emits_panel_resize_events_from_gesture_signal() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            panel_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 180.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = node_rect(&ctx, "panel");
+        let x = rect.x + rect.w - 1.0;
+        let y = rect.y + rect.h - 1.0;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let start = ctx.handle_event(&AppEvent::MouseMove {
+            x: x + 12.0,
+            y: y + 12.0,
+        });
+        let move_output = ctx.handle_event(&AppEvent::MouseMove {
+            x: x + 20.0,
+            y: y + 20.0,
+        });
+        let end = ctx.handle_event(&AppEvent::MouseRelease {
+            x: x + 20.0,
+            y: y + 20.0,
+            button: MouseButton::Left,
+        });
+
+        assert!(matches!(
+            start.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::ResizeStart { id, .. })] if id == "panel"
+        ));
+        assert!(matches!(
+            move_output.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::ResizeMove { id, .. })] if id == "panel"
+        ));
+        assert!(matches!(
+            end.events.as_slice(),
+            [GuiEvent::Panel(PanelEvent::ResizeEnd { id, .. })] if id == "panel"
         ));
     }
 
@@ -931,7 +1039,7 @@ mod tests {
         );
         let rect = node_rect(&ctx, "scroll");
 
-        let _ = ctx.handle_event(&AppEvent::ScrollPixel {
+        let output = ctx.handle_event(&AppEvent::ScrollPixel {
             x: rect.x + rect.w * 0.5,
             y: rect.y + rect.h * 0.5,
             delta_x: 0.0,
@@ -944,6 +1052,37 @@ mod tests {
             .find(|(_, node)| node.id.as_ref() == "scroll")
             .expect("scroll node");
         assert!(node.scroll_offset > 0.0);
+        assert!(output.consumed);
+        assert!(output.events.is_empty());
+    }
+
+    #[test]
+    fn unhandled_pointer_event_is_not_consumed() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let output = ctx.handle_event(&AppEvent::ScrollPixel {
+            x: 300.0,
+            y: 100.0,
+            delta_x: 0.0,
+            delta_y: -24.0,
+        });
+
+        assert!(!output.consumed);
+        assert!(output.events.is_empty());
+        assert!(output.effects.is_empty());
     }
 
     #[test]
@@ -976,8 +1115,9 @@ mod tests {
         });
 
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::NumberChange { id, value }] if id == "number" && (*value - 2.0).abs() < 0.0001
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::NumberChanged { id, value })]
+                if id == "number" && (*value - 2.0).abs() < 0.0001
         ));
     }
 
@@ -1002,7 +1142,7 @@ mod tests {
         let output = ctx.handle_event(&AppEvent::TextInput {
             text: "a".to_string(),
         });
-        assert!(output.actions.is_empty());
+        assert!(output.events.is_empty());
         assert_eq!(
             ctx.text_input_system
                 .store()
@@ -1065,8 +1205,9 @@ mod tests {
         });
 
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::NumberChange { id, value }] if id == "number" && (*value - 3.0).abs() < 0.0001
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::NumberChanged { id, value })]
+                if id == "number" && (*value - 3.0).abs() < 0.0001
         ));
     }
 
@@ -1146,11 +1287,10 @@ mod tests {
             y: option_rect.y + option_rect.h * 0.5,
             button: MouseButton::Left,
         });
-        eprintln!("dropdown output: {:?}", output.actions);
-
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::SelectChange { id, selected }] if id == "dropdown" && *selected == 1
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::SelectionChanged { id, selected })]
+                if id == "dropdown" && *selected == 1
         ));
         assert!(!ctx.overlay_open());
     }
@@ -1190,8 +1330,9 @@ mod tests {
         });
 
         assert!(matches!(
-            output.actions.as_slice(),
-            [Action::SelectChange { id, selected }] if id == "dropdown" && *selected == 1
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::SelectionChanged { id, selected })]
+                if id == "dropdown" && *selected == 1
         ));
     }
 }

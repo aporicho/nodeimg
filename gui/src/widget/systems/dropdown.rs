@@ -1,7 +1,7 @@
-use crate::context::{FrameworkOutput, OverlayPlacement, OverlayRequest};
+use crate::context::{OverlayPlacement, OverlayRequest};
+use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
-use crate::widget::action::Action;
 use crate::widget::atoms::button::ButtonProps;
 use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
@@ -52,14 +52,12 @@ impl DropdownSystem {
                 if let Some((dropdown_id, index)) = overlay_option_hit(tree, x, y) {
                     popup_system.close(tree, interaction);
                     self.open = None;
-                    return FrameworkOutput::from_actions(vec![Action::SelectChange {
-                        id: dropdown_id,
-                        selected: index,
-                    }]);
+                    return selection_output(dropdown_id, index);
                 }
 
                 if let Some(dropdown_id) = dropdown_field_hit(tree, x, y) {
                     self.toggle_dropdown(tree, interaction, popup_system, &dropdown_id);
+                    return FrameworkOutput::consumed();
                 }
                 FrameworkOutput::default()
             }
@@ -95,6 +93,7 @@ impl DropdownSystem {
                         id: dropdown_id,
                         highlighted,
                     });
+                    return FrameworkOutput::consumed();
                 }
                 _ => {}
             }
@@ -114,21 +113,21 @@ impl DropdownSystem {
                     open.highlighted -= 1;
                     reopen_popup(tree, popup_system, &open.id, open.highlighted, props);
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Down => {
                 if open.highlighted + 1 < props.options.len() {
                     open.highlighted += 1;
                     reopen_popup(tree, popup_system, &open.id, open.highlighted, props);
                 }
-                FrameworkOutput::default()
+                FrameworkOutput::consumed()
             }
             Key::Enter | Key::Space => {
                 let selected = open.highlighted;
                 let id = open.id.clone();
                 popup_system.close(tree, interaction);
                 self.open = None;
-                FrameworkOutput::from_actions(vec![Action::SelectChange { id, selected }])
+                selection_output(id, selected)
             }
             _ => FrameworkOutput::default(),
         }
@@ -177,6 +176,12 @@ fn reopen_popup(
     props: &DropdownProps,
 ) {
     popup_system.open(tree, build_request(dropdown_id, highlighted, props));
+}
+
+fn selection_output(id: String, selected: usize) -> FrameworkOutput {
+    OutputBuilder::new()
+        .widget(WidgetEvent::SelectionChanged { id, selected })
+        .finish()
 }
 
 fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -> OverlayRequest {

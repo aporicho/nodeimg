@@ -15,3 +15,6 @@ pub use text_measurer::TextMeasurer;
 pub use types::{Color, Point, Rect};
 
 mod renderer;
+
+#[cfg(test)]
+pub(crate) mod test_support;

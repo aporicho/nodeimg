@@ -2,7 +2,6 @@ pub mod atoms;
 pub mod frameworks;
 pub mod props;
 
-pub mod action;
 mod mapping;
 pub(crate) mod painters;
 pub mod resize_edge;
