@@ -1,6 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, TextStyle};
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
+use crate::tree::layout::{
+    BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
+};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -166,6 +168,7 @@ impl WidgetProps for PanelProps {
                     Size::Auto
                 },
                 direction: Direction::Column,
+                overflow: Overflow::Hidden,
                 gestures: vec![Gesture::Resize],
                 ..BoxStyle::default()
             },
@@ -287,12 +290,10 @@ mod tests {
     }
 
     #[test]
-    fn build_outer_has_frame_decoration() {
+    fn build_outer_overflow_is_hidden() {
         let theme = dark_theme();
         let build = sample_props().build("test", &build_cx(&theme));
-        let dec = build.decoration.expect("outer should have decoration");
-        assert!(dec.background.is_some(), "outer should have background");
-        assert!(dec.border.is_some(), "outer should have border");
+        assert_eq!(build.style.overflow, Overflow::Hidden);
     }
 
     #[test]

@@ -15,11 +15,18 @@ pub struct TextRequest {
     pub bounds: Option<Rect>,
 }
 
+struct PreparedTextBatch {
+    renderer: TextRenderer,
+    #[cfg(test)]
+    request_count: usize,
+}
+
 pub struct TextPipeline {
     swash_cache: SwashCache,
     atlas: TextAtlas,
-    text_renderer: TextRenderer,
     viewport: Viewport,
+    prepared_batches: Vec<PreparedTextBatch>,
+    multisample: wgpu::MultisampleState,
     #[allow(dead_code)]
     cache: Cache,
 }
@@ -34,22 +41,21 @@ impl TextPipeline {
     ) -> Self {
         let swash_cache = SwashCache::new();
         let cache = Cache::new(device);
-        let mut atlas = TextAtlas::new(device, queue, &cache, format);
-        let text_renderer = TextRenderer::new(
-            &mut atlas,
-            device,
-            multisample,
-            Some(super::stencil::content_depth_stencil_state()),
-        );
+        let atlas = TextAtlas::new(device, queue, &cache, format);
         let viewport = Viewport::new(device, &cache);
 
         Self {
             swash_cache,
             atlas,
-            text_renderer,
             viewport,
+            prepared_batches: Vec::new(),
+            multisample,
             cache,
         }
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.prepared_batches.clear();
     }
 
     pub fn prepare(
@@ -60,7 +66,7 @@ impl TextPipeline {
         size: PhysicalSize<u32>,
         scale_factor: f64,
         text_measurer: &mut TextMeasurer,
-    ) {
+    ) -> usize {
         self.viewport.update(
             queue,
             Resolution {
@@ -69,14 +75,12 @@ impl TextPipeline {
             },
         );
 
-        // Phase 1 (mutable): mark all unused, ensure buffers exist for each request
         text_measurer.mark_all_unused();
 
         for req in texts {
             text_measurer.ensure_buffer(&req.text, &req.style);
         }
 
-        // Phase 2 (immutable borrow of buffer_cache): build TextArea references
         let sf = scale_factor as f32;
 
         let text_areas: Vec<TextArea<'_>> = texts
@@ -96,7 +100,14 @@ impl TextPipeline {
             })
             .collect();
 
-        self.text_renderer
+        let mut renderer = TextRenderer::new(
+            &mut self.atlas,
+            device,
+            self.multisample,
+            Some(super::stencil::content_depth_stencil_state()),
+        );
+
+        renderer
             .prepare(
                 device,
                 queue,
@@ -108,14 +119,32 @@ impl TextPipeline {
             )
             .expect("failed to prepare text");
 
-        // Evict unused buffers after prepare
         text_measurer.evict_unused();
+
+        let batch_index = self.prepared_batches.len();
+        self.prepared_batches.push(PreparedTextBatch {
+            renderer,
+            #[cfg(test)]
+            request_count: texts.len(),
+        });
+        batch_index
     }
 
-    pub fn render<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        self.text_renderer
+    pub fn render_batch<'a>(&'a self, batch_index: usize, pass: &mut wgpu::RenderPass<'a>) {
+        self.prepared_batches[batch_index]
+            .renderer
             .render(&self.atlas, &self.viewport, pass)
             .expect("failed to render text");
+    }
+
+    #[cfg(test)]
+    fn prepared_batch_count_for_test(&self) -> usize {
+        self.prepared_batches.len()
+    }
+
+    #[cfg(test)]
+    fn prepared_request_count_for_test(&self, index: usize) -> Option<usize> {
+        self.prepared_batches.get(index).map(|batch| batch.request_count)
     }
 }
 
@@ -143,4 +172,74 @@ fn to_glyphon_color(c: Color) -> GlyphonColor {
         (c.b * 255.0) as u8,
         (c.a * 255.0) as u8,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_device() -> (wgpu::Device, wgpu::Queue) {
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            compatible_surface: None,
+            force_fallback_adapter: true,
+        }))
+        .expect("failed to create test adapter");
+        pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("text-pipeline-test-device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            ..Default::default()
+        }))
+        .expect("failed to create test device")
+    }
+
+    #[test]
+    fn pipeline_keeps_multiple_prepared_batches() {
+        let (device, queue) = test_device();
+        let mut font_system = glyphon::FontSystem::new();
+        let mut pipeline = TextPipeline::new(
+            &device,
+            &queue,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::MultisampleState::default(),
+            &mut font_system,
+        );
+        let mut measurer = TextMeasurer::new();
+
+        pipeline.begin_frame();
+        let first = pipeline.prepare(
+            &device,
+            &queue,
+            &[TextRequest {
+                pos: Point { x: 0.0, y: 0.0 },
+                text: "first".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0),
+                bounds: None,
+            }],
+            PhysicalSize::new(800, 600),
+            1.0,
+            &mut measurer,
+        );
+        let second = pipeline.prepare(
+            &device,
+            &queue,
+            &[TextRequest {
+                pos: Point { x: 10.0, y: 10.0 },
+                text: "second".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0),
+                bounds: None,
+            }],
+            PhysicalSize::new(800, 600),
+            1.0,
+            &mut measurer,
+        );
+
+        assert_eq!(first, 0);
+        assert_eq!(second, 1);
+        assert_eq!(pipeline.prepared_batch_count_for_test(), 2);
+        assert_eq!(pipeline.prepared_request_count_for_test(0), Some(1));
+        assert_eq!(pipeline.prepared_request_count_for_test(1), Some(1));
+    }
 }

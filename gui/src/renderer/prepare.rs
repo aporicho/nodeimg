@@ -13,6 +13,7 @@ use super::pipeline::quad::{
 };
 use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
+use super::pipeline::text::TextRequest;
 use super::types::Rect;
 
 // ── 绘制操作 ──
@@ -35,7 +36,9 @@ pub enum DrawOp {
         rect: Rect,
         view: Arc<wgpu::TextureView>,
     },
-    Text,
+    Text {
+        index: usize,
+    },
     StencilWrite {
         index_start: u32,
         index_count: u32,
@@ -50,6 +53,7 @@ pub enum DrawOp {
 
 pub struct PreparedFrame {
     pub ops: Vec<DrawOp>,
+    pub text_requests: Vec<TextRequest>,
 
     pub quad_vertices: Vec<QuadVertex>,
     pub quad_indices: Vec<u32>,
@@ -72,6 +76,7 @@ pub fn prepare_frame(
 ) -> PreparedFrame {
     let mut frame = PreparedFrame {
         ops: Vec::new(),
+        text_requests: Vec::new(),
         quad_vertices: Vec::new(),
         quad_indices: Vec::new(),
         curve_vertices: Vec::new(),
@@ -105,11 +110,18 @@ pub fn prepare_frame(
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 circle_batch.push(req);
             }
-            DrawCommand::Text(_) => {
+            DrawCommand::Text(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
-                frame.ops.push(DrawOp::Text);
+                let index = frame.text_requests.len();
+                frame.text_requests.push(TextRequest {
+                    pos: req.pos,
+                    text: req.text.clone(),
+                    style: req.style,
+                    bounds: req.bounds,
+                });
+                frame.ops.push(DrawOp::Text { index });
             }
             DrawCommand::Image { rect, view } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
@@ -363,3 +375,81 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::{Color, Point, Rect, RectStyle, TextStyle};
+
+    fn test_curve_pipeline() -> CurvePipeline {
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            compatible_surface: None,
+            force_fallback_adapter: true,
+        }))
+        .expect("failed to create test adapter");
+        let (device, _queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("prepare-test-device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            ..Default::default()
+        }))
+        .expect("failed to create test device");
+
+        CurvePipeline::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::MultisampleState::default(),
+        )
+    }
+
+    fn rect_command(x: f32) -> DrawCommand {
+        DrawCommand::Rect(QuadRequest::from_style(
+            Rect {
+                x,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
+            &RectStyle {
+                color: Color::WHITE,
+                border: None,
+                radius: [0.0; 4],
+                shadow: None,
+            },
+        ))
+    }
+
+    fn text_command(text: &str) -> DrawCommand {
+        DrawCommand::Text(TextRequest {
+            pos: Point { x: 0.0, y: 0.0 },
+            text: text.to_string(),
+            style: TextStyle::new(Color::WHITE, 12.0),
+            bounds: None,
+        })
+    }
+
+    #[test]
+    fn prepare_frame_preserves_text_indices_in_order() {
+        let mut curve_pipeline = test_curve_pipeline();
+        let frame = prepare_frame(
+            &[
+                rect_command(0.0),
+                text_command("first"),
+                rect_command(20.0),
+                text_command("second"),
+            ],
+            &mut curve_pipeline,
+        );
+
+        assert!(matches!(frame.ops[0], DrawOp::Quad { .. }));
+        assert!(matches!(frame.ops[1], DrawOp::Text { index: 0 }));
+        assert!(matches!(frame.ops[2], DrawOp::Quad { .. }));
+        assert!(matches!(frame.ops[3], DrawOp::Text { index: 1 }));
+        assert_eq!(frame.text_requests.len(), 2);
+        assert_eq!(frame.text_requests[0].text, "first");
+        assert_eq!(frame.text_requests[1].text, "second");
+    }
+}
+
