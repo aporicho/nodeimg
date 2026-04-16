@@ -1,13 +1,13 @@
+use crate::interaction::{InteractionState, WidgetVisualState};
 use crate::renderer::{Color, RectStyle};
 use crate::theme::Theme;
 use crate::tree::{NodeId, NodeKind};
 use crate::widget::atoms::button::ButtonProps;
-use crate::widget::state::{InteractionStore, WidgetVisualState};
 
 pub(super) fn visual_override(
     node_id: NodeId,
     kind: &NodeKind,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let NodeKind::Widget(props) = kind else {

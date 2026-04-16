@@ -42,9 +42,9 @@ impl WidgetProps for ToggleProps {
         let visual = theme.toggle_visual(
             self.value,
             if self.disabled {
-                crate::widget::state::WidgetVisualState::Disabled
+                crate::interaction::WidgetVisualState::Disabled
             } else {
-                crate::widget::state::WidgetVisualState::Normal
+                crate::interaction::WidgetVisualState::Normal
             },
         );
         let thumb_justify = if self.value {

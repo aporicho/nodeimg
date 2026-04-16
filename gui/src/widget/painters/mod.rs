@@ -7,15 +7,16 @@ mod slider;
 mod text_input;
 mod toggle;
 
+use crate::interaction::InteractionState;
 use crate::renderer::{Color, RectStyle, Renderer, TextStyle};
 use crate::theme::Theme;
 use crate::tree::{NodeId, Tree};
-use crate::widget::state::{InteractionStore, TextInputStore};
+use crate::widget::state::TextInputStore;
 
 pub(crate) fn widget_visual_override(
     tree: &Tree,
     node_id: NodeId,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
@@ -35,7 +36,7 @@ pub(crate) fn paint_text_leaf_override(
     node_id: NodeId,
     renderer: &mut Renderer,
     tf: crate::tree::paint_helpers::PaintTransform,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
     content: &str,

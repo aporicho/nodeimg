@@ -1,4 +1,5 @@
 use crate::context::{OverlayPlacement, OverlayRequest};
+use crate::interaction::InteractionState;
 use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
@@ -7,7 +8,6 @@ use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
 use crate::widget::frameworks::group::GroupProps;
 use crate::widget::frameworks::list_view::ListViewProps;
-use crate::widget::state::InteractionStore;
 use crate::widget::systems::PopupSystem;
 use std::borrow::Cow;
 
@@ -39,7 +39,7 @@ impl DropdownSystem {
     pub fn handle_event(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         popup_system: &mut PopupSystem,
         event: &AppEvent,
     ) -> FrameworkOutput {
@@ -74,7 +74,7 @@ impl DropdownSystem {
     fn handle_key(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         popup_system: &mut PopupSystem,
         key: Key,
     ) -> FrameworkOutput {
@@ -136,7 +136,7 @@ impl DropdownSystem {
     fn toggle_dropdown(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         popup_system: &mut PopupSystem,
         dropdown_id: &str,
     ) {

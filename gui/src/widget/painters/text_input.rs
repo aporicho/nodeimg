@@ -1,17 +1,18 @@
+use crate::interaction::{InteractionState, WidgetVisualState};
 use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
 use crate::theme::{TextInputTheme, Theme};
 use crate::tree::paint_helpers::PaintTransform;
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::NumberInputProps;
 use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::state::{InteractionStore, TextInputStore, WidgetVisualState};
+use crate::widget::state::TextInputStore;
 
 use super::transparent_style;
 
 pub(super) fn visual_override(
     tree: &Tree,
     node_id: NodeId,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;
@@ -63,7 +64,7 @@ pub(super) fn paint_text_leaf(
     node_id: NodeId,
     renderer: &mut Renderer,
     tf: PaintTransform,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
     content: &str,
@@ -196,7 +197,7 @@ pub(super) fn paint_text_leaf(
 fn text_input_widget_id(
     tree: &Tree,
     node_id: NodeId,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
 ) -> Option<(String, bool)> {
     let node = tree.get(node_id)?;
     let node_id_str = node.id.as_ref();

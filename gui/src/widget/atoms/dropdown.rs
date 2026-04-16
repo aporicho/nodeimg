@@ -40,9 +40,9 @@ impl WidgetProps for DropdownProps {
         let theme = cx.theme;
         let tokens = theme.components.dropdown;
         let visual = theme.dropdown_visual(if self.disabled {
-            crate::widget::state::WidgetVisualState::Disabled
+            crate::interaction::WidgetVisualState::Disabled
         } else {
-            crate::widget::state::WidgetVisualState::Normal
+            crate::interaction::WidgetVisualState::Normal
         });
 
         let selected_text = self

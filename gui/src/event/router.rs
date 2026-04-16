@@ -1,38 +1,21 @@
-use std::time::Instant;
-
 use crate::context::Context;
-use crate::event::gesture_adapter;
-use crate::gesture::{self, GestureSignal};
 use crate::output::FrameworkOutput;
-use crate::shell::{AppEvent, MouseButton};
+use crate::shell::AppEvent;
 use crate::tree::layout::Overflow;
 use crate::tree::{hit_test, NodeId, Tree};
 
 pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
-    ctx.interaction_state.handle_event(&ctx.tree, event);
+    ctx.handle_interaction_event(event);
     let scroll_consumed = handle_scroll_event(&mut ctx.tree, event);
-    if ctx
-        .popup_system
-        .handle_event(&ctx.tree, &mut ctx.interaction_state, event)
-    {
+    if ctx.handle_popup_event(event) {
         return finalize_output(FrameworkOutput::consumed());
     }
 
-    let dropdown_output = ctx.dropdown_system.handle_event(
-        &ctx.tree,
-        &mut ctx.interaction_state,
-        &mut ctx.popup_system,
-        event,
-    );
-    let text_output =
-        ctx.text_input_system
-            .handle_event(&ctx.tree, &mut ctx.interaction_state, event);
+    let dropdown_output = ctx.handle_dropdown_event(event);
+    let text_output = ctx.handle_text_input_event(event);
 
-    if dropdown_output.consumed
-        || !dropdown_output.events.is_empty()
-        || !dropdown_output.effects.is_empty()
-    {
-        ctx.gesture_arena = None;
+    if output_has_pre_gesture_work(&dropdown_output) || output_has_pre_gesture_work(&text_output) {
+        ctx.cancel_gesture();
         return finalize_output(
             dropdown_output
                 .merge(text_output)
@@ -40,7 +23,7 @@ pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutp
         );
     }
 
-    let gesture_output = handle_gesture_event(ctx, event);
+    let gesture_output = ctx.handle_gesture_event(event);
     finalize_output(
         dropdown_output
             .merge(text_output)
@@ -49,57 +32,8 @@ pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutp
     )
 }
 
-fn handle_gesture_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
-    match *event {
-        AppEvent::MousePress { x, y, button }
-            if button == MouseButton::Left && ctx.gesture_arena.is_none() =>
-        {
-            let chain = hit_chain(&ctx.tree, x, y);
-            if let Some(arena) =
-                gesture::arena_from_hit_chain(&ctx.tree, &chain, x, y, ctx.last_tap_time)
-            {
-                ctx.gesture_arena = Some(arena);
-                return FrameworkOutput::consumed();
-            }
-            FrameworkOutput::default()
-        }
-        AppEvent::MouseMove { x, y } => {
-            let Some(arena) = ctx.gesture_arena.as_mut() else {
-                return FrameworkOutput::default();
-            };
-            arena
-                .pointer_move(x, y)
-                .map(|signal| record_gesture_signal(ctx, signal))
-                .unwrap_or_else(FrameworkOutput::consumed)
-        }
-        AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
-            let Some(mut arena) = ctx.gesture_arena.take() else {
-                return FrameworkOutput::default();
-            };
-            arena
-                .pointer_up(x, y)
-                .map(|signal| record_gesture_signal(ctx, signal))
-                .unwrap_or_else(FrameworkOutput::consumed)
-        }
-        AppEvent::Unfocused => {
-            ctx.gesture_arena = None;
-            FrameworkOutput::default()
-        }
-        _ => FrameworkOutput::default(),
-    }
-}
-
-fn record_gesture_signal(ctx: &mut Context, signal: GestureSignal) -> FrameworkOutput {
-    match &signal {
-        GestureSignal::Click(_) => {
-            ctx.last_tap_time = Some(Instant::now());
-        }
-        GestureSignal::DoubleClick(_) => {
-            ctx.last_tap_time = None;
-        }
-        _ => {}
-    }
-    gesture_adapter::gesture_signal_output(&ctx.tree, &signal)
+fn output_has_pre_gesture_work(output: &FrameworkOutput) -> bool {
+    output.consumed || !output.events.is_empty() || !output.effects.is_empty()
 }
 
 fn finalize_output(mut output: FrameworkOutput) -> FrameworkOutput {

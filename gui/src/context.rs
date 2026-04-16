@@ -1,15 +1,15 @@
-use std::time::Instant;
 use std::{collections::HashMap, sync::Arc};
 
+use crate::event::gesture_adapter;
 use crate::event::router;
-use crate::gesture::GestureArena;
+use crate::gesture::{GestureSession, GestureSessionUpdate};
+use crate::interaction::InteractionState;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, Tree};
 use crate::widget::props::WidgetBuildCx;
-use crate::widget::state::InteractionStore;
 use crate::widget::systems::{DropdownSystem, PopupSystem, TextInputSystem};
 
 pub use crate::output::{
@@ -17,16 +17,15 @@ pub use crate::output::{
 };
 pub use crate::widget::systems::{OverlayPlacement, OverlayRequest};
 
-/// GUI 中心对象。持有统一的控件树与当前手势竞技场。
+/// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
     pub(crate) tree: Tree,
-    pub(crate) gesture_arena: Option<GestureArena>,
-    pub(crate) interaction_state: InteractionStore,
+    gesture_session: GestureSession,
+    interaction: InteractionState,
     pub(crate) dropdown_system: DropdownSystem,
     pub(crate) popup_system: PopupSystem,
     pub(crate) text_input_system: TextInputSystem,
     pub(crate) last_theme_revision: Option<u64>,
-    pub(crate) last_tap_time: Option<Instant>,
     pub(crate) textures: HashMap<TextureHandle, Arc<wgpu::TextureView>>,
 }
 
@@ -40,13 +39,12 @@ impl Context {
     pub fn new() -> Self {
         Self {
             tree: Tree::new(),
-            gesture_arena: None,
-            interaction_state: InteractionStore::new(),
+            gesture_session: GestureSession::new(),
+            interaction: InteractionState::new(),
             dropdown_system: DropdownSystem::new(),
             popup_system: PopupSystem::new(),
             text_input_system: TextInputSystem::new(),
             last_theme_revision: None,
-            last_tap_time: None,
             textures: HashMap::new(),
         }
     }
@@ -72,13 +70,13 @@ impl Context {
                 measurer.measure_with_style(text, style)
             });
         }
-        self.interaction_state.sync_with_tree(&self.tree);
+        self.interaction.sync_with_tree(&self.tree);
         self.text_input_system.sync_with_tree(
             &self.tree,
             measurer,
             theme,
-            self.interaction_state.focused(),
-            self.interaction_state.captured(),
+            self.interaction.focused(),
+            self.interaction.captured(),
         );
         self.dropdown_system
             .sync_with_tree(&self.tree, &self.popup_system);
@@ -97,7 +95,7 @@ impl Context {
                 &self.tree,
                 root,
                 renderer,
-                Some(&self.interaction_state),
+                Some(&self.interaction),
                 Some(self.text_input_system.store()),
                 Some(&self.textures),
                 theme,
@@ -114,8 +112,7 @@ impl Context {
     }
 
     pub fn close_overlay(&mut self) {
-        self.popup_system
-            .close(&self.tree, &mut self.interaction_state);
+        self.popup_system.close(&self.tree, &mut self.interaction);
     }
 
     pub fn overlay_open(&self) -> bool {
@@ -128,15 +125,12 @@ impl Context {
 
     pub fn ime_request(&self) -> ImeRequest {
         self.text_input_system
-            .ime_request(&self.tree, self.interaction_state.focused())
+            .ime_request(&self.tree, self.interaction.focused())
     }
 
     pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
-        self.text_input_system.paste_focused_text(
-            &self.tree,
-            self.interaction_state.focused(),
-            text,
-        )
+        self.text_input_system
+            .paste_focused_text(&self.tree, self.interaction.focused(), text)
     }
 
     /// 命中测试，返回从叶子到根的命中链。
@@ -155,8 +149,86 @@ impl Context {
         &self.tree
     }
 
-    pub fn interaction_state(&self) -> &InteractionStore {
-        &self.interaction_state
+    pub fn focused_node(&self) -> Option<NodeId> {
+        self.interaction.focused()
+    }
+
+    pub fn focused_widget_id(&self) -> Option<&str> {
+        self.node_name(self.focused_node())
+    }
+
+    pub fn hovered_node(&self) -> Option<NodeId> {
+        self.interaction.hovered()
+    }
+
+    pub fn hovered_widget_id(&self) -> Option<&str> {
+        self.node_name(self.hovered_node())
+    }
+
+    pub fn captured_node(&self) -> Option<NodeId> {
+        self.interaction.captured()
+    }
+
+    pub fn captured_widget_id(&self) -> Option<&str> {
+        self.node_name(self.captured_node())
+    }
+
+    pub fn request_focus(&mut self, node_id: NodeId) {
+        self.interaction.focus(node_id);
+    }
+
+    pub fn clear_focus(&mut self) {
+        self.interaction.blur();
+    }
+
+    pub(crate) fn handle_interaction_event(&mut self, event: &AppEvent) {
+        self.interaction.handle_event(&self.tree, event);
+    }
+
+    pub(crate) fn handle_popup_event(&mut self, event: &AppEvent) -> bool {
+        self.popup_system
+            .handle_event(&self.tree, &mut self.interaction, event)
+    }
+
+    pub(crate) fn handle_dropdown_event(&mut self, event: &AppEvent) -> FrameworkOutput {
+        self.dropdown_system.handle_event(
+            &self.tree,
+            &mut self.interaction,
+            &mut self.popup_system,
+            event,
+        )
+    }
+
+    pub(crate) fn handle_text_input_event(&mut self, event: &AppEvent) -> FrameworkOutput {
+        self.text_input_system
+            .handle_event(&self.tree, &mut self.interaction, event)
+    }
+
+    pub(crate) fn handle_gesture_event(&mut self, event: &AppEvent) -> FrameworkOutput {
+        let update = self.handle_gesture_session_event(event);
+        let output = update
+            .signal
+            .as_ref()
+            .map(|signal| gesture_adapter::gesture_signal_output(&self.tree, signal))
+            .unwrap_or_default();
+        output.with_consumed(update.consumed)
+    }
+
+    pub(crate) fn handle_gesture_session_event(
+        &mut self,
+        event: &AppEvent,
+    ) -> GestureSessionUpdate {
+        self.gesture_session.handle_event(&self.tree, event)
+    }
+
+    pub(crate) fn cancel_gesture(&mut self) {
+        self.gesture_session.cancel();
+    }
+
+    fn node_name(&self, node_id: Option<NodeId>) -> Option<&str> {
+        node_id
+            .and_then(|id| self.tree.get(id))
+            .map(|node| node.id.as_ref())
     }
 }
 
@@ -286,6 +358,37 @@ mod tests {
                     w: 180.0,
                     h: 100.0,
                     content: vec![],
+                }),
+            }],
+        }
+    }
+
+    fn panel_with_input_desc() -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(320.0),
+                height: Size::Fixed(240.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: vec![Desc::Widget {
+                id: Cow::Borrowed("panel"),
+                props: Box::new(PanelProps {
+                    id: Cow::Borrowed("panel"),
+                    title: Cow::Borrowed("Panel"),
+                    x: 20.0,
+                    y: 20.0,
+                    w: 240.0,
+                    h: 160.0,
+                    content: vec![Desc::Widget {
+                        id: Cow::Borrowed("input"),
+                        props: Box::new(TextInputProps {
+                            label: Cow::Borrowed("Prompt"),
+                            value: Cow::Borrowed("hello"),
+                            disabled: false,
+                        }),
+                    }],
                 }),
             }],
         }
@@ -594,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn context_emits_click_without_demo_owned_gesture_arena() {
+    fn context_emits_click_through_gesture_session() {
         let mut ctx = Context::new();
         let mut measurer = TextMeasurer::new();
         let theme = dark_theme();
@@ -627,6 +730,135 @@ mod tests {
             [GuiEvent::Widget(WidgetEvent::Click { id })] if id == "button"
         ));
         assert!(output.consumed);
+    }
+
+    #[test]
+    fn mouse_move_updates_hovered_widget_through_context_facade() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = button_rect(&ctx);
+
+        let _ = ctx.handle_event(&AppEvent::MouseMove {
+            x: rect.x + rect.w * 0.5,
+            y: rect.y + rect.h * 0.5,
+        });
+
+        assert_eq!(ctx.hovered_widget_id(), Some("button"));
+    }
+
+    #[test]
+    fn mouse_press_and_release_updates_capture_through_context_facade() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = button_rect(&ctx);
+        let x = rect.x + rect.w * 0.5;
+        let y = rect.y + rect.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        assert_eq!(ctx.captured_widget_id(), Some("button"));
+
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        assert_eq!(ctx.captured_widget_id(), None);
+    }
+
+    #[test]
+    fn text_input_consumed_pointer_press_cancels_active_gesture_session() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            panel_with_input_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 240.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let titlebar = node_rect(&ctx, "panel::titlebar");
+        let field = node_rect(&ctx, "input::field");
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: titlebar.x + titlebar.w * 0.5,
+            y: titlebar.y + titlebar.h * 0.5,
+            button: MouseButton::Left,
+        });
+        assert!(ctx.gesture_session.is_active());
+
+        let output = ctx.handle_event(&AppEvent::MousePress {
+            x: field.x + field.w * 0.5,
+            y: field.y + field.h * 0.5,
+            button: MouseButton::Left,
+        });
+
+        assert!(output.consumed);
+        assert!(!ctx.gesture_session.is_active());
+        assert_eq!(ctx.focused_widget_id(), Some("input"));
+    }
+
+    #[test]
+    fn unfocused_cancels_active_gesture_session() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            panel_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 180.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let titlebar = node_rect(&ctx, "panel::titlebar");
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: titlebar.x + titlebar.w * 0.5,
+            y: titlebar.y + titlebar.h * 0.5,
+            button: MouseButton::Left,
+        });
+        assert!(ctx.gesture_session.is_active());
+
+        let output = ctx.handle_event(&AppEvent::Unfocused);
+
+        assert!(!output.consumed);
+        assert!(!ctx.gesture_session.is_active());
     }
 
     #[test]
@@ -1005,7 +1237,7 @@ mod tests {
             &mut measurer,
             &theme,
         );
-        ctx.interaction_state.blur();
+        ctx.clear_focus();
 
         let _ = ctx.handle_event(&AppEvent::KeyPress {
             key: Key::Escape,
@@ -1013,12 +1245,7 @@ mod tests {
         });
 
         assert!(!ctx.overlay_open());
-        let focused_name = ctx
-            .interaction_state
-            .focused()
-            .and_then(|id| ctx.tree().get(id))
-            .map(|node| node.id.as_ref().to_string());
-        assert_eq!(focused_name.as_deref(), Some("button"));
+        assert_eq!(ctx.focused_widget_id(), Some("button"));
     }
 
     #[test]
@@ -1312,7 +1539,7 @@ mod tests {
             .iter()
             .find_map(|(id, node)| (node.id.as_ref() == "dropdown").then_some(id))
             .expect("dropdown id");
-        ctx.interaction_state.focus(dropdown_id);
+        ctx.request_focus(dropdown_id);
 
         let _ = ctx.handle_event(&AppEvent::KeyPress {
             key: Key::Enter,

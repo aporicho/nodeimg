@@ -5,13 +5,14 @@ use super::paint_helpers::{
     PaintTransform,
 };
 use super::tree::Tree;
+use crate::interaction::InteractionState;
 use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
     widget_visual_override as paint_widget_visual_override,
 };
-use crate::widget::state::{InteractionStore, TextInputStore};
+use crate::widget::state::TextInputStore;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ pub fn paint(
     tree: &Tree,
     root: NodeId,
     renderer: &mut Renderer,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     textures: Option<&HashMap<crate::tree::layout::TextureHandle, Arc<wgpu::TextureView>>>,
     theme: &Theme,
@@ -44,7 +45,7 @@ fn paint_node(
     node_id: NodeId,
     renderer: &mut Renderer,
     tf: PaintTransform,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     textures: Option<&HashMap<crate::tree::layout::TextureHandle, Arc<wgpu::TextureView>>>,
     theme: &Theme,

@@ -3,6 +3,7 @@ use super::signal::GestureSignal;
 
 pub struct GestureArena {
     members: Vec<Box<dyn GestureRecognizer>>,
+    #[cfg(test)]
     target_id: String,
     resolved: bool,
     winner_signal: Option<GestureSignal>,
@@ -10,22 +11,25 @@ pub struct GestureArena {
 
 impl GestureArena {
     pub fn new(target_id: String) -> Self {
+        #[cfg(not(test))]
+        let _ = target_id;
+
         Self {
             members: Vec::new(),
+            #[cfg(test)]
             target_id,
             resolved: false,
             winner_signal: None,
         }
     }
 
+    #[cfg(test)]
     pub fn target_id(&self) -> &str {
         &self.target_id
     }
+
     pub fn is_empty(&self) -> bool {
         self.members.is_empty()
-    }
-    pub fn is_resolved(&self) -> bool {
-        self.resolved
     }
 
     pub(crate) fn add(&mut self, recognizer: Box<dyn GestureRecognizer>) {

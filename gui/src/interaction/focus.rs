@@ -1,20 +1,20 @@
 use crate::tree::NodeId;
 
-/// 框架级焦点状态。只跟踪哪个运行时节点拥有键盘焦点。
-pub struct FocusState {
+/// Framework-level keyboard focus state.
+pub(crate) struct FocusState {
     focused: Option<NodeId>,
     focusable: Vec<NodeId>,
 }
 
 impl FocusState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             focused: None,
             focusable: Vec::new(),
         }
     }
 
-    pub fn set_focusable(&mut self, ids: Vec<NodeId>) {
+    pub(crate) fn set_focusable(&mut self, ids: Vec<NodeId>) {
         if let Some(focused) = self.focused {
             if !ids.contains(&focused) {
                 self.focused = None;
@@ -23,27 +23,27 @@ impl FocusState {
         self.focusable = ids;
     }
 
-    pub fn focus(&mut self, id: NodeId) {
+    pub(crate) fn focus(&mut self, id: NodeId) {
         self.focused = Some(id);
     }
 
-    pub fn blur(&mut self) {
+    pub(crate) fn blur(&mut self) {
         self.focused = None;
     }
 
-    pub fn is_focused(&self, id: NodeId) -> bool {
+    pub(crate) fn is_focused(&self, id: NodeId) -> bool {
         self.focused == Some(id)
     }
 
-    pub fn focused(&self) -> Option<NodeId> {
+    pub(crate) fn focused(&self) -> Option<NodeId> {
         self.focused
     }
 
-    pub fn tab_next(&mut self) {
+    pub(crate) fn tab_next(&mut self) {
         self.focused = self.advance(1);
     }
 
-    pub fn tab_prev(&mut self) {
+    pub(crate) fn tab_prev(&mut self) {
         self.focused = self.advance(-1);
     }
 

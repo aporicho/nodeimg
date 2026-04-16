@@ -41,9 +41,9 @@ impl WidgetProps for ButtonProps {
         let theme = cx.theme;
         let tokens = theme.components.button;
         let visual = theme.button_visual(if self.disabled {
-            crate::widget::state::WidgetVisualState::Disabled
+            crate::interaction::WidgetVisualState::Disabled
         } else {
-            crate::widget::state::WidgetVisualState::Normal
+            crate::interaction::WidgetVisualState::Normal
         });
 
         WidgetBuild {

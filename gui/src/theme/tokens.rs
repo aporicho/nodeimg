@@ -1,5 +1,5 @@
+use crate::interaction::WidgetVisualState;
 use crate::renderer::{Color, TextFamily, TextStyle, TextWeight};
-use crate::widget::state::WidgetVisualState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThemeMode {

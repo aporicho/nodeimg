@@ -1,15 +1,15 @@
+use crate::interaction::{InteractionState, WidgetVisualState};
 use crate::renderer::{Color, RectStyle};
 use crate::theme::Theme;
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::dropdown::DropdownProps;
-use crate::widget::state::{InteractionStore, WidgetVisualState};
 
 use super::transparent_style;
 
 pub(super) fn visual_override(
     tree: &Tree,
     node_id: NodeId,
-    interaction: Option<&InteractionStore>,
+    interaction: Option<&InteractionState>,
     theme: &Theme,
 ) -> Option<(RectStyle, Color)> {
     let node = tree.get(node_id)?;

@@ -1,7 +1,7 @@
+use crate::interaction::InteractionState;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::layout::{BoxStyle, Position, Size};
 use crate::tree::{Desc, Tree};
-use crate::widget::state::InteractionStore;
 use std::borrow::Cow;
 
 const OVERLAY_ROOT_ID: &str = "__overlay_root";
@@ -55,7 +55,7 @@ impl PopupSystem {
         });
     }
 
-    pub fn close(&mut self, tree: &Tree, interaction: &mut InteractionStore) {
+    pub fn close(&mut self, tree: &Tree, interaction: &mut InteractionState) {
         let Some(state) = self.current.take() else {
             return;
         };
@@ -100,7 +100,7 @@ impl PopupSystem {
     pub fn handle_event(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         event: &AppEvent,
     ) -> bool {
         let Some(state) = &self.current else {

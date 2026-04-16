@@ -41,9 +41,9 @@ impl WidgetProps for RadioProps {
         let visual = theme.radio_visual(
             self.selected,
             if self.disabled {
-                crate::widget::state::WidgetVisualState::Disabled
+                crate::interaction::WidgetVisualState::Disabled
             } else {
-                crate::widget::state::WidgetVisualState::Normal
+                crate::interaction::WidgetVisualState::Normal
             },
         );
 

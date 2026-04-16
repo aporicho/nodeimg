@@ -9,7 +9,7 @@ use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::frameworks::collapsible::CollapsibleProps;
 
-pub fn focusable_nodes(tree: &Tree) -> Vec<NodeId> {
+pub(crate) fn focusable_nodes(tree: &Tree) -> Vec<NodeId> {
     tree.iter()
         .filter_map(|(id, node)| match &node.kind {
             NodeKind::Widget(props)
@@ -23,7 +23,7 @@ pub fn focusable_nodes(tree: &Tree) -> Vec<NodeId> {
         .collect()
 }
 
-pub fn interactive_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
+pub(crate) fn interactive_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
     let mut gesture_target = None;
     let mut focusable_widget = None;
 
@@ -52,7 +52,7 @@ pub fn interactive_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
     focusable_widget.or(gesture_target)
 }
 
-pub fn input_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
+pub(crate) fn input_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
     let mut gesture_target = None;
     let mut focusable_widget = None;
 

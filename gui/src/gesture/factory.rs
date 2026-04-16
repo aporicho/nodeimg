@@ -1,9 +1,8 @@
 use std::time::Instant;
 
+use super::arena::GestureArena;
 use super::resize::ResizeRecognizer;
-use super::{
-    DragRecognizer, Gesture, GestureArena, GestureRecognizer, LongPressRecognizer, TapRecognizer,
-};
+use super::{DragRecognizer, Gesture, GestureRecognizer, LongPressRecognizer, TapRecognizer};
 use crate::tree::{HitChain, Tree};
 
 /// 根据命中链自动创建手势竞技场。
@@ -12,7 +11,7 @@ use crate::tree::{HitChain, Tree};
 /// - Tap / DoubleTap 共用点击识别器（TapRecognizer）
 /// - Drag / Resize 优先绑定最近的 Panel widget
 /// - 其余手势绑定声明该手势的节点本身
-pub fn arena_from_hit_chain(
+pub(crate) fn arena_from_hit_chain(
     tree: &Tree,
     chain: &HitChain,
     x: f32,

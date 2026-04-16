@@ -38,9 +38,9 @@ impl WidgetProps for TextInputProps {
         let theme = cx.theme;
         let tokens = theme.components.text_input;
         let visual = theme.text_input_visual(if self.disabled {
-            crate::widget::state::WidgetVisualState::Disabled
+            crate::interaction::WidgetVisualState::Disabled
         } else {
-            crate::widget::state::WidgetVisualState::Normal
+            crate::interaction::WidgetVisualState::Normal
         });
 
         WidgetBuild {

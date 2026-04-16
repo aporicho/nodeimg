@@ -3,18 +3,18 @@ use crate::tree::{NodeId, Tree};
 
 use super::focus::FocusState;
 use super::reducer;
-use super::registry;
-use super::visual::WidgetVisualState;
+use super::target;
+use super::WidgetVisualState;
 
-/// 框架级交互状态存储。统一管理 hover / press / capture / focus。
-pub struct InteractionStore {
+/// Framework-level interaction state for hover, press, pointer capture, and focus.
+pub struct InteractionState {
     hovered: Option<NodeId>,
     pressed: Option<NodeId>,
     captured: Option<NodeId>,
     focus: FocusState,
 }
 
-impl InteractionStore {
+impl InteractionState {
     pub fn new() -> Self {
         Self {
             hovered: None,
@@ -24,11 +24,11 @@ impl InteractionStore {
         }
     }
 
-    pub fn sync_with_tree(&mut self, tree: &Tree) {
+    pub(crate) fn sync_with_tree(&mut self, tree: &Tree) {
         self.hovered = self.hovered.filter(|&id| tree.get(id).is_some());
         self.pressed = self.pressed.filter(|&id| tree.get(id).is_some());
         self.captured = self.captured.filter(|&id| tree.get(id).is_some());
-        self.focus.set_focusable(registry::focusable_nodes(tree));
+        self.focus.set_focusable(target::focusable_nodes(tree));
         if let Some(id) = self.focus.focused() {
             if tree.get(id).is_none() {
                 self.focus.blur();
@@ -36,7 +36,7 @@ impl InteractionStore {
         }
     }
 
-    pub fn handle_event(&mut self, tree: &Tree, event: &AppEvent) {
+    pub(crate) fn handle_event(&mut self, tree: &Tree, event: &AppEvent) {
         reducer::apply_event(self, tree, event);
     }
 
@@ -66,19 +66,19 @@ impl InteractionStore {
         self.captured
     }
 
-    pub fn set_hovered(&mut self, hovered: Option<NodeId>) {
+    pub(crate) fn set_hovered(&mut self, hovered: Option<NodeId>) {
         self.hovered = hovered;
     }
 
-    pub fn set_pressed(&mut self, pressed: Option<NodeId>) {
+    pub(crate) fn set_pressed(&mut self, pressed: Option<NodeId>) {
         self.pressed = pressed;
     }
 
-    pub fn set_captured(&mut self, captured: Option<NodeId>) {
+    pub(crate) fn set_captured(&mut self, captured: Option<NodeId>) {
         self.captured = captured;
     }
 
-    pub fn clear_pointer_state(&mut self) {
+    pub(crate) fn clear_pointer_state(&mut self) {
         self.hovered = None;
         self.pressed = None;
         self.captured = None;
@@ -92,16 +92,16 @@ impl InteractionStore {
         self.focus.blur();
     }
 
-    pub fn tab_next(&mut self) {
+    pub(crate) fn tab_next(&mut self) {
         self.focus.tab_next();
     }
 
-    pub fn tab_prev(&mut self) {
+    pub(crate) fn tab_prev(&mut self) {
         self.focus.tab_prev();
     }
 }
 
-impl Default for InteractionStore {
+impl Default for InteractionState {
     fn default() -> Self {
         Self::new()
     }

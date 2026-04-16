@@ -1,4 +1,5 @@
 use crate::context::ImeRequest;
+use crate::interaction::InteractionState;
 use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent};
 use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
@@ -6,7 +7,7 @@ use crate::theme::Theme;
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::{format_number, NumberInputProps};
 use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::state::{InteractionStore, TextFieldKind, TextInputStore};
+use crate::widget::state::{TextFieldKind, TextInputStore};
 
 pub struct TextInputSystem {
     store: TextInputStore,
@@ -38,7 +39,7 @@ impl TextInputSystem {
     pub fn handle_event(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         event: &AppEvent,
     ) -> FrameworkOutput {
         let outcome = match event {
@@ -175,7 +176,7 @@ impl TextInputSystem {
     fn handle_key_press(
         &mut self,
         tree: &Tree,
-        interaction: &mut InteractionStore,
+        interaction: &mut InteractionState,
         key: Key,
         modifiers: Modifiers,
     ) -> FrameworkOutput {

@@ -41,9 +41,9 @@ impl WidgetProps for SliderProps {
         let theme = cx.theme;
         let tokens = theme.components.slider;
         let visual = theme.slider_visual(if self.disabled {
-            crate::widget::state::WidgetVisualState::Disabled
+            crate::interaction::WidgetVisualState::Disabled
         } else {
-            crate::widget::state::WidgetVisualState::Normal
+            crate::interaction::WidgetVisualState::Normal
         });
 
         // 填充比例
