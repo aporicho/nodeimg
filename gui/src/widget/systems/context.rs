@@ -1,5 +1,5 @@
 use crate::interaction::InteractionState;
-use crate::tree::{NodeId, Tree};
+use crate::tree::{hit_test, HitChain, NodeId, NodeKind, Tree};
 
 use super::popup::{OverlayRequest, PopupSystem};
 
@@ -23,6 +23,29 @@ impl<'a> SystemCx<'a> {
 
     pub(crate) fn captured_node(&self) -> Option<NodeId> {
         self.interaction.captured()
+    }
+
+    pub(crate) fn hit_chain(&self, x: f32, y: f32) -> HitChain {
+        let Some(root) = self.tree.root() else {
+            return HitChain::empty();
+        };
+        hit_test(self.tree, root, x, y)
+    }
+
+    pub(crate) fn node_name(&self, node_id: NodeId) -> Option<&str> {
+        self.tree.get(node_id).map(|node| node.id.as_ref())
+    }
+
+    pub(crate) fn widget_type(&self, node_id: NodeId) -> Option<&'static str> {
+        let node = self.tree.get(node_id)?;
+        let NodeKind::Widget(props) = &node.kind else {
+            return None;
+        };
+        Some(props.widget_type())
+    }
+
+    pub(crate) fn is_widget_type(&self, node_id: NodeId, widget_type: &str) -> bool {
+        self.widget_type(node_id) == Some(widget_type)
     }
 
     pub(crate) fn focus(&mut self, node_id: NodeId) {
