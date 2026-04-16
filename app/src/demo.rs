@@ -429,11 +429,8 @@ impl DemoApp {
                 if let Some(session) = &mut self.pointer_session {
                     let entry = self.panel_positions.entry(id.clone()).or_insert_with(|| {
                         self.gui
-                            .tree()
-                            .iter()
-                            .find_map(|(_, node)| {
-                                (node.id.as_ref() == id).then_some((node.rect.x, node.rect.y))
-                            })
+                            .node_rect(&id)
+                            .map(|rect| (rect.x, rect.y))
                             .unwrap_or((0.0, 0.0))
                     });
                     entry.0 += x - session.last_x;
@@ -471,49 +468,50 @@ impl DemoApp {
         }
 
         for node_id in chain.iter() {
-            let Some(node) = self.gui.tree().get(node_id) else {
+            let Some(id) = self.gui.node_name(node_id) else {
                 continue;
             };
 
-            if node.style.gestures.contains(&Gesture::Resize)
-                && !is_gallery_panel_node(node.id.as_ref())
-            {
-                if let Some(edge) = detect_resize_edge(node.rect, x, y) {
+            if self.gui.node_has_gesture(node_id, Gesture::Resize) && !is_gallery_panel_node(id) {
+                if let Some(edge) = self
+                    .gui
+                    .node_rect_by_node(node_id)
+                    .and_then(|rect| detect_resize_edge(rect, x, y))
+                {
                     ctx.cursor.set(cursor_for_resize_edge(edge));
                     return;
                 }
             }
 
-            let id = node.id.as_ref();
-            if is_slider_target(id) && node.style.gestures.contains(&Gesture::Drag) {
+            if is_slider_target(id) && self.gui.node_has_gesture(node_id, Gesture::Drag) {
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
 
-            if is_text_input_field(self.gui.tree(), node_id) {
+            if self.gui.node_is_text_input_field(node_id) {
                 ctx.cursor.set(CursorStyle::Text);
                 return;
             }
 
             if is_toggle_target(id)
-                && (node.style.gestures.contains(&Gesture::Tap)
-                    || node.style.gestures.contains(&Gesture::DoubleTap))
+                && (self.gui.node_has_gesture(node_id, Gesture::Tap)
+                    || self.gui.node_has_gesture(node_id, Gesture::DoubleTap))
             {
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
 
-            if id.ends_with("::titlebar") && node.style.gestures.contains(&Gesture::Drag) {
+            if id.ends_with("::titlebar") && self.gui.node_has_gesture(node_id, Gesture::Drag) {
                 ctx.cursor.set(CursorStyle::Move);
                 return;
             }
 
-            if is_gallery_panel_node(node.id.as_ref()) {
+            if is_gallery_panel_node(id) {
                 continue;
             }
 
-            if node.style.gestures.contains(&Gesture::Tap)
-                || node.style.gestures.contains(&Gesture::DoubleTap)
+            if self.gui.node_has_gesture(node_id, Gesture::Tap)
+                || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
             {
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
@@ -522,8 +520,10 @@ impl DemoApp {
     }
 
     fn update_slider_from_pointer(&mut self, x: f32) {
-        if let Some(value) =
-            slider_value_from_x(self.gui.tree(), "slider_radius", x, 0.0, 10.0, 0.1)
+        if let Some(value) = self
+            .gui
+            .node_rect(&format!("{SLIDER_RADIUS_ID}::track"))
+            .and_then(|track_rect| slider_value_from_x(track_rect, x, 0.0, 10.0, 0.1))
         {
             self.gallery.slider_value = value;
         }
@@ -542,42 +542,9 @@ fn is_gallery_panel_node(id: &str) -> bool {
     id.starts_with(GALLERY_PANEL_PREFIX)
 }
 
-fn is_text_input_field(tree: &gui::tree::Tree, node_id: usize) -> bool {
-    let Some(node) = tree.get(node_id) else {
-        return false;
-    };
-    let node_id_str = node.id.as_ref();
-    if !node_id_str.ends_with("::field") {
-        return false;
-    }
-
-    let Some(root_id) = node_id_str.split("::").next() else {
-        return false;
-    };
-    let Some((_, root_node)) = tree
-        .iter()
-        .find(|(_, candidate)| candidate.id.as_ref() == root_id)
-    else {
-        return false;
-    };
-    let gui::tree::NodeKind::Widget(props) = &root_node.kind else {
-        return false;
-    };
-    props.widget_type() == "TextInput"
-}
-
-fn slider_value_from_x(
-    tree: &gui::tree::Tree,
-    root_id: &str,
-    x: f32,
-    min: f32,
-    max: f32,
-    step: f32,
-) -> Option<f32> {
-    let track_id = format!("{root_id}::track");
-    let (_, track) = tree.iter().find(|(_, node)| node.id.as_ref() == track_id)?;
-    let width = track.rect.w.max(1.0);
-    let ratio = ((x - track.rect.x) / width).clamp(0.0, 1.0);
+fn slider_value_from_x(track_rect: Rect, x: f32, min: f32, max: f32, step: f32) -> Option<f32> {
+    let width = track_rect.w.max(1.0);
+    let ratio = ((x - track_rect.x) / width).clamp(0.0, 1.0);
     let raw = min + (max - min) * ratio;
     let stepped = if step > 0.0 {
         ((raw - min) / step).round() * step + min

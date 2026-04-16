@@ -2,13 +2,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::event::gesture_adapter;
 use crate::event::router;
-use crate::gesture::{GestureSession, GestureSessionUpdate};
+use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::interaction::InteractionState;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
-use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, Tree};
+use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, NodeKind, Tree};
 use crate::widget::props::WidgetBuildCx;
 use crate::widget::systems::{DropdownSystem, PopupSystem, TextInputSystem};
 
@@ -145,8 +145,57 @@ impl Context {
         self.tree.root()
     }
 
-    pub fn tree(&self) -> &Tree {
-        &self.tree
+    pub fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
+        self.tree
+            .iter()
+            .find_map(|(node_id, node)| (node.id.as_ref() == id).then_some(node_id))
+    }
+
+    pub fn node_exists(&self, id: &str) -> bool {
+        self.node_id_by_name(id).is_some()
+    }
+
+    pub fn node_rect(&self, id: &str) -> Option<Rect> {
+        self.node_id_by_name(id)
+            .and_then(|node_id| self.node_rect_by_node(node_id))
+    }
+
+    pub fn node_rect_by_node(&self, node_id: NodeId) -> Option<Rect> {
+        self.tree.get(node_id).map(|node| node.rect)
+    }
+
+    pub fn node_name(&self, node_id: NodeId) -> Option<&str> {
+        self.tree.get(node_id).map(|node| node.id.as_ref())
+    }
+
+    pub fn node_scroll_offset(&self, id: &str) -> Option<f32> {
+        self.node_id_by_name(id)
+            .and_then(|node_id| self.tree.get(node_id))
+            .map(|node| node.scroll_offset)
+    }
+
+    pub fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
+        self.tree
+            .get(node_id)
+            .map(|node| node.style.gestures.contains(&gesture))
+            .unwrap_or(false)
+    }
+
+    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&'static str> {
+        let node_name = self.node_name(node_id)?;
+        let root_name = node_name.split("::").next()?;
+        let root_id = self.node_id_by_name(root_name)?;
+        let root_node = self.tree.get(root_id)?;
+        let NodeKind::Widget(props) = &root_node.kind else {
+            return None;
+        };
+        Some(props.widget_type())
+    }
+
+    pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
+        self.node_name(node_id)
+            .is_some_and(|id| id.ends_with("::field"))
+            && self.node_root_widget_type(node_id) == Some("TextInput")
     }
 
     pub fn focused_node(&self) -> Option<NodeId> {
@@ -154,7 +203,7 @@ impl Context {
     }
 
     pub fn focused_widget_id(&self) -> Option<&str> {
-        self.node_name(self.focused_node())
+        self.node_name_for(self.focused_node())
     }
 
     pub fn hovered_node(&self) -> Option<NodeId> {
@@ -162,7 +211,7 @@ impl Context {
     }
 
     pub fn hovered_widget_id(&self) -> Option<&str> {
-        self.node_name(self.hovered_node())
+        self.node_name_for(self.hovered_node())
     }
 
     pub fn captured_node(&self) -> Option<NodeId> {
@@ -170,7 +219,7 @@ impl Context {
     }
 
     pub fn captured_widget_id(&self) -> Option<&str> {
-        self.node_name(self.captured_node())
+        self.node_name_for(self.captured_node())
     }
 
     pub fn request_focus(&mut self, node_id: NodeId) {
@@ -225,10 +274,8 @@ impl Context {
         self.gesture_session.cancel();
     }
 
-    fn node_name(&self, node_id: Option<NodeId>) -> Option<&str> {
-        node_id
-            .and_then(|id| self.tree.get(id))
-            .map(|node| node.id.as_ref())
+    fn node_name_for(&self, node_id: Option<NodeId>) -> Option<&str> {
+        node_id.and_then(|id| self.node_name(id))
     }
 }
 
@@ -503,24 +550,16 @@ mod tests {
     }
 
     fn field_rect(ctx: &Context) -> Rect {
-        ctx.tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == "input::field").then_some(node.rect))
+        ctx.node_rect("input::field")
             .expect("text input field rect")
     }
 
     fn button_rect(ctx: &Context) -> Rect {
-        ctx.tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == "button").then_some(node.rect))
-            .expect("button rect")
+        ctx.node_rect("button").expect("button rect")
     }
 
     fn node_rect(ctx: &Context, node_name: &str) -> Rect {
-        ctx.tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == node_name).then_some(node.rect))
-            .expect("node rect")
+        ctx.node_rect(node_name).expect("node rect")
     }
 
     fn focus_number(ctx: &mut Context) {
@@ -553,6 +592,28 @@ mod tests {
             y: rect.y + rect.h * 0.5,
             button: MouseButton::Left,
         });
+    }
+
+    #[test]
+    fn context_query_api_finds_nodes_without_exposing_tree() {
+        let ctx = test_context("hello");
+
+        let field_id = ctx
+            .node_id_by_name("input::field")
+            .expect("text input field id");
+
+        assert!(ctx.node_exists("input::field"));
+        assert!(!ctx.node_exists("missing"));
+        assert_eq!(ctx.node_name(field_id), Some("input::field"));
+        let by_name = ctx.node_rect("input::field").expect("rect by name");
+        let by_node = ctx.node_rect_by_node(field_id).expect("rect by node");
+        assert_eq!(by_name.x, by_node.x);
+        assert_eq!(by_name.y, by_node.y);
+        assert_eq!(by_name.w, by_node.w);
+        assert_eq!(by_name.h, by_node.h);
+        assert_eq!(ctx.node_root_widget_type(field_id), Some("TextInput"));
+        assert!(ctx.node_is_text_input_field(field_id));
+        assert!(ctx.node_rect("missing").is_none());
     }
 
     #[test]
@@ -668,11 +729,7 @@ mod tests {
             &dark,
         );
 
-        let before_height = ctx
-            .tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == "input::field").then_some(node.rect.h))
-            .expect("text input field");
+        let before_height = ctx.node_rect("input::field").expect("text input field").h;
 
         ctx.update(
             test_desc("hello"),
@@ -686,11 +743,7 @@ mod tests {
             &updated,
         );
 
-        let after_height = ctx
-            .tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == "input::field").then_some(node.rect.h))
-            .expect("text input field");
+        let after_height = ctx.node_rect("input::field").expect("text input field").h;
 
         assert_eq!(before_height, dark.components.text_input.field_height);
         assert_eq!(after_height, updated.components.text_input.field_height);
@@ -1141,9 +1194,8 @@ mod tests {
         let popup_rect = node_rect(&ctx, "__overlay::test_popup");
         let chain = ctx.hit_test(popup_rect.x + 2.0, popup_rect.y + 2.0);
         assert!(chain.iter().any(|node_id| {
-            ctx.tree()
-                .get(node_id)
-                .is_some_and(|node| node.id.as_ref().starts_with("__overlay::test_popup"))
+            ctx.node_name(node_id)
+                .is_some_and(|id| id.starts_with("__overlay::test_popup"))
         }));
     }
 
@@ -1273,12 +1325,7 @@ mod tests {
             delta_y: -24.0,
         });
 
-        let (_, node) = ctx
-            .tree()
-            .iter()
-            .find(|(_, node)| node.id.as_ref() == "scroll")
-            .expect("scroll node");
-        assert!(node.scroll_offset > 0.0);
+        assert!(ctx.node_scroll_offset("scroll").expect("scroll node") > 0.0);
         assert!(output.consumed);
         assert!(output.events.is_empty());
     }
@@ -1534,11 +1581,7 @@ mod tests {
             h: 360.0,
         };
         ctx.update(dropdown_desc(0), viewport, &mut measurer, &theme);
-        let dropdown_id = ctx
-            .tree()
-            .iter()
-            .find_map(|(id, node)| (node.id.as_ref() == "dropdown").then_some(id))
-            .expect("dropdown id");
+        let dropdown_id = ctx.node_id_by_name("dropdown").expect("dropdown id");
         ctx.request_focus(dropdown_id);
 
         let _ = ctx.handle_event(&AppEvent::KeyPress {
