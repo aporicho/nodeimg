@@ -1,122 +1,30 @@
+use crate::demo_gallery::{
+    build_demo_popup, build_gallery_sections, GallerySection, GalleryState, POPUP_CLOSE_ID,
+    POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
+};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{Context, FrameworkOutput, OverlayPlacement, OverlayRequest, PlatformEffect};
 use gui::gesture::Gesture;
-use gui::renderer::{Rect, Renderer, TextStyle, TextWeight};
+use gui::renderer::{Rect, Renderer};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, TextureHandle, Transform};
 use gui::tree::Desc;
 use gui::widget::action::Action;
-use gui::widget::atoms::button::ButtonProps;
-use gui::widget::atoms::checkbox::CheckboxProps;
-use gui::widget::atoms::dropdown::DropdownProps;
-use gui::widget::atoms::image_viewer::ImageViewerProps;
-use gui::widget::atoms::label::{LabelProps, LabelVariant};
-use gui::widget::atoms::number_input::NumberInputProps;
-use gui::widget::atoms::radio::RadioProps;
-use gui::widget::atoms::separator::{SeparatorOrientation, SeparatorProps};
-use gui::widget::atoms::slider::SliderProps;
-use gui::widget::atoms::text_input::TextInputProps;
-use gui::widget::atoms::toggle::ToggleProps;
-use gui::widget::frameworks::collapsible::CollapsibleProps;
-use gui::widget::frameworks::group::GroupProps;
-use gui::widget::frameworks::list_view::ListViewProps;
 use gui::widget::frameworks::panel::PanelProps;
 use gui::widget::resize_edge::ResizeEdge;
 use std::borrow::Cow;
+use std::collections::HashMap;
 
+const GALLERY_SCALE: f32 = 1.2;
 const GRID_SPACING: f32 = 20.0;
 const GRID_DOT_SIZE: f32 = 1.5;
-const PANEL_ID: &str = "demo_panel";
 const DEMO_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum QualityMode {
-    Fast,
-    Balanced,
-}
+const GALLERY_PANEL_PREFIX: &str = "gallery_panel::";
 
 fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
     (min_canvas / spacing).floor() * spacing - spacing * 2.0
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PanelState {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    auto_h: bool,
-    min_w: f32,
-    min_h: f32,
-}
-
-impl PanelState {
-    fn new() -> Self {
-        Self {
-            x: 100.0,
-            y: 100.0,
-            w: 300.0,
-            h: 0.0,
-            auto_h: true,
-            min_w: 120.0,
-            min_h: 80.0,
-        }
-    }
-
-    fn apply_drag(&mut self, x: f32, y: f32, last_x: f32, last_y: f32) {
-        self.x += x - last_x;
-        self.y += y - last_y;
-    }
-
-    fn apply_resize(&mut self, edge: ResizeEdge, x: f32, y: f32, last_x: f32, last_y: f32) {
-        let dx = x - last_x;
-        let dy = y - last_y;
-
-        match edge {
-            ResizeEdge::Right => {
-                self.w = (self.w + dx).max(self.min_w);
-            }
-            ResizeEdge::Bottom => {
-                self.h = (self.h + dy).max(self.min_h);
-            }
-            ResizeEdge::Left => {
-                let new_w = (self.w - dx).max(self.min_w);
-                self.x += self.w - new_w;
-                self.w = new_w;
-            }
-            ResizeEdge::Top => {
-                let new_h = (self.h - dy).max(self.min_h);
-                self.y += self.h - new_h;
-                self.h = new_h;
-            }
-            ResizeEdge::TopLeft => {
-                let new_w = (self.w - dx).max(self.min_w);
-                let new_h = (self.h - dy).max(self.min_h);
-                self.x += self.w - new_w;
-                self.y += self.h - new_h;
-                self.w = new_w;
-                self.h = new_h;
-            }
-            ResizeEdge::TopRight => {
-                self.w = (self.w + dx).max(self.min_w);
-                let new_h = (self.h - dy).max(self.min_h);
-                self.y += self.h - new_h;
-                self.h = new_h;
-            }
-            ResizeEdge::BottomLeft => {
-                let new_w = (self.w - dx).max(self.min_w);
-                self.x += self.w - new_w;
-                self.w = new_w;
-                self.h = (self.h + dy).max(self.min_h);
-            }
-            ResizeEdge::BottomRight => {
-                self.w = (self.w + dx).max(self.min_w);
-                self.h = (self.h + dy).max(self.min_h);
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -134,333 +42,12 @@ impl PointerSession {
     }
 }
 
-fn build_panel_content(
-    theme: &Theme,
-    text_value: &str,
-    slider_value: f32,
-    toggle_value: bool,
-    snap_to_grid: bool,
-    quality_mode: QualityMode,
-    advanced_open: bool,
-    blend_mode: usize,
-) -> Vec<Desc> {
-    let list_items = (1..=18)
-        .map(|index| Desc::Widget {
-            id: Cow::Owned(format!("history_item_{index}")),
-            props: Box::new(LabelProps {
-                text: Cow::Owned(format!("Preset #{index:02} · Gaussian Blur")),
-                variant: LabelVariant::Body,
-                muted: index % 2 == 0,
-            }),
-        })
-        .collect();
-
-    vec![
-        Desc::Widget {
-            id: Cow::Borrowed("intro_label"),
-            props: Box::new(LabelProps {
-                text: Cow::Borrowed("Shadcn 风格基础控件演示"),
-                variant: LabelVariant::Title,
-                muted: false,
-            }),
-        },
-        Desc::Widget {
-            id: Cow::Borrowed("intro_caption"),
-            props: Box::new(LabelProps {
-                text: Cow::Borrowed(
-                    "下面的按钮、输入框、滑块和开关现在都建立在统一主题和框架边界上。",
-                ),
-                variant: LabelVariant::Caption,
-                muted: true,
-            }),
-        },
-        Desc::Widget {
-            id: Cow::Borrowed("top_separator"),
-            props: Box::new(SeparatorProps {
-                orientation: SeparatorOrientation::Horizontal,
-            }),
-        },
-        Desc::Widget {
-            id: Cow::Borrowed("btn_a"),
-            props: Box::new(ButtonProps {
-                label: "Button A".into(),
-                icon: None,
-                disabled: false,
-            }),
-        },
-        Desc::Widget {
-            id: Cow::Borrowed("btn_b"),
-            props: Box::new(ButtonProps {
-                label: "Button B".into(),
-                icon: None,
-                disabled: false,
-            }),
-        },
-        Desc::Widget {
-            id: Cow::Borrowed("popup_trigger"),
-            props: Box::new(ButtonProps {
-                label: "Open Popup".into(),
-                icon: None,
-                disabled: false,
-            }),
-        },
-        build_text_style_showcase(theme),
-        Desc::Widget {
-            id: Cow::Borrowed("controls_group"),
-            props: Box::new(GroupProps {
-                title: Cow::Borrowed("Parameters"),
-                content: vec![
-                    Desc::Widget {
-                        id: Cow::Borrowed("text_prompt"),
-                        props: Box::new(TextInputProps {
-                            label: "Prompt".into(),
-                            value: Cow::Owned(text_value.to_string()),
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("group_separator"),
-                        props: Box::new(SeparatorProps {
-                            orientation: SeparatorOrientation::Horizontal,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("slider_radius"),
-                        props: Box::new(SliderProps {
-                            label: "Radius".into(),
-                            min: 0.0,
-                            max: 10.0,
-                            step: 0.1,
-                            value: slider_value,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("number_radius"),
-                        props: Box::new(NumberInputProps {
-                            label: "Radius value".into(),
-                            value: slider_value,
-                            min: 0.0,
-                            max: 10.0,
-                            step: 0.1,
-                            precision: 2,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("toggle_grid"),
-                        props: Box::new(ToggleProps {
-                            label: "Show Grid".into(),
-                            value: toggle_value,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("checkbox_snap"),
-                        props: Box::new(CheckboxProps {
-                            label: "Snap to grid".into(),
-                            checked: snap_to_grid,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("dropdown_blend"),
-                        props: Box::new(DropdownProps {
-                            label: Cow::Borrowed("Blend Mode"),
-                            options: vec![
-                                Cow::Borrowed("Normal"),
-                                Cow::Borrowed("Multiply"),
-                                Cow::Borrowed("Screen"),
-                            ],
-                            selected: blend_mode,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("radio_quality_fast"),
-                        props: Box::new(RadioProps {
-                            label: "Fast quality".into(),
-                            selected: quality_mode == QualityMode::Fast,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("radio_quality_balanced"),
-                        props: Box::new(RadioProps {
-                            label: "Balanced quality".into(),
-                            selected: quality_mode == QualityMode::Balanced,
-                            disabled: false,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("preview_label"),
-                        props: Box::new(LabelProps {
-                            text: Cow::Borrowed("Preview"),
-                            variant: LabelVariant::Caption,
-                            muted: true,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("preview_image"),
-                        props: Box::new(ImageViewerProps {
-                            texture: DEMO_IMAGE_HANDLE,
-                            height: 96.0,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("history_separator"),
-                        props: Box::new(SeparatorProps {
-                            orientation: SeparatorOrientation::Horizontal,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("history_list"),
-                        props: Box::new(ListViewProps {
-                            height: 128.0,
-                            items: list_items,
-                        }),
-                    },
-                    Desc::Widget {
-                        id: Cow::Borrowed("advanced_section"),
-                        props: Box::new(CollapsibleProps {
-                            title: Cow::Borrowed("Advanced"),
-                            expanded: advanced_open,
-                            disabled: false,
-                            content: vec![
-                                Desc::Widget {
-                                    id: Cow::Borrowed("advanced_label"),
-                                    props: Box::new(LabelProps {
-                                        text: Cow::Borrowed(
-                                            "Collapsible 目前是 controlled 模式，点击头部会由 app 层切换 expanded。",
-                                        ),
-                                        variant: LabelVariant::Caption,
-                                        muted: true,
-                                    }),
-                                },
-                                Desc::Widget {
-                                    id: Cow::Borrowed("advanced_separator"),
-                                    props: Box::new(SeparatorProps {
-                                        orientation: SeparatorOrientation::Horizontal,
-                                    }),
-                                },
-                                Desc::Widget {
-                                    id: Cow::Borrowed("advanced_toggle"),
-                                    props: Box::new(ToggleProps {
-                                        label: "Use denoise pass".into(),
-                                        value: toggle_value,
-                                        disabled: false,
-                                    }),
-                                },
-                            ],
-                        }),
-                    },
-                ],
-            }),
-        },
-    ]
-}
-
-fn build_text_style_showcase(theme: &Theme) -> Desc {
-    Desc::Widget {
-        id: Cow::Borrowed("text_style_showcase"),
-        props: Box::new(GroupProps {
-            title: Cow::Borrowed("Text Style Showcase"),
-            content: vec![
-                Desc::Leaf {
-                    id: Cow::Borrowed("text_style_body"),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: "Body / Sans / Regular".to_string(),
-                        style: theme.text_style_body_md(),
-                    },
-                },
-                Desc::Leaf {
-                    id: Cow::Borrowed("text_style_title"),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: "Title / Sans / Semibold".to_string(),
-                        style: theme.text_style_title_sm(),
-                    },
-                },
-                Desc::Leaf {
-                    id: Cow::Borrowed("text_style_italic"),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: "Caption / Sans / Italic".to_string(),
-                        style: theme.text_style_label_sm().with_italic(true),
-                    },
-                },
-                Desc::Leaf {
-                    id: Cow::Borrowed("text_style_mono"),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: "Mono / Medium / Value 42.00".to_string(),
-                        style: theme.text_style_mono_md(),
-                    },
-                },
-                Desc::Leaf {
-                    id: Cow::Borrowed("text_style_bold"),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: "Body / Sans / Bold override".to_string(),
-                        style: TextStyle {
-                            color: theme.colors.text,
-                            ..theme.text_style_body_md().with_weight(TextWeight::Bold)
-                        },
-                    },
-                },
-            ],
-        }),
-    }
-}
-
-fn build_demo_popup() -> Desc {
-    Desc::Widget {
-        id: Cow::Borrowed("demo_popup_group"),
-        props: Box::new(GroupProps {
-            title: Cow::Borrowed("Quick Actions"),
-            content: vec![
-                Desc::Widget {
-                    id: Cow::Borrowed("popup_label"),
-                    props: Box::new(LabelProps {
-                        text: Cow::Borrowed(
-                            "Overlay 现在由 framework 持有，支持 outside click 和 Escape 关闭。",
-                        ),
-                        variant: LabelVariant::Caption,
-                        muted: true,
-                    }),
-                },
-                Desc::Widget {
-                    id: Cow::Borrowed("popup_separator"),
-                    props: Box::new(SeparatorProps {
-                        orientation: SeparatorOrientation::Horizontal,
-                    }),
-                },
-                Desc::Widget {
-                    id: Cow::Borrowed("popup_close"),
-                    props: Box::new(ButtonProps {
-                        label: "Close Popup".into(),
-                        icon: None,
-                        disabled: false,
-                    }),
-                },
-            ],
-        }),
-    }
-}
-
 fn build_demo_tree(
     viewport: Rect,
     camera: &Camera,
     theme: &Theme,
-    panel: PanelState,
-    text_value: &str,
-    slider_value: f32,
-    toggle_value: bool,
-    snap_to_grid: bool,
-    quality_mode: QualityMode,
-    advanced_open: bool,
-    blend_mode: usize,
+    gallery: &GalleryState,
+    panel_positions: &HashMap<String, (f32, f32)>,
 ) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
     let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
@@ -468,6 +55,7 @@ fn build_demo_tree(
     let grid_y = align_grid_start(canvas_min_y, GRID_SPACING);
     let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
     let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
+    let sections = build_gallery_sections(theme, gallery, DEMO_IMAGE_HANDLE);
 
     Desc::Container {
         id: Cow::Borrowed("root"),
@@ -524,46 +112,60 @@ fn build_demo_tree(
                     ..BoxStyle::default()
                 },
                 decoration: None,
-                children: vec![Desc::Widget {
-                    id: Cow::Borrowed(PANEL_ID),
-                    props: Box::new(PanelProps {
-                        id: Cow::Borrowed(PANEL_ID),
-                        title: Cow::Borrowed("Demo Panel"),
-                        x: panel.x,
-                        y: panel.y,
-                        w: panel.w,
-                        h: panel.h,
-                        content: build_panel_content(
-                            theme,
-                            text_value,
-                            slider_value,
-                            toggle_value,
-                            snap_to_grid,
-                            quality_mode,
-                            advanced_open,
-                            blend_mode,
-                        ),
-                    }),
-                }],
+                children: build_gallery_panels(viewport, &sections, panel_positions),
             },
         ],
     }
 }
 
+fn build_gallery_panels(
+    viewport: Rect,
+    sections: &[GallerySection],
+    panel_positions: &HashMap<String, (f32, f32)>,
+) -> Vec<Desc> {
+    let columns = if viewport.w >= 1200.0 { 4 } else { 3 };
+    let margin = 28.0;
+    let gap = 22.0;
+    let panel_w = ((viewport.w - margin * 2.0) - gap * (columns as f32 - 1.0)) / columns as f32;
+    let mut column_heights = vec![margin; columns];
+
+    sections
+        .iter()
+        .map(|section| {
+            let column = section.column.min(columns.saturating_sub(1));
+            let panel_id = format!("{GALLERY_PANEL_PREFIX}{}", section.id);
+            let default_x = margin + column as f32 * (panel_w + gap);
+            let default_y = column_heights[column];
+            let (x, y) = panel_positions
+                .get(&panel_id)
+                .copied()
+                .unwrap_or((default_x, default_y));
+            column_heights[column] += section.estimated_height + gap;
+
+            Desc::Widget {
+                id: Cow::Owned(panel_id.clone()),
+                props: Box::new(PanelProps {
+                    id: Cow::Owned(panel_id),
+                    title: Cow::Borrowed(section.title),
+                    x,
+                    y,
+                    w: panel_w,
+                    h: 0.0,
+                    content: section.clone().content,
+                }),
+            }
+        })
+        .collect()
+}
+
 pub struct DemoApp {
     gui: Context,
     pointer_session: Option<PointerSession>,
-    panel: PanelState,
     camera: Camera,
     navigation: CanvasNavigationController,
     active_button: Option<String>,
-    text_value: String,
-    toggle_value: bool,
-    snap_to_grid: bool,
-    quality_mode: QualityMode,
-    advanced_open: bool,
-    blend_mode: usize,
-    slider_value: f32,
+    gallery: GalleryState,
+    panel_positions: HashMap<String, (f32, f32)>,
     mouse_x: f32,
     mouse_y: f32,
     theme: Theme,
@@ -580,20 +182,14 @@ impl App for DemoApp {
         Self {
             gui,
             pointer_session: None,
-            panel: PanelState::new(),
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             active_button: None,
-            text_value: "Hello nodeimg".to_string(),
-            toggle_value: true,
-            snap_to_grid: true,
-            quality_mode: QualityMode::Balanced,
-            advanced_open: true,
-            blend_mode: 0,
-            slider_value: 5.0,
+            gallery: GalleryState::default(),
+            panel_positions: HashMap::new(),
             mouse_x: 0.0,
             mouse_y: 0.0,
-            theme: light_theme(),
+            theme: light_theme().scaled(GALLERY_SCALE),
         }
     }
 
@@ -625,26 +221,15 @@ impl App for DemoApp {
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
-        let mut panel = self.panel;
-        if panel.auto_h {
-            panel.h = 0.0;
-        }
         let desc = build_demo_tree(
             viewport,
             &self.camera,
             &self.theme,
-            panel,
-            &self.text_value,
-            self.slider_value,
-            self.toggle_value,
-            self.snap_to_grid,
-            self.quality_mode,
-            self.advanced_open,
-            self.blend_mode,
+            &self.gallery,
+            &self.panel_positions,
         );
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
-        self.auto_grow_panel_to_fit_content();
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
     }
@@ -717,22 +302,6 @@ fn create_demo_texture(
 }
 
 impl DemoApp {
-    fn current_panel_height(&self) -> Option<f32> {
-        self.gui
-            .tree()
-            .iter()
-            .find_map(|(_, node)| (node.id.as_ref() == PANEL_ID).then_some(node.rect.h))
-    }
-
-    fn auto_grow_panel_to_fit_content(&mut self) {
-        if !self.panel.auto_h {
-            return;
-        }
-        if let Some(height) = self.current_panel_height() {
-            self.panel.h = height.max(self.panel.min_h);
-        }
-    }
-
     fn update_mouse_position_from_event(&mut self, event: &AppEvent) {
         match *event {
             AppEvent::MouseMove { x, y }
@@ -774,33 +343,15 @@ impl DemoApp {
         match action {
             Action::Click(id) => {
                 tracing::info!("handle click: {}", id);
-                if is_toggle_target(&id) {
-                    self.toggle_value = !self.toggle_value;
-                    tracing::info!("toggle_value -> {}", self.toggle_value);
-                }
-                if id == "checkbox_snap" {
-                    self.snap_to_grid = !self.snap_to_grid;
-                }
-                if id == "radio_quality_fast" {
-                    self.quality_mode = QualityMode::Fast;
-                }
-                if id == "radio_quality_balanced" {
-                    self.quality_mode = QualityMode::Balanced;
-                }
-                if id == "advanced_section::header" {
-                    self.advanced_open = !self.advanced_open;
-                }
-                if id == "advanced_toggle" {
-                    self.toggle_value = !self.toggle_value;
-                }
-                if id == "popup_trigger" {
+                let _ = self.gallery.apply_click(&id);
+                if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
                         self.gui.close_overlay();
                     } else {
                         self.gui.open_overlay(OverlayRequest {
                             id: "demo_popup".to_string(),
-                            anchor_id: "popup_trigger".to_string(),
-                            restore_focus_id: Some("popup_trigger".to_string()),
+                            anchor_id: POPUP_TRIGGER_ID.to_string(),
+                            restore_focus_id: Some(POPUP_TRIGGER_ID.to_string()),
                             placement: OverlayPlacement::BelowStart,
                             content: build_demo_popup(),
                             offset_x: 0.0,
@@ -812,42 +363,46 @@ impl DemoApp {
                         });
                     }
                 }
-                if id == "popup_close" {
+                if id == POPUP_CLOSE_ID {
                     self.gui.close_overlay();
                 }
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(self.mouse_x);
-                    tracing::info!("slider_value(click) -> {}", self.slider_value);
+                    tracing::info!("slider_value(click) -> {}", self.gallery.slider_value);
                 }
                 self.active_button = Some(id);
             }
             Action::DoubleClick(id) => {
                 if id.contains("slider") {
-                    self.slider_value = 5.0;
+                    self.gallery.slider_value = 5.0;
                 }
             }
             Action::TextChange { id, value } => {
-                if id == "text_prompt" {
-                    self.text_value = value;
-                }
+                let _ = self.gallery.apply_text_change(&id, value);
             }
             Action::NumberChange { id, value } => {
-                if id == "number_radius" {
-                    self.slider_value = value;
-                }
+                let _ = self.gallery.apply_number_change(&id, value);
             }
             Action::SelectChange { id, selected } => {
-                if id == "dropdown_blend" {
-                    self.blend_mode = selected;
-                }
+                let _ = self.gallery.apply_select_change(&id, selected);
             }
             Action::DragMove { id, x, y } => {
                 let mut should_update_slider = false;
                 if let Some(session) = &mut self.pointer_session {
-                    if id == PANEL_ID {
-                        self.panel.apply_drag(x, y, session.last_x, session.last_y);
-                    } else if is_slider_target(&id) {
+                    if is_slider_target(&id) {
                         should_update_slider = true;
+                    } else if is_gallery_panel_node(&id) {
+                        let entry = self.panel_positions.entry(id.clone()).or_insert_with(|| {
+                            self.gui
+                                .tree()
+                                .iter()
+                                .find_map(|(_, node)| {
+                                    (node.id.as_ref() == id).then_some((node.rect.x, node.rect.y))
+                                })
+                                .unwrap_or((0.0, 0.0))
+                        });
+                        entry.0 += x - session.last_x;
+                        entry.1 += y - session.last_y;
                     } else {
                         tracing::info!("Unhandled drag target: {} at ({}, {})", id, x, y);
                     }
@@ -856,31 +411,24 @@ impl DemoApp {
                 }
                 if should_update_slider {
                     self.update_slider_from_pointer(x);
-                    tracing::info!("slider_value(drag) -> {}", self.slider_value);
+                    tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
                 }
             }
             Action::ResizeMove { id, edge, x, y } => {
-                if id == PANEL_ID {
-                    if let Some(session) = &mut self.pointer_session {
-                        self.panel
-                            .apply_resize(edge, x, y, session.last_x, session.last_y);
-                        session.last_x = x;
-                        session.last_y = y;
-                    }
+                tracing::info!(
+                    "Ignoring gallery panel resize: {} {:?} {} {}",
+                    id,
+                    edge,
+                    x,
+                    y
+                );
+            }
+            Action::DragStart { id, x, y } => {
+                if is_slider_target(&id) || is_gallery_panel_node(&id) {
+                    self.pointer_session = Some(PointerSession::new(x, y));
                 }
             }
-            Action::DragStart { x, y, .. } => {
-                self.pointer_session = Some(PointerSession::new(x, y));
-            }
-            Action::ResizeStart { id, x, y, .. } => {
-                if id == PANEL_ID && self.panel.auto_h {
-                    if let Some(height) = self.current_panel_height() {
-                        self.panel.h = height.max(self.panel.min_h);
-                    }
-                    self.panel.auto_h = false;
-                }
-                self.pointer_session = Some(PointerSession::new(x, y));
-            }
+            Action::ResizeStart { .. } => {}
             Action::DragEnd { .. } | Action::ResizeEnd { .. } => {
                 self.pointer_session = None;
             }
@@ -906,7 +454,9 @@ impl DemoApp {
                 continue;
             };
 
-            if node.style.gestures.contains(&Gesture::Resize) {
+            if node.style.gestures.contains(&Gesture::Resize)
+                && !is_gallery_panel_node(node.id.as_ref())
+            {
                 if let Some(edge) = detect_resize_edge(node.rect, x, y) {
                     ctx.cursor.set(cursor_for_resize_edge(edge));
                     return;
@@ -937,6 +487,10 @@ impl DemoApp {
                 return;
             }
 
+            if is_gallery_panel_node(node.id.as_ref()) {
+                continue;
+            }
+
             if node.style.gestures.contains(&Gesture::Tap)
                 || node.style.gestures.contains(&Gesture::DoubleTap)
             {
@@ -950,7 +504,7 @@ impl DemoApp {
         if let Some(value) =
             slider_value_from_x(self.gui.tree(), "slider_radius", x, 0.0, 10.0, 0.1)
         {
-            self.slider_value = value;
+            self.gallery.slider_value = value;
         }
     }
 }
@@ -960,7 +514,11 @@ fn is_toggle_target(id: &str) -> bool {
 }
 
 fn is_slider_target(id: &str) -> bool {
-    id == "slider_radius" || id.starts_with("slider_radius::")
+    id == SLIDER_RADIUS_ID || id.starts_with(&format!("{SLIDER_RADIUS_ID}::"))
+}
+
+fn is_gallery_panel_node(id: &str) -> bool {
+    id.starts_with(GALLERY_PANEL_PREFIX)
 }
 
 fn is_text_input_field(tree: &gui::tree::Tree, node_id: usize) -> bool {
