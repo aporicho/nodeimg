@@ -8,32 +8,56 @@
 
 > **机制冻结,内容开放。**
 
-所有 **17 条机制**必须在写代码前**全部在文档中存在**。首版代码可以只实现"占位",但机制(字段、trait、层)必须真实存在。详见 `architecture-invariants.md` §6 和本文件 §2。
+所有 **18 条机制**必须在写代码前**全部在文档中存在**。首版代码可以只实现"占位",但机制(字段、trait、层)必须真实存在。详见 `architecture-invariants.md` §6 和本文件 §2。
 
-**产品宣言**: nodeimg **集 DaVinci / TouchDesigner / Nuke 三家之大成**——融合三家的核心模型(per-frame cook + ambient time context + 节点无时间感),首版用**单一 demo** 证明这套机制能承载完整工作流。
+**产品宣言**: nodeimg 用同一套节点图平权承载三类执行来源: 图形处理节点、可控 Python 后端节点、云端 API 节点。图片、视频、实时反馈共享 per-frame cook、ambient time context 和节点无时间感模型。
 
-**首版 Demo · 实时视频调色工作流:**
+**首版 Demo 组合:**
 
-```
-load_video (input.mp4)
-    ↓
-[ai_lut_generate]              ← AI 节点(慢,realtime_capable=false,首次跑后缓存)
-    ↓
-primary_color_grade            ← 实时节点(可拖滑块,可加 keyframe 动画)
-    ↓
-gaussian_blur                  ← 实时节点
-    ↓
-save_video (output.mp4)
-```
+1. **图片 demo**
+
+   ```
+   Python/API 多轮生成
+       ↓
+   节点级历史对比 + 选中当前版本
+       ↓
+   图形处理节点
+       ↓
+   save_image
+   ```
+
+2. **视频 demo**
+
+   ```
+   load_video 或 API 生成视频
+       ↓
+   图形处理节点(按 frame 求值)
+       ↓
+   save_video
+   ```
+
+3. **综合 demo**
+
+   ```
+   Python 出主图和 logo
+       ↓
+   API 生视频
+       ↓
+   图形节点合成/调色
+       ↓
+   输出视频
+   ```
 
 **首版要证明的能力:**
 
-1. **视频读写**: load_video / save_video(MP4 + ffmpeg)
-2. **统一节点模型**: 同一个 `gaussian_blur` 节点处理单图 / 序列帧 / 视频帧 —— 节点代码不变
-3. **关键帧动画**: `primary_color_grade` 的 lift/gamma/gain 加 keyframe,从 frame 0 渐变到 frame 100
-4. **60fps 实时预览**: 进入 Continuous 模式,拖滑块时实时看效果,持续 cook
-5. **慢节点缓存复用**: AI LUT 节点跑一次后缓存,Continuous 模式跳过它直接用 cache
-6. **完整导出**: 切到 OneShot Full 模式,导出整段视频
+1. **三类执行器平权**: 图形处理、可控 Python 后端、云端 API 都是首版一等能力。
+2. **图片和视频同等完整**: 图片流和视频流都必须覆盖生成、处理、历史选择和导出。
+3. **统一节点模型**: 同一套图形处理节点处理单图 / 序列帧 / 视频帧,节点代码不因载体拆分。
+4. **参数动画**: 参数支持 `Constant + Animated(Curve)`,表达式不进首版。
+5. **Continuous 持续反馈**: 进入 Continuous 模式后尽可能快地持续 cook,不写死固定帧率承诺。
+6. **慢节点 cache-only**: 慢节点在 Continuous 中只读 cache;未命中时占位并提示 warm。
+7. **结果历史**: 多轮生成候选是用户可见历史,支持当前版本选用、标记和清理。
+8. **完整导出**: OneShot Full 导出图片或整段视频。
 
 **不在首版的:**
 
@@ -42,6 +66,7 @@ save_video (output.mp4)
 - ❌ 音频处理(`AtomicType::Audio` 仍为占位)
 - ❌ 实时摄像头 / MIDI / OSC 输入(Continuous mode 已支持,但输入源延后)
 - ❌ OCIO 专业色彩管理(机制保留,首版只支持 SRgb / LinearRec709)
+- ❌ 用户直接写任意自定义 Python 脚本节点(Python 节点首版来自可控后端声明)
 
 ---
 
@@ -109,17 +134,18 @@ save_video (output.mp4)
 - [x] **A18** · params_hash 与动画参数的采样次序(并入 A16)
 - [x] **A19** · roadmap.md 阶段 B 扩展(本文件)
 
-**C1~C9(单 Demo + 视频 + Continuous 真实 + 持久化 cache,完成中):**
+**C1~C10(decision-log 回填: 三类执行器平权 + 三个 Demo + 结果历史,已完成):**
 
-- [x] **C1** · roadmap.md 单 Demo 重写 + §2 18 条机制 + §3 阶段 B 28 任务(本文件)
-- [ ] **C2** · README.md 单 Demo 产品宣言更新
-- [ ] **C3** · architecture-invariants.md 真源 ②/⑤/⑥ 更新(lifecycle hooks / realtime_capable / Continuous 真实)
-- [ ] **C4** · 0.1.0-models.md `NodeDef.realtime_capable` 字段 + 通道首版状态(Z/ObjectID 改占位)
-- [ ] **C5** · 0.1.1-execution-models.md Continuous 真实实现 + lifecycle hooks signatures
-- [ ] **C6** · 4.1.2-runtime.md Continuous 流程 + 慢节点处理 + lifecycle 调用
-- [ ] **C7** · 4.11.2-executor-contract.md lifecycle 方法 + 长寿命内部状态合法性
-- [ ] **C8** · 0.1.4-capability.md 视频 Capability 首版(`video.decode/encode` + `ai.video_generate`;`exr.*` 占位)
-- [ ] **C9** · 4.11.2-executor-contract.md 持久化 disk cache 模式 + 标准目录约定(并入 C7 文件)
+- [x] **C1** · roadmap.md 主叙事改为三类执行器平权 + 图片 demo / 视频 demo / 综合 demo(本文件)
+- [x] **C2** · README.md 主叙事改为三类执行器平权 + 三个 demo
+- [x] **C3** · architecture-invariants.md 增加“产物管理能力/节点 + 当前选中版本参与图语义”真源
+- [x] **C4** · 0.1.0-models.md `ParamValueMode::Constant | Animated(Curve)` + 参数连线优先级 + 产物管理节点模型
+- [x] **C5** · 0.1.1-execution-models.md Continuous 尽可能快 + 慢节点 cache-only + selected artifact id 进入签名
+- [x] **C6** · 4.1.1-planner.md 自包含 `ExecutionPlan` + 参数采样 + artifact selection 输入
+- [x] **C7** · 4.1.2-runtime.md Runtime 消费 Plan + Continuous tick 边界换 plan + 慢节点占位事件
+- [x] **C8** · 4.11.2-executor-contract.md Python 可控后端底层节点 + API 黑盒任务节点 + lifecycle/disk cache
+- [x] **C9** · 4.12.0-session.md 播放头、preview cache、结果历史面板交互边界
+- [x] **C10** · artifact/project 文件文档: 候选历史、源素材、导出历史进入项目 bundle
 
 ### 阶段 B · 代码骨架
 
@@ -214,9 +240,9 @@ save_video (output.mp4)
     - 首版允许 Preview 行为等同 Full
     - **风险:** 低
 
-### 阶段 B 扩展(单 Demo · 实时视频调色)—— B15~B28
+### 阶段 B 扩展(三类执行器 + 图片/视频/综合 demo)—— B15~B31
 
-**目标:** 让首版完成单个 Demo——**实时视频调色工作流**。Demo 描述见 §1。该 Demo 一个跑下来,验证 18 条机制全部就位 + DaVinci/TouchDesigner/Nuke 三家核心模型都被覆盖。
+**目标:** 让首版完成三条代表性工作流: 图片 demo、视频 demo、综合 demo。三条 demo 一起验证 18 条机制全部就位,同时证明图形处理、可控 Python 后端、云端 API 三类执行器可以在同一执行内核下协作。
 
 15. **B15 — 多通道 ImageValue 机制(机制保留,首版只用 RGBA)**
     - `ImageValueInner` 改为 `channels: BTreeMap<ChannelId, ChannelData>` + `metadata: ImageMetadata`
@@ -227,7 +253,7 @@ save_video (output.mp4)
     - **风险:** 中(`ImageValue` 内部结构变化,所有现有执行器需要适配 `channel(...)` access API)
 
 16. **B16 — `ParamValueMode` + `Curve` + 关键帧动画**
-    - `ParamValueMode` 三个变体: `Constant` / `Animated(Curve)` / `Expression(占位)`
+    - `ParamValueMode` 两个首版变体: `Constant` / `Animated(Curve)`
     - `Curve` 首版支持 `InterpolationType::{Constant, Linear}`,Bezier/Smooth 占位
     - `Curve::sample(ctx)` 实现按 keyframe 排序查找 + 线性插值
     - `Node.params` 类型从 `HashMap<String, Value>` 改为 `HashMap<String, ParamValueMode>`
@@ -271,6 +297,7 @@ save_video (output.mp4)
     - 退出: `stop_continuous()` 显式调用 / `cancel`
     - tick 内: 用最新 plan + clock-driven context 执行一遍
     - frame 维度: 按 `target_fps` 推进,默认循环播放
+    - 目标: 尽可能快的持续反馈,不承诺固定帧率
     - **风险:** 中(新的 Runtime 状态机分支)
 
 23. **B23 — 慢节点在 Continuous 模式下的 cache-only 行为 + `NodeMissingInContinuous` 事件**
@@ -287,9 +314,18 @@ save_video (output.mp4)
     - 注册 `Capability::video.decode` / `Capability::video.encode`
     - **风险:** 中-高(FFmpeg API 的工程量较大,首版只支持常见 codec)
 
-25. **B25 — `ApiVideoGenerateExecutor` 示例(AI 节点 + disk cache)**
+25. **B25 — Python executor adapter(可控后端底层节点)**
+    - 让 `python/nodes/*` 中的 `load_checkpoint`、`clip_text_encode`、`ksampler`、`vae_decode` 走可控后端执行器
+    - Python 节点不是高层黑盒任务节点,而是底层工作流节点
+    - Python 本地/远端只是部署位置差异,不改变节点定义
+    - Python 工作流的候选历史主要通过显式产物管理节点暴露
+    - **风险:** 中(需要 Rust executor 与 Python backend 协议)
+
+26. **B26 — `ApiVideoGenerateExecutor` 示例(API 黑盒任务节点 + disk cache + 原生历史)**
     - 节点声明: `cooking_sensitivity=["frame"]`, `realtime_capable=false`, `purity=Impure`
     - 参数: `prompt: String`, `duration: Int`, `seed: Int`
+    - API 节点是黑盒任务节点,输出接口稳定、少而关键
+    - API 节点可以原生自带结果历史和结果面板
     - 执行器内部三级 cache:
       - L1: 进程内 `Mutex<HashMap<GenerationKey, Arc<GeneratedVideo>>>`
       - L2: 持久化磁盘 cache(`~/.cache/nodeimg/ai.video_generate/<key>.mp4`)
@@ -297,14 +333,25 @@ save_video (output.mp4)
     - 首版可以用 mock(本地生成 96 帧渐变图)代替真实 API,仅证明机制
     - **风险:** 低(机制证明,不要求真实 API 集成)
 
-26. **B26 — `primary_color_grade` 节点(DaVinci 风格)**
+27. **B27 — 显式产物管理节点**
+    - 节点类型例如 `artifact_manager`
+    - 单个产物管理节点一次主要管理一个结果流
+    - 通用节点,不按图片/视频拆成两个类型
+    - 接图片管理图片版本,接视频管理视频版本
+    - 输出当前选中版本给下游
+    - 切换历史版本时只重算下游,不重算上游
+    - 首版不额外暴露版本元数据 pin
+    - 最低 UI 形态: 一个节点一个结果库面板,支持浏览、选中、标记、清理
+    - **风险:** 中(需要 artifact selection 进入签名和 dirty 传播)
+
+28. **B28 — `primary_color_grade` 节点(图形处理示例)**
     - 参数: lift / gamma / gain(每个 `[f32; 3]` RGB 三元组),全部支持 `Animated(Curve)`
     - 实现 GPU shader 做 lift/gamma/gain 变换
     - 颜色空间感知: 在 LinearRec709 空间应用变换,SRgb 输入自动 to-linear / from-linear(读 `metadata.color_space`)
     - 注册 `Capability::raster.primary_grade`
     - **风险:** 低(纯 GPU shader)
 
-27. **B27 — `pixel_fluid_animation` 节点(TouchDesigner 风格,执行器内部状态)**
+29. **B29 — `pixel_fluid_animation` 节点(实时图形处理 + 执行器内部状态)**
     - 输入: `Image`(每帧的输入)
     - 输出: `Image`(每帧的输出)
     - `cooking_sensitivity=["frame"]`(输出随 frame 变化)
@@ -314,49 +361,65 @@ save_video (output.mp4)
     - 注册 `Capability::raster.fluid_sim`
     - **风险:** 中(GPU 状态管理)
 
-28. **B28 — 单 Demo 集成测试**
+30. **B30 — `composite` / logo 合成节点**
+    - 输入: base image/video frame + logo image + transform/opacity 参数
+    - 输出: image
+    - 静态 logo 接入视频链时广播到每帧
+    - 支撑综合 demo 的 `Python 出主图和 logo -> API 生视频 -> 图形节点合成/调色 -> 输出视频`
+    - **风险:** 低(常规图形处理节点)
 
-    完整 demo 工作流:
+31. **B31 — 三个 demo 集成测试**
+
+    图片 demo:
 
     ```
-    [api_video_generate prompt="ocean waves" duration=4]   ← realtime=false, disk cache
+    [python/image workflow or image API] -> [artifact_manager] -> [color_adjust] -> [save_image]
+    ```
+
+    视频 demo:
+
+    ```
+    [load_video or api_video_generate] -> [primary_color_grade] -> [save_video]
+    ```
+
+    综合 demo:
+
+    ```
+    [Python 主图] + [Python logo]
             ↓
-    [primary_color_grade lift/gamma/gain w/ keyframes]      ← realtime=true, animated params
-            ↓
-    [gaussian_blur sigma=2]                                 ← realtime=true
-            ↓
-            ├──→ [save_video output.mp4]                    ← realtime=false, lifecycle hooks
-            │
-            └──→ [pixel_fluid_animation viscosity=0.5]      ← realtime=true, internal GPU state
-                    ↓
-                [preview_output]
+    [API 生视频] -> [composite/logo overlay] -> [primary_color_grade] -> [save_video]
     ```
 
     **测试验证清单:**
 
-    - [ ] 第一次跑 OneShot Full → API 同步等待 → 96 帧入 disk cache + Runtime cache + 写 output.mp4
-    - [ ] 重启 nodeimg → 同 prompt 再跑 → disk cache 命中,无 API 调用
-    - [ ] 进入 Continuous 模式 → 60fps 实时播放(预热后)
-    - [ ] 拖动 color_grade 滑块 → 实时看到效果(掉到 ~30fps 可接受)
-    - [ ] 加 keyframe(frame 0 lift=蓝;frame 95 lift=橙)→ 播放看到颜色渐变
-    - [ ] 切回 OneShot Full → 导出整段动画视频
-    - [ ] 改 prompt → 触发新 API 调用 + 新 disk cache 条目
+    - [ ] 图片 demo 覆盖多轮生成 -> 历史对比 -> 选中一个版本 -> 图形处理 -> 导出图片
+    - [ ] 视频 demo 覆盖按 frame 求值 -> 图形处理 -> 导出视频
+    - [ ] 综合 demo 在同一张图串联 Python / API / 图形处理三类执行器
+    - [ ] 第一次跑 OneShot Full -> 慢节点执行 -> 结果进入 Runtime cache / artifact history / 执行器 disk cache 中各自应进的位置
+    - [ ] 重启 nodeimg -> 同请求可命中执行器 disk cache 或项目内候选历史
+    - [ ] 进入 Continuous 模式 -> 尽可能快地持续反馈
+    - [ ] Continuous 中慢节点 cache-only,未命中时发占位事件
+    - [ ] 暂停 Continuous 跑 OneShot Full warm 后可恢复
+    - [ ] 拖动图形处理参数 -> 在 tick 边界使用新 plan
+    - [ ] 加 keyframe 后按 frame 采样并影响签名
+    - [ ] 切换 artifact 当前版本 -> 只重算下游
+    - [ ] 切回 OneShot Full -> 导出完整图片或视频
 
     **同时验证的机制:**
 
     | 机制 | Demo 中如何用到 |
     |------|---------------|
-    | M1 多通道 ImageValue | 视频帧本质是多通道(首版只用 RGBA) |
-    | M2 ParamValueMode + 自动 sensitivity | color_grade 加 keyframe 后自动按 frame 分缓存 |
-    | M3 Continuous 模式 | 60fps 实时预览 |
-    | M4 realtime_capable | 慢节点(api/save_video)与快节点(grade/blur/fluid)的区分 |
+    | M1 多通道 ImageValue | 图片/视频帧本质是同一 ImageValue(首版只用 RGBA) |
+    | M2 ParamValueMode + 自动 sensitivity | 图形节点加 keyframe 后自动按 frame 分缓存 |
+    | M3 Continuous 模式 | 尽可能快的持续反馈 |
+    | M4 realtime_capable | 慢节点(Python/API/save_video)与快节点(grade/blur/composite/fluid)的区分 |
     | M5 lifecycle hooks | save_video 用 on_plan_started/finished 管理 encoder |
-    | M6 持久化 disk cache | api_video_generate 跨 session 缓存 |
+    | M6 持久化 disk cache | Python/API 执行器内部 cache 与用户可见历史分离 |
     | CookingContext.frame | 视频按帧驱动 |
     | 三级 cache | preview_cache / 正式 cache / 执行器内部 cache 协同 |
-    | 签名传播 | color_grade 自动跟随 api_video_generate 的 per-frame 签名 |
+    | 签名传播 | selected artifact id 与 per-frame 输入共同影响下游签名 |
 
-    - **风险:** 中(集成验证整个 stack;FFmpeg 是最大风险点)
+    - **风险:** 中(集成验证整个 stack;FFmpeg、Python backend 协议和 artifact 语义是主要风险点)
 
 ### 阶段 C · 垂直切片验证
 

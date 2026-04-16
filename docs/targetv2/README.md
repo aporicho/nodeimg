@@ -2,39 +2,32 @@
 
 > **"机制一次设计好,内容持续开放"** —— targetv2 的核心目标。
 >
-> **产品宣言:** nodeimg **集 DaVinci / TouchDesigner / Nuke 三家之大成** —— 融合三家的核心模型(per-frame cook + ambient time context + 节点无时间感),首版用单一 demo 完整证明这套机制。
+> **产品宣言:** nodeimg 以统一节点图承载三类一等执行来源: 图形处理节点、可控 Python 后端节点、云端 API 节点。图片流、视频流、实时反馈共享同一套执行语义。
 
 targetv2 是 `docs/target/` 的继任文档体系。它在 target 已冻结真源的基础上,**补齐所有必要扩展机制的占位**,使得未来加任何新东西都可以是"填槽"而不是"挖槽"。
 
-**首版 Demo · 实时视频调色工作流:**
+**首版 Demo 目标:**
 
-```
-[ai_video_generate]   ← AI 节点(慢,跨 session disk 持久化)
-       ↓
-[primary_color_grade] ← lift/gamma/gain,可拖滑块 + 加 keyframe 动画
-       ↓
-[gaussian_blur]       ← 实时
-       ↓
-       ├──→ [save_video]               (导出 MP4)
-       │
-       └──→ [pixel_fluid_animation]    (TouchDesigner 风格实时流体)
-              ↓
-            [preview_output]            (60fps 实时)
-```
+1. **图片 demo:** Python/API 多轮生成 -> 节点级历史对比 -> 选中一个版本 -> 图形处理 -> 导出图片。
+2. **视频 demo:** `load_video` 或 API 生成视频 -> 按 frame 求值的图形处理节点 -> `save_video` 输出。
+3. **综合 demo:** `Python 出主图和 logo -> API 生视频 -> 图形节点合成/调色 -> 输出视频`。
 
-这一个 demo 覆盖三家的核心:
+这三个 demo 共同证明:
 
-- **DaVinci**: keyframed primary grade + 序列帧调色 + 完整导出
-- **TouchDesigner**: 60fps Continuous 模式 + 实时流体生成节点 + 拖滑块即时反馈
-- **Nuke**: per-frame cook + ambient time context(虽然首版不做多通道 EXR,但机制保留)
+- **可控 Python 后端:** Python 节点是底层工作流节点,例如 `load_checkpoint`、`clip_text_encode`、`ksampler`、`vae_decode`。
+- **云端 API:** API 节点是黑盒任务节点,输出接口稳定、少而关键。
+- **图形处理:** 图片和视频共享同一套图形处理节点;视频在引擎里主要按 frame 求值。
+- **实时反馈:** `Continuous` 是首版能力,目标是尽可能快的持续反馈,不写死固定帧率承诺。
+- **结果历史:** 多轮生成的候选结果是工作流核心,支持浏览、当前版本选用、标记和清理。
 
-**为支持单 demo 目标**,targetv2 在原有 12 条机制之上**追加 6 条**(M1~M6),共 **18 条机制**,见 `roadmap.md` §2。
+**为支持三类执行器平权目标**,targetv2 在原有 12 条机制之上**追加 6 条**(M1~M6),共 **18 条机制**,见 `roadmap.md` §2。
 
 **首版关键约束:**
 
 - ✅ 视频 I/O(MP4)是首版功能
-- ✅ 60fps 实时持续 cook(Continuous 模式)是首版功能
-- ✅ AI 输出**持久化到本地磁盘**(避免重抽卡)
+- ✅ `Continuous` 持续 cook 是首版功能,目标是尽可能快的反馈
+- ✅ Python 可控后端节点和云端 API 节点是首版一等能力
+- ✅ 用户可见结果历史和执行器内部 disk cache 是两套不同机制
 - ❌ 多通道 EXR 读写(机制保留,文件 I/O 延后)
 - ❌ 3D 几何 / 渲染(完全不在路线图)
 - ❌ 音频 / 实时摄像头 / OCIO(占位,延后)
@@ -53,7 +46,7 @@ targetv2 是 `docs/target/` 的继任文档体系。它在 target 已冻结真�
 - targetv2 **新增** `ExecutionMode::OneShot/Continuous`,首版 Continuous 真实实现(M3)
 - targetv2 **新增** `NodeDef.realtime_capable: bool` 字段,区分快/慢节点(M4)
 - targetv2 **新增** Executor `on_plan_started` / `on_plan_finished` lifecycle hooks(M5)
-- targetv2 **新增** 执行器持久化 disk cache 模式(M6)—— AI 输出跨 session 复用
+- targetv2 **新增** 执行器持久化 disk cache 模式(M6)——与用户可见候选历史分离
 
 target 的所有 `2.x.x`(GUI)、`5.x.x`(项目文件)、`6.x.x`(Python 后端)文档**在 targetv2 下保持引用**,不重复。targetv2 只改写 `0.x.x` 真源层和 `4.x.x` 引擎层。
 

@@ -101,6 +101,8 @@
 5. **`single-flight` 全局守卫由 Runtime(Layer 4)持有**;Session / CLI / Server 等调用方只能申请启动,不能直接变更状态。(targetv2 新增)
 6. **Session(Layer 5)拥有 undo 栈、preview 热路径缓存、事件订阅者注册**;不拥有 single-flight 权限、不拥有正式 cache、**不持有 RunHandle 引用**(查询当前 run 走 `scheduler.query_state()`)。(targetv2 新增)
 7. **Project(Layer 6)与 Graph 正交**:Project 是容器 / 持久化边界,不参与执行语义。"无 Project 的 Graph"必须能存在。(targetv2 新增)
+8. **ArtifactManager 拥有用户可见候选历史和当前版本选择**。Runtime 只负责按 `ArtifactPolicy` 把正式完成的结果登记进去;Session / GUI 只发起浏览、选用、标记、清理等交互,不直接拥有正式历史。
+9. **显式产物管理节点是普通图节点**。它不是 GUI 侧面板的隐式状态;API 节点原生历史与显式产物管理节点必须共享同一套 Artifact / History 抽象。
 
 ---
 
@@ -124,6 +126,7 @@
 5. **执行器路由的主键是 `Capability`**,不是 `executor_type`。`executor_type` 可作为 Capability 的粗粒度分组,但不是权威分类。(targetv2 新增)
 6. **执行器接口含 `on_plan_started` / `on_plan_finished` plan-level lifecycle hooks**(targetv2 M5 新增)。两个方法 default no-op,执行器可以 override 来管理跨 execute() 的资源(如视频 encoder 的 finalize、模型权重的 warm-up/release)。
 7. **执行器允许持有跨 execute() 的内部状态,包括持久化到磁盘的 cache**(targetv2 M6 新增)。这与"执行器无落盘权限"(真源 ① §3)**不冲突**——前者是"内部资源管理"(decoder pool / 模型权重 / API 调用结果 cache),后者禁止"输出 ExecutionOutputs 落盘为外部 Artifact"。两者的判据是: **数据的所有权在执行器内部还是流出执行器边界**。详见 `4.11.2-executor-contract.md` §长寿命内部状态。
+8. **节点原生历史与显式产物管理节点共享 Artifact 抽象**。差异只在入口形态:某些 API 节点可原生展示历史,Python 底层工作流主要通过显式产物管理节点暴露历史;底层版本、选中、标记、清理语义必须一致。
 
 ---
 
@@ -144,7 +147,7 @@
 - `Value` **本体不提供全局可比的 hash 或 equality**。身份由**其来源节点的执行签名**间接表达。
 - **`Value` 是 opaque handle**,通过 `Materializable` 协议按需物化到 `MaterializationTarget` 之一(见 `0.1.5-value-materialization.md`)。节点 schema / Connection 不得引用 `MaterializationTarget`。(targetv2 新增)
 - **`AtomicType` 首版清单足够宽**,包含 `Video`、`Audio`、`VectorGraphic`、`LayoutDocument`、`BoundingBox`、`Keypoint`、`RemoteRef` 等占位类型,避免未来加类型触发破坏性变更。占位类型可标为"无执行器支持",但类型系统中必须存在。(targetv2 新增)
-- **`ImageValue` 从首版就是多通道 + 元数据容器**,不是固定 RGBA。`channels: BTreeMap<ChannelId, ChannelData>` 支持任意通道集合(首版启用 `R/G/B/A/Z/ObjectID`);`metadata: ImageMetadata` 支持色彩空间、时间戳、帧号等(首版启用 `color_space`)。`ChannelId` 是**开放字符串**,加新通道是"填槽"。这是 targetv2 相对 target 的关键演进——它让 Nuke 风格多通道 EXR 和 DaVinci 风格 OCIO 工作流不需要改核心就能加入。(targetv2 新增)
+- **`ImageValue` 从首版就是多通道 + 元数据容器**,不是固定 RGBA。`channels: BTreeMap<ChannelId, ChannelData>` 支持任意通道集合(首版启用 `R/G/B/A`,其他通道保留占位);`metadata: ImageMetadata` 支持色彩空间、时间戳、帧号等(首版启用 `color_space`)。`ChannelId` 是**开放字符串**,加新通道是"填槽"。(targetv2 新增)
 - **`List<T>` 是值的集合容器,不是调度维度**。调度维度由 `CookingContext` 承担(见真源 ⑥ 和 `0.1.3-cooking-context.md`)。`List<Image>` 在首版为**过渡白名单**。(targetv2 新增)
 
 ---
@@ -185,14 +188,17 @@
 - **`purity` 判定源 = `NodeDef` 必填字段,由节点作者手动标注**。引擎**不推断**、**不按 `executor_type` 给默认值**、**不读执行历史反推**。
 - **`ArtifactPolicy` 默认行为**:`purity = Impure` 默认登记为 `Artifact`;`purity = Pure` 默认不登记。导出型节点不靠 `purity` 判定。
 - **`NodeDef.requires: Vec<CapabilityId>` 是路由主键**(targetv2 新增)。Runtime 按此字段查 `CapabilityRegistry`,选择合适的执行器。`executor_type` 字段保留作为 Capability 的粗粒度分组,但不是权威分类。
-- **`ParamDef.default_mode: ParamValueMode`(targetv2 新增):** 参数从静态 `Value` 升级为 `Constant | Animated(Curve) | Expression`。这让 keyframed / expression-driven 参数成为一等概念。`Node.params` 类型同步从 `HashMap<String, Value>` 改为 `HashMap<String, ParamValueMode>`。Planner 在构造 ExecSignature 时**先按当前 CookingContext 采样动画参数**,再 hash——避免"同 curve 在不同 frame 签名相同"的静默数据损坏。
+- **三类执行来源平权**:图形处理节点、可控 Python 后端节点、云端 API 节点都是普通节点来源,统一通过 `NodeRegistry` + `CapabilityRegistry` 进入图语义。节点来源不改变 Graph / Planner / Runtime 的执行模型。
+- **Python 节点与 API 节点层级固定**:Python 节点首版是可控后端的底层工作流节点;API 节点首版是黑盒任务节点,输出接口稳定、少而关键。若同种能力可由不同后端执行,用户层面倾向显式区分节点来源,不是自动路由。
+- **`ParamDef.default_mode: ParamValueMode`(targetv2 新增):** 参数从静态 `Value` 升级为 `Constant | Animated(Curve)`。表达式不进首版模型。`Node.params` 类型同步从 `HashMap<String, Value>` 改为 `HashMap<String, ParamValueMode>`。Planner 在构造 ExecSignature 时**先按当前 CookingContext 采样动画参数**,再 hash——避免"同 curve 在不同 frame 签名相同"的静默数据损坏。
 - **`cooking_sensitivity` 的实例级自动推导:** Planner 计算 effective_sensitivity = NodeDef 静态声明 ∪ 节点实例的 Animated 参数依赖维度。这让节点作者**不需要预判**哪些节点会有动画参数——默认空,用户加 keyframe 时 Planner 自动让该实例对相应维度敏感。详见 `0.1.0-models.md` §2.5.2。
-- **`NodeDef.realtime_capable: bool`(targetv2 M4 新增,必填):** 标记节点是否能跟得上 60fps 持续 cook(`ExecutionMode::Continuous`)。
+- **`NodeDef.realtime_capable: bool`(targetv2 M4 新增,必填):** 标记节点是否适合参与尽可能快的持续 cook(`ExecutionMode::Continuous`)。
   - `true` (默认): GPU shader、算术运算、本地处理节点
   - `false`: AI 推理、API 调用、文件 I/O、长时间运算
   - **Continuous 模式下:** Runtime 对 `realtime_capable=false` 节点**不重新执行**;命中正式 cache 则用,未命中则发 `NodeMissingInContinuous` 事件 + 用占位输出
   - **OneShot 模式下:** 该字段无效,所有节点正常执行
   - 详见 `4.1.2-runtime.md` §Continuous 模式 + `0.1.2-interaction-loop.md`
+- **显式产物管理节点是通用节点**:它一次主要管理一个结果流,随输入类型处理静态结果或时序结果,对下游输出当前选中版本;首版不按图片 / 视频拆成不同节点,也不额外暴露版本元数据 pin。
 
 ---
 
@@ -200,11 +206,11 @@
 
 | 字段 | 内容 |
 |------|------|
-| **定义** | `ExecutionRequest / ExecutionOutputs` 的形状固定;取消粒度 = **run 级 + node 级**;single-flight(同一时刻最多一个活动执行,由 Runtime 全局持有);**语义签名与缓存键严格分离**:`ExecSignature`(语义签名)= 上游签名闭包 + 本节点参数 hash + **CookingContext hash** + **Capability version**,**不含 generation、不 hash `Value` 本体**;`CacheKey`(缓存键)= `(NodeId, OutputPin, ExecSignature, generation)`。 |
+| **定义** | `ExecutionRequest / ExecutionOutputs` 的形状固定;取消粒度 = **run 级 + node 级**;single-flight(同一时刻最多一个活动执行,由 Runtime 全局持有);**语义签名与缓存键严格分离**:`ExecSignature`(语义签名)= 上游签名闭包 + 本节点参数 hash + selected artifact identity + **CookingContext hash** + **Capability version**,**不含 generation、不 hash `Value` 本体**;`CacheKey`(缓存键)= `(NodeId, OutputPin, ExecSignature, generation)`。 |
 | **状态** | **已冻结**(targetv2 新增 CookingContext 与 Capability 输入) |
 | **权威文档** | `0.1.1-execution-models.md`;`4.1.1-planner.md`;`4.1.2-runtime.md`;`4.11.2-executor-contract.md` |
 | **连锁影响** | Planner、Runtime、CacheManager、ArtifactManager、所有 Executor、EngineFacade 的 `execute / cancel_execution / get_execution_state` 接口 |
-| **反证/风险** | **高风险 A**:`ExecSignature` 若包含 `Value` 的字节 hash → GPU 回读造成 order-of-magnitude 性能损失;若 hash handle → 缓存命中率崩塌。<br>**高风险 B**:若把 generation 并入 `ExecSignature`,则每次 cache clear / 项目切换都会导致所有签名失效。<br>**高风险 C**(targetv2 新增):如果首版 `ExecSignature` 公式**不**包含 `cooking_context_hash` 和 `capability_version` 这两个输入,未来加入它们时所有历史签名失效——静默踩坑。注意:target → targetv2 首版的迁移**会**触发一次 cache 清零(因为 hash 输入多了两项,位级别不同),这是**唯一一次**破坏性代价;之后填入真实 hash 不再破坏,因为旧节点的 `cooking_sensitivity` 声明让它们保持恒零。<br>**高风险 D**(targetv2 新增):如果 single-flight 守卫归属 Session,CLI / Server 路径就没有 single-flight 约束——静默踩坑。 |
+| **反证/风险** | **高风险 A**:`ExecSignature` 若包含 `Value` 的字节 hash → GPU 回读造成 order-of-magnitude 性能损失;若 hash handle → 缓存命中率崩塌。<br>**高风险 B**:若把 generation 并入 `ExecSignature`,则每次 cache clear / 项目切换都会导致所有签名失效。<br>**高风险 C**(targetv2 新增):如果首版 `ExecSignature` 公式**不**包含 selected artifact identity、`cooking_context_hash` 和 `capability_version`,未来加入它们时所有历史签名失效或下游错误复用旧版本——静默踩坑。注意:target → targetv2 首版的迁移**会**触发一次 cache 清零(因为 hash 输入增加,位级别不同),这是**唯一一次**破坏性代价;之后填入真实 hash 不再破坏,因为旧节点的 `cooking_sensitivity` 声明让它们保持恒零。<br>**高风险 D**(targetv2 新增):如果 single-flight 守卫归属 Session,CLI / Server 路径就没有 single-flight 约束——静默踩坑。 |
 | **变更门槛** | 任何涉及执行请求形状、取消粒度、`ExecSignature` 构造、`CacheKey` 构造的变更,必须先改本文档 + `0.1.1` + `4.11.2`。 |
 
 **已冻结子项:**
@@ -217,10 +223,12 @@
   - `params_hash`
   - `node_def_type_id`
   - `node_def_version`
+  - `selected_artifact_identity` —— 当节点输入来自候选历史或产物管理节点时,当前选中版本是语义输入
   - `cooking_context_hash` **[占位]** —— 首版恒为 0,未来填入 CookingContext 的 hash
   - `capability_version` **[占位]** —— 首版恒为 0,未来填入 Capability 的版本
 - **`generation +1` 的触发集严格限定为 `{clear_cache, replace_graph}`**。
 - **`ExecSignature` 的 hash 算法首版选定 `xxHash3-128`**。换算法视为破坏性变更。
+- **切换当前候选版本是图语义变化**:选中旧候选版本后,产物拥有节点本身不因选择变化而重跑;Planner 只标记其下游 dirty,下游签名因 selected artifact identity 变化而改变。
 - **`ExecutionRequest` 必须包含 `fidelity: EvaluationFidelity` 字段**(targetv2 新增),值域 `Preview | Full`。首版 `Preview` 和 `Full` 的执行器行为可以一致,但字段必须存在。
 - **`Runtime::try_start_run` 接收 `ExecutionMode`**(targetv2 新增):`OneShot { fidelity }` 是首版主要模式;**`Continuous { tick_source, target_fps }` 首版真实实现**。Continuous 模式下:
   - Runtime 进入 tick loop,按 `target_fps` 持续 cook 同一 plan
@@ -228,8 +236,9 @@
   - `realtime_capable=false` 的节点**不重新执行**(只读 cache + 发缺失事件)
   - 退出: 用户调用 `stop_continuous()` / `cancel`
   - 与 OneShot 互斥: 一次最多一个 Continuous run + single-flight 守卫与 OneShot 共享
-  - 这覆盖 TouchDesigner 风格的 60fps 实时持续 cook 工作流
+  - 目标是尽可能快的持续反馈,不承诺固定帧率
 - **Planner 是纯函数**(targetv2 新增),签名为 `(Graph, CookingContext, DirtyState) → ExecutionPlan`。首版 CookingContext 可以为空。
+- **Planner 必须产出自包含 `ExecutionPlan`**:Runtime 消费 plan,不回读 Graph。参数采样、参数连线覆盖、输入来源解析、selected artifact query 都属于 Planner 构造计划时的职责。
 
 ---
 
@@ -238,10 +247,10 @@
 | 字段 | 内容 |
 |------|------|
 | **定义** | 三类状态的归属:**进项目文件** / **只在运行时** / **跨项目持久但不进项目文件**。 |
-| **状态** | 已冻结(framework),部分子项首版待定 |
-| **权威文档** | `5.0.0-project-file.draft.md`;`4.7.0-project-manager.impl.md`;`4.12.0-session.md` |
+| **状态** | 已冻结(framework);用户可见历史与当前版本归属已冻结 |
+| **权威文档** | `5.0.0-project-file.draft.md`;`../target/4.6.0-artifact.draft.md`;`4.7.0-project-manager.impl.md`;`4.12.0-session.md` |
 | **连锁影响** | 项目文件 schema、打开 / 保存流程、undo 栈设计、缓存初始化、后端凭证管理、Session 生存期 |
-| **反证/风险** | 若把 undo 栈放进项目文件 → 项目文件膨胀且跨 session 行为不定;若把 Provider 凭证放进项目文件 → 凭证跟随项目文件泄漏;若把缓存放进项目文件 → 打开项目需恢复一个可能已失效的缓存快照;若把 preview cache 放进正式 cache → 交互路径与 export 路径互相干扰。 |
+| **反证/风险** | 若把 undo 栈放进项目文件 → 项目文件膨胀且跨 session 行为不定;若把 Provider 凭证放进项目文件 → 凭证跟随项目文件泄漏;若把缓存放进项目文件 → 打开项目需恢复一个可能已失效的缓存快照;若把 preview cache 放进正式 cache → 交互路径与 export 路径互相干扰;若把用户候选历史当后台 cache → 关项目后用户丢失可继续工作的版本选择。 |
 | **变更门槛** | 任何状态迁移(如把"只在运行时"迁入项目文件)必须先改本文档 + `5.0.0` + `4.7.0`。 |
 
 **三类归属完整表(targetv2 逐行填齐):**
@@ -249,8 +258,12 @@
 | 状态项 | 归属 |
 |--------|------|
 | Graph | 进项目文件 |
-| 选用的 Artifact 索引 | 进项目文件 |
-| Artifact 物理存储 | 进项目文件(或外部存储,由项目文件 schema 决定) |
+| 编辑器布局快照(节点位置、分组展开、画布视口) | 进项目文件,但不进入 Graph 语义 |
+| 源素材(`load_image` / `load_video`) | 进项目文件 bundle |
+| 用户可见候选历史(节点输出历史) | 进项目文件 |
+| 当前选中的 Artifact / 候选版本索引 | 进项目文件,并参与图执行语义 |
+| 导出历史(`save_image` / `save_video` 输出) | 进项目文件 |
+| Artifact 物理存储 | 进项目文件 bundle(或外部存储,由项目文件 schema 明确) |
 | CookingContext 默认值(如项目级 frame range) | 进项目文件 |
 | 当前交互查看的 CookingContext(如当前查看 frame=42) | 只在运行时(Session) |
 | Capability 路由表 | 只在运行时(CapabilityRegistry,启动时注册,冻结) |
@@ -267,11 +280,11 @@
 | CLI / Server 路径的事件订阅者 | 只在运行时(EventSystem,直接订阅) |
 | 当前交互 run 状态查询 | 只在运行时(Session 通过 scheduler.query_state() 主动查询,不持有引用) |
 | 执行进度 | 只在运行时(Runtime) |
+| 执行器持久化 disk cache | 跨项目持久,不进项目文件 |
 | 后端 HTTP 客户端连接池 | 跨项目持久,不进项目文件 |
 | Provider 凭证 | 跨项目持久,不进项目文件 |
 | Python 后端连接状态 | 跨项目持久,不进项目文件 |
-| GUI 布局、视口、选中态(节点级) | 不进项目文件,归 GUI App 层 |
-| GUI 选中节点 / 焦点节点(逻辑) | 只在运行时(Session,作为交互状态) |
+| 当前选中节点 / 焦点面板 / 打开的历史窗口 | 只在运行时(Session,作为交互状态) |
 
 ---
 
@@ -304,16 +317,17 @@
 
 ## §3 最优先"静默踩坑"冻结点
 
-以下 4 条**藏在**真源 ③⑤⑥里,但它们是整份文档里**最容易被无声踩坑**的决策。写错不会立刻报错,只会表现为"缓存命中率慢慢下降"或"某类节点永远无法表达"。单独列出以强调:
+以下 5 条**藏在**真源 ③⑤⑥⑦里,但它们是整份文档里**最容易被无声踩坑**的决策。写错不会立刻报错,只会表现为"缓存命中率慢慢下降"、"某类节点永远无法表达"或"用户选中的版本被下游错误复用"。单独列出以强调:
 
 | # | 冻结点 | 归属真源 | 必须明文的内容 |
 |---|--------|---------|--------------|
 | ① | **`DataType` 封闭 / 开放** | 真源 ③ | `DataType` 是封闭枚举;`AtomicType` 首版清单足够宽以容纳未来一年能力 |
-| ② | **`ExecSignature` 身份语义** | 真源 ⑥ | 完整构造输入六项,含 `cooking_context_hash` 与 `capability_version` **[占位]**;**不对 `Value` 本体做 hash**;**generation 不参与签名** |
+| ② | **`ExecSignature` 身份语义** | 真源 ⑥ | 完整构造输入含 selected artifact identity、`cooking_context_hash` 与 `capability_version` **[占位]**;**不对 `Value` 本体做 hash**;**generation 不参与签名** |
 | ③ | **`purity` 独立于 `executor_type`** | 真源 ⑤ | `NodeDef` 必须有独立 `purity` 字段;`executor_type` 只决定粗粒度 Capability 分组 |
 | ④ | **single-flight 归 Runtime 而非 Session** | 真源 ①/⑥ | Runtime 是全局守卫持有者;Session 只持有引用。CLI / Server 路径不经过 Session 也受约束 |
+| ⑤ | **当前选中产物版本属于图语义** | 真源 ⑥/⑦ | 切换候选版本只使下游 dirty,不重跑拥有历史的上游节点;当前选中版本进项目文件并参与下游签名 |
 
-这 4 条必须在第一版就写死,否则后续任何模块文档都可能"按当时的默认值"做出不可逆的假设。
+这 5 条必须在第一版就写死,否则后续任何模块文档都可能"按当时的默认值"做出不可逆的假设。
 
 ---
 
@@ -391,9 +405,9 @@ Reviewer 必须验证引用的真源确实对应,不得放行无真源追溯的�
 | 集合值 | `List<T>` 作为端口值,不嵌套 | 白名单里的 T |
 | 执行路由 | 按 `Capability` 路由 | 有哪些 `Capability` |
 | 执行器契约 | 单一 `Executor` trait,声明 Capability,无落盘权限 | 有哪些执行器实现 |
-| 身份系统 | `ExecSignature` = 闭包 + 参数 hash + context hash + capability version | 签名作用的具体节点 |
+| 身份系统 | `ExecSignature` = 闭包 + 参数 hash + selected artifact identity + context hash + capability version | 签名作用的具体节点 |
 | 缓存系统 | `CacheKey = (NodeId, OutputPin, ExecSignature, generation)` | 有哪些缓存后端 / 策略 |
-| 产物系统 | `ArtifactPolicy` 二元 + 导出型节点独立判定 | 有哪些 Artifact 类型 |
+| 产物系统 | 用户可见候选历史 + 当前版本选择 + `ArtifactPolicy` + 显式产物管理节点共享同一抽象 | 有哪些 Artifact 类型 / 哪些节点原生带历史 |
 | 持久化边界 | 三分法完整覆盖(见真源 ⑦) | 具体字段归属 |
 | 扩展入口 | 单一 `NodeRegistry` façade,内部按五轴路由 | 有哪些 Source / Provider |
 | 交互回路 | preview/full 二分,Session 拥有预览路径 | 具体 preview 策略 |
@@ -423,6 +437,9 @@ Reviewer 必须验证引用的真源确实对应,不得放行无真源追溯的�
 | M7 | CacheManager 所有权(targetv2 新增) | 正式 cache 的**所有权**归 CacheManager,`GenerationId` 归 CacheManager;Runtime 是**用户**,负责读写但不持有所有权。preview cache 归 Session | `4.5.0-cache.impl.md`;`4.1.2-runtime.md` | 影响缓存清理路径;修改须更新 CacheManager 文档 + 本表 |
 | M8 | 执行器持久化 disk cache 标准目录(targetv2 M6 新增) | 执行器可以管理跨 session 的 disk cache,标准位置为 `~/.cache/nodeimg/<executor_name>/`(Linux/macOS)或 `%LOCALAPPDATA%\nodeimg\cache\<executor_name>\`(Windows)。每个执行器自管 cache key、文件命名、淘汰策略。**不**进项目文件,不与 Artifact 系统耦合 | `4.11.2-executor-contract.md` §长寿命内部状态 | 影响 AI / video / 模型权重 等长时间外部资源的复用策略;修改须更新执行器约定 + 本表 |
 | M9 | Executor lifecycle hooks(targetv2 M5 新增) | `Executor` trait 含 `on_plan_started(plan)` / `on_plan_finished(plan, status)` 两个 default no-op 方法。Runtime 在 Plan 边界调用对应 hook。用于跨 execute() 的资源生命周期管理(视频 encoder finalize、temp file 清理等) | `4.11.2-executor-contract.md`;`4.1.2-runtime.md` | 影响所有视频 / 流式输出执行器;修改须更新 Executor trait |
+| M10 | 三类执行来源平权 | 图形处理节点、可控 Python 后端节点、云端 API 节点都是首版一等执行来源。Python 节点是底层可控工作流节点;API 节点是黑盒任务节点 | `README.md`;`roadmap.md`;`4.11.2-executor-contract.md` | 影响 NodeRegistry、CapabilityRegistry、ExecutorContract;修改须更新三处主叙事和执行器契约 |
+| M11 | 用户可见候选历史 | Python/API 多轮生成候选、导出结果、当前选中版本是工作流状态,不是后台 cache。候选历史和当前选择随项目保存 | `../target/4.6.0-artifact.draft.md`;`5.0.0-project-file.draft.md`;`4.12.0-session.md` | 影响 Artifact、Project、Session、undo/redo;修改须更新项目文件和产物文档 |
+| M12 | 显式产物管理节点 | `artifact_manager` 是图里的通用节点,一次主要管理一个结果流,输出当前选中版本。API 节点原生历史与它共享 Artifact 抽象 | `0.1.0-models.md`;`4.1.1-planner.md`;`../target/4.6.0-artifact.draft.md` | 影响节点模型、Planner dirty 传播、Artifact selection query;修改须同步模型与执行文档 |
 
 ---
 
@@ -432,18 +449,18 @@ targetv2 相对 target 的派生层变更清单。变更生效日:targetv2 文�
 
 | 文档 | 变更类型 | 说明 |
 |------|---------|------|
-| `0.1.0-models.md` | 新增字段 | `NodeDef.requires: Vec<CapabilityId>`;`AtomicType` 首版清单扩充 |
-| `0.1.1-execution-models.md` | 公式扩充 | `ExecSignature` 加 `cooking_context_hash`、`capability_version` 占位(target → targetv2 会触发一次 cache 清零);`ExecutionRequest` 加 `fidelity` 字段 |
+| `0.1.0-models.md` | 新增字段 / 模型收敛 | `NodeDef.requires: Vec<CapabilityId>`;`AtomicType` 首版清单扩充;`ParamValueMode = Constant \| Animated(Curve)`;显式产物管理节点模型 |
+| `0.1.1-execution-models.md` | 公式扩充 | `ExecSignature` 加 selected artifact identity、`cooking_context_hash`、`capability_version` 占位(target → targetv2 会触发一次 cache 清零);`ExecutionRequest` 加 `fidelity` 字段;`Continuous` 表述为尽可能快的持续反馈 |
 | `0.1.2-interaction-loop.md` | 新建 | 真源 ⑧ 权威文档 |
 | `0.1.3-cooking-context.md` | 新建 | CookingContext 类型与枚举规则 |
 | `0.1.4-capability.md` | 新建 | Capability 路由主键 |
 | `0.1.5-value-materialization.md` | 新建 | Materializable 协议 |
 | `4.0.0-engine.md` | 组件清单扩充 | 加 Planner、Runtime、CapabilityRegistry、Session |
 | `4.1.0-scheduler.md` | 拆分 | Scheduler 降格为 facade,核心职责拆分到 4.1.1 Planner 和 4.1.2 Runtime |
-| `4.1.1-planner.md` | 新建 | Planner 作为纯函数层 |
-| `4.1.2-runtime.md` | 新建 | Runtime 作为副作用层,持有 single-flight |
+| `4.1.1-planner.md` | 新建 | Planner 作为纯函数层,产出自包含 `ExecutionPlan`,负责参数采样、输入来源和 artifact selection query |
+| `4.1.2-runtime.md` | 新建 | Runtime 作为副作用层,持有 single-flight,消费 plan 并管理正式 cache / artifact 写入 |
 | `4.1.3-capability-registry.md` | 新建 | Capability 注册表 |
-| `4.11.2-executor-contract.md` | 接口增补 | 执行器声明 `provides()`;接收 `fidelity` 字段 |
-| `4.12.0-session.md` | 新建 | Session 层所有权清单 |
+| `4.11.2-executor-contract.md` | 接口增补 | 执行器声明 `provides()`;接收 `fidelity` 字段;明确图形处理 / Python 可控后端 / API 黑盒任务三类来源 |
+| `4.12.0-session.md` | 新建 | Session 层所有权清单;当前 frame、preview cache、undo/redo 与结果历史面板交互边界 |
 | `extensibility.md` | 小幅更新 | 加 NodeRegistry façade 对外入口说明;补 Capability / CookingContext / Session 扩展路径 |
 | `first-principles-architecture.md` | 重写 | 8 层分层模型 + Project-Graph 正交 |
