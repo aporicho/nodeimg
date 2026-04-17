@@ -1,18 +1,18 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::interaction::InteractionState;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
+use crate::runtime::{
+    ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSyncCx, RuntimeSystems,
+};
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
 use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, NodeKind, Tree};
 use crate::widget::props::WidgetBuildCx;
-use crate::widget::systems::{
-    DropdownSystem, OverlaySystemCx, PopupSystem, SystemCx, TextInputSystem,
-};
 
 pub use crate::output::{
     FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
@@ -24,11 +24,9 @@ pub struct Context {
     pub(crate) tree: Tree,
     gesture_session: GestureSession,
     interaction: InteractionState,
-    pub(crate) dropdown_system: DropdownSystem,
-    pub(crate) popup_system: PopupSystem,
-    pub(crate) text_input_system: TextInputSystem,
+    pub(crate) systems: RuntimeSystems,
     pub(crate) last_theme_revision: Option<u64>,
-    pub(crate) textures: HashMap<TextureHandle, Arc<wgpu::TextureView>>,
+    pub(crate) resources: ResourceRegistry,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -43,11 +41,9 @@ impl Context {
             tree: Tree::new(),
             gesture_session: GestureSession::new(),
             interaction: InteractionState::new(),
-            dropdown_system: DropdownSystem::new(),
-            popup_system: PopupSystem::new(),
-            text_input_system: TextInputSystem::new(),
+            systems: RuntimeSystems::new(),
             last_theme_revision: None,
-            textures: HashMap::new(),
+            resources: ResourceRegistry::new(),
         }
     }
 
@@ -59,7 +55,7 @@ impl Context {
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
-        let desc = self.popup_system.compose_desc(&self.tree, desc, root_rect);
+        let desc = self.systems.compose_desc(&self.tree, desc, root_rect);
         let force_rebuild = self.last_theme_revision != Some(theme.revision);
         let build_cx = WidgetBuildCx {
             theme,
@@ -73,15 +69,12 @@ impl Context {
             });
         }
         self.interaction.sync_with_tree(&self.tree);
-        self.text_input_system.sync_with_tree(
-            &self.tree,
+        self.systems.sync_with_tree(RuntimeSyncCx {
+            tree: &self.tree,
+            interaction: &self.interaction,
             measurer,
             theme,
-            self.interaction.focused(),
-            self.interaction.captured(),
-        );
-        self.dropdown_system
-            .sync_with_tree(&self.tree, &self.popup_system);
+        });
     }
 
     /// 渲染整棵树。
@@ -98,28 +91,28 @@ impl Context {
                 root,
                 renderer,
                 Some(&self.interaction),
-                Some(self.text_input_system.store()),
-                Some(&self.textures),
+                Some(self.systems.text_input_store()),
+                Some(self.resources.textures()),
                 theme,
             );
         }
     }
 
     pub fn register_texture(&mut self, handle: TextureHandle, view: Arc<wgpu::TextureView>) {
-        self.textures.insert(handle, view);
+        self.resources.register_texture(handle, view);
     }
 
     pub fn open_overlay(&mut self, request: OverlayRequest) {
-        self.popup_system.open(&self.tree, request);
+        self.systems.open_overlay(&self.tree, request);
     }
 
     pub fn close_overlay(&mut self) {
-        let cx = SystemCx::new(&self.tree, &mut self.interaction);
-        self.popup_system.close(cx);
+        self.systems
+            .close_overlay(&self.tree, &mut self.interaction);
     }
 
     pub fn overlay_open(&self) -> bool {
-        self.popup_system.is_open()
+        self.systems.overlay_open()
     }
 
     pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
@@ -127,12 +120,12 @@ impl Context {
     }
 
     pub fn ime_request(&self) -> ImeRequest {
-        self.text_input_system
+        self.systems
             .ime_request(&self.tree, self.interaction.focused())
     }
 
     pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
-        self.text_input_system
+        self.systems
             .paste_focused_text(&self.tree, self.interaction.focused(), text)
     }
 
@@ -237,19 +230,17 @@ impl Context {
         self.interaction.handle_event(&self.tree, event);
     }
 
-    pub(crate) fn handle_popup_event(&mut self, event: &AppEvent) -> bool {
-        let cx = SystemCx::new(&self.tree, &mut self.interaction);
-        self.popup_system.handle_event(cx, event)
-    }
-
-    pub(crate) fn handle_dropdown_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        let cx = OverlaySystemCx::new(&self.tree, &mut self.interaction, &mut self.popup_system);
-        self.dropdown_system.handle_event(cx, event)
-    }
-
-    pub(crate) fn handle_text_input_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        let cx = SystemCx::new(&self.tree, &mut self.interaction);
-        self.text_input_system.handle_event(cx, event)
+    pub(crate) fn handle_runtime_pre_gesture_event(
+        &mut self,
+        event: &AppEvent,
+    ) -> RuntimeEventResult {
+        self.systems.handle_pre_gesture_event(
+            RuntimeEventCx {
+                tree: &self.tree,
+                interaction: &mut self.interaction,
+            },
+            event,
+        )
     }
 
     pub(crate) fn handle_gesture_event(&mut self, event: &AppEvent) -> FrameworkOutput {
@@ -1417,8 +1408,8 @@ mod tests {
         });
         assert!(output.events.is_empty());
         assert_eq!(
-            ctx.text_input_system
-                .store()
+            ctx.systems
+                .text_input_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1438,8 +1429,8 @@ mod tests {
         });
 
         assert_eq!(
-            ctx.text_input_system
-                .store()
+            ctx.systems
+                .text_input_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1504,8 +1495,8 @@ mod tests {
         ctx.update(number_desc(2.0), viewport, &mut measurer, &theme);
 
         assert_eq!(
-            ctx.text_input_system
-                .store()
+            ctx.systems
+                .text_input_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1513,8 +1504,8 @@ mod tests {
             "a1.50"
         );
         assert_eq!(
-            ctx.text_input_system
-                .store()
+            ctx.systems
+                .text_input_store()
                 .runtime("number")
                 .unwrap()
                 .external_text(),

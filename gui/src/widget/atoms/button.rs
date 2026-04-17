@@ -1,5 +1,6 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -45,6 +46,7 @@ impl WidgetProps for ButtonProps {
         } else {
             crate::interaction::WidgetVisualState::Normal
         });
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
@@ -66,7 +68,7 @@ impl WidgetProps for ButtonProps {
                 shadow: None,
             }),
             children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::label")),
+                id: Cow::Owned(anatomy.label()),
                 style: BoxStyle {
                     width: Size::Auto,
                     height: Size::Auto,

@@ -44,6 +44,52 @@ impl PointerSession {
     }
 }
 
+#[derive(Debug)]
+enum DemoMessage {
+    WidgetClicked(String),
+    WidgetDoubleClicked(String),
+    TextChanged {
+        id: String,
+        value: String,
+    },
+    NumberChanged {
+        id: String,
+        value: f32,
+    },
+    SelectionChanged {
+        id: String,
+        selected: usize,
+    },
+    WidgetDragStart {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    WidgetDragMove {
+        id: String,
+        x: f32,
+    },
+    WidgetDragEnd,
+    LongPress(String),
+    PanelDragStart {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    PanelDragMove {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    PanelDragEnd,
+    PanelResizeMove {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+}
+
 fn build_demo_tree(
     viewport: Rect,
     camera: &Camera,
@@ -342,16 +388,51 @@ impl DemoApp {
 
     fn handle_gui_event(&mut self, event: GuiEvent) {
         tracing::info!("GuiEvent: {:?}", event);
-        match event {
-            GuiEvent::Widget(event) => self.handle_widget_event(event),
-            GuiEvent::Panel(event) => self.handle_panel_event(event),
-            GuiEvent::Overlay(_) => {}
+        if let Some(message) = self.map_gui_event(event) {
+            self.handle_message(message);
         }
     }
 
-    fn handle_widget_event(&mut self, event: WidgetEvent) {
+    fn map_gui_event(&self, event: GuiEvent) -> Option<DemoMessage> {
         match event {
-            WidgetEvent::Click { id } => {
+            GuiEvent::Widget(event) => self.map_widget_event(event),
+            GuiEvent::Panel(event) => self.map_panel_event(event),
+            GuiEvent::Overlay(_) => None,
+        }
+    }
+
+    fn map_widget_event(&self, event: WidgetEvent) -> Option<DemoMessage> {
+        Some(match event {
+            WidgetEvent::Click { id } => DemoMessage::WidgetClicked(id),
+            WidgetEvent::DoubleClick { id } => DemoMessage::WidgetDoubleClicked(id),
+            WidgetEvent::TextChanged { id, value } => DemoMessage::TextChanged { id, value },
+            WidgetEvent::NumberChanged { id, value } => DemoMessage::NumberChanged { id, value },
+            WidgetEvent::SelectionChanged { id, selected } => {
+                DemoMessage::SelectionChanged { id, selected }
+            }
+            WidgetEvent::DragStart { id, x, y } => DemoMessage::WidgetDragStart { id, x, y },
+            WidgetEvent::DragMove { id, x, .. } => DemoMessage::WidgetDragMove { id, x },
+            WidgetEvent::DragEnd { .. } => DemoMessage::WidgetDragEnd,
+            WidgetEvent::LongPress { id } => DemoMessage::LongPress(id),
+        })
+    }
+
+    fn map_panel_event(&self, event: PanelEvent) -> Option<DemoMessage> {
+        Some(match event {
+            PanelEvent::DragStart { id, x, y } => DemoMessage::PanelDragStart { id, x, y },
+            PanelEvent::DragMove { id, x, y } => DemoMessage::PanelDragMove { id, x, y },
+            PanelEvent::DragEnd { .. } => DemoMessage::PanelDragEnd,
+            PanelEvent::ResizeStart { .. } => return None,
+            PanelEvent::ResizeMove { id, edge, x, y } => {
+                DemoMessage::PanelResizeMove { id, edge, x, y }
+            }
+            PanelEvent::ResizeEnd { .. } => return None,
+        })
+    }
+
+    fn handle_message(&mut self, message: DemoMessage) {
+        match message {
+            DemoMessage::WidgetClicked(id) => {
                 let _ = self.gallery.apply_click(&id);
                 if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
@@ -381,48 +462,43 @@ impl DemoApp {
                 }
                 self.active_button = Some(id);
             }
-            WidgetEvent::DoubleClick { id } => {
+            DemoMessage::WidgetDoubleClicked(id) => {
                 if id == SLIDER_RADIUS_ID {
                     self.gallery.slider_value = 5.0;
                 }
             }
-            WidgetEvent::TextChanged { id, value } => {
+            DemoMessage::TextChanged { id, value } => {
                 let _ = self.gallery.apply_text_change(&id, value);
             }
-            WidgetEvent::NumberChanged { id, value } => {
+            DemoMessage::NumberChanged { id, value } => {
                 let _ = self.gallery.apply_number_change(&id, value);
             }
-            WidgetEvent::SelectionChanged { id, selected } => {
+            DemoMessage::SelectionChanged { id, selected } => {
                 let _ = self.gallery.apply_select_change(&id, selected);
             }
-            WidgetEvent::DragStart { id, x, y } => {
+            DemoMessage::WidgetDragStart { id, x, y } => {
                 if is_slider_target(&id) {
                     self.pointer_session = Some(PointerSession::new(x, y));
                 }
             }
-            WidgetEvent::DragMove { id, x, .. } => {
+            DemoMessage::WidgetDragMove { id, x } => {
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
                     tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
                 }
             }
-            WidgetEvent::DragEnd { .. } => {
+            DemoMessage::WidgetDragEnd => {
                 self.pointer_session = None;
             }
-            WidgetEvent::LongPress { id } => {
+            DemoMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
             }
-        }
-    }
-
-    fn handle_panel_event(&mut self, event: PanelEvent) {
-        match event {
-            PanelEvent::DragStart { id, x, y } => {
+            DemoMessage::PanelDragStart { id, x, y } => {
                 if is_gallery_panel_node(&id) {
                     self.pointer_session = Some(PointerSession::new(x, y));
                 }
             }
-            PanelEvent::DragMove { id, x, y } => {
+            DemoMessage::PanelDragMove { id, x, y } => {
                 if !is_gallery_panel_node(&id) {
                     return;
                 }
@@ -439,11 +515,10 @@ impl DemoApp {
                     session.last_y = y;
                 }
             }
-            PanelEvent::DragEnd { .. } => {
+            DemoMessage::PanelDragEnd => {
                 self.pointer_session = None;
             }
-            PanelEvent::ResizeStart { .. } => {}
-            PanelEvent::ResizeMove { id, edge, x, y } => {
+            DemoMessage::PanelResizeMove { id, edge, x, y } => {
                 tracing::info!(
                     "Ignoring gallery panel resize: {} {:?} {} {}",
                     id,
@@ -452,7 +527,6 @@ impl DemoApp {
                     y
                 );
             }
-            PanelEvent::ResizeEnd { .. } => {}
         }
     }
 

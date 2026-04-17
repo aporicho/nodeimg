@@ -1,4 +1,5 @@
 use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -48,6 +49,7 @@ impl WidgetProps for NumberInputProps {
         } else {
             crate::interaction::WidgetVisualState::Normal
         });
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
@@ -59,7 +61,7 @@ impl WidgetProps for NumberInputProps {
             decoration: None,
             children: vec![
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
+                    id: Cow::Owned(anatomy.label()),
                     style: BoxStyle::default(),
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
@@ -71,7 +73,7 @@ impl WidgetProps for NumberInputProps {
                     },
                 },
                 Desc::Container {
-                    id: Cow::Owned(format!("{id}::field")),
+                    id: Cow::Owned(anatomy.field()),
                     style: BoxStyle {
                         height: Size::Fixed(tokens.field_height),
                         padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
@@ -90,7 +92,7 @@ impl WidgetProps for NumberInputProps {
                         shadow: None,
                     }),
                     children: vec![Desc::Leaf {
-                        id: Cow::Owned(format!("{id}::value")),
+                        id: Cow::Owned(anatomy.part("value")),
                         style: BoxStyle::default(),
                         kind: LeafKind::Text {
                             content: format_number(self.value, self.precision),

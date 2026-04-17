@@ -1,4 +1,5 @@
 use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -50,6 +51,7 @@ impl WidgetProps for DropdownProps {
             .get(self.selected)
             .map(|s| s.to_string())
             .unwrap_or_default();
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
@@ -61,7 +63,7 @@ impl WidgetProps for DropdownProps {
             decoration: None,
             children: vec![
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
+                    id: Cow::Owned(anatomy.label()),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
@@ -77,7 +79,7 @@ impl WidgetProps for DropdownProps {
                     },
                 },
                 Desc::Container {
-                    id: Cow::Owned(format!("{id}::field")),
+                    id: Cow::Owned(anatomy.field()),
                     style: BoxStyle {
                         direction: Direction::Row,
                         gap: tokens.gap,
@@ -98,7 +100,7 @@ impl WidgetProps for DropdownProps {
                     }),
                     children: vec![
                         Desc::Leaf {
-                            id: Cow::Owned(format!("{id}::selected")),
+                            id: Cow::Owned(anatomy.part("selected")),
                             style: BoxStyle {
                                 width: Size::Auto,
                                 height: Size::Auto,
@@ -114,7 +116,7 @@ impl WidgetProps for DropdownProps {
                             },
                         },
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::spacer")),
+                            id: Cow::Owned(anatomy.part("spacer")),
                             style: BoxStyle {
                                 flex_grow: 1.0,
                                 ..BoxStyle::default()
@@ -123,7 +125,7 @@ impl WidgetProps for DropdownProps {
                             children: vec![],
                         },
                         Desc::Leaf {
-                            id: Cow::Owned(format!("{id}::arrow")),
+                            id: Cow::Owned(anatomy.part("arrow")),
                             style: BoxStyle {
                                 width: Size::Auto,
                                 height: Size::Auto,

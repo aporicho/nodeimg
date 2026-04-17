@@ -1,5 +1,6 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -60,6 +61,7 @@ impl WidgetProps for SliderProps {
         } else {
             format!("{:.1}", self.value)
         };
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
@@ -73,7 +75,7 @@ impl WidgetProps for SliderProps {
             children: vec![
                 // 标签
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
+                    id: Cow::Owned(anatomy.label()),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
@@ -90,7 +92,7 @@ impl WidgetProps for SliderProps {
                 },
                 // 轨道
                 Desc::Container {
-                    id: Cow::Owned(format!("{id}::track")),
+                    id: Cow::Owned(anatomy.track()),
                     style: BoxStyle {
                         flex_grow: 1.0,
                         height: Size::Fixed(tokens.track_height),
@@ -109,7 +111,7 @@ impl WidgetProps for SliderProps {
                     children: vec![
                         // 填充条（按比例占空间）
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::fill")),
+                            id: Cow::Owned(anatomy.part("fill")),
                             style: BoxStyle {
                                 flex_grow: ratio,
                                 height: Size::Fill,
@@ -126,7 +128,7 @@ impl WidgetProps for SliderProps {
                         },
                         // Thumb（明确可拖拽的圆点）
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::thumb")),
+                            id: Cow::Owned(anatomy.thumb()),
                             style: BoxStyle {
                                 width: Size::Fixed(tokens.thumb_size),
                                 height: Size::Fixed(tokens.thumb_size),
@@ -143,7 +145,7 @@ impl WidgetProps for SliderProps {
                         },
                         // 空白（剩余空间）
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::spacer")),
+                            id: Cow::Owned(anatomy.part("spacer")),
                             style: BoxStyle {
                                 flex_grow: 1.0 - ratio,
                                 height: Size::Fill,
@@ -157,7 +159,7 @@ impl WidgetProps for SliderProps {
                 },
                 // 值显示
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::value")),
+                    id: Cow::Owned(anatomy.part("value")),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,

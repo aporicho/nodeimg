@@ -4,6 +4,7 @@ use crate::tree::layout::{
     BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
 };
 use crate::tree::Desc;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -108,10 +109,11 @@ impl WidgetProps for PanelProps {
         let theme = cx.theme;
         let tokens = theme.components.panel;
         let visual = theme.panel_visual();
+        let anatomy = Anatomy::new(id);
 
         // 标题栏
         let titlebar = Desc::Container {
-            id: Cow::Owned(format!("{id}::titlebar")),
+            id: Cow::Owned(anatomy.titlebar()),
             style: BoxStyle {
                 height: Size::Fixed(tokens.title_bar_height),
                 padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
@@ -126,7 +128,7 @@ impl WidgetProps for PanelProps {
                 shadow: None,
             }),
             children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::title")),
+                id: Cow::Owned(anatomy.title()),
                 style: BoxStyle {
                     width: Size::Auto,
                     height: Size::Auto,
@@ -145,7 +147,7 @@ impl WidgetProps for PanelProps {
 
         // 内容区（透明，事件穿透到子控件）
         let content_area = Desc::Container {
-            id: Cow::Owned(format!("{id}::content")),
+            id: Cow::Owned(anatomy.content()),
             style: BoxStyle {
                 flex_grow: 1.0,
                 padding: Edges::all(tokens.content_padding),

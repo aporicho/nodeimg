@@ -1,3 +1,4 @@
+pub mod anatomy;
 pub mod atoms;
 pub mod frameworks;
 pub mod props;

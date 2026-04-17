@@ -7,33 +7,19 @@ use crate::tree::{hit_test, NodeId, Tree};
 pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
     ctx.handle_interaction_event(event);
     let scroll_consumed = handle_scroll_event(&mut ctx.tree, event);
-    if ctx.handle_popup_event(event) {
-        return finalize_output(FrameworkOutput::consumed());
-    }
-
-    let dropdown_output = ctx.handle_dropdown_event(event);
-    let text_output = ctx.handle_text_input_event(event);
-
-    if output_has_pre_gesture_work(&dropdown_output) || output_has_pre_gesture_work(&text_output) {
+    let runtime_result = ctx.handle_runtime_pre_gesture_event(event);
+    if runtime_result.cancel_gesture {
         ctx.cancel_gesture();
-        return finalize_output(
-            dropdown_output
-                .merge(text_output)
-                .with_consumed(scroll_consumed),
-        );
+        return finalize_output(runtime_result.output.with_consumed(scroll_consumed));
     }
 
     let gesture_output = ctx.handle_gesture_event(event);
     finalize_output(
-        dropdown_output
-            .merge(text_output)
+        runtime_result
+            .output
             .merge(gesture_output)
             .with_consumed(scroll_consumed),
     )
-}
-
-fn output_has_pre_gesture_work(output: &FrameworkOutput) -> bool {
-    output.consumed || !output.events.is_empty() || !output.effects.is_empty()
 }
 
 fn finalize_output(mut output: FrameworkOutput) -> FrameworkOutput {

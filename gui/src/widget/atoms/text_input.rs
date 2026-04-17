@@ -1,4 +1,5 @@
 use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -42,6 +43,7 @@ impl WidgetProps for TextInputProps {
         } else {
             crate::interaction::WidgetVisualState::Normal
         });
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
@@ -54,7 +56,7 @@ impl WidgetProps for TextInputProps {
             children: vec![
                 // label
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
+                    id: Cow::Owned(anatomy.label()),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
@@ -71,7 +73,7 @@ impl WidgetProps for TextInputProps {
                 },
                 // field
                 Desc::Container {
-                    id: Cow::Owned(format!("{id}::field")),
+                    id: Cow::Owned(anatomy.field()),
                     style: BoxStyle {
                         height: Size::Fixed(tokens.field_height),
                         padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
@@ -90,7 +92,7 @@ impl WidgetProps for TextInputProps {
                         shadow: None,
                     }),
                     children: vec![Desc::Leaf {
-                        id: Cow::Owned(format!("{id}::value")),
+                        id: Cow::Owned(anatomy.part("value")),
                         style: BoxStyle {
                             width: Size::Auto,
                             height: Size::Auto,
