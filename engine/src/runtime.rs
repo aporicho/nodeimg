@@ -24,11 +24,9 @@ use crate::graph;
 use crate::graph::model::subgraph::ExecuteTarget;
 use crate::graph::query::resolve_subgraph::resolve_subgraph;
 use crate::graph::query::topo_sort::topo_sort;
-use crate::graph::NodeInstance;
 use crate::node_manager::{ArtifactPolicy, NodeManager};
-use std::collections::hash_map::DefaultHasher;
+use crate::planner::{compute_exec_signature, SignatureInput};
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Condvar, Mutex};
 use types::{NodeId, Value};
 
@@ -1137,14 +1135,13 @@ impl Runtime {
                         message: error.to_string(),
                     })
                 })?;
-            let exec_signature = compute_exec_signature(
-                self.node_manager.as_ref(),
-                def,
-                node,
-                &effective_params,
-                &upstream_signatures,
+            let exec_signature = compute_exec_signature(SignatureInput {
+                node_manager: self.node_manager.as_ref(),
+                node_def: def,
+                effective_params: &effective_params,
+                upstream_signatures: &upstream_signatures,
                 cooking_context,
-            );
+            });
             let artifact_identity = artifacts::build_artifact_identity(
                 def.type_id.as_str(),
                 exec_signature,
@@ -1679,14 +1676,13 @@ impl Runtime {
                 .map_err(|error| EngineError::Schema {
                     message: error.to_string(),
                 })?;
-            let exec_signature = compute_exec_signature(
-                self.node_manager.as_ref(),
-                def,
-                node,
-                &effective_params,
-                &upstream_signatures,
+            let exec_signature = compute_exec_signature(SignatureInput {
+                node_manager: self.node_manager.as_ref(),
+                node_def: def,
+                effective_params: &effective_params,
+                upstream_signatures: &upstream_signatures,
                 cooking_context,
-            );
+            });
             signatures.insert(*node_id, exec_signature);
         }
 
@@ -1834,43 +1830,6 @@ impl Runtime {
     }
 }
 
-pub(crate) fn compute_exec_signature(
-    node_manager: &NodeManager,
-    def: &crate::node_manager::model::NodeDef,
-    node: &NodeInstance,
-    effective_params: &HashMap<String, Value>,
-    upstream_signatures: &[cache::model::ExecSignature],
-    cooking_context: &CookingContext,
-) -> cache::model::ExecSignature {
-    let mut params_entries: Vec<(&String, &Value)> = effective_params.iter().collect();
-    params_entries.sort_by(|a, b| a.0.cmp(b.0));
-
-    let params_hash = hash_entries(&params_entries);
-    let upstream_hash = hash_signatures(upstream_signatures);
-    let node_version = def.version.max(1) as u16;
-    let mut capability_versions = def
-        .requires
-        .iter()
-        .filter_map(|capability| node_manager.capability_version_of(&def.type_id, capability))
-        .collect::<Vec<_>>();
-    capability_versions.sort();
-    let capability_version = capability_versions.into_iter().fold(0_u32, |acc, version| {
-        acc.wrapping_mul(31).wrapping_add(version)
-    });
-    let cooking_context_hash = cooking_context.hash_filtered(&def.cooking_sensitivity);
-
-    let _ = node;
-
-    cache::model::ExecSignature::with_context(
-        2,
-        node_version,
-        params_hash,
-        upstream_hash,
-        cooking_context_hash,
-        capability_version,
-    )
-}
-
 fn positive_int_param(params: &HashMap<String, Value>, key: &str) -> Option<u64> {
     match params.get(key) {
         Some(Value::Int(value)) if *value > 0 => Some(*value as u64),
@@ -1910,33 +1869,4 @@ fn inferred_fps_for_node(type_id: &str, params: &HashMap<String, Value>) -> Opti
         },
         _ => None,
     })
-}
-
-fn hash_entries(entries: &[(&String, &Value)]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    for (key, value) in entries {
-        key.hash(&mut hasher);
-        format!("{value:?}").hash(&mut hasher);
-    }
-    hasher.finish()
-}
-
-fn hash_signatures(signatures: &[cache::model::ExecSignature]) -> u64 {
-    let mut ordered = signatures.to_vec();
-    ordered.sort_by_key(|signature| {
-        (
-            signature.sig_schema_version,
-            signature.node_version,
-            signature.params_hash,
-            signature.upstream_hash,
-            signature.cooking_context_hash,
-            signature.capability_version,
-        )
-    });
-
-    let mut hasher = DefaultHasher::new();
-    for signature in ordered {
-        signature.hash(&mut hasher);
-    }
-    hasher.finish()
 }

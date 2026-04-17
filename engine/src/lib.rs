@@ -9,6 +9,7 @@ pub mod facade;
 pub mod graph;
 pub mod node_manager;
 pub mod node_registry;
+pub mod planner;
 pub mod runtime;
 pub mod scheduler_facade;
 pub mod session;

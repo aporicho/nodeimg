@@ -3,18 +3,16 @@ use crate::artifact::model::ArtifactRecord;
 use crate::cache::manager::CacheManager;
 use crate::cache::model::ExecSignature;
 use crate::events::{EngineEvent, EventSubscription, ExecutionState, PendingExecutionId};
-use crate::execution::{
-    CookingContext, CookingContextRange, ExecutionMode, ExecutionPlan, PinSource, PlanSubtask,
-    PlannedNode, PlannedOutput, ProgressSink,
-};
+use crate::execution::{CookingContextRange, ExecutionMode, ProgressSink};
 use crate::facade::{EngineError, ExecutionRequest, ExecutionRequestResult, ExecutionTicket};
 use crate::graph;
 use crate::graph::model::events::{GraphChange, GraphChangedEvent};
 use crate::graph::model::subgraph::ExecuteTarget;
 use crate::graph::query::downstream::downstream;
+#[cfg(test)]
 use crate::graph::query::resolve_subgraph::resolve_subgraph;
-use crate::node_manager::{ArtifactPolicy, Purity};
-use crate::runtime::{compute_exec_signature, Runtime};
+use crate::planner::{self, PlanRequest, PlannerError};
+use crate::runtime::Runtime;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use types::{NodeId, Value};
@@ -503,17 +501,23 @@ impl SchedulerFacade {
                 fidelity: crate::execution::EvaluationFidelity::Preview { .. }
             }
         );
-        let resolved = resolve_subgraph(graph, request.target.clone()).map_err(|error| {
-            EngineError::Execution {
-                message: error.to_string(),
-            }
-        })?;
-        let plan = self.build_execution_plan(graph, &request, mode.clone(), &resolved.order)?;
+        let plan = planner::build_execution_plan(PlanRequest {
+            graph,
+            request: &request,
+            mode: mode.clone(),
+            cooking_range: &self.cooking_range,
+            node_manager: self.runtime.node_manager(),
+        })
+        .map_err(planner_error_to_engine_error)?;
         let completion_hook = if matches!(scope, ExecutionScope::CommittedGraph)
             && !is_preview_request
         {
             let dirty = Arc::clone(&self.dirty);
-            let resolved_nodes = resolved.nodes.iter().copied().collect::<Vec<_>>();
+            let resolved_nodes = plan
+                .subtasks
+                .iter()
+                .flat_map(|subtask| subtask.order.iter().map(|node| node.node_id))
+                .collect::<HashSet<_>>();
             Some(Arc::new(move |status| {
                 if !matches!(status, crate::execution::ExecutionTerminalStatus::Finished) {
                     return;
@@ -569,160 +573,6 @@ impl SchedulerFacade {
         )
     }
 
-    fn build_execution_plan(
-        &self,
-        graph: &graph::Graph,
-        request: &ExecutionRequest,
-        mode: ExecutionMode,
-        order: &[NodeId],
-    ) -> Result<ExecutionPlan, EngineError> {
-        let effective_range = if self.cooking_range.axes.is_empty() {
-            self.infer_cooking_range(graph, order)?
-        } else {
-            self.cooking_range.clone()
-        };
-
-        let mut subtasks = Vec::new();
-        for cooking_context in effective_range.enumerate() {
-            let order = self.plan_order(graph, order, &cooking_context)?;
-            subtasks.push(PlanSubtask {
-                cooking_context,
-                order,
-            });
-        }
-
-        Ok(ExecutionPlan {
-            target: request.target.clone(),
-            mode,
-            subtasks,
-        })
-    }
-
-    fn plan_order(
-        &self,
-        graph: &graph::Graph,
-        order: &[NodeId],
-        cooking_context: &CookingContext,
-    ) -> Result<Vec<PlannedNode>, EngineError> {
-        let node_manager = self.runtime.node_manager();
-        let mut signatures = HashMap::<NodeId, ExecSignature>::new();
-        let mut planned = Vec::new();
-
-        for node_id in order {
-            let node = graph.nodes.get(node_id).ok_or_else(|| EngineError::Graph {
-                message: format!("Node {:?} not found in graph", node_id),
-            })?;
-            let def =
-                node_manager
-                    .get_node_def(&node.type_id)
-                    .ok_or_else(|| EngineError::Graph {
-                        message: format!("Node type '{}' not registered", node.type_id),
-                    })?;
-
-            let mut inputs = HashMap::new();
-            let mut upstream_signatures = Vec::new();
-            for conn in &graph.connections {
-                if conn.to.node == *node_id {
-                    inputs.insert(
-                        conn.to.interface.clone(),
-                        PinSource::UpstreamOutput {
-                            node_id: conn.from.node,
-                            output_pin: conn.from.interface.clone(),
-                        },
-                    );
-                    if let Some(signature) = signatures.get(&conn.from.node) {
-                        upstream_signatures.push(*signature);
-                    }
-                }
-            }
-
-            let effective_params = node_manager
-                .resolve_effective_params(&node.type_id, &node.params)
-                .map_err(|error| EngineError::Schema {
-                    message: error.to_string(),
-                })?;
-            let exec_signature = compute_exec_signature(
-                node_manager,
-                def,
-                node,
-                &effective_params,
-                &upstream_signatures,
-                cooking_context,
-            );
-            for (name, value) in &effective_params {
-                inputs
-                    .entry(name.clone())
-                    .or_insert_with(|| PinSource::Value(value.clone()));
-            }
-
-            let artifact_policy = def.execution.artifact_policy.unwrap_or(match def.purity {
-                Purity::Pure => ArtifactPolicy::None,
-                Purity::Impure => ArtifactPolicy::Persist,
-            });
-            planned.push(PlannedNode {
-                node_id: *node_id,
-                type_id: node.type_id.clone(),
-                params: effective_params,
-                inputs,
-                exec_signature,
-                outputs: def
-                    .outputs
-                    .iter()
-                    .map(|output| PlannedOutput {
-                        name: output.name.clone(),
-                        optional: output.optional,
-                    })
-                    .collect(),
-                requires: def.requires.clone(),
-                timeout_ms: def.execution.timeout_ms,
-                realtime_capable: def.realtime_capable,
-                artifact_policy,
-            });
-            signatures.insert(*node_id, exec_signature);
-        }
-
-        Ok(planned)
-    }
-
-    fn infer_cooking_range(
-        &self,
-        graph: &graph::Graph,
-        order: &[NodeId],
-    ) -> Result<CookingContextRange, EngineError> {
-        let node_manager = self.runtime.node_manager();
-        let mut max_frame_count = 0_u64;
-
-        for node_id in order {
-            let Some(node) = graph.nodes.get(node_id) else {
-                continue;
-            };
-            let Some(def) = node_manager.get_node_def(&node.type_id) else {
-                continue;
-            };
-            if !def.cooking_sensitivity.iter().any(|axis| axis == "frame") {
-                continue;
-            }
-
-            let params = node_manager
-                .resolve_effective_params(&node.type_id, &node.params)
-                .map_err(|error| EngineError::Schema {
-                    message: error.to_string(),
-                })?;
-            if let (Some(duration), Some(fps)) = (
-                positive_int_param(&params, "duration_seconds"),
-                inferred_fps_for_node(def.type_id.as_str(), &params),
-            ) {
-                max_frame_count = max_frame_count.max(duration.saturating_mul(fps));
-            }
-        }
-
-        if max_frame_count > 0 {
-            Ok(CookingContextRange::frame_range(0, max_frame_count))
-        } else {
-            Ok(CookingContextRange::default())
-        }
-    }
-
     pub fn cancel_execution(
         &self,
         execution_id: crate::execution::ExecutionId,
@@ -740,11 +590,14 @@ impl SchedulerFacade {
             target: target.clone(),
             mode: Some(mode.clone()),
         };
-        let resolved =
-            resolve_subgraph(graph, target.clone()).map_err(|error| EngineError::Execution {
-                message: error.to_string(),
-            })?;
-        let plan = self.build_execution_plan(graph, &request, mode, &resolved.order)?;
+        let plan = planner::build_execution_plan(PlanRequest {
+            graph,
+            request: &request,
+            mode,
+            cooking_range: &self.cooking_range,
+            node_manager: self.runtime.node_manager(),
+        })
+        .map_err(planner_error_to_engine_error)?;
         Ok(plan
             .subtasks
             .last()
@@ -854,20 +707,15 @@ impl SchedulerFacade {
     }
 }
 
-fn positive_int_param(params: &HashMap<String, Value>, key: &str) -> Option<u64> {
-    match params.get(key) {
-        Some(Value::Int(value)) if *value > 0 => Some(*value as u64),
-        Some(Value::Float(value)) if *value > 0.0 => Some(*value as u64),
-        _ => None,
-    }
-}
-
-fn inferred_fps_for_node(type_id: &str, params: &HashMap<String, Value>) -> Option<u64> {
-    positive_int_param(params, "fps").or_else(|| match type_id {
-        "ai_video_generate_api" => match params.get("provider") {
-            Some(Value::String(provider)) if provider == "libtv" || provider == "mock" => Some(8),
-            _ => None,
+fn planner_error_to_engine_error(error: PlannerError) -> EngineError {
+    match error {
+        PlannerError::Schema { message } => EngineError::Schema { message },
+        PlannerError::Graph { message } => EngineError::Execution { message },
+        PlannerError::NodeNotFound { node_id } => EngineError::Graph {
+            message: format!("Node {:?} not found in graph", node_id),
         },
-        _ => None,
-    })
+        PlannerError::NodeTypeNotRegistered { type_id } => EngineError::Graph {
+            message: format!("Node type '{type_id}' not registered"),
+        },
+    }
 }
