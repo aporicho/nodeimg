@@ -2,7 +2,9 @@ use crate::demo_gallery::{
     build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
 use crate::image_demo::ImageDemoController;
-use crate::panels::EnginePanelState;
+use crate::panels::{
+    EnginePanelState, NodeLibraryItem, NodeLibraryPanelState, NODE_LIBRARY_ADD_PREFIX,
+};
 use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
@@ -20,11 +22,14 @@ use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, TextureH
 use gui::tree::Desc;
 use gui::widget::resize_edge::ResizeEdge;
 use std::borrow::Cow;
+use std::time::{Duration, Instant};
 
 const GALLERY_SCALE: f32 = 1.2;
 const GRID_SPACING: f32 = 20.0;
 const GRID_DOT_SIZE: f32 = 0.9;
 const DEMO_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
+const CANVAS_DOUBLE_CLICK_TIMEOUT: Duration = Duration::from_millis(300);
+const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 
 fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
     (min_canvas / spacing).floor() * spacing - spacing * 2.0
@@ -110,6 +115,8 @@ pub struct DemoApp {
     gallery: GalleryState,
     engine: Engine,
     image_demo: ImageDemoController,
+    node_library_popup: NodeLibraryPopup,
+    last_canvas_click: Option<CanvasClick>,
     last_engine_action: String,
     mouse_x: f32,
     mouse_y: f32,
@@ -132,6 +139,8 @@ impl App for DemoApp {
             gallery: GalleryState::default(),
             engine: Engine::new(None),
             image_demo: ImageDemoController::default(),
+            node_library_popup: NodeLibraryPopup::default(),
+            last_canvas_click: None,
             last_engine_action: "Ready".to_string(),
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -161,7 +170,11 @@ impl App for DemoApp {
             AppEvent::MouseMove { x, y } => {
                 self.update_hover_cursor(x, y, ctx);
             }
-            AppEvent::MouseRelease { button, .. } if button == MouseButton::Left => {}
+            AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
+                if !consumed {
+                    self.handle_canvas_release(x, y);
+                }
+            }
             _ => {}
         }
     }
@@ -173,6 +186,7 @@ impl App for DemoApp {
             gallery: &self.gallery,
             image: DEMO_IMAGE_HANDLE,
             engine: &self.engine_panel_state(),
+            node_library: &self.node_library_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
         let desc = build_demo_tree(viewport, &self.camera, &self.theme, panel_root);
@@ -325,6 +339,11 @@ impl DemoApp {
         match message {
             DemoMessage::WidgetClicked(id) => {
                 let _ = self.gallery.apply_click(&id);
+                if let Some(type_id) = node_library_add_type_id(&id) {
+                    self.add_node_from_library(type_id);
+                    self.active_button = Some(id);
+                    return;
+                }
                 if let Some(outcome) = self.image_demo.handle_button(&id, &mut self.engine) {
                     self.last_engine_action = outcome.to_string();
                 }
@@ -459,6 +478,58 @@ impl DemoApp {
         }
     }
 
+    fn handle_canvas_release(&mut self, x: f32, y: f32) {
+        if !self.is_blank_canvas_position(x, y) {
+            self.last_canvas_click = None;
+            return;
+        }
+
+        let now = Instant::now();
+        let double_click = self.last_canvas_click.is_some_and(|last| {
+            now.duration_since(last.at) <= CANVAS_DOUBLE_CLICK_TIMEOUT
+                && distance_sq([x, y], [last.x, last.y]) <= CANVAS_DOUBLE_CLICK_DISTANCE_SQ
+        });
+
+        if double_click {
+            self.open_node_library(x, y);
+            self.last_canvas_click = None;
+        } else {
+            self.last_canvas_click = Some(CanvasClick { at: now, x, y });
+        }
+    }
+
+    fn is_blank_canvas_position(&self, x: f32, y: f32) -> bool {
+        let chain = self.gui.hit_test(x, y);
+        if chain.is_empty() {
+            return true;
+        }
+
+        let blank = chain.iter().all(|node_id| {
+            self.gui
+                .node_name(node_id)
+                .map(|id| matches!(id, "root" | "canvas_root" | "canvas_grid" | "panel_root"))
+                .unwrap_or(true)
+        });
+        blank
+    }
+
+    fn open_node_library(&mut self, x: f32, y: f32) {
+        self.node_library_popup.open(x, y);
+        self.last_engine_action = "Node library opened".to_string();
+    }
+
+    fn add_node_from_library(&mut self, type_id: &str) {
+        match self.engine.add_node(type_id) {
+            Ok(node_id) => {
+                self.node_library_popup.close();
+                self.last_engine_action = format!("Added node {type_id} as {:?}", node_id);
+            }
+            Err(error) => {
+                self.last_engine_action = format!("Add node failed: {error}");
+            }
+        }
+    }
+
     fn engine_panel_state(&self) -> EnginePanelState {
         let graph = self.engine.query_graph_snapshot();
         let summary = self.engine.graph_state_summary();
@@ -478,6 +549,91 @@ impl DemoApp {
             last_action: self.last_engine_action.clone(),
         }
     }
+
+    fn node_library_panel_state(&self) -> NodeLibraryPanelState {
+        let mut items = self
+            .engine
+            .list_node_defs()
+            .into_iter()
+            .map(|node| NodeLibraryItem {
+                type_id: node.type_id.clone(),
+                name: node.name.clone(),
+                category: node.category.clone(),
+                source: format!("{:?}", node.source),
+            })
+            .collect::<Vec<_>>();
+        items.sort_by(|a, b| {
+            a.category
+                .cmp(&b.category)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.type_id.cmp(&b.type_id))
+        });
+
+        NodeLibraryPanelState {
+            open: self.node_library_popup.open,
+            panel_id: self.node_library_popup.panel_id(),
+            x: self.node_library_popup.x,
+            y: self.node_library_popup.y,
+            items,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CanvasClick {
+    at: Instant,
+    x: f32,
+    y: f32,
+}
+
+#[derive(Debug)]
+struct NodeLibraryPopup {
+    open: bool,
+    generation: u64,
+    x: f32,
+    y: f32,
+}
+
+impl Default for NodeLibraryPopup {
+    fn default() -> Self {
+        Self {
+            open: false,
+            generation: 0,
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+}
+
+impl NodeLibraryPopup {
+    fn open(&mut self, x: f32, y: f32) {
+        self.open = true;
+        self.generation += 1;
+        self.x = x;
+        self.y = y;
+    }
+
+    fn close(&mut self) {
+        self.open = false;
+    }
+
+    fn panel_id(&self) -> String {
+        if self.open {
+            format!("node_library_{}", self.generation)
+        } else {
+            format!("node_library_closed_{}", self.generation)
+        }
+    }
+}
+
+fn node_library_add_type_id(id: &str) -> Option<&str> {
+    id.strip_prefix(NODE_LIBRARY_ADD_PREFIX)
+}
+
+fn distance_sq(a: [f32; 2], b: [f32; 2]) -> f32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    dx * dx + dy * dy
 }
 
 fn is_toggle_target(id: &str) -> bool {
