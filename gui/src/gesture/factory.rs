@@ -151,12 +151,18 @@ mod tests {
         Desc::Widget {
             id: Cow::Borrowed("demo_panel"),
             props: Box::new(PanelProps {
-                id: Cow::Borrowed("demo_panel"),
                 title: Cow::Borrowed("Demo"),
-                x: 10.0,
-                y: 20.0,
-                w: 200.0,
-                h: 120.0,
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 200.0,
+                    h: 120.0,
+                },
+                min_size: [120.0, 80.0],
+                titlebar_visible: true,
+                draggable: true,
+                resizable: true,
+                closable: false,
                 content: vec![],
             }),
         }

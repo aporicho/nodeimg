@@ -1,12 +1,11 @@
 use crate::demo_gallery::{
-    build_demo_popup, build_gallery_sections, GallerySection, GalleryState, POPUP_CLOSE_ID,
-    POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
+    build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{
-    Context, FrameworkOutput, GuiEvent, OverlayPlacement, OverlayRequest, PanelEvent,
-    PlatformEffect, WidgetEvent,
+    Context, FrameworkOutput, GuiEvent, OverlayPlacement, OverlayRequest, PlatformEffect,
+    WidgetEvent,
 };
 use gui::gesture::Gesture;
 use gui::renderer::{Rect, Renderer};
@@ -14,96 +13,38 @@ use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, TextureHandle, Transform};
 use gui::tree::Desc;
-use gui::widget::frameworks::panel::PanelProps;
 use gui::widget::resize_edge::ResizeEdge;
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 const GALLERY_SCALE: f32 = 1.2;
 const GRID_SPACING: f32 = 20.0;
-const GRID_DOT_SIZE: f32 = 1.5;
+const GRID_DOT_SIZE: f32 = 0.9;
 const DEMO_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
-const GALLERY_PANEL_PREFIX: &str = "gallery_panel::";
 
 fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
     (min_canvas / spacing).floor() * spacing - spacing * 2.0
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PointerSession {
-    last_x: f32,
-    last_y: f32,
-}
-
-impl PointerSession {
-    fn new(x: f32, y: f32) -> Self {
-        Self {
-            last_x: x,
-            last_y: y,
-        }
-    }
 }
 
 #[derive(Debug)]
 enum DemoMessage {
     WidgetClicked(String),
     WidgetDoubleClicked(String),
-    TextChanged {
-        id: String,
-        value: String,
-    },
-    NumberChanged {
-        id: String,
-        value: f32,
-    },
-    SelectionChanged {
-        id: String,
-        selected: usize,
-    },
-    WidgetDragStart {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    WidgetDragMove {
-        id: String,
-        x: f32,
-    },
+    TextChanged { id: String, value: String },
+    NumberChanged { id: String, value: f32 },
+    SelectionChanged { id: String, selected: usize },
+    WidgetDragStart { id: String, x: f32, y: f32 },
+    WidgetDragMove { id: String, x: f32 },
     WidgetDragEnd,
     LongPress(String),
-    PanelDragStart {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    PanelDragMove {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    PanelDragEnd,
-    PanelResizeMove {
-        id: String,
-        edge: ResizeEdge,
-        x: f32,
-        y: f32,
-    },
 }
 
-fn build_demo_tree(
-    viewport: Rect,
-    camera: &Camera,
-    theme: &Theme,
-    gallery: &GalleryState,
-    panel_positions: &HashMap<String, (f32, f32)>,
-) -> Desc {
+fn build_demo_tree(viewport: Rect, camera: &Camera, theme: &Theme, panel_root: Desc) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
     let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
     let grid_x = align_grid_start(canvas_min_x, GRID_SPACING);
     let grid_y = align_grid_start(canvas_min_y, GRID_SPACING);
     let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
     let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
-    let sections = build_gallery_sections(theme, gallery, DEMO_IMAGE_HANDLE);
 
     Desc::Container {
         id: Cow::Borrowed("root"),
@@ -151,69 +92,17 @@ fn build_demo_tree(
                     },
                 }],
             },
-            Desc::Container {
-                id: Cow::Borrowed("panel_root"),
-                style: BoxStyle {
-                    position: Position::Absolute { x: 0.0, y: 0.0 },
-                    width: Size::Fixed(viewport.w),
-                    height: Size::Fixed(viewport.h),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children: build_gallery_panels(viewport, &sections, panel_positions),
-            },
+            panel_root,
         ],
     }
 }
 
-fn build_gallery_panels(
-    viewport: Rect,
-    sections: &[GallerySection],
-    panel_positions: &HashMap<String, (f32, f32)>,
-) -> Vec<Desc> {
-    let columns = if viewport.w >= 1200.0 { 4 } else { 3 };
-    let margin = 28.0;
-    let gap = 22.0;
-    let panel_w = ((viewport.w - margin * 2.0) - gap * (columns as f32 - 1.0)) / columns as f32;
-    let mut column_heights = vec![margin; columns];
-
-    sections
-        .iter()
-        .map(|section| {
-            let column = section.column.min(columns.saturating_sub(1));
-            let panel_id = format!("{GALLERY_PANEL_PREFIX}{}", section.id);
-            let default_x = margin + column as f32 * (panel_w + gap);
-            let default_y = column_heights[column];
-            let (x, y) = panel_positions
-                .get(&panel_id)
-                .copied()
-                .unwrap_or((default_x, default_y));
-            column_heights[column] += section.estimated_height + gap;
-
-            Desc::Widget {
-                id: Cow::Owned(panel_id.clone()),
-                props: Box::new(PanelProps {
-                    id: Cow::Owned(panel_id),
-                    title: Cow::Borrowed(section.title),
-                    x,
-                    y,
-                    w: panel_w,
-                    h: 0.0,
-                    content: section.clone().content,
-                }),
-            }
-        })
-        .collect()
-}
-
 pub struct DemoApp {
     gui: Context,
-    pointer_session: Option<PointerSession>,
     camera: Camera,
     navigation: CanvasNavigationController,
     active_button: Option<String>,
     gallery: GalleryState,
-    panel_positions: HashMap<String, (f32, f32)>,
     mouse_x: f32,
     mouse_y: f32,
     theme: Theme,
@@ -229,12 +118,10 @@ impl App for DemoApp {
 
         Self {
             gui,
-            pointer_session: None,
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             active_button: None,
             gallery: GalleryState::default(),
-            panel_positions: HashMap::new(),
             mouse_x: 0.0,
             mouse_y: 0.0,
             theme: light_theme().scaled(GALLERY_SCALE),
@@ -270,13 +157,13 @@ impl App for DemoApp {
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
-        let desc = build_demo_tree(
-            viewport,
-            &self.camera,
-            &self.theme,
-            &self.gallery,
-            &self.panel_positions,
-        );
+        let panels = crate::panels::collect_panels(&crate::panels::PanelBuildContext {
+            theme: &self.theme,
+            gallery: &self.gallery,
+            image: DEMO_IMAGE_HANDLE,
+        });
+        let panel_root = self.gui.panel_root(viewport, panels);
+        let desc = build_demo_tree(viewport, &self.camera, &self.theme, panel_root);
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
@@ -368,6 +255,11 @@ impl DemoApp {
 
     fn handle_framework_output(&mut self, output: FrameworkOutput, ctx: &mut AppContext) {
         for event in output.events {
+            if let GuiEvent::Panel(panel_event) = &event {
+                if self.gui.handle_panel_event(panel_event) {
+                    continue;
+                }
+            }
             self.handle_gui_event(event);
         }
 
@@ -396,7 +288,7 @@ impl DemoApp {
     fn map_gui_event(&self, event: GuiEvent) -> Option<DemoMessage> {
         match event {
             GuiEvent::Widget(event) => self.map_widget_event(event),
-            GuiEvent::Panel(event) => self.map_panel_event(event),
+            GuiEvent::Panel(_) => None,
             GuiEvent::Overlay(_) => None,
         }
     }
@@ -414,19 +306,6 @@ impl DemoApp {
             WidgetEvent::DragMove { id, x, .. } => DemoMessage::WidgetDragMove { id, x },
             WidgetEvent::DragEnd { .. } => DemoMessage::WidgetDragEnd,
             WidgetEvent::LongPress { id } => DemoMessage::LongPress(id),
-        })
-    }
-
-    fn map_panel_event(&self, event: PanelEvent) -> Option<DemoMessage> {
-        Some(match event {
-            PanelEvent::DragStart { id, x, y } => DemoMessage::PanelDragStart { id, x, y },
-            PanelEvent::DragMove { id, x, y } => DemoMessage::PanelDragMove { id, x, y },
-            PanelEvent::DragEnd { .. } => DemoMessage::PanelDragEnd,
-            PanelEvent::ResizeStart { .. } => return None,
-            PanelEvent::ResizeMove { id, edge, x, y } => {
-                DemoMessage::PanelResizeMove { id, edge, x, y }
-            }
-            PanelEvent::ResizeEnd { .. } => return None,
         })
     }
 
@@ -478,8 +357,10 @@ impl DemoApp {
             }
             DemoMessage::WidgetDragStart { id, x, y } => {
                 if is_slider_target(&id) {
-                    self.pointer_session = Some(PointerSession::new(x, y));
+                    self.update_slider_from_pointer(x);
+                    tracing::info!("slider_value(drag_start) -> {}", self.gallery.slider_value);
                 }
+                let _ = y;
             }
             DemoMessage::WidgetDragMove { id, x } => {
                 if is_slider_target(&id) {
@@ -487,45 +368,9 @@ impl DemoApp {
                     tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
                 }
             }
-            DemoMessage::WidgetDragEnd => {
-                self.pointer_session = None;
-            }
+            DemoMessage::WidgetDragEnd => {}
             DemoMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
-            }
-            DemoMessage::PanelDragStart { id, x, y } => {
-                if is_gallery_panel_node(&id) {
-                    self.pointer_session = Some(PointerSession::new(x, y));
-                }
-            }
-            DemoMessage::PanelDragMove { id, x, y } => {
-                if !is_gallery_panel_node(&id) {
-                    return;
-                }
-                if let Some(session) = &mut self.pointer_session {
-                    let entry = self.panel_positions.entry(id.clone()).or_insert_with(|| {
-                        self.gui
-                            .node_rect(&id)
-                            .map(|rect| (rect.x, rect.y))
-                            .unwrap_or((0.0, 0.0))
-                    });
-                    entry.0 += x - session.last_x;
-                    entry.1 += y - session.last_y;
-                    session.last_x = x;
-                    session.last_y = y;
-                }
-            }
-            DemoMessage::PanelDragEnd => {
-                self.pointer_session = None;
-            }
-            DemoMessage::PanelResizeMove { id, edge, x, y } => {
-                tracing::info!(
-                    "Ignoring gallery panel resize: {} {:?} {} {}",
-                    id,
-                    edge,
-                    x,
-                    y
-                );
             }
         }
     }
@@ -546,7 +391,7 @@ impl DemoApp {
                 continue;
             };
 
-            if self.gui.node_has_gesture(node_id, Gesture::Resize) && !is_gallery_panel_node(id) {
+            if self.gui.node_has_gesture(node_id, Gesture::Resize) {
                 if let Some(edge) = self
                     .gui
                     .node_rect_by_node(node_id)
@@ -580,10 +425,6 @@ impl DemoApp {
                 return;
             }
 
-            if is_gallery_panel_node(id) {
-                continue;
-            }
-
             if self.gui.node_has_gesture(node_id, Gesture::Tap)
                 || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
             {
@@ -610,10 +451,6 @@ fn is_toggle_target(id: &str) -> bool {
 
 fn is_slider_target(id: &str) -> bool {
     id == SLIDER_RADIUS_ID || id.starts_with(&format!("{SLIDER_RADIUS_ID}::"))
-}
-
-fn is_gallery_panel_node(id: &str) -> bool {
-    id.starts_with(GALLERY_PANEL_PREFIX)
 }
 
 fn slider_value_from_x(track_rect: Rect, x: f32, min: f32, max: f32, step: f32) -> Option<f32> {

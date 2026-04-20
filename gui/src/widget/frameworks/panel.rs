@@ -1,5 +1,5 @@
 use crate::gesture::Gesture;
-use crate::renderer::{Border, TextStyle};
+use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
 use crate::tree::layout::{
     BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
 };
@@ -12,27 +12,29 @@ use std::fmt;
 
 /// Panel widget 的 props。
 ///
-/// Controlled 模型：x/y/w/h 每帧由调用方传入，widget 本身不持任何状态。
-/// 拖拽/resize 手势产生的 PanelEvent 由调用方处理并更新 props。
+/// Widget 只负责把标题栏、内容区和交互热区组合成树；位置、尺寸、显示和层级
+/// 由上层 panel runtime 维护后再写回 props。
 pub struct PanelProps {
-    pub id: Cow<'static, str>,
     pub title: Cow<'static, str>,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
+    pub rect: Rect,
+    pub min_size: [f32; 2],
+    pub titlebar_visible: bool,
+    pub draggable: bool,
+    pub resizable: bool,
+    pub closable: bool,
     pub content: Vec<Desc>,
 }
 
 impl Clone for PanelProps {
     fn clone(&self) -> Self {
         PanelProps {
-            id: self.id.clone(),
             title: self.title.clone(),
-            x: self.x,
-            y: self.y,
-            w: self.w,
-            h: self.h,
+            rect: self.rect,
+            min_size: self.min_size,
+            titlebar_visible: self.titlebar_visible,
+            draggable: self.draggable,
+            resizable: self.resizable,
+            closable: self.closable,
             content: self.content.iter().map(desc_clone).collect(),
         }
     }
@@ -66,12 +68,13 @@ fn desc_clone(d: &Desc) -> Desc {
 impl fmt::Debug for PanelProps {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PanelProps")
-            .field("id", &self.id)
             .field("title", &self.title)
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .field("w", &self.w)
-            .field("h", &self.h)
+            .field("rect", &self.rect)
+            .field("min_size", &self.min_size)
+            .field("titlebar_visible", &self.titlebar_visible)
+            .field("draggable", &self.draggable)
+            .field("resizable", &self.resizable)
+            .field("closable", &self.closable)
             .field("content_len", &self.content.len())
             .finish()
     }
@@ -92,12 +95,13 @@ impl WidgetProps for PanelProps {
 
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
         other.as_any().downcast_ref::<Self>().is_some_and(|o| {
-            self.id == o.id
-                && self.title == o.title
-                && self.x == o.x
-                && self.y == o.y
-                && self.w == o.w
-                && self.h == o.h
+            self.title == o.title
+                && rect_eq(self.rect, o.rect)
+                && self.min_size == o.min_size
+                && self.titlebar_visible == o.titlebar_visible
+                && self.draggable == o.draggable
+                && self.resizable == o.resizable
+                && self.closable == o.closable
         })
     }
 
@@ -112,13 +116,17 @@ impl WidgetProps for PanelProps {
         let anatomy = Anatomy::new(id);
 
         // 标题栏
-        let titlebar = Desc::Container {
+        let titlebar = self.titlebar_visible.then(|| Desc::Container {
             id: Cow::Owned(anatomy.titlebar()),
             style: BoxStyle {
                 height: Size::Fixed(tokens.title_bar_height),
                 padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
                 direction: Direction::Row,
-                gestures: vec![Gesture::Drag],
+                gestures: self
+                    .draggable
+                    .then_some(Gesture::Drag)
+                    .into_iter()
+                    .collect(),
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
@@ -143,13 +151,15 @@ impl WidgetProps for PanelProps {
                     },
                 },
             }],
-        };
+        });
 
         // 内容区（透明，事件穿透到子控件）
         let content_area = Desc::Container {
             id: Cow::Owned(anatomy.content()),
             style: BoxStyle {
                 flex_grow: 1.0,
+                direction: Direction::Column,
+                gap: tokens.content_padding,
                 padding: Edges::all(tokens.content_padding),
                 ..BoxStyle::default()
             },
@@ -160,18 +170,22 @@ impl WidgetProps for PanelProps {
         WidgetBuild {
             style: BoxStyle {
                 position: Position::Absolute {
-                    x: self.x,
-                    y: self.y,
+                    x: self.rect.x,
+                    y: self.rect.y,
                 },
-                width: Size::Fixed(self.w),
-                height: if self.h > 0.0 {
-                    Size::Fixed(self.h)
+                width: Size::Fixed(self.rect.w),
+                height: if self.rect.h > 0.0 {
+                    Size::Fixed(self.rect.h)
                 } else {
                     Size::Auto
                 },
                 direction: Direction::Column,
                 overflow: Overflow::Hidden,
-                gestures: vec![Gesture::Resize],
+                gestures: self
+                    .resizable
+                    .then_some(Gesture::Resize)
+                    .into_iter()
+                    .collect(),
                 ..BoxStyle::default()
             },
             decoration: Some(Decoration {
@@ -181,11 +195,28 @@ impl WidgetProps for PanelProps {
                     color: visual.frame_border,
                 }),
                 radius: [tokens.radius; 4],
-                shadow: None,
+                shadow: Some(Shadow {
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.18,
+                    },
+                    offset: [0.0, 10.0],
+                    blur: 24.0,
+                    spread: 1.0,
+                }),
             }),
-            children: vec![titlebar, content_area],
+            children: titlebar
+                .into_iter()
+                .chain(std::iter::once(content_area))
+                .collect(),
         }
     }
+}
+
+fn rect_eq(a: Rect, b: Rect) -> bool {
+    a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h
 }
 
 #[cfg(test)]
@@ -208,12 +239,18 @@ mod tests {
     /// 标准 props：x=10, y=20, w=300, h=200，空 content。
     fn sample_props() -> PanelProps {
         PanelProps {
-            id: Cow::Borrowed("test"),
             title: Cow::Borrowed("Title"),
-            x: 10.0,
-            y: 20.0,
-            w: 300.0,
-            h: 200.0,
+            rect: Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 200.0,
+            },
+            min_size: [120.0, 80.0],
+            titlebar_visible: true,
+            draggable: true,
+            resizable: true,
+            closable: false,
             content: Vec::new(),
         }
     }
@@ -310,6 +347,26 @@ mod tests {
     }
 
     #[test]
+    fn build_can_hide_titlebar() {
+        let theme = dark_theme();
+        let mut props = sample_props();
+        props.titlebar_visible = false;
+        let build = props.build("test", &build_cx(&theme));
+
+        assert_eq!(build.children.len(), 1);
+        match &build.children[0] {
+            Desc::Container { id, style, .. } => {
+                assert_eq!(id.as_ref(), "test::content");
+                assert!(style.gestures.is_empty());
+            }
+            other => panic!(
+                "only child should be content Container, got {}",
+                desc_variant_name(other)
+            ),
+        }
+    }
+
+    #[test]
     fn build_titlebar_has_drag_gesture() {
         let theme = dark_theme();
         let build = sample_props().build("test", &build_cx(&theme));
@@ -383,6 +440,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(style.flex_grow, 1.0);
+                assert_eq!(style.gap, theme.components.panel.content_padding);
                 assert!(decoration.is_none(), "content area should be transparent");
                 assert_eq!(children.len(), 1);
             }
@@ -406,11 +464,11 @@ mod tests {
     fn props_eq_different_position() {
         let a = sample_props();
         let mut b = sample_props();
-        b.x = 999.0;
+        b.rect.x = 999.0;
         assert!(!a.props_eq(&b), "x 不同应返回 false");
 
         let mut c = sample_props();
-        c.y = 999.0;
+        c.rect.y = 999.0;
         assert!(!a.props_eq(&c), "y 不同应返回 false");
     }
 
@@ -420,6 +478,14 @@ mod tests {
         let mut b = sample_props();
         b.title = Cow::Borrowed("Different");
         assert!(!a.props_eq(&b), "title 不同应返回 false");
+    }
+
+    #[test]
+    fn props_eq_different_titlebar_visibility() {
+        let a = sample_props();
+        let mut b = sample_props();
+        b.titlebar_visible = false;
+        assert!(!a.props_eq(&b), "titlebar_visible 不同应返回 false");
     }
 
     // ── 集成测试（与 C.1 layout + C.2 hit_test 联动）──

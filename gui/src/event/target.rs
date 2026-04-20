@@ -153,12 +153,18 @@ mod tests {
         let tree = build_tree(vec![Desc::Widget {
             id: Cow::Borrowed("panel"),
             props: Box::new(PanelProps {
-                id: Cow::Borrowed("panel"),
                 title: Cow::Borrowed("Panel"),
-                x: 20.0,
-                y: 20.0,
-                w: 240.0,
-                h: 160.0,
+                rect: Rect {
+                    x: 20.0,
+                    y: 20.0,
+                    w: 240.0,
+                    h: 160.0,
+                },
+                min_size: [120.0, 80.0],
+                titlebar_visible: true,
+                draggable: true,
+                resizable: true,
+                closable: false,
                 content: vec![],
             }),
         }]);
@@ -211,12 +217,18 @@ mod tests {
         let tree = build_tree(vec![Desc::Widget {
             id: Cow::Borrowed("gallery_panel::basic"),
             props: Box::new(PanelProps {
-                id: Cow::Borrowed("gallery_panel::basic"),
                 title: Cow::Borrowed("Panel"),
-                x: 20.0,
-                y: 20.0,
-                w: 240.0,
-                h: 160.0,
+                rect: Rect {
+                    x: 20.0,
+                    y: 20.0,
+                    w: 240.0,
+                    h: 160.0,
+                },
+                min_size: [120.0, 80.0],
+                titlebar_visible: true,
+                draggable: true,
+                resizable: true,
+                closable: false,
                 content: vec![],
             }),
         }]);

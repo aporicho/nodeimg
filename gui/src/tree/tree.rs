@@ -1,10 +1,14 @@
 use super::node::{NodeId, PanelNode};
+use super::runtime::TreeRuntime;
+use crate::panel::{PanelConfig, PanelRuntime};
+use crate::widget::resize_edge::ResizeEdge;
 
 /// 全局控件树存储。用 Vec<Option<>> 做 arena，索引访问。
 pub struct Tree {
     nodes: Vec<Option<PanelNode>>,
     root: Option<NodeId>,
     free: Vec<NodeId>,
+    runtime: TreeRuntime,
 }
 
 impl Tree {
@@ -13,6 +17,7 @@ impl Tree {
             nodes: Vec::new(),
             root: None,
             free: Vec::new(),
+            runtime: TreeRuntime::default(),
         }
     }
 
@@ -65,5 +70,68 @@ impl Tree {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut PanelNode> {
         self.nodes.iter_mut().filter_map(|n| n.as_mut())
+    }
+
+    pub fn ensure_panel(&mut self, config: &PanelConfig) {
+        self.runtime.panels.ensure_panel(config);
+        self.runtime
+            .panels
+            .clamp_min_size(config.id.as_str(), config.min_size);
+    }
+
+    pub fn panel_state(&self, id: &str) -> Option<&PanelRuntime> {
+        self.runtime.panels.state(id)
+    }
+
+    pub fn panel_state_mut(&mut self, id: &str) -> Option<&mut PanelRuntime> {
+        self.runtime.panels.state_mut(id)
+    }
+
+    pub fn move_panel_by(&mut self, id: &str, dx: f32, dy: f32) {
+        self.runtime.panels.move_by(id, dx, dy);
+    }
+
+    pub fn resize_panel_by(&mut self, id: &str, edge: ResizeEdge, dx: f32, dy: f32) {
+        self.runtime.panels.resize_by(id, edge, dx, dy);
+    }
+
+    pub fn show_panel(&mut self, id: &str) {
+        self.runtime.panels.show(id);
+    }
+
+    pub fn hide_panel(&mut self, id: &str) {
+        self.runtime.panels.hide(id);
+    }
+
+    pub fn toggle_panel(&mut self, id: &str) {
+        self.runtime.panels.toggle(id);
+    }
+
+    pub fn bring_panel_to_front(&mut self, id: &str) {
+        self.runtime.panels.bring_to_front(id);
+    }
+
+    pub fn start_panel_drag(&mut self, id: &str, x: f32, y: f32) {
+        self.runtime.panels.start_drag(id, x, y);
+    }
+
+    pub fn move_panel_drag(&mut self, id: &str, x: f32, y: f32) {
+        self.runtime.panels.drag_move(id, x, y);
+    }
+
+    pub fn end_panel_drag(&mut self) {
+        self.runtime.panels.end_drag();
+    }
+
+    pub fn start_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
+        self.runtime.panels.start_resize(id, edge, x, y);
+    }
+
+    pub fn move_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
+        self.runtime.panels.resize_move(id, edge, x, y);
+    }
+
+    pub fn end_panel_resize(&mut self) {
+        self.runtime.panels.end_resize();
     }
 }

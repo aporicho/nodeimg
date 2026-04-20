@@ -4,6 +4,7 @@ use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::interaction::InteractionState;
+use crate::panel::PanelDeclaration;
 use crate::renderer::{Rect, Renderer, TextMeasurer};
 use crate::runtime::{
     ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSyncCx, RuntimeSystems,
@@ -127,6 +128,14 @@ impl Context {
     pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
         self.systems
             .paste_focused_text(&self.tree, self.interaction.focused(), text)
+    }
+
+    pub fn panel_root(&mut self, viewport: Rect, panels: Vec<PanelDeclaration>) -> Desc {
+        crate::panel::panel_root(&mut self.tree, viewport, panels)
+    }
+
+    pub fn handle_panel_event(&mut self, event: &PanelEvent) -> bool {
+        crate::panel::event::apply_panel_event(&mut self.tree, event)
     }
 
     /// 命中测试，返回从叶子到根的命中链。
@@ -388,12 +397,18 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("panel"),
                 props: Box::new(PanelProps {
-                    id: Cow::Borrowed("panel"),
                     title: Cow::Borrowed("Panel"),
-                    x: 20.0,
-                    y: 20.0,
-                    w: 180.0,
-                    h: 100.0,
+                    rect: Rect {
+                        x: 20.0,
+                        y: 20.0,
+                        w: 180.0,
+                        h: 100.0,
+                    },
+                    min_size: [120.0, 80.0],
+                    titlebar_visible: true,
+                    draggable: true,
+                    resizable: true,
+                    closable: false,
                     content: vec![],
                 }),
             }],
@@ -412,12 +427,18 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("panel"),
                 props: Box::new(PanelProps {
-                    id: Cow::Borrowed("panel"),
                     title: Cow::Borrowed("Panel"),
-                    x: 20.0,
-                    y: 20.0,
-                    w: 240.0,
-                    h: 160.0,
+                    rect: Rect {
+                        x: 20.0,
+                        y: 20.0,
+                        w: 240.0,
+                        h: 160.0,
+                    },
+                    min_size: [120.0, 80.0],
+                    titlebar_visible: true,
+                    draggable: true,
+                    resizable: true,
+                    closable: false,
                     content: vec![Desc::Widget {
                         id: Cow::Borrowed("input"),
                         props: Box::new(TextInputProps {

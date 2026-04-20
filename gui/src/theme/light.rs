@@ -9,7 +9,7 @@ pub fn build_theme() -> Theme {
         mode: ThemeMode::Light,
         colors: ThemeColors {
             canvas_bg: color(250, 250, 250),
-            canvas_grid: color(212, 212, 216),
+            canvas_grid: color_alpha(161, 161, 170, 0.34),
             surface: Color::WHITE,
             surface_hover: color(248, 248, 249),
             surface_pressed: color(228, 228, 231),
@@ -77,7 +77,7 @@ pub fn build_theme() -> Theme {
                 header_padding_y: 8.0,
                 content_padding: 12.0,
                 border_width: 1.0,
-                radius: 6.0,
+                radius: 8.0,
                 title_font_size: 12.0,
                 background: color_alpha(255, 255, 255, 0.92),
                 border: color(228, 228, 231),

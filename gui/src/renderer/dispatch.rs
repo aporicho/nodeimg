@@ -94,7 +94,8 @@ pub fn dispatch(
         let total_steps = render_steps.len();
         let mut first_pass = true;
         for (step_index, step) in render_steps.iter().enumerate() {
-            let resolve_target = should_resolve_step(step_index, total_steps).then_some(resolve_view);
+            let resolve_target =
+                should_resolve_step(step_index, total_steps).then_some(resolve_view);
             match step {
                 RenderStep::Ops {
                     range,
@@ -166,14 +167,22 @@ pub fn dispatch(
                             }
                             DrawOp::Shadow(req) => {
                                 last_bound = PipelineKind::Other;
-                                shadow_pipeline.draw(&mut pass, device, req, viewport_buf, clip_depth);
+                                shadow_pipeline.draw(
+                                    &mut pass,
+                                    device,
+                                    req,
+                                    viewport_buf,
+                                    clip_depth,
+                                );
                             }
                             DrawOp::Image { rect, view } => {
                                 last_bound = PipelineKind::Other;
                                 pass.set_stencil_reference(clip_depth);
                                 image_pipeline.draw(&mut pass, device, view, *rect, viewport_buf);
                             }
-                            DrawOp::Text { .. } => unreachable!("text ops are split into dedicated render steps"),
+                            DrawOp::Text { .. } => {
+                                unreachable!("text ops are split into dedicated render steps")
+                            }
                             DrawOp::StencilWrite {
                                 index_start,
                                 index_count,
@@ -182,7 +191,12 @@ pub fn dispatch(
                                     stencil.bind_stencil(&mut pass);
                                     last_bound = PipelineKind::Stencil;
                                 }
-                                stencil.draw_write(&mut pass, clip_depth, *index_start, *index_count);
+                                stencil.draw_write(
+                                    &mut pass,
+                                    clip_depth,
+                                    *index_start,
+                                    *index_count,
+                                );
                                 clip_depth += 1;
                             }
                             DrawOp::StencilClear {
@@ -193,7 +207,12 @@ pub fn dispatch(
                                     stencil.bind_stencil(&mut pass);
                                     last_bound = PipelineKind::Stencil;
                                 }
-                                stencil.draw_clear(&mut pass, clip_depth, *index_start, *index_count);
+                                stencil.draw_clear(
+                                    &mut pass,
+                                    clip_depth,
+                                    *index_start,
+                                    *index_count,
+                                );
                                 clip_depth = clip_depth.saturating_sub(1);
                             }
                         }
