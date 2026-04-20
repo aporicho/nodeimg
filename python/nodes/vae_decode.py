@@ -5,18 +5,33 @@ import logging
 import torch
 from PIL import Image as PILImage
 
-from registry import NodeDef, PinDef
+from registry import Pin, node
 
 log = logging.getLogger("vae_decode")
 
 
-def execute(inputs, params):
+@node(
+    type_id="ai.vae_decode",
+    title="VAE Decode",
+    category="ai/image",
+    inputs=[
+        Pin("vae", "VAE", required=True),
+        Pin("latent", "LATENT", required=True),
+    ],
+    outputs=[Pin("image", "IMAGE")],
+    params=[],
+)
+def execute(ctx, inputs, params):
     vae = inputs["vae"]
     latent = inputs["latent"]
 
     log.info("Latent shape: %s, dtype: %s", latent.shape, latent.dtype)
-    log.info("Latent stats — min: %.4f, max: %.4f, mean: %.4f",
-             latent.min().item(), latent.max().item(), latent.mean().item())
+    log.info(
+        "Latent stats — min: %.4f, max: %.4f, mean: %.4f",
+        latent.min().item(),
+        latent.max().item(),
+        latent.mean().item(),
+    )
     log.info("VAE scaling_factor: %.5f", vae.config.scaling_factor)
 
     # SDXL VAE is numerically unstable in float16 — produces NaN values.
@@ -27,14 +42,22 @@ def execute(inputs, params):
 
     with torch.no_grad():
         scaled_latent = latent.to(dtype=torch.float32) / vae.config.scaling_factor
-        log.info("Scaled latent stats — min: %.4f, max: %.4f, mean: %.4f",
-                 scaled_latent.min().item(), scaled_latent.max().item(), scaled_latent.mean().item())
+        log.info(
+            "Scaled latent stats — min: %.4f, max: %.4f, mean: %.4f",
+            scaled_latent.min().item(),
+            scaled_latent.max().item(),
+            scaled_latent.mean().item(),
+        )
         image_tensor = vae.decode(scaled_latent).sample
 
     vae.to(dtype=original_dtype)
 
-    log.info("Decoded tensor stats — min: %.4f, max: %.4f, mean: %.4f",
-             image_tensor.min().item(), image_tensor.max().item(), image_tensor.mean().item())
+    log.info(
+        "Decoded tensor stats — min: %.4f, max: %.4f, mean: %.4f",
+        image_tensor.min().item(),
+        image_tensor.max().item(),
+        image_tensor.mean().item(),
+    )
 
     # Check for NaN — indicates VAE fp16 instability
     if torch.isnan(image_tensor).any():
@@ -53,14 +76,3 @@ def execute(inputs, params):
     b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     return {"image": b64}
-
-
-definition = NodeDef(
-    inputs=[
-        PinDef("vae", "VAE"),
-        PinDef("latent", "LATENT"),
-    ],
-    outputs=[PinDef("image", "IMAGE")],
-    params=[],
-    execute=execute,
-)

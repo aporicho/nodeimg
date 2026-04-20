@@ -1,0 +1,759 @@
+use crate::capability::CapabilityRegistry;
+use crate::node_manager::NodeDef;
+use crate::node_registry::{
+    NodeRegistration, PresentationProvider, ResolvedSchema, SchemaError, SchemaProvider,
+    SchemaQuery,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
+use types::{DataType, Value};
+
+pub struct NodeManager {
+    nodes: HashMap<String, NodeDef>,
+    schema_providers: HashMap<String, Arc<dyn SchemaProvider>>,
+    presentation_providers: HashMap<String, Arc<dyn PresentationProvider>>,
+    capability_versions: HashMap<(String, String), u32>,
+}
+
+impl NodeManager {
+    pub fn from_inventory() -> Self {
+        let mut registry = crate::node_registry::NodeRegistry::new();
+        registry.register(crate::node_registry::sources::InventoryNodeSource);
+        registry.register(crate::node_registry::sources::GenericImageGenerationSource);
+        registry.register(crate::node_registry::sources::ApiVideoGenerationSource);
+        registry.register(crate::node_registry::sources::ColorAdjustSource);
+        registry.register(crate::node_registry::sources::SaveVideoSource);
+        registry.build().node_manager
+    }
+
+    pub fn new() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            schema_providers: HashMap::new(),
+            presentation_providers: HashMap::new(),
+            capability_versions: HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, def: NodeDef) {
+        self.nodes.insert(def.type_id.clone(), def);
+    }
+
+    pub fn register_all(&mut self, defs: impl IntoIterator<Item = NodeDef>) {
+        for def in defs {
+            self.register(def);
+        }
+    }
+
+    pub(crate) fn nodes(&self) -> &HashMap<String, NodeDef> {
+        &self.nodes
+    }
+
+    pub fn register_registration(
+        &mut self,
+        registration: NodeRegistration,
+        capability_registry: &CapabilityRegistry,
+    ) {
+        let type_id = registration.static_def.type_id.clone();
+        for capability_id in &registration.static_def.requires {
+            if let Some(version) = capability_registry.capability_version(capability_id) {
+                self.capability_versions
+                    .insert((type_id.clone(), capability_id.clone()), version);
+            }
+        }
+
+        if let Some(schema_provider) = registration.schema_provider {
+            self.schema_providers
+                .insert(type_id.clone(), schema_provider);
+        }
+        if let Some(presentation_provider) = registration.presentation_provider {
+            self.presentation_providers
+                .insert(type_id.clone(), presentation_provider);
+        }
+
+        self.register(registration.static_def);
+    }
+
+    pub fn resolve_schema(
+        &self,
+        type_id: &str,
+        current_params: &HashMap<String, Value>,
+    ) -> Result<ResolvedSchema, SchemaError> {
+        let def = self.get_node_def(type_id).ok_or_else(|| SchemaError {
+            message: format!("Node type '{type_id}' is not registered"),
+        })?;
+
+        let mut params = def.params.clone();
+        let mut system_values = HashMap::new();
+
+        if let Some(schema_provider) = self.schema_providers.get(type_id) {
+            let resolved = schema_provider.resolve_schema(SchemaQuery {
+                type_id,
+                current_params,
+            })?;
+            for param in resolved.params {
+                if let Some(existing) = params
+                    .iter_mut()
+                    .find(|existing| existing.name == param.name)
+                {
+                    *existing = param;
+                } else {
+                    params.push(param);
+                }
+            }
+            system_values.extend(resolved.system_values);
+        }
+
+        Ok(ResolvedSchema {
+            params,
+            system_values,
+        })
+    }
+
+    pub fn resolve_effective_params(
+        &self,
+        type_id: &str,
+        current_params: &HashMap<String, Value>,
+    ) -> Result<HashMap<String, Value>, SchemaError> {
+        let schema = self.resolve_schema(type_id, current_params)?;
+        let mut resolved = schema
+            .params
+            .iter()
+            .map(|param| (param.name.clone(), param.default_value.clone()))
+            .collect::<HashMap<_, _>>();
+        resolved.extend(current_params.clone());
+        resolved.extend(schema.system_values);
+        Ok(resolved)
+    }
+
+    pub fn capability_version_of(&self, type_id: &str, capability_id: &str) -> Option<u32> {
+        self.capability_versions
+            .get(&(type_id.to_string(), capability_id.to_string()))
+            .copied()
+    }
+
+    pub fn default_params(&self, type_id: &str) -> Option<HashMap<String, Value>> {
+        self.resolve_schema(type_id, &HashMap::new())
+            .ok()
+            .map(|resolved| {
+                resolved
+                    .params
+                    .into_iter()
+                    .map(|param| (param.name, param.default_value))
+                    .collect()
+            })
+    }
+
+    pub fn pin_type(&self, type_id: &str, pin_name: &str) -> Option<&DataType> {
+        let pin = self.get_exposed_pin(type_id, pin_name)?;
+        self.get_node_def(type_id)?
+            .inputs
+            .iter()
+            .chain(self.get_node_def(type_id)?.outputs.iter())
+            .find(|p| p.name == pin.name)
+            .map(|p| &p.data_type)
+            .or_else(|| {
+                self.get_node_def(type_id)?
+                    .params
+                    .iter()
+                    .find(|p| p.name == pin.name)
+                    .map(|p| &p.data_type)
+            })
+    }
+}
+
+impl Default for NodeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::node_manager::collect::collect_python_defs::{
+        parse_param_expose, python_node_decl_specs, PythonNodeDeclFormat, PythonParamExpose,
+    };
+    use crate::node_manager::{ExposedPinSource, ParamDef, ParamExpose, PinDef};
+    use std::collections::HashSet;
+
+    fn make_test_def(type_id: &str, category: &str) -> NodeDef {
+        NodeDef {
+            type_id: type_id.into(),
+            version: 1,
+            source: crate::node_manager::NodeSourceKind::Builtin,
+            name: type_id.into(),
+            category: category.into(),
+            requires: vec!["test.capability".into()],
+            purity: crate::node_manager::Purity::Pure,
+            cooking_sensitivity: vec![],
+            realtime_capable: true,
+            execution: crate::node_manager::ExecutionPolicy::default(),
+            api: None,
+            inputs: vec![PinDef {
+                name: "in".into(),
+                data_type: DataType::image(),
+                optional: false,
+            }],
+            outputs: vec![PinDef {
+                name: "out".into(),
+                data_type: DataType::image(),
+                optional: false,
+            }],
+            params: vec![ParamDef {
+                name: "amount".into(),
+                data_type: DataType::float(),
+                constraint: None,
+                default_value: Value::Float(0.0),
+                expose: vec![ParamExpose::Control],
+            }],
+            execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+        }
+    }
+
+    #[test]
+    fn test_register_and_get() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        assert!(nm.get_node_def("brightness").is_some());
+        assert!(nm.get_node_def("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_pin_type() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        assert_eq!(nm.pin_type("brightness", "in"), Some(&DataType::image()));
+        assert_eq!(nm.pin_type("brightness", "out"), Some(&DataType::image()));
+        assert_eq!(nm.pin_type("brightness", "nope"), None);
+    }
+
+    #[test]
+    fn test_default_params() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        let params = nm.default_params("brightness").unwrap();
+        assert!(matches!(params.get("amount"), Some(Value::Float(f)) if *f == 0.0));
+    }
+
+    #[test]
+    fn test_list_node_defs_returns_all_registered_defs() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        nm.register(make_test_def("contrast", "color"));
+
+        let type_ids: HashSet<_> = nm
+            .list_node_defs()
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+
+        assert_eq!(type_ids.len(), 2);
+        assert!(type_ids.contains("brightness"));
+        assert!(type_ids.contains("contrast"));
+    }
+
+    #[test]
+    fn test_list_nodes_by_category_filters_defs() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        nm.register(make_test_def("contrast", "color"));
+        nm.register(make_test_def("blur", "filter"));
+
+        let color_type_ids: HashSet<_> = nm
+            .list_nodes_by_category("color")
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+
+        assert_eq!(color_type_ids.len(), 2);
+        assert!(color_type_ids.contains("brightness"));
+        assert!(color_type_ids.contains("contrast"));
+        assert!(!color_type_ids.contains("blur"));
+
+        let filter_type_ids: HashSet<_> = nm
+            .list_nodes_by_category("filter")
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+
+        assert_eq!(filter_type_ids.len(), 1);
+        assert!(filter_type_ids.contains("blur"));
+
+        assert!(nm.list_nodes_by_category("missing").is_empty());
+    }
+
+    #[test]
+    fn test_search_nodes_matches_name_and_type_id() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        nm.register(make_test_def("blur", "filter"));
+        nm.register(make_test_def("contrast", "color"));
+
+        let bright_matches: HashSet<_> = nm
+            .search_nodes("bright")
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+        assert_eq!(bright_matches.len(), 1);
+        assert!(bright_matches.contains("brightness"));
+
+        let blur_matches: HashSet<_> = nm
+            .search_nodes("blur")
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+        assert_eq!(blur_matches.len(), 1);
+        assert!(blur_matches.contains("blur"));
+
+        let uppercase_matches: HashSet<_> = nm
+            .search_nodes("BRIGHT")
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+        assert_eq!(uppercase_matches.len(), 1);
+        assert!(uppercase_matches.contains("brightness"));
+
+        assert!(nm.search_nodes("missing").is_empty());
+    }
+
+    #[test]
+    fn test_list_categories_returns_unique_sorted_categories() {
+        let mut nm = NodeManager::new();
+        nm.register(make_test_def("brightness", "color"));
+        nm.register(make_test_def("contrast", "color"));
+        nm.register(make_test_def("blur", "filter"));
+        nm.register(make_test_def("load_image", "data"));
+
+        let categories = nm.list_categories();
+
+        assert_eq!(categories, vec!["color", "data", "filter"]);
+    }
+
+    #[test]
+    fn test_from_inventory_list_node_defs_contains_builtins() {
+        let nm = NodeManager::from_inventory();
+
+        let type_ids: HashSet<_> = nm
+            .list_node_defs()
+            .into_iter()
+            .map(|def| def.type_id.as_str())
+            .collect();
+
+        assert!(type_ids.contains("load_image"));
+        assert!(type_ids.contains("save_image"));
+        assert!(type_ids.contains("brightness"));
+        assert!(type_ids.contains("contrast"));
+        assert!(type_ids.contains("image_gen"));
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_are_generated() {
+        let specs = python_node_decl_specs();
+        assert!(!specs.is_empty());
+
+        let load_checkpoint = specs
+            .iter()
+            .find(|spec| spec.path == "nodes/load_checkpoint.py")
+            .expect("load_checkpoint.py should be scanned");
+        assert_eq!(load_checkpoint.format, PythonNodeDeclFormat::Decorator);
+        assert_eq!(load_checkpoint.type_id, "ai.load_checkpoint");
+        assert_eq!(load_checkpoint.title, "Load Checkpoint");
+        assert_eq!(load_checkpoint.category, "ai/model");
+        assert!(load_checkpoint.inputs.is_empty());
+        assert_eq!(load_checkpoint.outputs.len(), 3);
+        assert_eq!(load_checkpoint.outputs[0].name, "model");
+        assert_eq!(load_checkpoint.outputs[0].data_type, "MODEL");
+        assert!(!load_checkpoint.outputs[0].required);
+        assert_eq!(load_checkpoint.params.len(), 1);
+        assert_eq!(load_checkpoint.params[0].name, "checkpoint_path");
+        assert_eq!(load_checkpoint.params[0].data_type, "STRING");
+        assert_eq!(load_checkpoint.params[0].default_expr, "None");
+
+        let clip_text_encode = specs
+            .iter()
+            .find(|spec| spec.path == "nodes/clip_text_encode.py")
+            .expect("clip_text_encode.py should be scanned");
+        assert_eq!(clip_text_encode.inputs.len(), 1);
+        assert_eq!(clip_text_encode.inputs[0].name, "clip");
+        assert!(clip_text_encode.inputs[0].required);
+        assert_eq!(clip_text_encode.params.len(), 1);
+        assert_eq!(clip_text_encode.params[0].name, "text");
+        assert_eq!(clip_text_encode.params[0].default_expr, "\"\"");
+
+        let decorator_node = specs
+            .iter()
+            .find(|spec| spec.path == "nodes/clip_text_encode.py")
+            .expect("clip_text_encode.py should be scanned as decorator node");
+        assert_eq!(decorator_node.format, PythonNodeDeclFormat::Decorator);
+        assert_eq!(decorator_node.type_id, "ai.clip_text_encode");
+        assert_eq!(decorator_node.title, "CLIP Text Encode");
+        assert_eq!(decorator_node.category, "ai/conditioning");
+        assert_eq!(decorator_node.inputs.len(), 1);
+        assert_eq!(decorator_node.inputs[0].name, "clip");
+        assert!(decorator_node.inputs[0].required);
+        assert_eq!(decorator_node.outputs.len(), 1);
+        assert_eq!(decorator_node.outputs[0].name, "conditioning");
+        assert_eq!(decorator_node.params.len(), 1);
+        assert_eq!(decorator_node.params[0].name, "text");
+        assert_eq!(decorator_node.params[0].default_expr, "\"\"");
+        assert_eq!(
+            decorator_node.params[0].expose_expr,
+            &["[\"control\", \"input\"]"]
+        );
+    }
+
+    #[test]
+    fn test_from_inventory_includes_python_node_defs() {
+        let nm = NodeManager::from_inventory();
+
+        let load_checkpoint = nm
+            .get_node_def("ai.load_checkpoint")
+            .expect("load_checkpoint node def should exist");
+        assert_eq!(load_checkpoint.name, "Load Checkpoint");
+        assert_eq!(load_checkpoint.category, "ai/model");
+        assert_eq!(load_checkpoint.outputs.len(), 3);
+        assert_eq!(load_checkpoint.outputs[0].name, "model");
+        assert_eq!(
+            load_checkpoint.outputs[0].data_type,
+            DataType("ai.model".into())
+        );
+        assert_eq!(load_checkpoint.params.len(), 1);
+        assert_eq!(load_checkpoint.params[0].name, "checkpoint_path");
+        assert_eq!(load_checkpoint.params[0].data_type, DataType::string());
+        assert!(matches!(
+            &load_checkpoint.params[0].default_value,
+            Value::String(value) if value.is_empty()
+        ));
+
+        let ksampler = nm
+            .get_node_def("ai.ksampler")
+            .expect("ksampler node def should exist");
+        let seed = ksampler
+            .params
+            .iter()
+            .find(|param| param.name == "seed")
+            .expect("seed param should exist");
+        assert_eq!(seed.data_type, DataType::int());
+        assert!(matches!(seed.default_value, Value::Int(0)));
+        assert!(seed.constraint.is_some());
+
+        let sampler_name = ksampler
+            .params
+            .iter()
+            .find(|param| param.name == "sampler_name")
+            .expect("sampler_name param should exist");
+        assert_eq!(sampler_name.data_type, DataType::string());
+        assert!(matches!(
+            &sampler_name.default_value,
+            Value::String(value) if value == "euler"
+        ));
+        assert!(sampler_name.constraint.is_some());
+
+        let clip_text_encode = nm
+            .get_node_def("ai.clip_text_encode")
+            .expect("clip_text_encode node def should exist");
+        assert_eq!(clip_text_encode.name, "CLIP Text Encode");
+        assert_eq!(clip_text_encode.category, "ai/conditioning");
+        assert_eq!(clip_text_encode.inputs.len(), 1);
+        assert_eq!(clip_text_encode.inputs[0].name, "clip");
+        assert!(!clip_text_encode.inputs[0].optional);
+        assert_eq!(clip_text_encode.outputs.len(), 1);
+        assert_eq!(clip_text_encode.outputs[0].name, "conditioning");
+        assert_eq!(clip_text_encode.params.len(), 1);
+
+        let text = clip_text_encode
+            .params
+            .iter()
+            .find(|param| param.name == "text")
+            .expect("text param should exist");
+        assert_eq!(text.data_type, DataType::string());
+        assert!(matches!(&text.default_value, Value::String(v) if v.is_empty()));
+        assert_eq!(text.expose, vec![ParamExpose::Control, ParamExpose::Input]);
+
+        let ksampler = nm
+            .get_node_def("ai.ksampler")
+            .expect("ksampler node def should exist");
+
+        let sampler_name = ksampler
+            .params
+            .iter()
+            .find(|param| param.name == "sampler_name")
+            .expect("sampler_name param should exist");
+        assert_eq!(sampler_name.data_type, DataType::string());
+        assert!(matches!(
+            &sampler_name.default_value,
+            Value::String(value) if value == "euler"
+        ));
+        assert!(sampler_name.constraint.is_some());
+
+        let scheduler = ksampler
+            .params
+            .iter()
+            .find(|param| param.name == "scheduler")
+            .expect("scheduler param should exist");
+        assert!(scheduler.constraint.is_some());
+
+        let empty_latent = nm
+            .get_node_def("ai.empty_latent_image")
+            .expect("empty_latent_image node def should exist");
+        let width = empty_latent
+            .params
+            .iter()
+            .find(|param| param.name == "width")
+            .expect("width param should exist");
+        assert!(width.constraint.is_some());
+
+        let decorator = nm
+            .get_node_def("ai.load_checkpoint")
+            .expect("load_checkpoint node def should exist");
+        assert_eq!(decorator.name, "Load Checkpoint");
+        assert_eq!(decorator.category, "ai/model");
+        assert!(decorator.inputs.is_empty());
+        assert_eq!(decorator.outputs.len(), 3);
+
+        let checkpoint_path = decorator
+            .params
+            .iter()
+            .find(|param| param.name == "checkpoint_path")
+            .expect("checkpoint_path param should exist");
+        assert_eq!(checkpoint_path.expose, vec![ParamExpose::Control]);
+    }
+
+    #[test]
+    fn test_parse_param_expose_normalizes_decorator_expose_expr() {
+        let specs = python_node_decl_specs();
+        let decorator_node = specs
+            .iter()
+            .find(|spec| spec.path == "nodes/clip_text_encode.py")
+            .expect("clip_text_encode.py should be scanned");
+
+        let text = decorator_node
+            .params
+            .iter()
+            .find(|param| param.name == "text")
+            .expect("text param should be scanned");
+        assert_eq!(
+            parse_param_expose(text),
+            vec![PythonParamExpose::Control, PythonParamExpose::Input]
+        );
+
+        let ksampler = specs
+            .iter()
+            .find(|spec| spec.path == "nodes/ksampler.py")
+            .expect("ksampler.py should be scanned");
+        let seed = ksampler
+            .params
+            .iter()
+            .find(|param| param.name == "seed")
+            .expect("seed param should be scanned");
+        assert_eq!(
+            parse_param_expose(seed),
+            vec![PythonParamExpose::Control, PythonParamExpose::Input]
+        );
+    }
+
+    #[test]
+    fn test_list_exposed_input_pins_includes_param_input_expose() {
+        let nm = NodeManager::from_inventory();
+        let pins = nm
+            .list_exposed_input_pins("ai.clip_text_encode")
+            .expect("clip_text_encode should expose inputs");
+
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
+        assert!(names.contains("clip"));
+        assert!(names.contains("text"));
+
+        let text = pins
+            .iter()
+            .find(|pin| pin.name == "text")
+            .expect("text should be exposed as input");
+        assert!(text.optional);
+        assert_eq!(text.source, ExposedPinSource::Param);
+    }
+
+    #[test]
+    fn test_list_exposed_pins_contains_pin_and_param_views() {
+        let nm = NodeManager::from_inventory();
+        let pins = nm
+            .list_exposed_pins("ai.load_checkpoint")
+            .expect("load_checkpoint should expose pins");
+
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
+        assert!(names.contains("model"));
+        assert!(names.contains("clip"));
+        assert!(names.contains("vae"));
+
+        let checkpoint_path_pin_count = pins
+            .iter()
+            .filter(|pin| pin.name == "checkpoint_path")
+            .count();
+        assert_eq!(checkpoint_path_pin_count, 0);
+
+        assert_eq!(pins.len(), 3);
+    }
+
+    #[test]
+    fn test_list_exposed_output_pins_includes_param_output_expose() {
+        let nm = NodeManager::from_inventory();
+        let pins = nm
+            .list_exposed_output_pins("ai.ksampler")
+            .expect("ksampler should expose outputs");
+
+        let names = pins
+            .iter()
+            .map(|pin| pin.name.as_str())
+            .collect::<HashSet<_>>();
+        assert!(names.contains("latent"));
+        assert!(!names.contains("seed"));
+
+        let latent = pins
+            .iter()
+            .find(|pin| pin.name == "latent")
+            .expect("latent should be exposed as output");
+        assert_eq!(latent.source, ExposedPinSource::Pin);
+        assert!(!latent.optional);
+    }
+
+    #[test]
+    fn test_get_exposed_pin_queries_general_and_directional_views() {
+        let nm = NodeManager::from_inventory();
+
+        let text_input = nm
+            .get_exposed_input_pin("ai.clip_text_encode", "text")
+            .expect("text should be exposed as input");
+        assert_eq!(text_input.source, ExposedPinSource::Param);
+        assert!(text_input.optional);
+
+        let latent_output = nm
+            .get_exposed_output_pin("ai.ksampler", "latent")
+            .expect("latent should be exposed as output");
+        assert_eq!(latent_output.source, ExposedPinSource::Pin);
+
+        let conditioning = nm
+            .get_exposed_pin("ai.clip_text_encode", "conditioning")
+            .expect("conditioning should exist in exposed pins");
+        assert_eq!(conditioning.source, ExposedPinSource::Pin);
+
+        assert!(nm
+            .get_exposed_input_pin("ai.clip_text_encode", "conditioning")
+            .is_none());
+        assert!(nm
+            .get_exposed_output_pin("ai.clip_text_encode", "text")
+            .is_none());
+        assert!(nm
+            .get_exposed_pin("ai.clip_text_encode", "missing")
+            .is_none());
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_params_have_non_empty_expose() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for param in spec.params {
+                assert!(
+                    !param.expose_expr.is_empty(),
+                    "{}:{} expose should not be empty",
+                    spec.path,
+                    param.name
+                );
+                assert!(
+                    !parse_param_expose(param).is_empty(),
+                    "{}:{} expose should parse into at least one value",
+                    spec.path,
+                    param.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_complex_defaults_follow_rules() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for param in spec.params {
+                let is_complex = matches!(
+                    param.data_type,
+                    "IMAGE" | "MASK" | "MODEL" | "CLIP" | "VAE" | "LATENT" | "CONDITIONING"
+                );
+                if is_complex {
+                    assert_eq!(
+                        param.default_expr, "None",
+                        "{}:{} complex type default must be None",
+                        spec.path, param.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_output_pins_are_not_marked_required() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            for output in spec.outputs {
+                assert!(
+                    !output.required,
+                    "{}:{} output pin must not be marked required",
+                    spec.path, output.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_python_node_decl_specs_names_are_unique_per_direction() {
+        let specs = python_node_decl_specs();
+
+        for spec in specs {
+            let input_names = spec
+                .inputs
+                .iter()
+                .map(|pin| pin.name)
+                .chain(spec.params.iter().filter_map(|param| {
+                    let exposes = parse_param_expose(param);
+                    exposes
+                        .contains(&PythonParamExpose::Input)
+                        .then_some(param.name)
+                }))
+                .collect::<Vec<_>>();
+
+            let output_names = spec
+                .outputs
+                .iter()
+                .map(|pin| pin.name)
+                .chain(spec.params.iter().filter_map(|param| {
+                    let exposes = parse_param_expose(param);
+                    exposes
+                        .contains(&PythonParamExpose::Output)
+                        .then_some(param.name)
+                }))
+                .collect::<Vec<_>>();
+
+            let input_unique = input_names.iter().copied().collect::<HashSet<_>>();
+            let output_unique = output_names.iter().copied().collect::<HashSet<_>>();
+
+            assert_eq!(
+                input_unique.len(),
+                input_names.len(),
+                "{} input-side names must be unique",
+                spec.path
+            );
+            assert_eq!(
+                output_unique.len(),
+                output_names.len(),
+                "{} output-side names must be unique",
+                spec.path
+            );
+        }
+    }
+}

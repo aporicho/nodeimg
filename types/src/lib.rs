@@ -8,4 +8,4 @@ pub use constraint::Constraint;
 pub use geometry::Vec2;
 pub use id::{NodeId, PinRef};
 pub use texture::GpuTexture;
-pub use value::{DataType, Image, Value};
+pub use value::{DataType, Handle, Image, Value};

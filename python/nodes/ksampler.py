@@ -13,7 +13,7 @@ from diffusers import (
     UniPCMultistepScheduler,
 )
 
-from registry import NodeDef, PinDef, ParamDef
+from registry import Param, Pin, node
 
 log = logging.getLogger("ksampler")
 
@@ -29,7 +29,51 @@ SCHEDULERS = {
 }
 
 
-def execute(inputs, params):
+@node(
+    type_id="ai.ksampler",
+    title="KSampler",
+    category="ai/sampling",
+    inputs=[
+        Pin("model", "MODEL", required=True),
+        Pin("positive", "CONDITIONING", required=True),
+        Pin("negative", "CONDITIONING", required=True),
+        Pin("latent", "LATENT", required=True),
+    ],
+    outputs=[Pin("latent", "LATENT")],
+    params=[
+        Param(
+            "seed", "INT", default=0, expose=["control", "input"], min=0, max=2147483647
+        ),
+        Param("steps", "INT", default=20, expose=["control", "input"], min=1, max=150),
+        Param(
+            "cfg", "FLOAT", default=7.0, expose=["control", "input"], min=1.0, max=30.0
+        ),
+        Param(
+            "sampler_name",
+            "STRING",
+            default="euler",
+            expose=["control", "input"],
+            options=[
+                "euler",
+                "euler_ancestral",
+                "dpm_2",
+                "dpm_2_ancestral",
+                "lms",
+                "heun",
+                "ddim",
+                "uni_pc",
+            ],
+        ),
+        Param(
+            "scheduler",
+            "STRING",
+            default="normal",
+            expose=["control", "input"],
+            options=["normal", "karras", "exponential", "sgm_uniform"],
+        ),
+    ],
+)
+def execute(ctx, inputs, params):
     unet = inputs["model"]
     positive_embeds, positive_pooled = inputs["positive"]
     negative_embeds, negative_pooled = inputs["negative"]
@@ -46,13 +90,17 @@ def execute(inputs, params):
     scheduler_cls = SCHEDULERS.get(sampler_name, EulerDiscreteScheduler)
     scheduler_config = getattr(unet, "_pipeline_scheduler_config", None)
     if scheduler_config:
-        log.info("Using pipeline scheduler config: beta_start=%.5f, beta_end=%.4f, schedule=%s",
-                 scheduler_config.get("beta_start", "?"),
-                 scheduler_config.get("beta_end", "?"),
-                 scheduler_config.get("beta_schedule", "?"))
+        log.info(
+            "Using pipeline scheduler config: beta_start=%.5f, beta_end=%.4f, schedule=%s",
+            scheduler_config.get("beta_start", "?"),
+            scheduler_config.get("beta_end", "?"),
+            scheduler_config.get("beta_schedule", "?"),
+        )
         scheduler = scheduler_cls.from_config(scheduler_config)
     else:
-        log.warning("No pipeline scheduler config found on UNet, using scheduler defaults!")
+        log.warning(
+            "No pipeline scheduler config found on UNet, using scheduler defaults!"
+        )
         scheduler = scheduler_cls()
 
     if scheduler_type == "karras":
@@ -92,7 +140,8 @@ def execute(inputs, params):
 
         with torch.no_grad():
             noise_pred = unet(
-                latent_input, t,
+                latent_input,
+                t,
                 encoder_hidden_states=prompt_embeds,
                 added_cond_kwargs=added_cond,
             ).sample
@@ -108,36 +157,12 @@ def execute(inputs, params):
         eta = avg * (total_steps - i - 1)
         log.info(
             "Step %d/%d  %.2fs/step  elapsed %.1fs  ETA %.1fs",
-            i + 1, total_steps, step_time, elapsed, eta,
+            i + 1,
+            total_steps,
+            step_time,
+            elapsed,
+            eta,
         )
 
     log.info("Sampling done: %d steps in %.1fs", total_steps, time.time() - loop_start)
     return {"latent": latent}
-
-
-definition = NodeDef(
-    inputs=[
-        PinDef("model", "MODEL"),
-        PinDef("positive", "CONDITIONING"),
-        PinDef("negative", "CONDITIONING"),
-        PinDef("latent", "LATENT"),
-    ],
-    outputs=[PinDef("latent", "LATENT")],
-    params=[
-        ParamDef("seed", "INT", default=0, min=0, max=2147483647),
-        ParamDef("steps", "INT", default=20, min=1, max=150),
-        ParamDef("cfg", "FLOAT", default=7.0, min=1.0, max=30.0),
-        ParamDef(
-            "sampler_name", "ENUM", default="euler",
-            options=[
-                "euler", "euler_ancestral", "dpm_2", "dpm_2_ancestral",
-                "lms", "heun", "ddim", "uni_pc",
-            ],
-        ),
-        ParamDef(
-            "scheduler", "ENUM", default="normal",
-            options=["normal", "karras", "exponential", "sgm_uniform"],
-        ),
-    ],
-    execute=execute,
-)

@@ -14,6 +14,7 @@ struct NodeMacroInput {
     name: LitStr,
     title: LitStr,
     category: LitStr,
+    purity: Option<Ident>,
     inputs: Vec<PinInput>,
     outputs: Vec<PinInput>,
     params: Vec<ParamInput>,
@@ -50,6 +51,7 @@ impl Parse for NodeMacroInput {
         let mut name: Option<LitStr> = None;
         let mut title: Option<LitStr> = None;
         let mut category: Option<LitStr> = None;
+        let mut purity: Option<Ident> = None;
         let mut inputs: Option<Vec<PinInput>> = None;
         let mut outputs: Option<Vec<PinInput>> = None;
         let mut params: Option<Vec<ParamInput>> = None;
@@ -70,6 +72,9 @@ impl Parse for NodeMacroInput {
                 }
                 "category" => {
                     category = Some(input.parse()?);
+                }
+                "purity" => {
+                    purity = Some(input.parse()?);
                 }
                 "inputs" => {
                     inputs = Some(parse_pin_list(input)?);
@@ -109,6 +114,7 @@ impl Parse for NodeMacroInput {
             name: name.ok_or_else(|| missing("name"))?,
             title: title.ok_or_else(|| missing("title"))?,
             category: category.ok_or_else(|| missing("category"))?,
+            purity,
             inputs: inputs.ok_or_else(|| missing("inputs"))?,
             outputs: outputs.ok_or_else(|| missing("outputs"))?,
             params: params.ok_or_else(|| missing("params"))?,
@@ -297,7 +303,7 @@ fn pin_def_tokens(pin: &PinInput) -> TokenStream2 {
     let dt = data_type_tokens(&pin.data_type);
     let optional = !pin.required;
     quote! {
-        crate::registry::PinDef {
+        crate::node_manager::PinDef {
             name: #name_str.to_string(),
             data_type: #dt,
             optional: #optional,
@@ -312,11 +318,12 @@ fn param_def_tokens(param: &ParamInput) -> TokenStream2 {
     let constraint = constraint_tokens(&param.constraint);
     let default = default_value_tokens(&param.data_type, &param.default_expr);
     quote! {
-        crate::registry::ParamDef {
+        crate::node_manager::ParamDef {
             name: #name_str.to_string(),
             data_type: #dt,
             constraint: #constraint,
             default_value: #default,
+            expose: vec![crate::node_manager::ParamExpose::Control],
         }
     }
 }
@@ -330,6 +337,11 @@ pub fn node(input: TokenStream) -> TokenStream {
     let name = &input.name;
     let title = &input.title;
     let category = &input.category;
+    let purity = input
+        .purity
+        .as_ref()
+        .map(|purity| quote! { crate::node_manager::Purity::#purity })
+        .unwrap_or_else(|| quote! { crate::node_manager::Purity::Pure });
 
     let input_defs: Vec<TokenStream2> = input.inputs.iter().map(pin_def_tokens).collect();
     let output_defs: Vec<TokenStream2> = input.outputs.iter().map(pin_def_tokens).collect();
@@ -340,11 +352,19 @@ pub fn node(input: TokenStream) -> TokenStream {
     let body = &input.exec_body;
 
     let expanded = quote! {
-        inventory::submit!(crate::registry::NodeDefEntry(|| {
-            crate::registry::NodeDef {
+        inventory::submit!(crate::node_manager::NodeDefEntry(|| {
+            crate::node_manager::NodeDef {
                 type_id: #name.to_string(),
+                version: 1,
+                source: crate::node_manager::NodeSourceKind::Builtin,
                 name: #title.to_string(),
                 category: #category.to_string(),
+                requires: vec![format!("builtin.{}", #name)],
+                purity: #purity,
+                cooking_sensitivity: vec![],
+                realtime_capable: true,
+                execution: crate::node_manager::ExecutionPolicy::default(),
+                api: None,
                 inputs: vec![
                     #( #input_defs ),*
                 ],
