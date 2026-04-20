@@ -1,6 +1,11 @@
 use crate::demo_gallery::{
     build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
+use crate::image_demo::ImageDemoController;
+use crate::panels::EnginePanelState;
+use engine::events::ExecutionStatus;
+use engine::facade::EngineFacade;
+use engine::Engine;
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{
@@ -103,6 +108,9 @@ pub struct DemoApp {
     navigation: CanvasNavigationController,
     active_button: Option<String>,
     gallery: GalleryState,
+    engine: Engine,
+    image_demo: ImageDemoController,
+    last_engine_action: String,
     mouse_x: f32,
     mouse_y: f32,
     theme: Theme,
@@ -122,6 +130,9 @@ impl App for DemoApp {
             navigation: CanvasNavigationController::new(),
             active_button: None,
             gallery: GalleryState::default(),
+            engine: Engine::new(None),
+            image_demo: ImageDemoController::default(),
+            last_engine_action: "Ready".to_string(),
             mouse_x: 0.0,
             mouse_y: 0.0,
             theme: light_theme().scaled(GALLERY_SCALE),
@@ -161,6 +172,7 @@ impl App for DemoApp {
             theme: &self.theme,
             gallery: &self.gallery,
             image: DEMO_IMAGE_HANDLE,
+            engine: &self.engine_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
         let desc = build_demo_tree(viewport, &self.camera, &self.theme, panel_root);
@@ -313,6 +325,9 @@ impl DemoApp {
         match message {
             DemoMessage::WidgetClicked(id) => {
                 let _ = self.gallery.apply_click(&id);
+                if let Some(outcome) = self.image_demo.handle_button(&id, &mut self.engine) {
+                    self.last_engine_action = outcome.to_string();
+                }
                 if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
                         self.gui.close_overlay();
@@ -441,6 +456,26 @@ impl DemoApp {
             .and_then(|track_rect| slider_value_from_x(track_rect, x, 0.0, 10.0, 0.1))
         {
             self.gallery.slider_value = value;
+        }
+    }
+
+    fn engine_panel_state(&self) -> EnginePanelState {
+        let graph = self.engine.query_graph_snapshot();
+        let summary = self.engine.graph_state_summary();
+        let execution_status = match self.engine.execution_state().status {
+            ExecutionStatus::Idle => "Idle",
+            ExecutionStatus::Running => "Running",
+            ExecutionStatus::Cancelling => "Cancelling",
+        };
+
+        EnginePanelState {
+            node_count: graph.nodes.len(),
+            connection_count: graph.connections.len(),
+            node_def_count: self.engine.list_node_defs().len(),
+            graph_version: summary.graph_version,
+            dirty: summary.dirty,
+            execution_status: execution_status.to_string(),
+            last_action: self.last_engine_action.clone(),
         }
     }
 }
