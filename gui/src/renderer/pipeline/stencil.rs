@@ -3,7 +3,6 @@ use winit::dpi::PhysicalSize;
 
 use super::super::buffer::DynamicBuffer;
 
-
 pub const DEPTH_STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
 /// 内容管线的 stencil state：只读，Equal 比较，不修改 stencil
@@ -96,12 +95,24 @@ impl StencilState {
         };
 
         let increment_pipeline = create_stencil_pipeline(
-            device, &shader, &pipeline_layout, &vertex_layout,
-            surface_format, wgpu::StencilOperation::IncrementClamp, "stencil_increment", multisample,
+            device,
+            &shader,
+            &pipeline_layout,
+            &vertex_layout,
+            surface_format,
+            wgpu::StencilOperation::IncrementClamp,
+            "stencil_increment",
+            multisample,
         );
         let decrement_pipeline = create_stencil_pipeline(
-            device, &shader, &pipeline_layout, &vertex_layout,
-            surface_format, wgpu::StencilOperation::DecrementClamp, "stencil_decrement", multisample,
+            device,
+            &shader,
+            &pipeline_layout,
+            &vertex_layout,
+            surface_format,
+            wgpu::StencilOperation::DecrementClamp,
+            "stencil_decrement",
+            multisample,
         );
 
         Self {
@@ -111,7 +122,12 @@ impl StencilState {
             bind_group_layout,
             clip_depth: 0,
             size,
-            vertex_buf: DynamicBuffer::new(device, wgpu::BufferUsages::VERTEX, "stencil_vertex", 4096),
+            vertex_buf: DynamicBuffer::new(
+                device,
+                wgpu::BufferUsages::VERTEX,
+                "stencil_vertex",
+                4096,
+            ),
             index_buf: DynamicBuffer::new(device, wgpu::BufferUsages::INDEX, "stencil_index", 4096),
             viewport_bind_group: None,
         }
@@ -120,7 +136,8 @@ impl StencilState {
     pub fn resize(&mut self, device: &wgpu::Device, size: PhysicalSize<u32>) {
         if size.width > 0 && size.height > 0 {
             self.size = size;
-            self.depth_stencil_view = create_depth_stencil_view(device, size, super::super::renderer::MSAA_SAMPLE_COUNT);
+            self.depth_stencil_view =
+                create_depth_stencil_view(device, size, super::super::renderer::MSAA_SAMPLE_COUNT);
         }
     }
 
@@ -147,8 +164,10 @@ impl StencilState {
         if vertices.is_empty() {
             return;
         }
-        self.vertex_buf.write(device, queue, bytemuck::cast_slice(vertices));
-        self.index_buf.write(device, queue, bytemuck::cast_slice(indices));
+        self.vertex_buf
+            .write(device, queue, bytemuck::cast_slice(vertices));
+        self.index_buf
+            .write(device, queue, bytemuck::cast_slice(indices));
     }
 
     pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {
@@ -165,26 +184,45 @@ impl StencilState {
     }
 
     pub fn bind_stencil<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {
-        let bg = self.viewport_bind_group.as_ref().expect("call update_bind_group before bind_stencil");
+        let bg = self
+            .viewport_bind_group
+            .as_ref()
+            .expect("call update_bind_group before bind_stencil");
         pass.set_bind_group(0, bg, &[]);
         pass.set_vertex_buffer(0, self.vertex_buf.buffer().slice(..));
         pass.set_index_buffer(self.index_buf.buffer().slice(..), wgpu::IndexFormat::Uint32);
     }
 
-    pub fn draw_write(&self, pass: &mut wgpu::RenderPass<'_>, clip_depth: u32, index_start: u32, index_count: u32) {
+    pub fn draw_write(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        clip_depth: u32,
+        index_start: u32,
+        index_count: u32,
+    ) {
         pass.set_pipeline(&self.increment_pipeline);
         pass.set_stencil_reference(clip_depth);
         pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
     }
 
-    pub fn draw_clear(&self, pass: &mut wgpu::RenderPass<'_>, clip_depth: u32, index_start: u32, index_count: u32) {
+    pub fn draw_clear(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        clip_depth: u32,
+        index_start: u32,
+        index_count: u32,
+    ) {
         pass.set_pipeline(&self.decrement_pipeline);
         pass.set_stencil_reference(clip_depth);
         pass.draw_indexed(index_start..index_start + index_count, 0, 0..1);
     }
 }
 
-fn create_depth_stencil_view(device: &wgpu::Device, size: PhysicalSize<u32>, sample_count: u32) -> wgpu::TextureView {
+fn create_depth_stencil_view(
+    device: &wgpu::Device,
+    size: PhysicalSize<u32>,
+    sample_count: u32,
+) -> wgpu::TextureView {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth_stencil"),
         size: wgpu::Extent3d {

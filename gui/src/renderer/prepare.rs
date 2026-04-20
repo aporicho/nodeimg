@@ -5,32 +5,55 @@ use lyon::tessellation::{
     StrokeVertex, VertexBuffers,
 };
 
-
 use super::command::DrawCommand;
 use super::pipeline::circle::{CircleRequest, CircleVertex};
 use super::pipeline::curve::{CurvePipeline, CurveRequest, CurveVertex};
-use super::pipeline::quad::{build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING};
+use super::pipeline::quad::{
+    build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING,
+};
 use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
+use super::pipeline::text::TextRequest;
 use super::types::Rect;
 
 // ── 绘制操作 ──
 
 pub enum DrawOp {
-    Quad { index_start: u32, index_count: u32 },
-    Circle { index_start: u32, index_count: u32 },
-    Curve { index_start: u32, index_count: u32 },
+    Quad {
+        index_start: u32,
+        index_count: u32,
+    },
+    Circle {
+        index_start: u32,
+        index_count: u32,
+    },
+    Curve {
+        index_start: u32,
+        index_count: u32,
+    },
     Shadow(ShadowRequest),
-    Image { rect: Rect, view: Arc<wgpu::TextureView> },
-    Text,
-    StencilWrite { index_start: u32, index_count: u32 },
-    StencilClear { index_start: u32, index_count: u32 },
+    Image {
+        rect: Rect,
+        view: Arc<wgpu::TextureView>,
+    },
+    Text {
+        index: usize,
+    },
+    StencilWrite {
+        index_start: u32,
+        index_count: u32,
+    },
+    StencilClear {
+        index_start: u32,
+        index_count: u32,
+    },
 }
 
 // ── 预处理结果 ──
 
 pub struct PreparedFrame {
     pub ops: Vec<DrawOp>,
+    pub text_requests: Vec<TextRequest>,
 
     pub quad_vertices: Vec<QuadVertex>,
     pub quad_indices: Vec<u32>,
@@ -47,9 +70,13 @@ pub struct PreparedFrame {
 
 // ── 预处理 ──
 
-pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipeline) -> PreparedFrame {
+pub fn prepare_frame(
+    commands: &[DrawCommand],
+    curve_pipeline: &mut CurvePipeline,
+) -> PreparedFrame {
     let mut frame = PreparedFrame {
         ops: Vec::new(),
+        text_requests: Vec::new(),
         quad_vertices: Vec::new(),
         quad_indices: Vec::new(),
         curve_vertices: Vec::new(),
@@ -83,11 +110,18 @@ pub fn prepare_frame(commands: &[DrawCommand], curve_pipeline: &mut CurvePipelin
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
                 circle_batch.push(req);
             }
-            DrawCommand::Text(_) => {
+            DrawCommand::Text(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_curve_batch(&mut curve_batch, &mut frame, curve_pipeline);
-                frame.ops.push(DrawOp::Text);
+                let index = frame.text_requests.len();
+                frame.text_requests.push(TextRequest {
+                    pos: req.pos,
+                    text: req.text.clone(),
+                    style: req.style,
+                    bounds: req.bounds,
+                });
+                frame.ops.push(DrawOp::Text { index });
             }
             DrawCommand::Image { rect, view } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
@@ -160,9 +194,11 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
                     .tessellate_path(
                         &path,
                         &StrokeOptions::default().with_line_width(req.border_width),
-                        &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| QuadVertex {
-                            position: vertex.position().to_array(),
-                            color: border_color,
+                        &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
+                            QuadVertex {
+                                position: vertex.position().to_array(),
+                                color: border_color,
+                            }
                         }),
                     )
                     .expect("failed to tessellate quad stroke");
@@ -191,7 +227,11 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
     });
 }
 
-fn flush_curve_batch(batch: &mut Vec<&CurveRequest>, frame: &mut PreparedFrame, curve_pipeline: &mut CurvePipeline) {
+fn flush_curve_batch(
+    batch: &mut Vec<&CurveRequest>,
+    frame: &mut PreparedFrame,
+    curve_pipeline: &mut CurvePipeline,
+) {
     if batch.is_empty() {
         return;
     }
@@ -247,10 +287,30 @@ fn flush_circle_batch(batch: &mut Vec<&CircleRequest>, frame: &mut PreparedFrame
         let vertex_offset = frame.circle_vertices.len() as u32;
 
         frame.circle_vertices.extend_from_slice(&[
-            CircleVertex { position: [cx - ext, cy - ext], center, radius: r, color },
-            CircleVertex { position: [cx + ext, cy - ext], center, radius: r, color },
-            CircleVertex { position: [cx + ext, cy + ext], center, radius: r, color },
-            CircleVertex { position: [cx - ext, cy + ext], center, radius: r, color },
+            CircleVertex {
+                position: [cx - ext, cy - ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx + ext, cy - ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx + ext, cy + ext],
+                center,
+                radius: r,
+                color,
+            },
+            CircleVertex {
+                position: [cx - ext, cy + ext],
+                center,
+                radius: r,
+                color,
+            },
         ]);
 
         frame.circle_indices.extend_from_slice(&[
@@ -304,8 +364,81 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
     let index_count = geometry.indices.len() as u32;
 
     if is_write {
-        frame.ops.push(DrawOp::StencilWrite { index_start, index_count });
+        frame.ops.push(DrawOp::StencilWrite {
+            index_start,
+            index_count,
+        });
     } else {
-        frame.ops.push(DrawOp::StencilClear { index_start, index_count });
+        frame.ops.push(DrawOp::StencilClear {
+            index_start,
+            index_count,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::test_support::try_test_device;
+    use crate::renderer::{Color, Point, Rect, RectStyle, TextStyle};
+
+    fn test_curve_pipeline() -> Option<CurvePipeline> {
+        let (device, _queue) = try_test_device("prepare-test-device")?;
+
+        Some(CurvePipeline::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::MultisampleState::default(),
+        ))
+    }
+
+    fn rect_command(x: f32) -> DrawCommand {
+        DrawCommand::Rect(QuadRequest::from_style(
+            Rect {
+                x,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
+            &RectStyle {
+                color: Color::WHITE,
+                border: None,
+                radius: [0.0; 4],
+                shadow: None,
+            },
+        ))
+    }
+
+    fn text_command(text: &str) -> DrawCommand {
+        DrawCommand::Text(TextRequest {
+            pos: Point { x: 0.0, y: 0.0 },
+            text: text.to_string(),
+            style: TextStyle::new(Color::WHITE, 12.0),
+            bounds: None,
+        })
+    }
+
+    #[test]
+    fn prepare_frame_preserves_text_indices_in_order() {
+        let Some(mut curve_pipeline) = test_curve_pipeline() else {
+            return;
+        };
+        let frame = prepare_frame(
+            &[
+                rect_command(0.0),
+                text_command("first"),
+                rect_command(20.0),
+                text_command("second"),
+            ],
+            &mut curve_pipeline,
+        );
+
+        assert!(matches!(frame.ops[0], DrawOp::Quad { .. }));
+        assert!(matches!(frame.ops[1], DrawOp::Text { index: 0 }));
+        assert!(matches!(frame.ops[2], DrawOp::Quad { .. }));
+        assert!(matches!(frame.ops[3], DrawOp::Text { index: 1 }));
+        assert_eq!(frame.text_requests.len(), 2);
+        assert_eq!(frame.text_requests[0].text, "first");
+        assert_eq!(frame.text_requests[1].text, "second");
     }
 }

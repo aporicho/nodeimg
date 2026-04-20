@@ -1,7 +1,10 @@
+use crate::gesture::Gesture;
+use crate::renderer::TextStyle;
+use crate::widget::anatomy::Anatomy;
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
-use crate::widget::props::{WidgetBuild, WidgetProps};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliderProps {
@@ -14,32 +17,43 @@ pub struct SliderProps {
 }
 
 impl WidgetProps for SliderProps {
-    fn widget_type(&self) -> &'static str { "Slider" }
-    fn as_any(&self) -> &dyn Any { self }
-    fn clone_box(&self) -> Box<dyn WidgetProps> { Box::new(self.clone()) }
+    fn widget_type(&self) -> &'static str {
+        "Slider"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn WidgetProps> {
+        Box::new(self.clone())
+    }
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other.as_any().downcast_ref::<Self>().map_or(false, |o| self == o)
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |o| self == o)
     }
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str) -> WidgetBuild {
-        use crate::widget::desc::Desc;
-        use crate::widget::layout::{BoxStyle, Decoration, Size, Direction, Align, LeafKind};
-        use crate::renderer::Color;
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
+        use crate::tree::Desc;
 
-        // shadcn zinc 色系
-        let label_color = Color { r: 0.443, g: 0.443, b: 0.478, a: 1.0 };  // zinc-500
-        let value_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };  // zinc-900
-        let track_color = Color { r: 0.894, g: 0.894, b: 0.906, a: 1.0 };  // zinc-200
-        let fill_color = Color { r: 0.094, g: 0.094, b: 0.106, a: 1.0 };   // zinc-900
-        let font_size = 12.0;
-        let track_height = 6.0;
-        let track_radius = track_height / 2.0;
+        let theme = cx.theme;
+        let tokens = theme.components.slider;
+        let visual = theme.slider_visual(if self.disabled {
+            crate::interaction::WidgetVisualState::Disabled
+        } else {
+            crate::interaction::WidgetVisualState::Normal
+        });
 
         // 填充比例
         let range = self.max - self.min;
-        let ratio = if range > 0.0 { ((self.value - self.min) / range).clamp(0.0, 1.0) } else { 0.0 };
+        let ratio = if range > 0.0 {
+            ((self.value - self.min) / range).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
 
         // 值文本格式化
         let value_text = if self.step >= 1.0 {
@@ -47,11 +61,12 @@ impl WidgetProps for SliderProps {
         } else {
             format!("{:.1}", self.value)
         };
+        let anatomy = Anatomy::new(id);
 
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
-                gap: 8.0,
+                gap: tokens.gap,
                 align_items: Align::Center,
                 height: Size::Auto,
                 ..BoxStyle::default()
@@ -60,7 +75,7 @@ impl WidgetProps for SliderProps {
             children: vec![
                 // 标签
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
+                    id: Cow::Owned(anatomy.label()),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
@@ -68,48 +83,73 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: self.label.to_string(),
-                        font_size,
-                        color: label_color,
+                        style: TextStyle {
+                            color: theme.colors.text_muted,
+                            size: tokens.font_size,
+                            ..theme.text_style_body_sm()
+                        },
                     },
                 },
                 // 轨道
                 Desc::Container {
-                    id: Cow::Owned(format!("{id}::track")),
+                    id: Cow::Owned(anatomy.track()),
                     style: BoxStyle {
                         flex_grow: 1.0,
-                        height: Size::Fixed(track_height),
+                        height: Size::Fixed(tokens.track_height),
+                        padding: crate::tree::layout::Edges::all(tokens.track_padding),
                         direction: Direction::Row,
+                        gestures: vec![Gesture::Tap, Gesture::Drag],
+                        align_items: Align::Center,
                         ..BoxStyle::default()
                     },
                     decoration: Some(Decoration {
-                        background: Some(track_color),
+                        background: Some(visual.track_background),
                         border: None,
-                        radius: [track_radius; 4],
+                        radius: [tokens.track_radius; 4],
                         shadow: None,
                     }),
                     children: vec![
                         // 填充条（按比例占空间）
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::fill")),
+                            id: Cow::Owned(anatomy.part("fill")),
                             style: BoxStyle {
                                 flex_grow: ratio,
                                 height: Size::Fill,
+                                gestures: vec![Gesture::Tap, Gesture::Drag],
                                 ..BoxStyle::default()
                             },
                             decoration: Some(Decoration {
-                                background: Some(fill_color),
+                                background: Some(visual.fill),
                                 border: None,
-                                radius: [track_radius; 4],
+                                radius: [tokens.track_radius; 4],
+                                shadow: None,
+                            }),
+                            children: vec![],
+                        },
+                        // Thumb（明确可拖拽的圆点）
+                        Desc::Container {
+                            id: Cow::Owned(anatomy.thumb()),
+                            style: BoxStyle {
+                                width: Size::Fixed(tokens.thumb_size),
+                                height: Size::Fixed(tokens.thumb_size),
+                                gestures: vec![Gesture::Tap, Gesture::Drag],
+                                ..BoxStyle::default()
+                            },
+                            decoration: Some(Decoration {
+                                background: Some(visual.thumb),
+                                border: None,
+                                radius: [tokens.thumb_size / 2.0; 4],
                                 shadow: None,
                             }),
                             children: vec![],
                         },
                         // 空白（剩余空间）
                         Desc::Container {
-                            id: Cow::Owned(format!("{id}::spacer")),
+                            id: Cow::Owned(anatomy.part("spacer")),
                             style: BoxStyle {
                                 flex_grow: 1.0 - ratio,
                                 height: Size::Fill,
+                                gestures: vec![Gesture::Tap, Gesture::Drag],
                                 ..BoxStyle::default()
                             },
                             decoration: None,
@@ -119,7 +159,7 @@ impl WidgetProps for SliderProps {
                 },
                 // 值显示
                 Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::value")),
+                    id: Cow::Owned(anatomy.part("value")),
                     style: BoxStyle {
                         width: Size::Auto,
                         height: Size::Auto,
@@ -127,8 +167,11 @@ impl WidgetProps for SliderProps {
                     },
                     kind: LeafKind::Text {
                         content: value_text,
-                        font_size,
-                        color: value_color,
+                        style: TextStyle {
+                            color: visual.text,
+                            size: tokens.font_size,
+                            ..theme.text_style_mono_md()
+                        },
                     },
                 },
             ],

@@ -5,6 +5,7 @@ use winit::window::CursorIcon;
 pub enum CursorStyle {
     Default,
     Move,
+    Text,
     ResizeN,
     ResizeS,
     ResizeW,
@@ -13,7 +14,7 @@ pub enum CursorStyle {
     ResizeNE,
     ResizeSW,
     ResizeSE,
-    Pointer,  // 手形，用于可点击元素
+    Pointer, // 手形，用于可点击元素
 }
 
 impl CursorStyle {
@@ -21,6 +22,7 @@ impl CursorStyle {
         match self {
             Self::Default => CursorIcon::Default,
             Self::Move => CursorIcon::Move,
+            Self::Text => CursorIcon::Text,
             Self::ResizeN | Self::ResizeS => CursorIcon::NsResize,
             Self::ResizeW | Self::ResizeE => CursorIcon::EwResize,
             Self::ResizeNW | Self::ResizeSE => CursorIcon::NwseResize,

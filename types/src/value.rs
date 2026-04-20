@@ -7,12 +7,24 @@ use std::sync::{Arc, OnceLock};
 pub struct DataType(pub String);
 
 impl DataType {
-    pub fn image() -> Self { Self("image".into()) }
-    pub fn float() -> Self { Self("float".into()) }
-    pub fn int() -> Self { Self("int".into()) }
-    pub fn bool() -> Self { Self("bool".into()) }
-    pub fn color() -> Self { Self("color".into()) }
-    pub fn string() -> Self { Self("string".into()) }
+    pub fn image() -> Self {
+        Self("image".into())
+    }
+    pub fn float() -> Self {
+        Self("float".into())
+    }
+    pub fn int() -> Self {
+        Self("int".into())
+    }
+    pub fn bool() -> Self {
+        Self("bool".into())
+    }
+    pub fn color() -> Self {
+        Self("color".into())
+    }
+    pub fn string() -> Self {
+        Self("string".into())
+    }
 }
 
 impl std::fmt::Display for DataType {
@@ -75,8 +87,12 @@ impl Image {
         self.gpu.get()
     }
 
-    pub fn has_cpu(&self) -> bool { self.cpu.get().is_some() }
-    pub fn has_gpu(&self) -> bool { self.gpu.get().is_some() }
+    pub fn has_cpu(&self) -> bool {
+        self.cpu.get().is_some()
+    }
+    pub fn has_gpu(&self) -> bool {
+        self.gpu.get().is_some()
+    }
 }
 
 impl std::fmt::Debug for Image {

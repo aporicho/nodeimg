@@ -1,0 +1,528 @@
+use crate::gesture::Gesture;
+use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
+use crate::tree::layout::{
+    BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
+};
+use crate::tree::Desc;
+use crate::widget::anatomy::Anatomy;
+use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
+use std::any::Any;
+use std::borrow::Cow;
+use std::fmt;
+
+/// Panel widget 的 props。
+///
+/// Widget 只负责把标题栏、内容区和交互热区组合成树；位置、尺寸、显示和层级
+/// 由上层 panel runtime 维护后再写回 props。
+pub struct PanelProps {
+    pub title: Cow<'static, str>,
+    pub rect: Rect,
+    pub min_size: [f32; 2],
+    pub titlebar_visible: bool,
+    pub draggable: bool,
+    pub resizable: bool,
+    pub closable: bool,
+    pub content: Vec<Desc>,
+}
+
+impl Clone for PanelProps {
+    fn clone(&self) -> Self {
+        PanelProps {
+            title: self.title.clone(),
+            rect: self.rect,
+            min_size: self.min_size,
+            titlebar_visible: self.titlebar_visible,
+            draggable: self.draggable,
+            resizable: self.resizable,
+            closable: self.closable,
+            content: self.content.iter().map(desc_clone).collect(),
+        }
+    }
+}
+
+fn desc_clone(d: &Desc) -> Desc {
+    match d {
+        Desc::Container {
+            id,
+            style,
+            decoration,
+            children,
+        } => Desc::Container {
+            id: id.clone(),
+            style: style.clone(),
+            decoration: decoration.clone(),
+            children: children.iter().map(desc_clone).collect(),
+        },
+        Desc::Leaf { id, style, kind } => Desc::Leaf {
+            id: id.clone(),
+            style: style.clone(),
+            kind: kind.clone(),
+        },
+        Desc::Widget { id, props } => Desc::Widget {
+            id: id.clone(),
+            props: props.clone_box(),
+        },
+    }
+}
+
+impl fmt::Debug for PanelProps {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PanelProps")
+            .field("title", &self.title)
+            .field("rect", &self.rect)
+            .field("min_size", &self.min_size)
+            .field("titlebar_visible", &self.titlebar_visible)
+            .field("draggable", &self.draggable)
+            .field("resizable", &self.resizable)
+            .field("closable", &self.closable)
+            .field("content_len", &self.content.len())
+            .finish()
+    }
+}
+
+impl WidgetProps for PanelProps {
+    fn widget_type(&self) -> &'static str {
+        "Panel"
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn WidgetProps> {
+        Box::new(self.clone())
+    }
+
+    fn props_eq(&self, other: &dyn WidgetProps) -> bool {
+        other.as_any().downcast_ref::<Self>().is_some_and(|o| {
+            self.title == o.title
+                && rect_eq(self.rect, o.rect)
+                && self.min_size == o.min_size
+                && self.titlebar_visible == o.titlebar_visible
+                && self.draggable == o.draggable
+                && self.resizable == o.resizable
+                && self.closable == o.closable
+        })
+    }
+
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        let theme = cx.theme;
+        let tokens = theme.components.panel;
+        let visual = theme.panel_visual();
+        let anatomy = Anatomy::new(id);
+
+        // 标题栏
+        let titlebar = self.titlebar_visible.then(|| Desc::Container {
+            id: Cow::Owned(anatomy.titlebar()),
+            style: BoxStyle {
+                height: Size::Fixed(tokens.title_bar_height),
+                padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
+                direction: Direction::Row,
+                gestures: self
+                    .draggable
+                    .then_some(Gesture::Drag)
+                    .into_iter()
+                    .collect(),
+                ..BoxStyle::default()
+            },
+            decoration: Some(Decoration {
+                background: Some(visual.titlebar_background),
+                border: None,
+                radius: [tokens.radius, tokens.radius, 0.0, 0.0],
+                shadow: None,
+            }),
+            children: vec![Desc::Leaf {
+                id: Cow::Owned(anatomy.title()),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: self.title.to_string(),
+                    style: TextStyle {
+                        color: visual.title_text,
+                        size: tokens.title_font_size,
+                        ..theme.text_style_title_sm()
+                    },
+                },
+            }],
+        });
+
+        // 内容区（透明，事件穿透到子控件）
+        let content_area = Desc::Container {
+            id: Cow::Owned(anatomy.content()),
+            style: BoxStyle {
+                flex_grow: 1.0,
+                direction: Direction::Column,
+                gap: tokens.content_padding,
+                padding: Edges::all(tokens.content_padding),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: self.content.iter().map(desc_clone).collect(),
+        };
+
+        WidgetBuild {
+            style: BoxStyle {
+                position: Position::Absolute {
+                    x: self.rect.x,
+                    y: self.rect.y,
+                },
+                width: Size::Fixed(self.rect.w),
+                height: if self.rect.h > 0.0 {
+                    Size::Fixed(self.rect.h)
+                } else {
+                    Size::Auto
+                },
+                direction: Direction::Column,
+                overflow: Overflow::Hidden,
+                gestures: self
+                    .resizable
+                    .then_some(Gesture::Resize)
+                    .into_iter()
+                    .collect(),
+                ..BoxStyle::default()
+            },
+            decoration: Some(Decoration {
+                background: Some(visual.frame_background),
+                border: Some(Border {
+                    width: tokens.border_width,
+                    color: visual.frame_border,
+                }),
+                radius: [tokens.radius; 4],
+                shadow: Some(Shadow {
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.18,
+                    },
+                    offset: [0.0, 10.0],
+                    blur: 24.0,
+                    spread: 1.0,
+                }),
+            }),
+            children: titlebar
+                .into_iter()
+                .chain(std::iter::once(content_area))
+                .collect(),
+        }
+    }
+}
+
+fn rect_eq(a: Rect, b: Rect) -> bool {
+    a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gesture::Gesture;
+    use crate::renderer::{Color, Rect, TextStyle};
+    use crate::theme::{dark_theme, Theme};
+    use crate::tree::layout::{LeafKind, Position, Size};
+    use crate::tree::{hit_test, layout, reconcile, NodeId, Tree};
+    use crate::widget::props::WidgetBuildCx;
+
+    fn build_cx<'a>(theme: &'a Theme) -> WidgetBuildCx<'a> {
+        WidgetBuildCx {
+            theme,
+            force_rebuild: false,
+        }
+    }
+
+    /// 标准 props：x=10, y=20, w=300, h=200，空 content。
+    fn sample_props() -> PanelProps {
+        PanelProps {
+            title: Cow::Borrowed("Title"),
+            rect: Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 200.0,
+            },
+            min_size: [120.0, 80.0],
+            titlebar_visible: true,
+            draggable: true,
+            resizable: true,
+            closable: false,
+            content: Vec::new(),
+        }
+    }
+
+    /// 集成测试 helper：把 PanelProps 装进树，走 reconcile + layout，
+    /// 返回可直接 hit_test 的 Tree + root NodeId。
+    fn build_tree_for_hit(props: PanelProps) -> (Tree, NodeId) {
+        let theme = dark_theme();
+        let desc = Desc::Widget {
+            id: Cow::Borrowed("test_panel"),
+            props: Box::new(props),
+        };
+
+        let mut tree = Tree::new();
+        reconcile(&mut tree, desc, build_cx(&theme));
+
+        let root = tree.root().expect("tree should have root after reconcile");
+
+        let mut no_measure = |_text: &str, _style: &TextStyle| -> (f32, f32) { (0.0, 0.0) };
+        layout(
+            &mut tree,
+            root,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 1000.0,
+                h: 1000.0,
+            },
+            &mut no_measure,
+        );
+
+        (tree, root)
+    }
+
+    fn desc_variant_name(d: &Desc) -> &'static str {
+        match d {
+            Desc::Container { .. } => "Container",
+            Desc::Leaf { .. } => "Leaf",
+            Desc::Widget { .. } => "Widget",
+        }
+    }
+
+    // ── 结构测试 ──
+
+    #[test]
+    fn widget_type_is_panel() {
+        assert_eq!(sample_props().widget_type(), "Panel");
+    }
+
+    #[test]
+    fn build_outer_is_absolute() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        match build.style.position {
+            Position::Absolute { x, y } => {
+                assert_eq!(x, 10.0);
+                assert_eq!(y, 20.0);
+            }
+            other => panic!("expected Absolute, got {:?}", other),
+        }
+        match build.style.width {
+            Size::Fixed(v) => assert_eq!(v, 300.0),
+            other => panic!("expected Fixed width, got {:?}", other),
+        }
+        match build.style.height {
+            Size::Fixed(v) => assert_eq!(v, 200.0),
+            other => panic!("expected Fixed height, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_outer_has_resize_gesture() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        assert_eq!(build.style.gestures, vec![Gesture::Resize]);
+    }
+
+    #[test]
+    fn build_outer_overflow_is_hidden() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        assert_eq!(build.style.overflow, Overflow::Hidden);
+    }
+
+    #[test]
+    fn build_children_count_is_two() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        assert_eq!(
+            build.children.len(),
+            2,
+            "panel should have titlebar + content"
+        );
+    }
+
+    #[test]
+    fn build_can_hide_titlebar() {
+        let theme = dark_theme();
+        let mut props = sample_props();
+        props.titlebar_visible = false;
+        let build = props.build("test", &build_cx(&theme));
+
+        assert_eq!(build.children.len(), 1);
+        match &build.children[0] {
+            Desc::Container { id, style, .. } => {
+                assert_eq!(id.as_ref(), "test::content");
+                assert!(style.gestures.is_empty());
+            }
+            other => panic!(
+                "only child should be content Container, got {}",
+                desc_variant_name(other)
+            ),
+        }
+    }
+
+    #[test]
+    fn build_titlebar_has_drag_gesture() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        match &build.children[0] {
+            Desc::Container { style, .. } => {
+                assert_eq!(style.gestures, vec![Gesture::Drag]);
+                match style.height {
+                    Size::Fixed(h) => assert_eq!(h, theme.components.panel.title_bar_height),
+                    other => panic!("expected Fixed titlebar height, got {:?}", other),
+                }
+            }
+            other => panic!(
+                "first child should be Container, got {}",
+                desc_variant_name(other)
+            ),
+        }
+    }
+
+    #[test]
+    fn build_titlebar_contains_title_text() {
+        let theme = dark_theme();
+        let build = sample_props().build("test", &build_cx(&theme));
+        let titlebar_children = match &build.children[0] {
+            Desc::Container { children, .. } => children,
+            other => panic!(
+                "first child should be Container, got {}",
+                desc_variant_name(other)
+            ),
+        };
+        assert_eq!(titlebar_children.len(), 1);
+        match &titlebar_children[0] {
+            Desc::Leaf {
+                kind: LeafKind::Text { content, .. },
+                ..
+            } => {
+                assert_eq!(content, "Title");
+            }
+            other => panic!(
+                "titlebar child should be Text leaf, got {}",
+                desc_variant_name(other)
+            ),
+        }
+    }
+
+    #[test]
+    fn build_content_flex_grow_holds_user_children() {
+        let theme = dark_theme();
+        let mut props = sample_props();
+        props.content = vec![Desc::Leaf {
+            id: Cow::Borrowed("user_child"),
+            style: BoxStyle::default(),
+            kind: LeafKind::Text {
+                content: "inner".to_string(),
+                style: TextStyle::new(
+                    Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    12.0,
+                ),
+            },
+        }];
+        let build = props.build("test", &build_cx(&theme));
+        match &build.children[1] {
+            Desc::Container {
+                style,
+                decoration,
+                children,
+                ..
+            } => {
+                assert_eq!(style.flex_grow, 1.0);
+                assert_eq!(style.gap, theme.components.panel.content_padding);
+                assert!(decoration.is_none(), "content area should be transparent");
+                assert_eq!(children.len(), 1);
+            }
+            other => panic!(
+                "second child should be Container, got {}",
+                desc_variant_name(other)
+            ),
+        }
+    }
+
+    // ── props_eq 测试 ──
+
+    #[test]
+    fn props_eq_identical() {
+        let a = sample_props();
+        let b = sample_props();
+        assert!(a.props_eq(&b), "相同 props 应返回 true");
+    }
+
+    #[test]
+    fn props_eq_different_position() {
+        let a = sample_props();
+        let mut b = sample_props();
+        b.rect.x = 999.0;
+        assert!(!a.props_eq(&b), "x 不同应返回 false");
+
+        let mut c = sample_props();
+        c.rect.y = 999.0;
+        assert!(!a.props_eq(&c), "y 不同应返回 false");
+    }
+
+    #[test]
+    fn props_eq_different_title() {
+        let a = sample_props();
+        let mut b = sample_props();
+        b.title = Cow::Borrowed("Different");
+        assert!(!a.props_eq(&b), "title 不同应返回 false");
+    }
+
+    #[test]
+    fn props_eq_different_titlebar_visibility() {
+        let a = sample_props();
+        let mut b = sample_props();
+        b.titlebar_visible = false;
+        assert!(!a.props_eq(&b), "titlebar_visible 不同应返回 false");
+    }
+
+    // ── 集成测试（与 C.1 layout + C.2 hit_test 联动）──
+
+    #[test]
+    fn hit_on_titlebar_reaches_drag_node() {
+        // sample_props: x=10, y=20, w=300, h=200
+        // 标题栏纵向范围：y=20 到 y=52（32px 高）
+        // 点 (100, 30) 应在标题栏内
+        let (tree, root) = build_tree_for_hit(sample_props());
+        let chain = hit_test(&tree, root, 100.0, 30.0);
+        assert!(!chain.is_empty(), "hit chain should not be empty");
+        let has_drag = chain.iter().any(|id| {
+            tree.get(id)
+                .map(|n| n.style.gestures.contains(&Gesture::Drag))
+                .unwrap_or(false)
+        });
+        assert!(
+            has_drag,
+            "hit chain should contain a node with Drag gesture"
+        );
+    }
+
+    #[test]
+    fn hit_on_corner_reaches_resize_node() {
+        // 外框右下角 (310, 220) = (x+w, y+h)
+        let (tree, root) = build_tree_for_hit(sample_props());
+        let chain = hit_test(&tree, root, 310.0, 220.0);
+        assert!(!chain.is_empty(), "hit chain should not be empty");
+        let has_resize = chain.iter().any(|id| {
+            tree.get(id)
+                .map(|n| n.style.gestures.contains(&Gesture::Resize))
+                .unwrap_or(false)
+        });
+        assert!(
+            has_resize,
+            "hit chain should contain a node with Resize gesture"
+        );
+    }
+}

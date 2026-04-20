@@ -54,11 +54,13 @@ impl GpuExecutor {
         output: &GpuTexture,
         params: &[u8],
     ) -> wgpu::BindGroup {
-        let params_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("params"),
-            contents: params,
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let params_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("params"),
+                contents: params,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
 
         let layout = pipeline.get_bind_group_layout(0);
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {

@@ -92,6 +92,11 @@ impl TextEditState {
     // ── 光标移动 ──
 
     pub fn move_left(&mut self) {
+        if let Some((start, _)) = self.selection_range() {
+            self.cursor = start;
+            self.selection_anchor = None;
+            return;
+        }
         if self.cursor > 0 {
             self.cursor = prev_char_boundary(&self.text, self.cursor);
         }
@@ -99,6 +104,11 @@ impl TextEditState {
     }
 
     pub fn move_right(&mut self) {
+        if let Some((_, end)) = self.selection_range() {
+            self.cursor = end;
+            self.selection_anchor = None;
+            return;
+        }
         if self.cursor < self.text.len() {
             self.cursor = next_char_boundary(&self.text, self.cursor);
         }
@@ -201,4 +211,67 @@ fn next_char_boundary(s: &str, pos: usize) -> usize {
         i += 1;
     }
     i
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TextEditState;
+
+    #[test]
+    fn insert_backspace_and_delete_update_text() {
+        let mut state = TextEditState::new("ab");
+        state.insert_char('c');
+        assert_eq!(state.text(), "abc");
+
+        state.backspace();
+        assert_eq!(state.text(), "ab");
+
+        state.move_to(0);
+        state.delete();
+        assert_eq!(state.text(), "b");
+    }
+
+    #[test]
+    fn selection_replaces_text_on_insert() {
+        let mut state = TextEditState::new("hello");
+        state.move_to(1);
+        state.select_right();
+        state.select_right();
+
+        state.insert_str("a");
+
+        assert_eq!(state.text(), "halo");
+        assert_eq!(state.cursor(), 2);
+        assert!(!state.has_selection());
+    }
+
+    #[test]
+    fn home_end_and_shift_selection_work() {
+        let mut state = TextEditState::new("hello");
+
+        state.move_home();
+        assert_eq!(state.cursor(), 0);
+
+        state.select_to(state.text().len());
+        assert_eq!(state.selection_range(), Some((0, 5)));
+
+        state.move_end();
+        assert_eq!(state.cursor(), 5);
+        assert_eq!(state.selection_range(), None);
+    }
+
+    #[test]
+    fn copy_cut_and_paste_follow_selection() {
+        let mut state = TextEditState::new("hello");
+        state.move_to(1);
+        state.select_right();
+        state.select_right();
+
+        assert_eq!(state.copy().as_deref(), Some("el"));
+        assert_eq!(state.cut().as_deref(), Some("el"));
+        assert_eq!(state.text(), "hlo");
+
+        state.paste("ey");
+        assert_eq!(state.text(), "heylo");
+    }
 }

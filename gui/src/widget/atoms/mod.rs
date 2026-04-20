@@ -1,5 +1,11 @@
 pub mod button;
+pub mod checkbox;
 pub mod dropdown;
+pub mod image_viewer;
+pub mod label;
+pub mod number_input;
+pub mod radio;
+pub mod separator;
 pub mod slider;
 pub mod text_input;
 pub mod toggle;

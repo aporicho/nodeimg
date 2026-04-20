@@ -14,6 +14,8 @@ pub enum Key {
     Enter,
     Backspace,
     Delete,
+    Home,
+    End,
     Left,
     Right,
     Up,
@@ -38,26 +40,68 @@ pub struct Modifiers {
 #[derive(Debug)]
 pub enum AppEvent {
     // ── 鼠标 ──
-    MouseMove { x: f32, y: f32 },
-    MousePress { x: f32, y: f32, button: MouseButton },
-    MouseRelease { x: f32, y: f32, button: MouseButton },
+    MouseMove {
+        x: f32,
+        y: f32,
+    },
+    MousePress {
+        x: f32,
+        y: f32,
+        button: MouseButton,
+    },
+    MouseRelease {
+        x: f32,
+        y: f32,
+        button: MouseButton,
+    },
     /// 鼠标滚轮（行级 delta）
-    ScrollLine { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+    ScrollLine {
+        x: f32,
+        y: f32,
+        delta_x: f32,
+        delta_y: f32,
+    },
     /// trackpad 双指滑动（像素级 delta）
-    ScrollPixel { x: f32, y: f32, delta_x: f32, delta_y: f32 },
+    ScrollPixel {
+        x: f32,
+        y: f32,
+        delta_x: f32,
+        delta_y: f32,
+    },
 
     // ── 键盘 ──
-    KeyPress { key: Key, modifiers: Modifiers },
-    KeyRelease { key: Key, modifiers: Modifiers },
-    TextInput { text: String },
+    KeyPress {
+        key: Key,
+        modifiers: Modifiers,
+    },
+    KeyRelease {
+        key: Key,
+        modifiers: Modifiers,
+    },
+    ImePreedit {
+        text: String,
+        caret: Option<(usize, usize)>,
+    },
+    TextInput {
+        text: String,
+    },
 
     // ── 窗口 ──
-    Resized { width: u32, height: u32 },
-    ScaleFactorChanged { scale_factor: f64 },
+    Resized {
+        width: u32,
+        height: u32,
+    },
+    ScaleFactorChanged {
+        scale_factor: f64,
+    },
     CloseRequested,
     Focused,
     Unfocused,
 
     // ── 触控板手势 ──
-    PinchZoom { x: f32, y: f32, delta: f32 },
+    PinchZoom {
+        x: f32,
+        y: f32,
+        delta: f32,
+    },
 }

@@ -1,7 +1,4 @@
 pub mod background;
 pub mod camera;
+pub mod navigation;
 pub mod pan;
-
-mod renderer;
-
-pub use renderer::CanvasRenderer;

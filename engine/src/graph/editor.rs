@@ -23,31 +23,27 @@ impl Graph {
     pub fn remove_node(&self, id: NodeId) -> Graph {
         let mut g = self.clone();
         g.nodes.remove(&id);
-        g.connections.retain(|c| c.from_node != id && c.to_node != id);
+        g.connections
+            .retain(|c| c.from_node != id && c.to_node != id);
         g
     }
 
     pub fn connect(&self, conn: Connection) -> Graph {
         let mut g = self.clone();
         // 单输入引脚：移除同一 to_pin 的旧连线
-        g.connections.retain(|c| {
-            !(c.to_node == conn.to_node && c.to_pin == conn.to_pin)
-        });
+        g.connections
+            .retain(|c| !(c.to_node == conn.to_node && c.to_pin == conn.to_pin));
         g.connections.push(conn);
         g
     }
 
-    pub fn disconnect(
-        &self,
-        from: NodeId,
-        from_pin: &str,
-        to: NodeId,
-        to_pin: &str,
-    ) -> Graph {
+    pub fn disconnect(&self, from: NodeId, from_pin: &str, to: NodeId, to_pin: &str) -> Graph {
         let mut g = self.clone();
         g.connections.retain(|c| {
-            !(c.from_node == from && c.from_pin == from_pin
-                && c.to_node == to && c.to_pin == to_pin)
+            !(c.from_node == from
+                && c.from_pin == from_pin
+                && c.to_node == to
+                && c.to_pin == to_pin)
         });
         g
     }

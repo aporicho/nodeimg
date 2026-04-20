@@ -10,8 +10,11 @@ pub mod style;
 
 pub use pipeline::svg;
 pub use renderer::Renderer;
-pub use style::{Border, RectStyle, Shadow, TextStyle};
+pub use style::{Border, RectStyle, Shadow, TextFamily, TextStyle, TextWeight};
 pub use text_measurer::TextMeasurer;
 pub use types::{Color, Point, Rect};
 
 mod renderer;
+
+#[cfg(test)]
+pub(crate) mod test_support;

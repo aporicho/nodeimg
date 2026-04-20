@@ -59,8 +59,12 @@ impl GraphState {
         }
     }
 
-    pub fn can_undo(&self) -> bool { !self.undo_stack.is_empty() }
-    pub fn can_redo(&self) -> bool { !self.redo_stack.is_empty() }
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
 
     pub fn replace(&mut self, graph: Graph) {
         self.current = Arc::new(graph);
@@ -77,7 +81,9 @@ mod tests {
     #[test]
     fn test_commit_pushes_to_undo_stack() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.commit(g);
         assert!(state.can_undo());
         assert!(!state.can_redo());
@@ -86,7 +92,9 @@ mod tests {
     #[test]
     fn test_undo_redo_cycle() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.commit(g);
         assert_eq!(state.current().nodes.len(), 1);
         state.undo();
@@ -99,11 +107,15 @@ mod tests {
     #[test]
     fn test_commit_clears_redo() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.commit(g);
         state.undo();
         assert!(state.can_redo());
-        let (g, _) = state.current().add_node("b", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("b", Vec2::default(), Default::default());
         state.commit(g);
         assert!(!state.can_redo());
     }
@@ -111,7 +123,9 @@ mod tests {
     #[test]
     fn test_preview_does_not_push_undo() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.preview(g);
         assert!(!state.can_undo());
         assert_eq!(state.current().nodes.len(), 1);
@@ -121,7 +135,10 @@ mod tests {
     fn test_max_undo_depth() {
         let mut state = GraphState::new(2);
         for i in 0..5 {
-            let (g, _) = state.current().add_node(&format!("n{i}"), Vec2::default(), Default::default());
+            let (g, _) =
+                state
+                    .current()
+                    .add_node(&format!("n{i}"), Vec2::default(), Default::default());
             state.commit(g);
         }
         assert!(state.undo());
@@ -132,9 +149,13 @@ mod tests {
     #[test]
     fn test_replace_clears_stacks() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.commit(g);
-        let (g, _) = state.current().add_node("b", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("b", Vec2::default(), Default::default());
         state.commit(g);
         state.undo();
         assert!(state.can_undo());
@@ -148,12 +169,16 @@ mod tests {
     #[test]
     fn test_snapshot_returns_arc_clone() {
         let mut state = GraphState::new(50);
-        let (g, _) = state.current().add_node("a", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("a", Vec2::default(), Default::default());
         state.commit(g);
         let snap = state.snapshot();
         assert_eq!(snap.nodes.len(), 1);
         // Snapshot is unaffected by subsequent changes
-        let (g, _) = state.current().add_node("b", Vec2::default(), Default::default());
+        let (g, _) = state
+            .current()
+            .add_node("b", Vec2::default(), Default::default());
         state.commit(g);
         assert_eq!(snap.nodes.len(), 1); // still 1
         assert_eq!(state.current().nodes.len(), 2); // current is 2

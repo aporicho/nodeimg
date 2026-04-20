@@ -1,7 +1,13 @@
 pub mod canvas;
 pub mod context;
+pub(crate) mod event;
 pub mod gesture;
-pub mod renderer;
-pub mod shell;
+pub mod interaction;
+pub mod output;
 pub mod panel;
+pub mod renderer;
+pub(crate) mod runtime;
+pub mod shell;
+pub mod theme;
+pub mod tree;
 pub mod widget;

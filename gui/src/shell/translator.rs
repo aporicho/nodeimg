@@ -9,6 +9,7 @@ pub struct EventTranslator {
     cursor_y: f64,
     scale_factor: f64,
     modifiers: Modifiers,
+    ime_preedit_active: bool,
 }
 
 impl EventTranslator {
@@ -18,36 +19,45 @@ impl EventTranslator {
             cursor_y: 0.0,
             scale_factor,
             modifiers: Modifiers::default(),
+            ime_preedit_active: false,
         }
     }
 
-    /// 翻译 winit 事件。返回 None 表示该事件不需要传递给应用层。
-    pub fn translate(&mut self, event: &WindowEvent) -> Option<AppEvent> {
+    /// 翻译 winit 事件。一个底层事件可能产出多个应用层事件。
+    pub fn translate(&mut self, event: &WindowEvent) -> Vec<AppEvent> {
         match event {
             // ── 鼠标 ──
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_x = position.x;
                 self.cursor_y = position.y;
                 let (x, y) = self.logical_cursor();
-                Some(AppEvent::MouseMove { x, y })
+                vec![AppEvent::MouseMove { x, y }]
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                let btn = translate_button(button)?;
+                let Some(btn) = translate_button(button) else {
+                    return Vec::new();
+                };
                 let (x, y) = self.logical_cursor();
                 match state {
-                    ElementState::Pressed => Some(AppEvent::MousePress { x, y, button: btn }),
-                    ElementState::Released => Some(AppEvent::MouseRelease { x, y, button: btn }),
+                    ElementState::Pressed => vec![AppEvent::MousePress { x, y, button: btn }],
+                    ElementState::Released => vec![AppEvent::MouseRelease { x, y, button: btn }],
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = self.logical_cursor();
                 match delta {
-                    MouseScrollDelta::LineDelta(dx, dy) => {
-                        Some(AppEvent::ScrollLine { x, y, delta_x: *dx, delta_y: *dy })
-                    }
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        Some(AppEvent::ScrollPixel { x, y, delta_x: pos.x as f32, delta_y: pos.y as f32 })
-                    }
+                    MouseScrollDelta::LineDelta(dx, dy) => vec![AppEvent::ScrollLine {
+                        x,
+                        y,
+                        delta_x: *dx,
+                        delta_y: *dy,
+                    }],
+                    MouseScrollDelta::PixelDelta(pos) => vec![AppEvent::ScrollPixel {
+                        x,
+                        y,
+                        delta_x: pos.x as f32,
+                        delta_y: pos.y as f32,
+                    }],
                 }
             }
 
@@ -60,39 +70,81 @@ impl EventTranslator {
                     alt: state.alt_key(),
                     meta: state.super_key(),
                 };
-                None
+                Vec::new()
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let key = translate_key(event);
                 match event.state {
-                    ElementState::Pressed => Some(AppEvent::KeyPress { key, modifiers: self.modifiers }),
-                    ElementState::Released => Some(AppEvent::KeyRelease { key, modifiers: self.modifiers }),
+                    ElementState::Pressed => {
+                        let mut events = vec![AppEvent::KeyPress {
+                            key,
+                            modifiers: self.modifiers,
+                        }];
+                        let shortcut_modifier = self.modifiers.ctrl || self.modifiers.meta;
+                        if !self.ime_preedit_active && !shortcut_modifier {
+                            if let Some(text) = translate_text(event) {
+                                events.push(AppEvent::TextInput { text });
+                            }
+                        }
+                        events
+                    }
+                    ElementState::Released => vec![AppEvent::KeyRelease {
+                        key,
+                        modifiers: self.modifiers,
+                    }],
                 }
             }
+            WindowEvent::Ime(winit::event::Ime::Enabled) => Vec::new(),
+            WindowEvent::Ime(winit::event::Ime::Preedit(text, caret)) => {
+                self.ime_preedit_active = !text.is_empty();
+                vec![AppEvent::ImePreedit {
+                    text: text.clone(),
+                    caret: *caret,
+                }]
+            }
             WindowEvent::Ime(winit::event::Ime::Commit(text)) => {
-                Some(AppEvent::TextInput { text: text.clone() })
+                self.ime_preedit_active = false;
+                vec![AppEvent::TextInput { text: text.clone() }]
+            }
+            WindowEvent::Ime(winit::event::Ime::Disabled) => {
+                self.ime_preedit_active = false;
+                vec![AppEvent::ImePreedit {
+                    text: String::new(),
+                    caret: None,
+                }]
             }
 
             // ── 窗口 ──
-            WindowEvent::Resized(size) => {
-                Some(AppEvent::Resized { width: size.width, height: size.height })
-            }
+            WindowEvent::Resized(size) => vec![AppEvent::Resized {
+                width: size.width,
+                height: size.height,
+            }],
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale_factor = *scale_factor;
-                Some(AppEvent::ScaleFactorChanged { scale_factor: *scale_factor })
+                vec![AppEvent::ScaleFactorChanged {
+                    scale_factor: *scale_factor,
+                }]
             }
-            WindowEvent::CloseRequested => Some(AppEvent::CloseRequested),
+            WindowEvent::CloseRequested => vec![AppEvent::CloseRequested],
             WindowEvent::Focused(focused) => {
-                if *focused { Some(AppEvent::Focused) } else { Some(AppEvent::Unfocused) }
+                if *focused {
+                    vec![AppEvent::Focused]
+                } else {
+                    vec![AppEvent::Unfocused]
+                }
             }
 
             // ── 触控板手势 ──
             WindowEvent::PinchGesture { delta, .. } => {
                 let (x, y) = self.logical_cursor();
-                Some(AppEvent::PinchZoom { x, y, delta: *delta as f32 })
+                vec![AppEvent::PinchZoom {
+                    x,
+                    y,
+                    delta: *delta as f32,
+                }]
             }
 
-            _ => None,
+            _ => Vec::new(),
         }
     }
 
@@ -113,6 +165,14 @@ fn translate_button(button: &winit::event::MouseButton) -> Option<MouseButton> {
     }
 }
 
+fn translate_text(event: &winit::event::KeyEvent) -> Option<String> {
+    let text = event.text.as_ref()?;
+    if text.is_empty() || text.chars().all(char::is_control) {
+        return None;
+    }
+    Some(text.to_string())
+}
+
 fn translate_key(event: &winit::event::KeyEvent) -> Key {
     match event.physical_key {
         PhysicalKey::Code(code) => match code {
@@ -121,6 +181,8 @@ fn translate_key(event: &winit::event::KeyEvent) -> Key {
             KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
             KeyCode::Backspace => Key::Backspace,
             KeyCode::Delete => Key::Delete,
+            KeyCode::Home => Key::Home,
+            KeyCode::End => Key::End,
             KeyCode::ArrowLeft => Key::Left,
             KeyCode::ArrowRight => Key::Right,
             KeyCode::ArrowUp => Key::Up,

@@ -1,7 +1,7 @@
-mod load_image;
-mod save_image;
 mod brightness;
 mod contrast;
+mod load_image;
+mod save_image;
 
 #[cfg(test)]
 mod test_macro {

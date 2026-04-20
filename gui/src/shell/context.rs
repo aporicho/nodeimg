@@ -1,8 +1,11 @@
+use arboard::Clipboard;
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
+use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::window::Window;
 
 use super::cursor::CursorState;
+use crate::context::ImeRequest;
 
 pub struct AppContext {
     pub device: wgpu::Device,
@@ -12,4 +15,35 @@ pub struct AppContext {
     pub size: PhysicalSize<u32>,
     pub scale_factor: f64,
     pub cursor: CursorState,
+    pub(crate) ime_allowed: bool,
+    pub(crate) clipboard: Option<Clipboard>,
+}
+
+impl AppContext {
+    pub fn apply_ime_request(&mut self, request: ImeRequest) {
+        if self.ime_allowed != request.allowed {
+            self.window.set_ime_allowed(request.allowed);
+            self.ime_allowed = request.allowed;
+        }
+
+        if request.allowed {
+            if let Some(rect) = request.cursor_area {
+                self.window.set_ime_cursor_area(
+                    LogicalPosition::new(rect.x as f64, rect.y as f64),
+                    LogicalSize::new(rect.w.max(1.0) as f64, rect.h.max(1.0) as f64),
+                );
+            }
+        }
+    }
+
+    pub fn clipboard_read_text(&mut self) -> Option<String> {
+        self.clipboard.as_mut()?.get_text().ok()
+    }
+
+    pub fn clipboard_write_text(&mut self, text: &str) -> bool {
+        self.clipboard
+            .as_mut()
+            .map(|clipboard| clipboard.set_text(text.to_string()).is_ok())
+            .unwrap_or(false)
+    }
 }
