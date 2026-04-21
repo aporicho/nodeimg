@@ -48,7 +48,9 @@ targetv2 是 `docs/target/` 的继任文档体系。它在 target 已冻结真�
 - targetv2 **新增** Executor `on_plan_started` / `on_plan_finished` lifecycle hooks(M5)
 - targetv2 **新增** 执行器持久化 disk cache 模式(M6)——与用户可见候选历史分离
 
-target 的所有 `2.x.x`(GUI)、`5.x.x`(项目文件)、`6.x.x`(Python 后端)文档**在 targetv2 下保持引用**,不重复。targetv2 只改写 `0.x.x` 真源层和 `4.x.x` 引擎层。
+target 的 `5.x.x`(项目文件)、`6.x.x`(Python 后端)文档**在 targetv2 下保持引用**,不重复。targetv2 首轮重点改写 `0.x.x` 真源层和 `4.x.x` 引擎层；现在新增 `2.x.x` GUI 架构基线，用于承接 UI / engine 集成。
+
+targetv2 现在新增 GUI 架构基线文档，用于承接首版 demo 的 UI / engine 集成工作。旧 `docs/target/2.x.x` 仍作为历史资料和细节参考；targetv2 的 GUI 状态归属、Tree 模型和文件结构以 `docs/targetv2/2.x.x` 为准。
 
 ---
 
@@ -93,6 +95,15 @@ target 的所有 `2.x.x`(GUI)、`5.x.x`(项目文件)、`6.x.x`(Python 后端)�
 
 粗体表示 targetv2 新增。其他 `4.x.x` 模块(GraphController、NodeManager、Cache、Artifact、ProjectManager、Events、各 Executor)从 target 继承,仅需按 targetv2 的真源变更做增量修订,不在本目录重写。
 
+### 2.x.x —— GUI 模块
+
+| 编号 | 文件 | 内容 |
+|------|------|------|
+| `2.0.0` | `2.0.0-gui.md` | GUI 总览 |
+| `2.1.0` | `2.1.0-gui-runtime.draft.md` | RuntimeSystems 过渡边界 |
+| `2.2.0` | `2.2.0-gui-tree.draft.md` | GUI Tree 状态模型 |
+| `2.3.0` | `2.3.0-gui-modules.draft.md` | GUI 文件结构与模块边界 |
+
 ---
 
 ## 阅读顺序
@@ -106,6 +117,7 @@ target 的所有 `2.x.x`(GUI)、`5.x.x`(项目文件)、`6.x.x`(Python 后端)�
 5. `0.1.3~0.1.5` —— 三个新补的机制
 6. `extensibility.md` —— 扩展入口
 7. `roadmap.md` —— 落地顺序
+8. `2.0.0-gui.md` —— GUI 总览与 Tree 架构入口
 
 **日常查询,按问题分:**
 
