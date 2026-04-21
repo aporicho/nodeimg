@@ -208,8 +208,8 @@ impl Context {
         self.tree.end_pending_canvas_connection()
     }
 
-    pub fn cancel_pending_canvas_connection(&mut self) {
-        self.tree.cancel_pending_canvas_connection();
+    pub fn cancel_pending_canvas_connection(&mut self) -> bool {
+        self.tree.cancel_pending_canvas_connection()
     }
 
     pub fn hovered_canvas_port_id(&self) -> Option<String> {

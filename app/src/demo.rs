@@ -13,7 +13,7 @@ use gui::context::{
 };
 use gui::gesture::Gesture;
 use gui::renderer::{Rect, Renderer};
-use gui::shell::{App, AppContext, AppEvent, CursorStyle, MouseButton};
+use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::TextureHandle;
 use gui::widget::resize_edge::ResizeEdge;
@@ -91,6 +91,13 @@ impl App for DemoApp {
         }
 
         match event {
+            AppEvent::KeyPress {
+                key: Key::Escape, ..
+            } if !consumed => {
+                if self.workspace.cancel_canvas_port_connection(&mut self.gui) {
+                    return;
+                }
+            }
             AppEvent::MouseMove { x, y } => {
                 self.workspace.update_canvas_hover(&mut self.gui, x, y);
                 self.update_hover_cursor(x, y, ctx);

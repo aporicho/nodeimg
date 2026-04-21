@@ -219,6 +219,14 @@ impl WorkspaceController {
         true
     }
 
+    pub(crate) fn cancel_canvas_port_connection(&mut self, gui: &mut Context) -> bool {
+        if !gui.cancel_pending_canvas_connection() {
+            return false;
+        }
+        self.last_engine_action = "Connection cancelled".to_string();
+        true
+    }
+
     pub(crate) fn update_canvas_hover(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
         let port_id = self.port_id_at(gui, x, y);
         gui.set_hovered_canvas_port(port_id.as_deref())
@@ -604,5 +612,28 @@ mod tests {
             .map(|port| port.connection_state);
 
         assert_eq!(target, Some(CanvasPortConnectionState::DropTarget));
+    }
+
+    #[test]
+    fn cancel_canvas_port_connection_clears_pending_and_hover_state() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        assert!(gui.begin_pending_canvas_connection(
+            "canvas_node::engine_node::0::port::output::image",
+            [0.0, 0.0],
+        ));
+        assert!(
+            gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
+        );
+
+        assert!(controller.cancel_canvas_port_connection(&mut gui));
+        assert!(gui.pending_canvas_connection().is_none());
+        assert!(gui.hovered_canvas_port_id().is_none());
+        assert!(!controller.cancel_canvas_port_connection(&mut gui));
+        assert_eq!(
+            controller.engine_panel_state().last_action,
+            "Connection cancelled"
+        );
     }
 }

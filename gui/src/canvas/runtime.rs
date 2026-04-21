@@ -139,11 +139,19 @@ impl CanvasInteractionRuntime {
     }
 
     pub(crate) fn end_pending_connection(&mut self) -> Option<CanvasPendingConnectionView> {
-        self.pending_connection.take()
+        let pending = self.pending_connection.take();
+        if pending.is_some() {
+            self.hovered_port_id = None;
+        }
+        pending
     }
 
-    pub(crate) fn cancel_pending_connection(&mut self) {
-        self.pending_connection = None;
+    pub(crate) fn cancel_pending_connection(&mut self) -> bool {
+        let had_pending = self.pending_connection.take().is_some();
+        if had_pending {
+            self.hovered_port_id = None;
+        }
+        had_pending
     }
 
     pub(crate) fn hovered_port_id(&self) -> Option<&str> {

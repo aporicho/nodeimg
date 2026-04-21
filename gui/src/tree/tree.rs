@@ -330,9 +330,9 @@ impl Tree {
             .end_pending_connection()
     }
 
-    pub(crate) fn cancel_pending_canvas_connection(&mut self) {
+    pub(crate) fn cancel_pending_canvas_connection(&mut self) -> bool {
         self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
-            .cancel_pending_connection();
+            .cancel_pending_connection()
     }
 
     pub(crate) fn hovered_canvas_port_id(&self) -> Option<String> {
@@ -758,6 +758,17 @@ mod tests {
         assert_eq!(
             tree.hovered_canvas_port_id(),
             Some("canvas_node::engine_node::1::port::input::prompt".to_string())
+        );
+        assert!(tree.cancel_pending_canvas_connection());
+        assert!(tree.pending_canvas_connection().is_none());
+        assert!(tree.hovered_canvas_port_id().is_none());
+        assert!(!tree.cancel_pending_canvas_connection());
+        assert!(tree.begin_pending_canvas_connection(
+            "canvas_node::engine_node::1::port::output::image",
+            [2.0, 3.0],
+        ));
+        assert!(
+            tree.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::prompt"))
         );
 
         tree.sync_canvas_node_layouts(&[second]);
