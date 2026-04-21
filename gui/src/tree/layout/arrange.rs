@@ -1,7 +1,8 @@
 use crate::renderer::Rect;
 
 use super::box_model::{
-    absolute_available_rect, border_box_from_available, layout_boxes, ChildCoordinateSpace,
+    absolute_available_rect, border_box_from_available, layout_boxes, relative_offset_rect,
+    ChildCoordinateSpace,
 };
 use super::measure::measure;
 use super::types::*;
@@ -12,6 +13,7 @@ struct FlexChildStyle {
     shrink: f32,
     width: Size,
     height: Size,
+    position: Position,
     align_self: Option<Align>,
     min_width: f32,
     max_width: f32,
@@ -27,8 +29,20 @@ pub(crate) fn arrange<T: LayoutTree>(
     available: Rect,
     measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
 ) {
+    arrange_in_containing_block(tree, node, available, available, measure_text);
+}
+
+fn arrange_in_containing_block<T: LayoutTree>(
+    tree: &mut T,
+    node: T::NodeId,
+    available: Rect,
+    absolute_containing_block: Rect,
+    measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
+) {
     let style = tree.style(node).clone();
-    let desired_size = matches!(style.position, Position::Absolute(_))
+    let desired_size = style
+        .position
+        .is_absolute()
         .then(|| measure(&*tree, node, measure_text));
 
     let border_available = border_box_from_available(available, style.margin);
@@ -84,7 +98,7 @@ pub(crate) fn arrange<T: LayoutTree>(
     let (flow_children, abs_children): (Vec<_>, Vec<_>) = children
         .iter()
         .copied()
-        .partition(|&c| matches!(tree.style(c).position, Position::Flow));
+        .partition(|&c| !tree.style(c).position.is_absolute());
 
     // Transform 节点的子节点在 local 空间，起点相对 (0, 0) + padding；
     // 普通节点的子节点在父坐标空间，起点相对 border box + padding。
@@ -96,6 +110,12 @@ pub(crate) fn arrange<T: LayoutTree>(
     let boxes = layout_boxes(available, node_rect, style.padding, child_space);
     let _ = (boxes.margin_box, boxes.border_box);
     let content = boxes.content_box;
+    let child_absolute_containing_block =
+        if style.position.is_positioned() || style.transform.is_some() {
+            content
+        } else {
+            absolute_containing_block
+        };
 
     // 度量子节点（提前，Scroll 分支和 Flex 分支共用）
     let is_column = style.direction == Direction::Column;
@@ -138,6 +158,7 @@ pub(crate) fn arrange<T: LayoutTree>(
                 shrink: s.flex_shrink,
                 width: s.width,
                 height: s.height,
+                position: s.position,
                 align_self: s.align_self,
                 min_width: s.min_width,
                 max_width: s.max_width,
@@ -278,7 +299,18 @@ pub(crate) fn arrange<T: LayoutTree>(
             }
         };
 
-        arrange(tree, child, child_rect, measure_text);
+        let child_rect = match child_style.position {
+            Position::Relative(position) => relative_offset_rect(child_rect, position.inset),
+            Position::Flow | Position::Absolute(_) => child_rect,
+        };
+
+        arrange_in_containing_block(
+            tree,
+            child,
+            child_rect,
+            child_absolute_containing_block,
+            measure_text,
+        );
 
         main_offset += child_main + style.gap + extra_gap;
     }
@@ -288,19 +320,27 @@ pub(crate) fn arrange<T: LayoutTree>(
         let child_style = tree.style(child).clone();
         let position = match child_style.position {
             Position::Absolute(position) => position,
-            Position::Flow => unreachable!("partition 已保证这里只有 Absolute"),
+            Position::Flow | Position::Relative(_) => {
+                unreachable!("partition 已保证这里只有 Absolute")
+            }
         };
         let desired = measure(&*tree, child, measure_text);
 
         let child_available = absolute_available_rect(
-            content,
+            child_absolute_containing_block,
             position,
             child_style.width,
             child_style.height,
             (desired.width, desired.height),
         );
 
-        arrange(tree, child, child_available, measure_text);
+        arrange_in_containing_block(
+            tree,
+            child,
+            child_available,
+            child_absolute_containing_block,
+            measure_text,
+        );
     }
 }
 
@@ -513,6 +553,81 @@ mod tests {
         assert_eq!(child.rect.y, 60.0);
         assert_eq!(child.rect.w, 50.0);
         assert_eq!(child.rect.h, 30.0);
+    }
+
+    #[test]
+    fn relative_child_offsets_rect_but_keeps_flow_slot() {
+        let mut tree = Tree::new();
+        let relative_id = tree.insert(container(BoxStyle {
+            position: Position::relative_inset(Inset::xy(10.0, 5.0)),
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let sibling_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(50.0),
+            direction: Direction::Column,
+            ..Default::default()
+        });
+        root.children = vec![relative_id, sibling_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 100.0, 50.0);
+
+        let relative = tree.get(relative_id).unwrap();
+        let sibling = tree.get(sibling_id).unwrap();
+        assert_eq!(relative.rect.x, 10.0);
+        assert_eq!(relative.rect.y, 5.0);
+        assert_eq!(sibling.rect.y, 10.0);
+    }
+
+    #[test]
+    fn absolute_descendant_uses_nearest_relative_containing_block() {
+        let mut tree = Tree::new();
+        let abs_id = tree.insert(container(BoxStyle {
+            position: Position::absolute_xy(10.0, 15.0),
+            width: Size::Fixed(20.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut static_wrapper = container(BoxStyle {
+            width: Size::Fixed(80.0),
+            height: Size::Fixed(50.0),
+            padding: Edges::all(5.0),
+            ..Default::default()
+        });
+        static_wrapper.children = vec![abs_id];
+        let static_wrapper_id = tree.insert(static_wrapper);
+        let mut relative_wrapper = container(BoxStyle {
+            position: Position::relative(),
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(70.0),
+            padding: Edges::all(20.0),
+            ..Default::default()
+        });
+        relative_wrapper.children = vec![static_wrapper_id];
+        let relative_wrapper_id = tree.insert(relative_wrapper);
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(200.0),
+            height: Size::Fixed(120.0),
+            ..Default::default()
+        });
+        root.children = vec![relative_wrapper_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 200.0, 120.0);
+
+        let abs = tree.get(abs_id).unwrap();
+        assert_eq!(abs.rect.x, 30.0);
+        assert_eq!(abs.rect.y, 35.0);
     }
 
     #[test]
@@ -812,6 +927,7 @@ mod tests {
             ..Default::default()
         }));
         let mut root = container(BoxStyle {
+            position: Position::relative(),
             width: Size::Fixed(800.0),
             height: Size::Fixed(600.0),
             padding: Edges::all(20.0),

@@ -101,17 +101,46 @@ impl Default for BoxStyle {
 pub enum Position {
     /// 参与 Flexbox 流式布局（默认）。
     Flow,
+    /// 参与 Flexbox 流式布局，并作为 absolute 后代的 containing block。
+    Relative(RelativePosition),
     /// 自由定位：相对于 containing block 的 CSS-style inset。
     Absolute(AbsolutePosition),
 }
 
 impl Position {
+    pub fn relative() -> Self {
+        Self::Relative(RelativePosition::default())
+    }
+
+    pub fn relative_inset(inset: Inset) -> Self {
+        Self::Relative(RelativePosition { inset })
+    }
+
     pub fn absolute_xy(x: f32, y: f32) -> Self {
         Self::Absolute(AbsolutePosition::xy(x, y))
     }
 
     pub fn absolute_inset(inset: Inset) -> Self {
         Self::Absolute(AbsolutePosition { inset })
+    }
+
+    pub fn is_absolute(&self) -> bool {
+        matches!(self, Self::Absolute(_))
+    }
+
+    pub fn is_positioned(&self) -> bool {
+        matches!(self, Self::Relative(_) | Self::Absolute(_))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RelativePosition {
+    pub inset: Inset,
+}
+
+impl Default for RelativePosition {
+    fn default() -> Self {
+        Self { inset: Inset::NONE }
     }
 }
 
@@ -145,6 +174,13 @@ pub struct Inset {
 }
 
 impl Inset {
+    pub const NONE: Self = Self {
+        top: None,
+        right: None,
+        bottom: None,
+        left: None,
+    };
+
     pub const ZERO: Self = Self {
         top: Some(0.0),
         right: Some(0.0),

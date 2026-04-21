@@ -23,7 +23,7 @@ pub fn layout<T: LayoutTree>(
             y: position.inset.top.unwrap_or(available.y),
             ..available
         },
-        Position::Flow => available,
+        Position::Flow | Position::Relative(_) => available,
     };
     arrange::arrange(tree, root, effective_available, measure_text);
 }

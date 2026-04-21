@@ -1,6 +1,6 @@
 use crate::renderer::Rect;
 
-use super::types::{AbsolutePosition, Edges, Size};
+use super::types::{AbsolutePosition, Edges, Inset, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChildCoordinateSpace {
@@ -95,6 +95,14 @@ pub(crate) fn absolute_available_rect(
     }
 }
 
+pub(crate) fn relative_offset_rect(rect: Rect, inset: Inset) -> Rect {
+    Rect {
+        x: rect.x + relative_axis_offset(inset.left, inset.right),
+        y: rect.y + relative_axis_offset(inset.top, inset.bottom),
+        ..rect
+    }
+}
+
 pub(crate) fn rect_contains(rect: Rect, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
 }
@@ -132,6 +140,16 @@ fn absolute_axis_origin(
         containing_origin + containing_size - end - size
     } else {
         containing_origin
+    }
+}
+
+fn relative_axis_offset(start: Option<f32>, end: Option<f32>) -> f32 {
+    if let Some(start) = start {
+        start
+    } else if let Some(end) = end {
+        -end
+    } else {
+        0.0
     }
 }
 
@@ -325,5 +343,35 @@ mod tests {
         );
 
         assert_rect(actual, rect(30.0, 40.0, 40.0, 30.0));
+    }
+
+    #[test]
+    fn relative_offset_uses_start_edges_first() {
+        let actual = relative_offset_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            Inset {
+                top: Some(5.0),
+                right: Some(12.0),
+                bottom: Some(8.0),
+                left: Some(10.0),
+            },
+        );
+
+        assert_rect(actual, rect(30.0, 35.0, 200.0, 100.0));
+    }
+
+    #[test]
+    fn relative_offset_uses_negative_end_edges_without_start_edges() {
+        let actual = relative_offset_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            Inset {
+                top: None,
+                right: Some(12.0),
+                bottom: Some(8.0),
+                left: None,
+            },
+        );
+
+        assert_rect(actual, rect(8.0, 22.0, 200.0, 100.0));
     }
 }
