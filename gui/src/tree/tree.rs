@@ -1,8 +1,9 @@
 use super::node::{NodeId, TreeNode};
 use super::runtime_slots::RuntimeSlot;
 use super::{RuntimeSlots, StableId};
-use crate::panel::state::{PanelPointerSession, PanelResizeSession, PanelRootRuntime};
-use crate::panel::{PanelConfig, PanelRuntime};
+use crate::panel::{
+    PanelConfig, PanelPointerSession, PanelResizeSession, PanelRootRuntime, PanelRuntime,
+};
 use crate::widget::resize_edge::ResizeEdge;
 use std::collections::HashMap;
 

@@ -1,6 +1,7 @@
 use crate::interaction::InteractionState;
 use crate::overlay::{OverlayRequest, OverlaySystem};
 use crate::tree::{hit_test, HitChain, NodeId, NodeKind, Tree};
+use crate::widget::state::dropdown::DropdownRuntime;
 
 pub(crate) struct SystemCx<'a> {
     tree: &'a Tree,
@@ -53,14 +54,14 @@ impl<'a> SystemCx<'a> {
 }
 
 pub(crate) struct OverlaySystemCx<'a> {
-    tree: &'a Tree,
+    tree: &'a mut Tree,
     interaction: &'a mut InteractionState,
     overlay: &'a mut OverlaySystem,
 }
 
 impl<'a> OverlaySystemCx<'a> {
     pub(crate) fn new(
-        tree: &'a Tree,
+        tree: &'a mut Tree,
         interaction: &'a mut InteractionState,
         overlay: &'a mut OverlaySystem,
     ) -> Self {
@@ -73,6 +74,17 @@ impl<'a> OverlaySystemCx<'a> {
 
     pub(crate) fn tree(&self) -> &Tree {
         self.tree
+    }
+
+    pub(crate) fn dropdown_runtime(&self) -> &DropdownRuntime {
+        self.tree
+            .runtime_slot_by_stable_id::<DropdownRuntime>("__dropdown_runtime")
+            .expect("dropdown runtime should be ensured before event handling")
+    }
+
+    pub(crate) fn dropdown_runtime_mut(&mut self) -> &mut DropdownRuntime {
+        self.tree
+            .ensure_runtime_slot_by_stable_id::<DropdownRuntime>("__dropdown_runtime")
     }
 
     pub(crate) fn focused_node(&self) -> Option<NodeId> {

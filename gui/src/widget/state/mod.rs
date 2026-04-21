@@ -1,3 +1,4 @@
+pub(crate) mod dropdown;
 mod text_input;
 
 pub use crate::interaction::{

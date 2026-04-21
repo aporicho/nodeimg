@@ -1,6 +1,10 @@
+mod config;
 pub mod event;
+mod reducer;
 pub mod root;
-pub mod state;
+mod runtime;
 
+pub use config::{PanelConfig, PanelId};
 pub use root::{panel_root, PanelDeclaration};
-pub use state::{PanelConfig, PanelId, PanelRuntime};
+pub use runtime::PanelRuntime;
+pub(crate) use runtime::{PanelPointerSession, PanelResizeSession, PanelRootRuntime};

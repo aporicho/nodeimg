@@ -71,7 +71,7 @@ impl Context {
         }
         self.interaction.sync_with_tree(&self.tree);
         self.systems.sync_with_tree(RuntimeSyncCx {
-            tree: &self.tree,
+            tree: &mut self.tree,
             interaction: &self.interaction,
             measurer,
             theme,
@@ -245,7 +245,7 @@ impl Context {
     ) -> RuntimeEventResult {
         self.systems.handle_pre_gesture_event(
             RuntimeEventCx {
-                tree: &self.tree,
+                tree: &mut self.tree,
                 interaction: &mut self.interaction,
             },
             event,

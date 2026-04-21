@@ -4,7 +4,7 @@ use crate::tree::{Desc, Tree};
 use crate::widget::frameworks::panel::PanelProps;
 use std::borrow::Cow;
 
-use super::state::PanelConfig;
+use super::PanelConfig;
 
 pub struct PanelDeclaration {
     pub config: PanelConfig,

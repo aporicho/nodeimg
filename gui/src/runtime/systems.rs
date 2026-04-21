@@ -11,14 +11,14 @@ use crate::widget::state::TextInputStore;
 use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextInputSystem};
 
 pub(crate) struct RuntimeSyncCx<'a> {
-    pub(crate) tree: &'a Tree,
+    pub(crate) tree: &'a mut Tree,
     pub(crate) interaction: &'a InteractionState,
     pub(crate) measurer: &'a mut TextMeasurer,
     pub(crate) theme: &'a Theme,
 }
 
 pub(crate) struct RuntimeEventCx<'a> {
-    pub(crate) tree: &'a Tree,
+    pub(crate) tree: &'a mut Tree,
     pub(crate) interaction: &'a mut InteractionState,
 }
 
