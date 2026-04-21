@@ -1,4 +1,7 @@
-use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortSide, CanvasPortView};
+use super::{
+    canvas_node_stable_id, canvas_port_group_trigger_id, CanvasNodeLayout, CanvasPortGroupView,
+    CanvasPortSide, CanvasPortView,
+};
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
@@ -12,6 +15,7 @@ const PORT_SIZE: f32 = 8.0;
 const PORT_TOP: f32 = 34.0;
 const PORT_GAP: f32 = 18.0;
 const NODE_LABEL_HEIGHT: f32 = 16.0;
+const PORT_TRIGGER_SIZE: f32 = 20.0;
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeView {
@@ -20,6 +24,8 @@ pub struct CanvasNodeView {
     pub subtitle: String,
     pub category: String,
     pub params: Vec<CanvasNodeParamView>,
+    pub input_group: CanvasPortGroupView,
+    pub output_group: CanvasPortGroupView,
     pub inputs: Vec<CanvasPortView>,
     pub outputs: Vec<CanvasPortView>,
     pub layout: CanvasNodeLayout,
@@ -83,8 +89,32 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         },
         node_body(&body_id, view, theme),
     ];
-    children.extend(view.inputs.iter().map(|port| port_leaf(port, view, theme)));
-    children.extend(view.outputs.iter().map(|port| port_leaf(port, view, theme)));
+    children.push(port_group(
+        &view.owner_id,
+        CanvasPortSide::Input,
+        &view.input_group,
+        &view.inputs,
+        view,
+        theme,
+    ));
+    children.push(port_group(
+        &view.owner_id,
+        CanvasPortSide::Output,
+        &view.output_group,
+        &view.outputs,
+        view,
+        theme,
+    ));
+    children.extend(
+        view.inputs
+            .iter()
+            .map(|port| port_anchor(port, view, theme)),
+    );
+    children.extend(
+        view.outputs
+            .iter()
+            .map(|port| port_anchor(port, view, theme)),
+    );
 
     Desc::Container {
         id: Cow::Owned(card_id),
@@ -115,6 +145,152 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             radius: [theme.radii.md; 4],
             shadow: None,
         }),
+        children,
+    }
+}
+
+fn port_group(
+    owner_id: &str,
+    side: CanvasPortSide,
+    group: &CanvasPortGroupView,
+    ports: &[CanvasPortView],
+    view: &CanvasNodeView,
+    theme: &Theme,
+) -> Desc {
+    let trigger_x = match side {
+        CanvasPortSide::Input => -PORT_TRIGGER_SIZE - 6.0,
+        CanvasPortSide::Output => view.layout.rect.w + 6.0,
+    };
+    let trigger_y = view.layout.rect.h * 0.5 - PORT_TRIGGER_SIZE * 0.5;
+    let list_x = match side {
+        CanvasPortSide::Input => trigger_x - 98.0,
+        CanvasPortSide::Output => trigger_x + PORT_TRIGGER_SIZE + 6.0,
+    };
+    let list_y = trigger_y - (ports.len().max(1) as f32 * 20.0) * 0.5 + 10.0;
+
+    let mut children = vec![port_trigger(owner_id, side, trigger_x, trigger_y, theme)];
+    if group.open {
+        children.push(pin_list(side, ports, list_x, list_y, theme));
+    }
+
+    Desc::Container {
+        id: Cow::Owned(super::canvas_port_group_stable_id(owner_id, side)),
+        style: BoxStyle {
+            position: Position::Absolute { x: 0.0, y: 0.0 },
+            width: Size::Fixed(0.0),
+            height: Size::Fixed(0.0),
+            hittable: Some(false),
+            ..BoxStyle::default()
+        },
+        decoration: None,
+        children,
+    }
+}
+
+fn port_trigger(owner_id: &str, side: CanvasPortSide, x: f32, y: f32, theme: &Theme) -> Desc {
+    Desc::Leaf {
+        id: Cow::Owned(canvas_port_group_trigger_id(owner_id, side)),
+        style: BoxStyle {
+            position: Position::Absolute { x, y },
+            width: Size::Fixed(PORT_TRIGGER_SIZE),
+            height: Size::Fixed(PORT_TRIGGER_SIZE),
+            hittable: Some(true),
+            gestures: vec![Gesture::Tap],
+            ..BoxStyle::default()
+        },
+        kind: LeafKind::Circle {
+            radius: PORT_TRIGGER_SIZE * 0.5,
+            fill: Some(theme.colors.surface),
+            stroke: Some(Border {
+                width: 1.5,
+                color: theme.colors.border,
+            }),
+        },
+    }
+}
+
+fn pin_list(side: CanvasPortSide, ports: &[CanvasPortView], x: f32, y: f32, theme: &Theme) -> Desc {
+    Desc::Container {
+        id: Cow::Owned(format!(
+            "{}::pin_list",
+            ports
+                .first()
+                .map(|port| port.stable_id.as_str())
+                .unwrap_or(side.as_str())
+        )),
+        style: BoxStyle {
+            position: Position::Absolute { x, y },
+            width: Size::Fixed(96.0),
+            height: Size::Auto,
+            padding: Edges::symmetric(6.0, 10.0),
+            direction: Direction::Column,
+            gap: 4.0,
+            hittable: Some(true),
+            ..BoxStyle::default()
+        },
+        decoration: Some(Decoration {
+            background: Some(theme.colors.surface),
+            border: Some(Border {
+                width: 1.0,
+                color: theme.colors.border,
+            }),
+            radius: [theme.radii.md; 4],
+            shadow: None,
+        }),
+        children: ports
+            .iter()
+            .map(|port| pin_item(side, port, theme))
+            .collect(),
+    }
+}
+
+fn pin_item(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
+    let mut children = vec![
+        Desc::Leaf {
+            id: Cow::Owned(format!("{}::pin_label", port.stable_id)),
+            style: BoxStyle {
+                width: Size::Fill,
+                height: Size::Auto,
+                ..BoxStyle::default()
+            },
+            kind: LeafKind::Text {
+                content: port.name.clone(),
+                style: theme.text_style_label_sm(),
+            },
+        },
+        Desc::Leaf {
+            id: Cow::Owned(format!("{}::pin_dot", port.stable_id)),
+            style: BoxStyle {
+                width: Size::Fixed(10.0),
+                height: Size::Fixed(10.0),
+                ..BoxStyle::default()
+            },
+            kind: LeafKind::Circle {
+                radius: 5.0,
+                fill: Some(port_color(port.side, theme)),
+                stroke: Some(Border {
+                    width: 1.0,
+                    color: theme.colors.surface,
+                }),
+            },
+        },
+    ];
+    if side == CanvasPortSide::Output {
+        children.swap(0, 1);
+    }
+
+    Desc::Container {
+        id: Cow::Owned(format!("{}::pin_item", port.stable_id)),
+        style: BoxStyle {
+            width: Size::Fill,
+            height: Size::Fixed(14.0),
+            direction: Direction::Row,
+            align_items: Align::Center,
+            gap: 6.0,
+            hittable: Some(true),
+            ..BoxStyle::default()
+        },
+        decoration: None,
         children,
     }
 }
@@ -203,7 +379,7 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
     }
 }
 
-fn port_leaf(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> Desc {
+fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> Desc {
     let x = match port.side {
         CanvasPortSide::Input => -14.0,
         CanvasPortSide::Output => view.layout.rect.w - 14.0,
@@ -284,6 +460,8 @@ mod tests {
             subtitle: "image_gen".to_string(),
             category: "image/generation".to_string(),
             params: Vec::new(),
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             layout: CanvasNodeLayout {
@@ -313,6 +491,8 @@ mod tests {
             subtitle: "image_gen".to_string(),
             category: "image/generation".to_string(),
             params: Vec::new(),
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             layout: CanvasNodeLayout {
@@ -346,6 +526,8 @@ mod tests {
                 kind: "string".to_string(),
                 value: "text".to_string(),
             }],
+            input_group: CanvasPortGroupView { open: true },
+            output_group: CanvasPortGroupView::default(),
             inputs: vec![CanvasPortView {
                 name: "prompt".to_string(),
                 stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
@@ -379,6 +561,13 @@ mod tests {
 
         assert!(children
             .iter()
+            .any(|child| child.id() == "canvas_node::engine_node::7::port_group::input"));
+        assert!(children.iter().any(|child| contains_desc_id(
+            child,
+            "canvas_node::engine_node::7::port::input::prompt::pin_list"
+        )));
+        assert!(children
+            .iter()
             .any(|child| child.id() == "canvas_node::engine_node::7::port::input::prompt"));
         assert!(children
             .iter()
@@ -397,6 +586,8 @@ mod tests {
                 kind: "string".to_string(),
                 value: "text".to_string(),
             }],
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             layout: CanvasNodeLayout {
@@ -422,5 +613,17 @@ mod tests {
         assert!(children
             .iter()
             .any(|child| child.id() == "canvas_node::engine_node::7::body"));
+    }
+
+    fn contains_desc_id(desc: &Desc, id: &str) -> bool {
+        if desc.id() == id {
+            return true;
+        }
+        match desc {
+            Desc::Container { children, .. } => {
+                children.iter().any(|child| contains_desc_id(child, id))
+            }
+            Desc::Leaf { .. } | Desc::Widget { .. } => false,
+        }
     }
 }

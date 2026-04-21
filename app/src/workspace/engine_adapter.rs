@@ -111,6 +111,8 @@ pub(crate) fn canvas_node_views(
                 subtitle: node.type_id.clone(),
                 category,
                 params,
+                input_group: gui::canvas::CanvasPortGroupView::default(),
+                output_group: gui::canvas::CanvasPortGroupView::default(),
                 inputs,
                 outputs,
                 layout,

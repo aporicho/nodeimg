@@ -10,7 +10,7 @@ use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_card::CanvasNodeView;
-use gui::canvas::CanvasConnectionView;
+use gui::canvas::{parse_canvas_port_group_trigger_id, CanvasConnectionView, CanvasPortSide};
 use gui::context::Context;
 
 pub(crate) struct WorkspaceController {
@@ -83,7 +83,12 @@ impl WorkspaceController {
     pub(crate) fn canvas_node_views(&self, gui: &mut Context) -> Vec<CanvasNodeView> {
         let identities = engine_adapter::canvas_node_identities(&self.engine);
         let layouts = gui.sync_canvas_node_layouts(&identities);
-        engine_adapter::canvas_node_views(&self.engine, layouts)
+        let mut views = engine_adapter::canvas_node_views(&self.engine, layouts);
+        for view in &mut views {
+            view.input_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Input);
+            view.output_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Output);
+        }
+        views
     }
 
     pub(crate) fn canvas_connection_views(&self) -> Vec<CanvasConnectionView> {
@@ -121,6 +126,14 @@ impl WorkspaceController {
         y: f32,
     ) -> bool {
         self.canvas_node_drag.end(gui, camera, id, x, y)
+    }
+
+    pub(crate) fn toggle_canvas_port_group(&mut self, gui: &mut Context, id: &str) -> bool {
+        let Some((owner_id, side)) = parse_canvas_port_group_trigger_id(id) else {
+            return false;
+        };
+        gui.toggle_canvas_port_group(owner_id, side);
+        true
     }
 
     pub(crate) fn note_node_library_opened(&mut self) {
@@ -166,5 +179,21 @@ mod tests {
         assert!(result.close_overlay);
         assert_eq!(panel.node_count, 1);
         assert!(panel.last_action.contains("Added node image_gen"));
+    }
+
+    #[test]
+    fn port_group_trigger_toggles_gui_tree_state() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        assert!(controller.toggle_canvas_port_group(
+            &mut gui,
+            "canvas_node::engine_node::1::port_group::input::trigger",
+        ));
+        assert!(
+            gui.canvas_port_group_view("engine_node::1", CanvasPortSide::Input)
+                .open
+        );
+        assert!(!controller.toggle_canvas_port_group(&mut gui, "slider"));
     }
 }

@@ -299,6 +299,9 @@ impl DemoApp {
     fn handle_message(&mut self, message: DemoMessage) {
         match message {
             DemoMessage::WidgetClicked(id) => {
+                if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
+                    return;
+                }
                 let _ = self.gallery.apply_click(&id);
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);

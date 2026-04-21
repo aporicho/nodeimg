@@ -1,8 +1,11 @@
 use super::node::{NodeId, TreeNode};
 use super::runtime_slots::RuntimeSlot;
 use super::{RuntimeSlots, StableId};
-use crate::canvas::runtime::CanvasNodeRuntime;
-use crate::canvas::{canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout};
+use crate::canvas::runtime::{CanvasNodeRuntime, CanvasPortGroupRuntime};
+use crate::canvas::{
+    canvas_node_stable_id, canvas_port_group_stable_id, CanvasNodeIdentity, CanvasNodeLayout,
+    CanvasPortGroupView, CanvasPortSide,
+};
 use crate::panel::{
     PanelConfig, PanelLayout, PanelPointerSession, PanelResizeSession, PanelRootRuntime,
     PanelRuntime,
@@ -249,6 +252,28 @@ impl Tree {
         runtime.rect.x += dx;
         runtime.rect.y += dy;
         true
+    }
+
+    pub(crate) fn canvas_port_group_view(
+        &self,
+        owner_id: &str,
+        side: CanvasPortSide,
+    ) -> CanvasPortGroupView {
+        let stable_id = canvas_port_group_stable_id(owner_id, side);
+        self.runtime_slot_by_stable_id::<CanvasPortGroupRuntime>(&stable_id)
+            .map(CanvasPortGroupRuntime::to_view)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn toggle_canvas_port_group(
+        &mut self,
+        owner_id: &str,
+        side: CanvasPortSide,
+    ) -> bool {
+        let stable_id = canvas_port_group_stable_id(owner_id, side);
+        let runtime = self.ensure_runtime_slot_by_stable_id::<CanvasPortGroupRuntime>(&stable_id);
+        runtime.open = !runtime.open;
+        runtime.open
     }
 
     pub(crate) fn export_panel_layouts(&self) -> Vec<PanelLayout> {
@@ -587,5 +612,26 @@ mod tests {
         let stale = tree.sync_canvas_node_layouts(&[]);
         assert!(stale.is_empty());
         assert!(tree.export_canvas_node_layouts().is_empty());
+    }
+
+    #[test]
+    fn canvas_port_group_toggle_is_tree_runtime_state() {
+        let mut tree = Tree::new();
+
+        assert!(
+            !tree
+                .canvas_port_group_view("engine_node::1", crate::canvas::CanvasPortSide::Input)
+                .open
+        );
+        assert!(
+            tree.toggle_canvas_port_group("engine_node::1", crate::canvas::CanvasPortSide::Input)
+        );
+        assert!(
+            tree.canvas_port_group_view("engine_node::1", crate::canvas::CanvasPortSide::Input)
+                .open
+        );
+        assert!(
+            !tree.toggle_canvas_port_group("engine_node::1", crate::canvas::CanvasPortSide::Input)
+        );
     }
 }

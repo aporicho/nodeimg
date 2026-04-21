@@ -157,6 +157,22 @@ impl Context {
         self.tree.move_canvas_node_by(owner_id, dx, dy)
     }
 
+    pub fn canvas_port_group_view(
+        &self,
+        owner_id: &str,
+        side: crate::canvas::CanvasPortSide,
+    ) -> crate::canvas::CanvasPortGroupView {
+        self.tree.canvas_port_group_view(owner_id, side)
+    }
+
+    pub fn toggle_canvas_port_group(
+        &mut self,
+        owner_id: &str,
+        side: crate::canvas::CanvasPortSide,
+    ) -> bool {
+        self.tree.toggle_canvas_port_group(owner_id, side)
+    }
+
     pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
         self.tree.export_panel_layouts()
     }

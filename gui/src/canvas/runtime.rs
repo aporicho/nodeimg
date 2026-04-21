@@ -1,4 +1,5 @@
 use super::layout::{CanvasNodeIdentity, CanvasNodeLayout};
+use super::port::CanvasPortGroupView;
 use crate::renderer::Rect;
 use crate::tree::{PersistenceClass, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, UndoClass};
 
@@ -52,6 +53,27 @@ impl RuntimeSlot for CanvasNodeRuntime {
             retention: RuntimeRetention::KeepWhileOwnerExists("canvas_node".to_string()),
             persistence: PersistenceClass::ProjectLayout,
             undo: UndoClass::Undoable,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CanvasPortGroupRuntime {
+    pub(crate) open: bool,
+}
+
+impl CanvasPortGroupRuntime {
+    pub(crate) fn to_view(&self) -> CanvasPortGroupView {
+        CanvasPortGroupView { open: self.open }
+    }
+}
+
+impl RuntimeSlot for CanvasPortGroupRuntime {
+    fn default_policy() -> RuntimeSlotPolicy {
+        RuntimeSlotPolicy {
+            retention: RuntimeRetention::KeepWhileOwnerExists("canvas_port_group".to_string()),
+            persistence: PersistenceClass::SessionOnly,
+            undo: UndoClass::NonUndoable,
         }
     }
 }

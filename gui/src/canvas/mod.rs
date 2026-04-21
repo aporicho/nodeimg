@@ -12,4 +12,7 @@ pub use connection::{connection_layer, CanvasConnectionView};
 pub use layout::{
     canvas_node_owner_id, canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout,
 };
-pub use port::{canvas_port_stable_id, CanvasPortSide, CanvasPortView};
+pub use port::{
+    canvas_port_group_stable_id, canvas_port_group_trigger_id, canvas_port_stable_id,
+    parse_canvas_port_group_trigger_id, CanvasPortGroupView, CanvasPortSide, CanvasPortView,
+};
