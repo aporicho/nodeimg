@@ -1,4 +1,5 @@
 use gui::canvas::camera::Camera;
+use gui::canvas::node_card::{node_card, CanvasNodeView};
 use gui::renderer::Rect;
 use gui::theme::Theme;
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
@@ -12,6 +13,7 @@ pub(crate) fn build_workspace_tree(
     viewport: Rect,
     camera: &Camera,
     theme: &Theme,
+    canvas_nodes: &[CanvasNodeView],
     panel_root: Desc,
 ) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
@@ -20,6 +22,25 @@ pub(crate) fn build_workspace_tree(
     let grid_y = align_grid_start(canvas_min_y, GRID_SPACING);
     let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
     let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
+
+    let mut canvas_children = vec![Desc::Leaf {
+        id: Cow::Borrowed("canvas_grid"),
+        style: BoxStyle {
+            position: Position::Absolute {
+                x: grid_x,
+                y: grid_y,
+            },
+            width: Size::Fixed(grid_w.max(GRID_SPACING)),
+            height: Size::Fixed(grid_h.max(GRID_SPACING)),
+            ..BoxStyle::default()
+        },
+        kind: LeafKind::Grid {
+            spacing: GRID_SPACING,
+            dot_color: theme.colors.canvas_grid,
+            dot_size: GRID_DOT_SIZE,
+        },
+    }];
+    canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
 
     Desc::Container {
         id: Cow::Borrowed("root"),
@@ -49,23 +70,7 @@ pub(crate) fn build_workspace_tree(
                     ..BoxStyle::default()
                 },
                 decoration: None,
-                children: vec![Desc::Leaf {
-                    id: Cow::Borrowed("canvas_grid"),
-                    style: BoxStyle {
-                        position: Position::Absolute {
-                            x: grid_x,
-                            y: grid_y,
-                        },
-                        width: Size::Fixed(grid_w.max(GRID_SPACING)),
-                        height: Size::Fixed(grid_h.max(GRID_SPACING)),
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Grid {
-                        spacing: GRID_SPACING,
-                        dot_color: theme.colors.canvas_grid,
-                        dot_size: GRID_DOT_SIZE,
-                    },
-                }],
+                children: canvas_children,
             },
             panel_root,
         ],

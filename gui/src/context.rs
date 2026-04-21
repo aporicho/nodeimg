@@ -138,6 +138,25 @@ impl Context {
         crate::panel::event::apply_panel_event(&mut self.tree, event)
     }
 
+    pub fn sync_canvas_node_layouts(
+        &mut self,
+        identities: &[crate::canvas::CanvasNodeIdentity],
+    ) -> Vec<crate::canvas::CanvasNodeLayout> {
+        self.tree.sync_canvas_node_layouts(identities)
+    }
+
+    pub fn export_canvas_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
+        self.tree.export_canvas_node_layouts()
+    }
+
+    pub fn import_canvas_node_layouts(&mut self, layouts: &[crate::canvas::CanvasNodeLayout]) {
+        self.tree.import_canvas_node_layouts(layouts);
+    }
+
+    pub fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
+        self.tree.move_canvas_node_by(owner_id, dx, dy)
+    }
+
     pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
         self.tree.export_panel_layouts()
     }

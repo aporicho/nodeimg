@@ -1,12 +1,14 @@
 use super::node::{NodeId, TreeNode};
 use super::runtime_slots::RuntimeSlot;
 use super::{RuntimeSlots, StableId};
+use crate::canvas::runtime::CanvasNodeRuntime;
+use crate::canvas::{canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout};
 use crate::panel::{
     PanelConfig, PanelLayout, PanelPointerSession, PanelResizeSession, PanelRootRuntime,
     PanelRuntime,
 };
 use crate::widget::resize_edge::ResizeEdge;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const PANEL_ROOT_ID: &str = "panel_root";
 
@@ -168,6 +170,85 @@ impl Tree {
 
     pub fn panel_state_mut(&mut self, id: &str) -> Option<&mut PanelRuntime> {
         self.runtime_slot_by_stable_id_mut::<PanelRuntime>(id)
+    }
+
+    pub(crate) fn sync_canvas_node_layouts(
+        &mut self,
+        identities: &[CanvasNodeIdentity],
+    ) -> Vec<CanvasNodeLayout> {
+        let owner_ids: HashSet<&str> = identities
+            .iter()
+            .map(|identity| identity.owner_id.as_str())
+            .collect();
+        self.retained_runtime.retain(|stable_id, slots| {
+            if slots.get::<CanvasNodeRuntime>().is_none() {
+                return true;
+            }
+            let Some(owner_id) = stable_id.strip_prefix("canvas_node::") else {
+                return true;
+            };
+            owner_ids.contains(owner_id)
+        });
+
+        let mut layouts = Vec::with_capacity(identities.len());
+        for (index, identity) in identities.iter().enumerate() {
+            let stable_id = canvas_node_stable_id(&identity.owner_id);
+            let runtime = self.ensure_runtime_slot_by_stable_id::<CanvasNodeRuntime>(&stable_id);
+            if runtime.owner_id.is_empty() {
+                *runtime = CanvasNodeRuntime::from_identity(identity, index as i32);
+            }
+            layouts.push(runtime.to_layout());
+        }
+
+        layouts.sort_by(|a, b| {
+            a.z_index
+                .cmp(&b.z_index)
+                .then_with(|| a.owner_id.cmp(&b.owner_id))
+        });
+        layouts
+    }
+
+    pub(crate) fn export_canvas_node_layouts(&self) -> Vec<CanvasNodeLayout> {
+        let mut layouts: Vec<CanvasNodeLayout> = self
+            .iter()
+            .filter_map(|(_, node)| {
+                node.runtime_slots
+                    .get::<CanvasNodeRuntime>()
+                    .map(CanvasNodeRuntime::to_layout)
+            })
+            .chain(self.retained_runtime.values().filter_map(|slots| {
+                slots
+                    .get::<CanvasNodeRuntime>()
+                    .map(CanvasNodeRuntime::to_layout)
+            }))
+            .collect();
+
+        layouts.sort_by(|a, b| a.owner_id.cmp(&b.owner_id));
+        layouts
+    }
+
+    pub(crate) fn import_canvas_node_layouts(&mut self, layouts: &[CanvasNodeLayout]) {
+        for layout in layouts {
+            let stable_id = canvas_node_stable_id(&layout.owner_id);
+            let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
+            else {
+                continue;
+            };
+            runtime.rect = layout.rect;
+            runtime.z_index = layout.z_index;
+            runtime.collapsed = layout.collapsed;
+        }
+    }
+
+    pub(crate) fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
+        let stable_id = canvas_node_stable_id(owner_id);
+        let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
+        else {
+            return false;
+        };
+        runtime.rect.x += dx;
+        runtime.rect.y += dy;
+        true
     }
 
     pub(crate) fn export_panel_layouts(&self) -> Vec<PanelLayout> {
@@ -460,5 +541,51 @@ mod tests {
 
         assert_eq!(tree.node_by_stable_id(&StableId::from("root")), tree.root());
         assert_eq!(tree.node_by_str("root"), tree.root());
+    }
+
+    #[test]
+    fn canvas_node_layout_sync_uses_owner_identity() {
+        let mut tree = Tree::new();
+        let first = crate::canvas::CanvasNodeIdentity {
+            owner_id: "engine_node::1".to_string(),
+            default_rect: crate::renderer::Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 220.0,
+                h: 96.0,
+            },
+        };
+
+        let layouts = tree.sync_canvas_node_layouts(&[first.clone()]);
+        assert_eq!(layouts.len(), 1);
+        assert_eq!(layouts[0].owner_id, "engine_node::1");
+        assert_eq!(layouts[0].rect.x, 10.0);
+
+        tree.import_canvas_node_layouts(&[crate::canvas::CanvasNodeLayout {
+            owner_id: "engine_node::1".to_string(),
+            rect: crate::renderer::Rect {
+                x: 80.0,
+                y: 90.0,
+                w: 260.0,
+                h: 120.0,
+            },
+            z_index: 7,
+            collapsed: true,
+        }]);
+
+        let layouts = tree.sync_canvas_node_layouts(&[first]);
+        assert_eq!(layouts[0].rect.x, 80.0);
+        assert_eq!(layouts[0].rect.y, 90.0);
+        assert_eq!(layouts[0].z_index, 7);
+        assert!(layouts[0].collapsed);
+
+        assert!(tree.move_canvas_node_by("engine_node::1", 10.0, -5.0));
+        let layouts = tree.export_canvas_node_layouts();
+        assert_eq!(layouts[0].rect.x, 90.0);
+        assert_eq!(layouts[0].rect.y, 85.0);
+
+        let stale = tree.sync_canvas_node_layouts(&[]);
+        assert!(stale.is_empty());
+        assert!(tree.export_canvas_node_layouts().is_empty());
     }
 }

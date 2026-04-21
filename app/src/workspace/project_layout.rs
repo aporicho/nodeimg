@@ -1,4 +1,5 @@
 use gui::canvas::camera::Camera;
+use gui::canvas::CanvasNodeLayout as GuiCanvasNodeLayout;
 use gui::context::Context;
 use gui::panel::PanelLayout as GuiPanelLayout;
 use gui::renderer::Rect;
@@ -39,6 +40,7 @@ pub(crate) struct CanvasNodeLayout {
     pub(crate) y: f32,
     pub(crate) w: f32,
     pub(crate) h: f32,
+    pub(crate) z_index: i32,
     pub(crate) collapsed: bool,
 }
 
@@ -51,7 +53,11 @@ pub(crate) fn export_project_layout(gui: &Context, camera: &Camera) -> ProjectLa
             .into_iter()
             .map(PanelLayout::from_gui)
             .collect(),
-        canvas_nodes: Vec::new(),
+        canvas_nodes: gui
+            .export_canvas_node_layouts()
+            .into_iter()
+            .map(CanvasNodeLayout::from_gui)
+            .collect(),
     }
 }
 
@@ -63,6 +69,12 @@ pub(crate) fn import_project_layout(gui: &mut Context, camera: &mut Camera, layo
         .map(PanelLayout::into_gui)
         .collect();
     gui.import_panel_layouts(&panel_layouts);
+    let canvas_node_layouts: Vec<GuiCanvasNodeLayout> = layout
+        .canvas_nodes
+        .into_iter()
+        .map(CanvasNodeLayout::into_gui)
+        .collect();
+    gui.import_canvas_node_layouts(&canvas_node_layouts);
 }
 
 impl CameraLayout {
@@ -105,6 +117,34 @@ impl PanelLayout {
                 h: self.h,
             },
             visible: self.visible,
+            z_index: self.z_index,
+            collapsed: self.collapsed,
+        }
+    }
+}
+
+impl CanvasNodeLayout {
+    fn from_gui(layout: GuiCanvasNodeLayout) -> Self {
+        Self {
+            owner_id: layout.owner_id,
+            x: layout.rect.x,
+            y: layout.rect.y,
+            w: layout.rect.w,
+            h: layout.rect.h,
+            z_index: layout.z_index,
+            collapsed: layout.collapsed,
+        }
+    }
+
+    fn into_gui(self) -> GuiCanvasNodeLayout {
+        GuiCanvasNodeLayout {
+            owner_id: self.owner_id,
+            rect: Rect {
+                x: self.x,
+                y: self.y,
+                w: self.w,
+                h: self.h,
+            },
             z_index: self.z_index,
             collapsed: self.collapsed,
         }
@@ -162,6 +202,36 @@ mod tests {
                 visible: true,
                 z_index: 4,
                 collapsed: false,
+            }
+        );
+    }
+
+    #[test]
+    fn canvas_node_layout_conversion_does_not_include_transient_runtime() {
+        let gui_layout = GuiCanvasNodeLayout {
+            owner_id: "engine_node::1".to_string(),
+            rect: Rect {
+                x: 40.0,
+                y: 80.0,
+                w: 220.0,
+                h: 96.0,
+            },
+            z_index: 9,
+            collapsed: true,
+        };
+
+        let layout = CanvasNodeLayout::from_gui(gui_layout);
+
+        assert_eq!(
+            layout,
+            CanvasNodeLayout {
+                owner_id: "engine_node::1".to_string(),
+                x: 40.0,
+                y: 80.0,
+                w: 220.0,
+                h: 96.0,
+                z_index: 9,
+                collapsed: true,
             }
         );
     }

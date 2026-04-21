@@ -32,8 +32,8 @@ enum DemoMessage {
     NumberChanged { id: String, value: f32 },
     SelectionChanged { id: String, selected: usize },
     WidgetDragStart { id: String, x: f32, y: f32 },
-    WidgetDragMove { id: String, x: f32 },
-    WidgetDragEnd,
+    WidgetDragMove { id: String, x: f32, y: f32 },
+    WidgetDragEnd { id: String, x: f32, y: f32 },
     LongPress(String),
 }
 
@@ -112,7 +112,14 @@ impl App for DemoApp {
             engine: &self.workspace.engine_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
-        let desc = build_workspace_tree(viewport, &self.camera, &self.theme, panel_root);
+        let canvas_nodes = self.workspace.canvas_node_views(&mut self.gui);
+        let desc = build_workspace_tree(
+            viewport,
+            &self.camera,
+            &self.theme,
+            &canvas_nodes,
+            panel_root,
+        );
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
@@ -281,8 +288,8 @@ impl DemoApp {
                 DemoMessage::SelectionChanged { id, selected }
             }
             WidgetEvent::DragStart { id, x, y } => DemoMessage::WidgetDragStart { id, x, y },
-            WidgetEvent::DragMove { id, x, .. } => DemoMessage::WidgetDragMove { id, x },
-            WidgetEvent::DragEnd { .. } => DemoMessage::WidgetDragEnd,
+            WidgetEvent::DragMove { id, x, y } => DemoMessage::WidgetDragMove { id, x, y },
+            WidgetEvent::DragEnd { id, x, y } => DemoMessage::WidgetDragEnd { id, x, y },
             WidgetEvent::LongPress { id } => DemoMessage::LongPress(id),
         })
     }
@@ -343,19 +350,35 @@ impl DemoApp {
                 let _ = self.gallery.apply_select_change(&id, selected);
             }
             DemoMessage::WidgetDragStart { id, x, y } => {
+                if self
+                    .workspace
+                    .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y)
+                {
+                    return;
+                }
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
                     tracing::info!("slider_value(drag_start) -> {}", self.gallery.slider_value);
                 }
                 let _ = y;
             }
-            DemoMessage::WidgetDragMove { id, x } => {
+            DemoMessage::WidgetDragMove { id, x, y } => {
+                if self
+                    .workspace
+                    .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y)
+                {
+                    return;
+                }
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
                     tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
                 }
             }
-            DemoMessage::WidgetDragEnd => {}
+            DemoMessage::WidgetDragEnd { id, x, y } => {
+                let _ = self
+                    .workspace
+                    .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+            }
             DemoMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
             }
@@ -408,6 +431,12 @@ impl DemoApp {
             }
 
             if id.ends_with("::titlebar") && self.gui.node_has_gesture(node_id, Gesture::Drag) {
+                ctx.cursor.set(CursorStyle::Move);
+                return;
+            }
+
+            if id.starts_with("canvas_node::") && self.gui.node_has_gesture(node_id, Gesture::Drag)
+            {
                 ctx.cursor.set(CursorStyle::Move);
                 return;
             }

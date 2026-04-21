@@ -1,3 +1,4 @@
+use super::canvas_drag::CanvasNodeDragController;
 use super::engine_adapter;
 use super::node_palette::NodePaletteState;
 use super::project_layout;
@@ -8,11 +9,13 @@ use engine::facade::EngineFacade;
 use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
+use gui::canvas::node_card::CanvasNodeView;
 use gui::context::Context;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
     image_demo: ImageDemoController,
+    canvas_node_drag: CanvasNodeDragController,
     last_engine_action: String,
 }
 
@@ -27,6 +30,7 @@ impl WorkspaceController {
         Self {
             engine: Engine::new(None),
             image_demo: ImageDemoController::default(),
+            canvas_node_drag: CanvasNodeDragController::default(),
             last_engine_action: "Ready".to_string(),
         }
     }
@@ -73,6 +77,45 @@ impl WorkspaceController {
 
     pub(crate) fn node_palette_state(&self) -> NodePaletteState {
         engine_adapter::node_palette_state(&self.engine)
+    }
+
+    pub(crate) fn canvas_node_views(&self, gui: &mut Context) -> Vec<CanvasNodeView> {
+        let identities = engine_adapter::canvas_node_identities(&self.engine);
+        let layouts = gui.sync_canvas_node_layouts(&identities);
+        engine_adapter::canvas_node_views(&self.engine, layouts)
+    }
+
+    pub(crate) fn start_canvas_node_drag(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_drag.start(gui, camera, id, x, y)
+    }
+
+    pub(crate) fn drag_canvas_node(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_drag.drag(gui, camera, id, x, y)
+    }
+
+    pub(crate) fn end_canvas_node_drag(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_drag.end(gui, camera, id, x, y)
     }
 
     pub(crate) fn note_node_library_opened(&mut self) {
