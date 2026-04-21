@@ -6,7 +6,7 @@ use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
 use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size,
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
 };
 use crate::tree::Desc;
 use std::borrow::Cow;
@@ -52,20 +52,19 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
     let label_text_id = format!("{card_id}::label_text");
     let card_body_id = format!("{card_id}::card");
     let body_id = format!("{card_id}::body");
-    let card_x = PIN_COLUMN_WIDTH + PIN_COLUMN_GAP;
 
     let children = vec![
         pin_column(
             &view.owner_id,
             CanvasPortSide::Input,
-            0.0,
+            -PIN_COLUMN_WIDTH - PIN_COLUMN_GAP,
             &view.inputs,
             theme,
         ),
         Desc::Container {
             id: Cow::Owned(card_body_id),
             style: BoxStyle {
-                position: Position::Absolute { x: card_x, y: 0.0 },
+                position: Position::Absolute { x: 0.0, y: 0.0 },
                 width: Size::Fixed(view.layout.rect.w),
                 height: Size::Fixed(card_height(view)),
                 padding: Edges::all(NODE_PADDING),
@@ -138,7 +137,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         pin_column(
             &view.owner_id,
             CanvasPortSide::Output,
-            card_x + view.layout.rect.w + PIN_COLUMN_GAP,
+            view.layout.rect.w + PIN_COLUMN_GAP,
             &view.outputs,
             theme,
         ),
@@ -148,14 +147,15 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         id: Cow::Owned(card_id),
         style: BoxStyle {
             position: Position::Absolute {
-                x: view.layout.rect.x - card_x,
+                x: view.layout.rect.x,
                 y: view.layout.rect.y,
             },
-            width: Size::Fixed(card_x + view.layout.rect.w + PIN_COLUMN_GAP + PIN_COLUMN_WIDTH),
-            height: Size::Fixed(outer_height(view)),
+            width: Size::Fixed(view.layout.rect.w),
+            height: Size::Fixed(card_height(view)),
             padding: Edges::all(0.0),
             gap: 0.0,
             direction: Direction::Row,
+            overflow: Overflow::Visible,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
@@ -357,18 +357,6 @@ fn card_height(view: &CanvasNodeView) -> f32 {
     }
 }
 
-fn outer_height(view: &CanvasNodeView) -> f32 {
-    card_height(view).max(pin_column_height(view.inputs.len().max(view.outputs.len())))
-}
-
-fn pin_column_height(count: usize) -> f32 {
-    if count == 0 {
-        0.0
-    } else {
-        count as f32 * PIN_ROW_HEIGHT + count.saturating_sub(1) as f32 * PIN_ROW_GAP
-    }
-}
-
 fn port_state_color(port: &CanvasPortView, theme: &Theme) -> Color {
     match port.connection_state {
         CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
@@ -505,6 +493,42 @@ mod tests {
             panic!("node card should build a container");
         };
         assert!(style.gestures.contains(&Gesture::Drag));
+    }
+
+    #[test]
+    fn node_card_shell_uses_center_card_layout_rect() {
+        let view = CanvasNodeView {
+            owner_id: "engine_node::7".to_string(),
+            title: "Image".to_string(),
+            subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: Vec::new(),
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            selected: false,
+            layout: CanvasNodeLayout {
+                owner_id: "engine_node::7".to_string(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 220.0,
+                    h: 96.0,
+                },
+                z_index: 0,
+                collapsed: false,
+            },
+        };
+
+        let Desc::Container { style, .. } = node_card(&view, &light_theme()) else {
+            panic!("node card should build a container");
+        };
+
+        assert_eq!(style.position, Position::Absolute { x: 10.0, y: 20.0 });
+        assert_eq!(style.width, Size::Fixed(220.0));
+        assert_eq!(style.height, Size::Fixed(96.0));
+        assert_eq!(style.overflow, Overflow::Visible);
     }
 
     #[test]
