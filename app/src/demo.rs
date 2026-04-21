@@ -1,13 +1,9 @@
 use crate::demo_gallery::{
     build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
-use crate::image_demo::ImageDemoController;
-use crate::panels::EnginePanelState;
-use crate::workspace::node_palette::{self, NodePaletteItem, NodePaletteState};
+use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
+use crate::workspace::node_palette;
 use crate::workspace::view::build_workspace_tree;
-use engine::events::ExecutionStatus;
-use engine::facade::EngineFacade;
-use engine::Engine;
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
@@ -47,10 +43,8 @@ pub struct DemoApp {
     navigation: CanvasNavigationController,
     active_button: Option<String>,
     gallery: GalleryState,
-    engine: Engine,
-    image_demo: ImageDemoController,
+    workspace: WorkspaceController,
     last_canvas_click: Option<CanvasClick>,
-    last_engine_action: String,
     mouse_x: f32,
     mouse_y: f32,
     theme: Theme,
@@ -70,10 +64,8 @@ impl App for DemoApp {
             navigation: CanvasNavigationController::new(),
             active_button: None,
             gallery: GalleryState::default(),
-            engine: Engine::new(None),
-            image_demo: ImageDemoController::default(),
+            workspace: WorkspaceController::new(),
             last_canvas_click: None,
-            last_engine_action: "Ready".to_string(),
             mouse_x: 0.0,
             mouse_y: 0.0,
             theme: light_theme().scaled(GALLERY_SCALE),
@@ -117,7 +109,7 @@ impl App for DemoApp {
             theme: &self.theme,
             gallery: &self.gallery,
             image: DEMO_IMAGE_HANDLE,
-            engine: &self.engine_panel_state(),
+            engine: &self.workspace.engine_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
         let desc = build_workspace_tree(viewport, &self.camera, &self.theme, panel_root);
@@ -213,7 +205,11 @@ impl DemoApp {
     fn handle_framework_output(&mut self, output: FrameworkOutput, ctx: &mut AppContext) {
         let mut handled_node_adds = Vec::new();
         for action in output.actions {
-            if let Some(type_id) = self.handle_gui_action(action) {
+            let result = self.handle_gui_action(action);
+            if result.close_overlay {
+                self.gui.close_overlay();
+            }
+            if let Some(type_id) = result.handled_node_add {
                 handled_node_adds.push(type_id);
             }
         }
@@ -245,17 +241,9 @@ impl DemoApp {
         }
     }
 
-    fn handle_gui_action(&mut self, action: GuiAction) -> Option<String> {
-        match action {
-            GuiAction::AddNode { type_id } => {
-                tracing::info!("GuiAction::AddNode: {type_id}");
-                self.add_node_from_library(&type_id);
-                Some(type_id)
-            }
-            GuiAction::OpenOverlay { .. }
-            | GuiAction::CloseOverlay { .. }
-            | GuiAction::WidgetClicked { .. } => None,
-        }
+    fn handle_gui_action(&mut self, action: GuiAction) -> WorkspaceActionResult {
+        tracing::info!("GuiAction: {:?}", action);
+        self.workspace.handle_gui_action(action)
     }
 
     fn is_duplicate_action_event(&self, event: &GuiEvent, handled_node_adds: &[String]) -> bool {
@@ -304,13 +292,14 @@ impl DemoApp {
             DemoMessage::WidgetClicked(id) => {
                 let _ = self.gallery.apply_click(&id);
                 if let Some(type_id) = node_library_add_type_id(&id) {
-                    self.add_node_from_library(type_id);
+                    let result = self.workspace.add_node_from_library(type_id);
+                    if result.close_overlay {
+                        self.gui.close_overlay();
+                    }
                     self.active_button = Some(id);
                     return;
                 }
-                if let Some(outcome) = self.image_demo.handle_button(&id, &mut self.engine) {
-                    self.last_engine_action = outcome.to_string();
-                }
+                let _ = self.workspace.handle_image_demo_button(&id);
                 if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
                         self.gui.close_overlay();
@@ -492,61 +481,11 @@ impl DemoApp {
             dismiss_on_outside_click: true,
             restore_focus_to_anchor: false,
         });
-        self.last_engine_action = "Node library opened".to_string();
+        self.workspace.note_node_library_opened();
     }
 
-    fn add_node_from_library(&mut self, type_id: &str) {
-        match self.engine.add_node(type_id) {
-            Ok(node_id) => {
-                self.gui.close_overlay();
-                self.last_engine_action = format!("Added node {type_id} as {:?}", node_id);
-            }
-            Err(error) => {
-                self.last_engine_action = format!("Add node failed: {error}");
-            }
-        }
-    }
-
-    fn engine_panel_state(&self) -> EnginePanelState {
-        let graph = self.engine.query_graph_snapshot();
-        let summary = self.engine.graph_state_summary();
-        let execution_status = match self.engine.execution_state().status {
-            ExecutionStatus::Idle => "Idle",
-            ExecutionStatus::Running => "Running",
-            ExecutionStatus::Cancelling => "Cancelling",
-        };
-
-        EnginePanelState {
-            node_count: graph.nodes.len(),
-            connection_count: graph.connections.len(),
-            node_def_count: self.engine.list_node_defs().len(),
-            graph_version: summary.graph_version,
-            dirty: summary.dirty,
-            execution_status: execution_status.to_string(),
-            last_action: self.last_engine_action.clone(),
-        }
-    }
-
-    fn node_palette_state(&self) -> NodePaletteState {
-        let mut items = self
-            .engine
-            .list_node_defs()
-            .into_iter()
-            .map(|node| NodePaletteItem {
-                type_id: node.type_id.clone(),
-                name: node.name.clone(),
-                category: node.category.clone(),
-                source: format!("{:?}", node.source),
-            })
-            .collect::<Vec<_>>();
-        items.sort_by(|a, b| {
-            a.category
-                .cmp(&b.category)
-                .then_with(|| a.name.cmp(&b.name))
-                .then_with(|| a.type_id.cmp(&b.type_id))
-        });
-
-        NodePaletteState { items }
+    fn node_palette_state(&self) -> crate::workspace::node_palette::NodePaletteState {
+        self.workspace.node_palette_state()
     }
 }
 
