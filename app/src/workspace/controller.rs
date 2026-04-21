@@ -10,6 +10,7 @@ use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_card::CanvasNodeView;
+use gui::canvas::CanvasConnectionView;
 use gui::context::Context;
 
 pub(crate) struct WorkspaceController {
@@ -83,6 +84,10 @@ impl WorkspaceController {
         let identities = engine_adapter::canvas_node_identities(&self.engine);
         let layouts = gui.sync_canvas_node_layouts(&identities);
         engine_adapter::canvas_node_views(&self.engine, layouts)
+    }
+
+    pub(crate) fn canvas_connection_views(&self) -> Vec<CanvasConnectionView> {
+        engine_adapter::canvas_connection_views(&self.engine)
     }
 
     pub(crate) fn start_canvas_node_drag(

@@ -113,11 +113,13 @@ impl App for DemoApp {
         });
         let panel_root = self.gui.panel_root(viewport, panels);
         let canvas_nodes = self.workspace.canvas_node_views(&mut self.gui);
+        let canvas_connections = self.workspace.canvas_connection_views();
         let desc = build_workspace_tree(
             viewport,
             &self.camera,
             &self.theme,
             &canvas_nodes,
+            &canvas_connections,
             panel_root,
         );
         self.gui

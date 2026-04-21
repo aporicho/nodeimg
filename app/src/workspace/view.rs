@@ -1,5 +1,7 @@
 use gui::canvas::camera::Camera;
+use gui::canvas::connection_layer;
 use gui::canvas::node_card::{node_card, CanvasNodeView};
+use gui::canvas::CanvasConnectionView;
 use gui::renderer::Rect;
 use gui::theme::Theme;
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
@@ -14,6 +16,7 @@ pub(crate) fn build_workspace_tree(
     camera: &Camera,
     theme: &Theme,
     canvas_nodes: &[CanvasNodeView],
+    canvas_connections: &[CanvasConnectionView],
     panel_root: Desc,
 ) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
@@ -40,6 +43,7 @@ pub(crate) fn build_workspace_tree(
             dot_size: GRID_DOT_SIZE,
         },
     }];
+    canvas_children.push(connection_layer(canvas_connections));
     canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
 
     Desc::Container {

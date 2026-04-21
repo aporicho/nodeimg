@@ -4,7 +4,10 @@ use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
 use gui::canvas::node_card::CanvasNodeView;
-use gui::canvas::{CanvasNodeIdentity, CanvasNodeLayout};
+use gui::canvas::{
+    canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
+    CanvasPortSide, CanvasPortView,
+};
 use gui::renderer::Rect;
 use std::collections::HashMap;
 
@@ -78,7 +81,7 @@ pub(crate) fn canvas_node_views(
     let defs_by_type = engine
         .list_node_defs()
         .into_iter()
-        .map(|def| (def.type_id.as_str(), def.name.as_str()))
+        .map(|def| (def.type_id.as_str(), def))
         .collect::<HashMap<_, _>>();
 
     let mut views = layouts
@@ -86,16 +89,24 @@ pub(crate) fn canvas_node_views(
         .filter_map(|layout| {
             let node_id = parse_engine_node_owner_id(&layout.owner_id)?;
             let node = graph.nodes.get(&node_id)?;
-            let title = defs_by_type
-                .get(node.type_id.as_str())
-                .copied()
+            let node_def = defs_by_type.get(node.type_id.as_str()).copied();
+            let title = node_def
+                .map(|def| def.name.as_str())
                 .unwrap_or(node.type_id.as_str())
                 .to_string();
+            let inputs = node_def
+                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Input, &def.inputs))
+                .unwrap_or_default();
+            let outputs = node_def
+                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Output, &def.outputs))
+                .unwrap_or_default();
 
             Some(CanvasNodeView {
                 owner_id: layout.owner_id.clone(),
                 title,
                 subtitle: node.type_id.clone(),
+                inputs,
+                outputs,
                 layout,
             })
         })
@@ -108,6 +119,47 @@ pub(crate) fn canvas_node_views(
             .then_with(|| a.owner_id.cmp(&b.owner_id))
     });
     views
+}
+
+pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionView> {
+    let graph = engine.query_graph_snapshot();
+    graph
+        .connections
+        .iter()
+        .filter_map(|connection| {
+            let from_owner_id = engine_node_owner_id(connection.from.node);
+            let to_owner_id = engine_node_owner_id(connection.to.node);
+            Some(CanvasConnectionView {
+                from_port_id: canvas_port_stable_id(
+                    &from_owner_id,
+                    CanvasPortSide::Output,
+                    &connection.from.interface,
+                ),
+                to_port_id: canvas_port_stable_id(
+                    &to_owner_id,
+                    CanvasPortSide::Input,
+                    &connection.to.interface,
+                ),
+            })
+        })
+        .collect()
+}
+
+fn canvas_ports(
+    owner_id: &str,
+    side: CanvasPortSide,
+    pins: &[engine::node_manager::PinDef],
+) -> Vec<CanvasPortView> {
+    pins.iter()
+        .enumerate()
+        .map(|(index, pin)| CanvasPortView {
+            name: pin.name.clone(),
+            stable_id: canvas_port_stable_id(owner_id, side, &pin.name),
+            side,
+            index,
+            count: pins.len(),
+        })
+        .collect()
 }
 
 fn default_canvas_node_rect(index: usize) -> Rect {
@@ -133,6 +185,7 @@ fn parse_engine_node_owner_id(owner_id: &str) -> Option<types::NodeId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::graph::{Connection, PinRef};
 
     #[test]
     fn engine_node_owner_id_roundtrips() {
@@ -143,5 +196,42 @@ mod tests {
             Some(types::NodeId(42))
         );
         assert_eq!(parse_engine_node_owner_id("panel::42"), None);
+    }
+
+    #[test]
+    fn canvas_connection_views_use_port_stable_ids() {
+        let mut engine = Engine::new(None);
+        let generator = engine.add_node("image_gen").unwrap();
+        let color_adjust = engine.add_node("color_adjust").unwrap();
+        engine
+            .connect(Connection {
+                from: PinRef {
+                    node: generator,
+                    interface: "image".to_string(),
+                },
+                to: PinRef {
+                    node: color_adjust,
+                    interface: "image".to_string(),
+                },
+            })
+            .unwrap();
+
+        let connections = canvas_connection_views(&engine);
+
+        assert_eq!(connections.len(), 1);
+        assert_eq!(
+            connections[0].from_port_id,
+            format!(
+                "canvas_node::engine_node::{}::port::output::image",
+                generator.0
+            )
+        );
+        assert_eq!(
+            connections[0].to_port_id,
+            format!(
+                "canvas_node::engine_node::{}::port::input::image",
+                color_adjust.0
+            )
+        );
     }
 }
