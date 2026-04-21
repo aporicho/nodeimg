@@ -2,54 +2,86 @@ use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortSide, CanvasPortV
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size};
+use crate::tree::layout::{
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Position, Size,
+};
 use crate::tree::Desc;
 use std::borrow::Cow;
 
 const PORT_SIZE: f32 = 8.0;
 const PORT_TOP: f32 = 34.0;
 const PORT_GAP: f32 = 18.0;
+const NODE_LABEL_HEIGHT: f32 = 16.0;
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeView {
     pub owner_id: String,
     pub title: String,
     pub subtitle: String,
+    pub category: String,
+    pub params: Vec<CanvasNodeParamView>,
     pub inputs: Vec<CanvasPortView>,
     pub outputs: Vec<CanvasPortView>,
     pub layout: CanvasNodeLayout,
 }
 
+#[derive(Clone, Debug)]
+pub struct CanvasNodeParamView {
+    pub name: String,
+    pub kind: String,
+    pub value: String,
+}
+
 pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
     let card_id = canvas_node_stable_id(&view.owner_id);
-    let title_id = format!("{card_id}::title");
-    let subtitle_id = format!("{card_id}::subtitle");
+    let label_id = format!("{card_id}::label");
+    let label_dot_id = format!("{card_id}::label_dot");
+    let label_text_id = format!("{card_id}::label_text");
+    let body_id = format!("{card_id}::body");
 
     let mut children = vec![
-        Desc::Leaf {
-            id: Cow::Owned(title_id),
+        Desc::Container {
+            id: Cow::Owned(label_id),
             style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Auto,
+                position: Position::Absolute { x: 2.0, y: -20.0 },
+                width: Size::Fixed(view.layout.rect.w),
+                height: Size::Fixed(NODE_LABEL_HEIGHT),
+                direction: Direction::Row,
+                align_items: Align::Center,
+                gap: 5.0,
+                hittable: Some(false),
                 ..BoxStyle::default()
             },
-            kind: LeafKind::Text {
-                content: view.title.clone(),
-                style: theme.text_style_title_sm(),
-            },
+            decoration: None,
+            children: vec![
+                Desc::Leaf {
+                    id: Cow::Owned(label_dot_id),
+                    style: BoxStyle {
+                        width: Size::Fixed(6.0),
+                        height: Size::Fixed(6.0),
+                        ..BoxStyle::default()
+                    },
+                    kind: LeafKind::Circle {
+                        radius: 3.0,
+                        fill: Some(category_color(&view.category)),
+                        stroke: None,
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Owned(label_text_id),
+                    style: BoxStyle {
+                        width: Size::Auto,
+                        height: Size::Auto,
+                        ..BoxStyle::default()
+                    },
+                    kind: LeafKind::Text {
+                        content: view.title.clone(),
+                        style: theme.text_style_label_sm(),
+                    },
+                },
+            ],
         },
-        Desc::Leaf {
-            id: Cow::Owned(subtitle_id),
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Text {
-                content: view.subtitle.clone(),
-                style: theme.text_style_label_sm(),
-            },
-        },
+        node_body(&body_id, view, theme),
     ];
     children.extend(view.inputs.iter().map(|port| port_leaf(port, view, theme)));
     children.extend(view.outputs.iter().map(|port| port_leaf(port, view, theme)));
@@ -68,7 +100,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                 view.layout.rect.h
             }),
             padding: Edges::all(10.0),
-            gap: 4.0,
+            gap: 0.0,
             direction: Direction::Column,
             hittable: Some(true),
             gestures: vec![Gesture::Drag],
@@ -84,6 +116,90 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             shadow: None,
         }),
         children,
+    }
+}
+
+fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
+    let mut children = Vec::new();
+    if view.params.is_empty() {
+        children.push(Desc::Leaf {
+            id: Cow::Owned(format!("{id}::summary")),
+            style: BoxStyle {
+                width: Size::Fill,
+                height: Size::Auto,
+                ..BoxStyle::default()
+            },
+            kind: LeafKind::Text {
+                content: view.subtitle.clone(),
+                style: theme.text_style_label_sm(),
+            },
+        });
+    } else {
+        children.extend(
+            view.params
+                .iter()
+                .take(5)
+                .enumerate()
+                .map(|(index, param)| param_row(id, index, param, theme)),
+        );
+    }
+
+    Desc::Container {
+        id: Cow::Owned(id.to_string()),
+        style: BoxStyle {
+            width: Size::Fill,
+            height: Size::Fill,
+            direction: Direction::Column,
+            gap: 4.0,
+            ..BoxStyle::default()
+        },
+        decoration: None,
+        children,
+    }
+}
+
+fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme) -> Desc {
+    Desc::Container {
+        id: Cow::Owned(format!("{id}::param::{index}")),
+        style: BoxStyle {
+            width: Size::Fill,
+            height: Size::Fixed(16.0),
+            direction: Direction::Row,
+            align_items: Align::Center,
+            gap: 6.0,
+            ..BoxStyle::default()
+        },
+        decoration: None,
+        children: vec![
+            Desc::Leaf {
+                id: Cow::Owned(format!("{id}::param::{index}::name")),
+                style: BoxStyle {
+                    width: Size::Fill,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: param.name.clone(),
+                    style: theme.text_style_label_sm(),
+                },
+            },
+            Desc::Leaf {
+                id: Cow::Owned(format!("{id}::param::{index}::value")),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: if param.value.is_empty() {
+                        param.kind.clone()
+                    } else {
+                        param.value.clone()
+                    },
+                    style: theme.text_style_label_sm(),
+                },
+            },
+        ],
     }
 }
 
@@ -125,6 +241,35 @@ fn port_color(side: CanvasPortSide, theme: &Theme) -> Color {
     }
 }
 
+fn category_color(category: &str) -> Color {
+    match category.split('/').next().unwrap_or(category) {
+        "image" => Color {
+            r: 0.976,
+            g: 0.451,
+            b: 0.086,
+            a: 1.0,
+        },
+        "ai" => Color {
+            r: 0.741,
+            g: 0.094,
+            b: 0.365,
+            a: 1.0,
+        },
+        "io" => Color {
+            r: 0.235,
+            g: 0.510,
+            b: 0.965,
+            a: 1.0,
+        },
+        _ => Color {
+            r: 0.388,
+            g: 0.400,
+            b: 0.945,
+            a: 1.0,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +282,8 @@ mod tests {
             owner_id: "engine_node::7".to_string(),
             title: "Image".to_string(),
             subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: Vec::new(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             layout: CanvasNodeLayout {
@@ -164,6 +311,8 @@ mod tests {
             owner_id: "engine_node::7".to_string(),
             title: "Image".to_string(),
             subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: Vec::new(),
             inputs: Vec::new(),
             outputs: Vec::new(),
             layout: CanvasNodeLayout {
@@ -191,6 +340,12 @@ mod tests {
             owner_id: "engine_node::7".to_string(),
             title: "Image".to_string(),
             subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: vec![CanvasNodeParamView {
+                name: "prompt".to_string(),
+                kind: "string".to_string(),
+                value: "text".to_string(),
+            }],
             inputs: vec![CanvasPortView {
                 name: "prompt".to_string(),
                 stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
@@ -228,5 +383,44 @@ mod tests {
         assert!(children
             .iter()
             .any(|child| child.id() == "canvas_node::engine_node::7::port::output::image"));
+    }
+
+    #[test]
+    fn node_card_builds_function_label_and_params() {
+        let view = CanvasNodeView {
+            owner_id: "engine_node::7".to_string(),
+            title: "Image".to_string(),
+            subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: vec![CanvasNodeParamView {
+                name: "prompt".to_string(),
+                kind: "string".to_string(),
+                value: "text".to_string(),
+            }],
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            layout: CanvasNodeLayout {
+                owner_id: "engine_node::7".to_string(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 220.0,
+                    h: 96.0,
+                },
+                z_index: 0,
+                collapsed: false,
+            },
+        };
+
+        let Desc::Container { children, .. } = node_card(&view, &light_theme()) else {
+            panic!("node card should build a container");
+        };
+
+        assert!(children
+            .iter()
+            .any(|child| child.id() == "canvas_node::engine_node::7::label"));
+        assert!(children
+            .iter()
+            .any(|child| child.id() == "canvas_node::engine_node::7::body"));
     }
 }

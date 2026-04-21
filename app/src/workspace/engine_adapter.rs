@@ -3,7 +3,7 @@ use crate::workspace::node_palette::{NodePaletteItem, NodePaletteState};
 use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
-use gui::canvas::node_card::CanvasNodeView;
+use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortSide, CanvasPortView,
@@ -100,11 +100,17 @@ pub(crate) fn canvas_node_views(
             let outputs = node_def
                 .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Output, &def.outputs))
                 .unwrap_or_default();
+            let category = node_def
+                .map(|def| def.category.clone())
+                .unwrap_or_else(|| "node".to_string());
+            let params = node_def.map(canvas_node_params).unwrap_or_default();
 
             Some(CanvasNodeView {
                 owner_id: layout.owner_id.clone(),
                 title,
                 subtitle: node.type_id.clone(),
+                category,
+                params,
                 inputs,
                 outputs,
                 layout,
@@ -160,6 +166,43 @@ fn canvas_ports(
             count: pins.len(),
         })
         .collect()
+}
+
+fn canvas_node_params(node_def: &engine::node_manager::NodeDef) -> Vec<CanvasNodeParamView> {
+    node_def
+        .params
+        .iter()
+        .filter(|param| {
+            param
+                .expose
+                .iter()
+                .any(|expose| matches!(expose, engine::node_manager::ParamExpose::Control))
+        })
+        .take(5)
+        .map(|param| CanvasNodeParamView {
+            name: param.name.clone(),
+            kind: param.data_type.to_string(),
+            value: compact_value(&param.default_value),
+        })
+        .collect()
+}
+
+fn compact_value(value: &types::Value) -> String {
+    match value {
+        types::Value::Float(value) => format!("{value:.2}"),
+        types::Value::Int(value) => value.to_string(),
+        types::Value::Bool(value) => value.to_string(),
+        types::Value::Color([r, g, b, _]) => format!("#{r:.1}{g:.1}{b:.1}"),
+        types::Value::String(value) => {
+            if value.is_empty() {
+                "text".to_string()
+            } else {
+                value.chars().take(16).collect()
+            }
+        }
+        types::Value::Image(_) => "image".to_string(),
+        types::Value::Handle(handle) => handle.data_type.to_string(),
+    }
 }
 
 fn default_canvas_node_rect(index: usize) -> Rect {
