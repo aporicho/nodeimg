@@ -1,8 +1,6 @@
 use crate::interaction::InteractionState;
-use crate::overlay::OverlayRequest;
+use crate::overlay::{OverlayRequest, OverlaySystem};
 use crate::tree::{hit_test, HitChain, NodeId, NodeKind, Tree};
-
-use super::popup::PopupSystem;
 
 pub(crate) struct SystemCx<'a> {
     tree: &'a Tree,
@@ -49,10 +47,6 @@ impl<'a> SystemCx<'a> {
         self.widget_type(node_id) == Some(widget_type)
     }
 
-    pub(crate) fn focus(&mut self, node_id: NodeId) {
-        self.interaction.focus(node_id);
-    }
-
     pub(crate) fn blur(&mut self) {
         self.interaction.blur();
     }
@@ -61,19 +55,19 @@ impl<'a> SystemCx<'a> {
 pub(crate) struct OverlaySystemCx<'a> {
     tree: &'a Tree,
     interaction: &'a mut InteractionState,
-    popup: &'a mut PopupSystem,
+    overlay: &'a mut OverlaySystem,
 }
 
 impl<'a> OverlaySystemCx<'a> {
     pub(crate) fn new(
         tree: &'a Tree,
         interaction: &'a mut InteractionState,
-        popup: &'a mut PopupSystem,
+        overlay: &'a mut OverlaySystem,
     ) -> Self {
         Self {
             tree,
             interaction,
-            popup,
+            overlay,
         }
     }
 
@@ -85,20 +79,19 @@ impl<'a> OverlaySystemCx<'a> {
         self.interaction.focused()
     }
 
-    pub(crate) fn popup_open(&self) -> bool {
-        self.popup.is_open()
+    pub(crate) fn overlay_open(&self) -> bool {
+        self.overlay.is_open()
     }
 
     pub(crate) fn open_overlay(&mut self, request: OverlayRequest) {
-        self.popup.open(self.tree, request);
+        self.overlay.open(self.tree, request);
     }
 
     pub(crate) fn close_overlay(&mut self) {
-        self.popup
-            .close(SystemCx::new(self.tree, &mut *self.interaction));
+        self.overlay.close(self.tree, &mut *self.interaction);
     }
 
     pub(crate) fn close_overlay_no_focus_restore(&mut self) {
-        self.popup.close_no_focus_restore();
+        self.overlay.close_no_focus_restore();
     }
 }

@@ -26,8 +26,6 @@ pub struct TreeNode {
     pub runtime_slots: RuntimeSlots,
 }
 
-pub type PanelNode = TreeNode;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct NodeLocalRuntime {
     pub scroll_offset: f32,

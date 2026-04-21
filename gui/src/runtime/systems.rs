@@ -2,14 +2,13 @@ use crate::context::ImeRequest;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
+use crate::overlay::OverlaySystem;
 use crate::renderer::{Rect, TextMeasurer};
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::{Desc, NodeId, Tree};
 use crate::widget::state::TextInputStore;
-use crate::widget::systems::{
-    DropdownSystem, OverlaySystemCx, PopupSystem, SystemCx, TextInputSystem,
-};
+use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextInputSystem};
 
 pub(crate) struct RuntimeSyncCx<'a> {
     pub(crate) tree: &'a Tree,
@@ -30,7 +29,7 @@ pub(crate) struct RuntimeEventResult {
 }
 
 pub(crate) struct RuntimeSystems {
-    popup: PopupSystem,
+    overlay: OverlaySystem,
     dropdown: DropdownSystem,
     text_input: TextInputSystem,
 }
@@ -38,14 +37,14 @@ pub(crate) struct RuntimeSystems {
 impl RuntimeSystems {
     pub(crate) fn new() -> Self {
         Self {
-            popup: PopupSystem::new(),
+            overlay: OverlaySystem::new(),
             dropdown: DropdownSystem::new(),
             text_input: TextInputSystem::new(),
         }
     }
 
     pub(crate) fn compose_desc(&mut self, tree: &Tree, desc: Desc, root_rect: Rect) -> Desc {
-        self.popup.compose_desc(tree, desc, root_rect)
+        self.overlay.compose_desc(tree, desc, root_rect)
     }
 
     pub(crate) fn sync_with_tree(&mut self, cx: RuntimeSyncCx<'_>) {
@@ -56,7 +55,7 @@ impl RuntimeSystems {
             cx.interaction.focused(),
             cx.interaction.captured(),
         );
-        self.dropdown.sync_with_tree(cx.tree, &self.popup);
+        self.dropdown.sync_with_tree(cx.tree, &self.overlay);
     }
 
     pub(crate) fn handle_pre_gesture_event(
@@ -65,8 +64,7 @@ impl RuntimeSystems {
         event: &AppEvent,
     ) -> RuntimeEventResult {
         {
-            let popup_cx = SystemCx::new(cx.tree, cx.interaction);
-            if self.popup.handle_event(popup_cx, event) {
+            if self.overlay.handle_event(cx.tree, cx.interaction, event) {
                 return RuntimeEventResult {
                     output: FrameworkOutput::consumed(),
                     cancel_gesture: true,
@@ -75,7 +73,7 @@ impl RuntimeSystems {
         }
 
         let dropdown_output = {
-            let dropdown_cx = OverlaySystemCx::new(cx.tree, cx.interaction, &mut self.popup);
+            let dropdown_cx = OverlaySystemCx::new(cx.tree, cx.interaction, &mut self.overlay);
             self.dropdown.handle_event(dropdown_cx, event)
         };
         let text_output = {
@@ -93,15 +91,15 @@ impl RuntimeSystems {
     }
 
     pub(crate) fn open_overlay(&mut self, tree: &Tree, request: OverlayRequest) {
-        self.popup.open(tree, request);
+        self.overlay.open(tree, request);
     }
 
     pub(crate) fn close_overlay(&mut self, tree: &Tree, interaction: &mut InteractionState) {
-        self.popup.close(SystemCx::new(tree, interaction));
+        self.overlay.close(tree, interaction);
     }
 
     pub(crate) fn overlay_open(&self) -> bool {
-        self.popup.is_open()
+        self.overlay.is_open()
     }
 
     pub(crate) fn ime_request(&self, tree: &Tree, focused: Option<NodeId>) -> ImeRequest {

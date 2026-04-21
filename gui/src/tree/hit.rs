@@ -120,7 +120,7 @@ mod tests {
     use super::*;
     use crate::renderer::{Color, Rect};
     use crate::tree::layout::{BoxStyle, Decoration, Transform};
-    use crate::tree::node::{NodeKind, NodeLocalRuntime, PanelNode};
+    use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
 
@@ -129,8 +129,8 @@ mod tests {
         style: BoxStyle,
         decoration: Option<Decoration>,
         rect: Rect,
-    ) -> PanelNode {
-        PanelNode {
+    ) -> TreeNode {
+        TreeNode {
             id: Cow::Borrowed("test").into(),
             props: NodeProps::default(),
             style,

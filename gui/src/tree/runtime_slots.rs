@@ -14,6 +14,10 @@ pub struct RuntimeSlots {
 }
 
 impl RuntimeSlots {
+    pub fn is_empty(&self) -> bool {
+        self.slots.is_empty()
+    }
+
     pub fn get<T: RuntimeSlot>(&self) -> Option<&T> {
         self.slots
             .get(&TypeId::of::<T>())

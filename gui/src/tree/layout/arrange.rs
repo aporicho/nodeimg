@@ -252,14 +252,14 @@ pub(crate) fn arrange<T: LayoutTree>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::node::{NodeKind, NodeLocalRuntime, PanelNode};
+    use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::tree::Tree;
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
 
     /// 构造一个基础 Container 节点（decoration 无、子节点无）
-    fn container(style: BoxStyle) -> PanelNode {
-        PanelNode {
+    fn container(style: BoxStyle) -> TreeNode {
+        TreeNode {
             id: Cow::Borrowed("test").into(),
             props: NodeProps::default(),
             style,

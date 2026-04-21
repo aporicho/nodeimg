@@ -7,7 +7,7 @@ use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
 use crate::widget::frameworks::group::GroupProps;
 use crate::widget::frameworks::list_view::ListViewProps;
-use crate::widget::systems::{OverlaySystemCx, PopupSystem};
+use crate::widget::systems::OverlaySystemCx;
 use std::borrow::Cow;
 
 struct OpenDropdown {
@@ -24,8 +24,8 @@ impl DropdownSystem {
         Self { open: None }
     }
 
-    pub fn sync_with_tree(&mut self, tree: &Tree, popup_system: &PopupSystem) {
-        if !popup_system.is_open() {
+    pub fn sync_with_tree(&mut self, tree: &Tree, overlay_system: &crate::overlay::OverlaySystem) {
+        if !overlay_system.is_open() {
             self.open = None;
         }
         if let Some(open) = &self.open {
@@ -40,7 +40,7 @@ impl DropdownSystem {
         mut cx: OverlaySystemCx<'_>,
         event: &AppEvent,
     ) -> FrameworkOutput {
-        if !cx.popup_open() {
+        if !cx.overlay_open() {
             self.open = None;
         }
 
