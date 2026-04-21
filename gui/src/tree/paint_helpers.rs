@@ -109,18 +109,10 @@ fn find_recursive(tree: &Tree, node_id: NodeId, target_id: &str) -> Option<Rect>
     None
 }
 
-/// 取 rect 右边中点（Connection 默认的输出锚点）。
-pub fn rect_center_right(r: Rect) -> Point {
+/// 取 rect 中心点。端口圆点使用自身中心作为连接锚点。
+pub fn rect_center(r: Rect) -> Point {
     Point {
-        x: r.x + r.w,
-        y: r.y + r.h * 0.5,
-    }
-}
-
-/// 取 rect 左边中点（Connection 默认的输入锚点）。
-pub fn rect_center_left(r: Rect) -> Point {
-    Point {
-        x: r.x,
+        x: r.x + r.w * 0.5,
         y: r.y + r.h * 0.5,
     }
 }
@@ -387,6 +379,19 @@ mod tests {
         ));
         tree.set_root(root_id);
         assert!(find_node_by_str_id(&tree, "nonexistent").is_none());
+    }
+
+    #[test]
+    fn rect_center_returns_midpoint() {
+        assert_eq!(
+            rect_center(Rect {
+                x: 10.0,
+                y: 20.0,
+                w: 32.0,
+                h: 32.0,
+            }),
+            Point { x: 26.0, y: 36.0 }
+        );
     }
 
     // ── dry run（Renderer 需 wgpu Device，暂无单测 stub）──

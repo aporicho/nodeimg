@@ -11,15 +11,15 @@ use gui::canvas::{
 use gui::renderer::Rect;
 use std::collections::HashMap;
 
-const CANVAS_NODE_WIDTH: f32 = 220.0;
+const CANVAS_NODE_WIDTH: f32 = 304.0;
 const CANVAS_NODE_MIN_HEIGHT: f32 = 96.0;
-const CANVAS_NODE_PADDING_Y: f32 = 20.0;
-const CANVAS_NODE_PARAM_ROW_HEIGHT: f32 = 20.0;
-const CANVAS_NODE_EMPTY_BODY_HEIGHT: f32 = 24.0;
-const CANVAS_NODE_PORT_ROW_HEIGHT: f32 = 18.0;
-const CANVAS_NODE_PORT_TOP: f32 = 34.0;
-const CANVAS_NODE_COLUMN_GAP: f32 = 280.0;
-const CANVAS_NODE_ROW_GAP: f32 = 140.0;
+const CANVAS_NODE_PADDING_Y: f32 = 48.0;
+const CANVAS_NODE_PARAM_ROW_HEIGHT: f32 = 36.0;
+const CANVAS_NODE_ROW_GAP_Y: f32 = 12.0;
+const CANVAS_NODE_PIN_ROW_HEIGHT: f32 = 32.0;
+const CANVAS_NODE_PIN_ROW_GAP: f32 = 12.0;
+const CANVAS_NODE_COLUMN_GAP: f32 = 680.0;
+const CANVAS_NODE_ROW_GAP: f32 = 180.0;
 const CANVAS_NODE_COLUMNS: usize = 3;
 
 pub(crate) fn engine_panel_state(engine: &Engine, last_action: &str) -> EnginePanelState {
@@ -239,15 +239,16 @@ fn layout_with_content_height(
     input_count: usize,
     output_count: usize,
 ) -> CanvasNodeLayout {
-    let body_height = if param_count == 0 {
-        CANVAS_NODE_EMPTY_BODY_HEIGHT
+    let row_count = param_count.clamp(1, 5);
+    let body_height = row_count as f32 * CANVAS_NODE_PARAM_ROW_HEIGHT
+        + row_count.saturating_sub(1) as f32 * CANVAS_NODE_ROW_GAP_Y;
+    let port_count = input_count.max(output_count);
+    let port_height = if port_count == 0 {
+        0.0
     } else {
-        param_count.min(5) as f32 * CANVAS_NODE_PARAM_ROW_HEIGHT
+        port_count as f32 * CANVAS_NODE_PIN_ROW_HEIGHT
+            + port_count.saturating_sub(1) as f32 * CANVAS_NODE_PIN_ROW_GAP
     };
-    let port_height = input_count.max(output_count).saturating_sub(1) as f32
-        * CANVAS_NODE_PORT_ROW_HEIGHT
-        + CANVAS_NODE_PORT_TOP
-        + 16.0;
     layout.rect.h = layout
         .rect
         .h

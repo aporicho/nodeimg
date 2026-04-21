@@ -1,6 +1,6 @@
 use super::{
-    canvas_node_stable_id, canvas_port_group_trigger_id, CanvasNodeLayout,
-    CanvasPortConnectionState, CanvasPortGroupView, CanvasPortSide, CanvasPortView,
+    canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView,
+    CanvasPortSide, CanvasPortView,
 };
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
@@ -11,11 +11,17 @@ use crate::tree::layout::{
 use crate::tree::Desc;
 use std::borrow::Cow;
 
-const PORT_SIZE: f32 = 8.0;
-const PORT_TOP: f32 = 34.0;
-const PORT_GAP: f32 = 18.0;
-const NODE_LABEL_HEIGHT: f32 = 16.0;
-const PORT_TRIGGER_SIZE: f32 = 20.0;
+const PIN_SIZE: f32 = 32.0;
+const PIN_ROW_HEIGHT: f32 = 32.0;
+const PIN_ROW_GAP: f32 = 12.0;
+const PIN_LABEL_GAP: f32 = 10.0;
+const PIN_COLUMN_WIDTH: f32 = 120.0;
+const PIN_COLUMN_GAP: f32 = 24.0;
+const NODE_PADDING: f32 = 24.0;
+const NODE_LABEL_TOP: f32 = -37.0;
+const NODE_LABEL_HEIGHT: f32 = 32.0;
+const NODE_ROW_HEIGHT: f32 = 36.0;
+const NODE_ROW_GAP: f32 = 12.0;
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeView {
@@ -44,147 +50,114 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
     let label_id = format!("{card_id}::label");
     let label_dot_id = format!("{card_id}::label_dot");
     let label_text_id = format!("{card_id}::label_text");
+    let card_body_id = format!("{card_id}::card");
     let body_id = format!("{card_id}::body");
+    let card_x = PIN_COLUMN_WIDTH + PIN_COLUMN_GAP;
 
-    let mut children = vec![
+    let children = vec![
+        pin_column(
+            &view.owner_id,
+            CanvasPortSide::Input,
+            0.0,
+            &view.inputs,
+            theme,
+        ),
         Desc::Container {
-            id: Cow::Owned(label_id),
+            id: Cow::Owned(card_body_id),
             style: BoxStyle {
-                position: Position::Absolute { x: 2.0, y: -20.0 },
+                position: Position::Absolute { x: card_x, y: 0.0 },
                 width: Size::Fixed(view.layout.rect.w),
-                height: Size::Fixed(NODE_LABEL_HEIGHT),
-                direction: Direction::Row,
-                align_items: Align::Center,
-                gap: 5.0,
-                hittable: Some(false),
+                height: Size::Fixed(card_height(view)),
+                padding: Edges::all(NODE_PADDING),
+                direction: Direction::Column,
+                gap: NODE_ROW_GAP,
+                hittable: Some(true),
                 ..BoxStyle::default()
             },
-            decoration: None,
+            decoration: Some(Decoration {
+                background: Some(theme.colors.surface),
+                border: Some(Border {
+                    width: if view.selected { 2.0 } else { 1.0 },
+                    color: if view.selected {
+                        theme.colors.text
+                    } else {
+                        theme.colors.border
+                    },
+                }),
+                radius: [24.0; 4],
+                shadow: None,
+            }),
             children: vec![
-                Desc::Leaf {
-                    id: Cow::Owned(label_dot_id),
+                node_body(&body_id, view, theme),
+                Desc::Container {
+                    id: Cow::Owned(label_id),
                     style: BoxStyle {
-                        width: Size::Fixed(6.0),
-                        height: Size::Fixed(6.0),
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Circle {
-                        radius: 3.0,
-                        fill: Some(category_color(&view.category)),
-                        stroke: None,
-                    },
-                },
-                Desc::Leaf {
-                    id: Cow::Owned(label_text_id),
-                    style: BoxStyle {
+                        position: Position::Absolute {
+                            x: 0.0,
+                            y: NODE_LABEL_TOP,
+                        },
                         width: Size::Auto,
-                        height: Size::Auto,
+                        height: Size::Fixed(NODE_LABEL_HEIGHT),
+                        direction: Direction::Row,
+                        align_items: Align::Center,
+                        gap: PIN_LABEL_GAP,
+                        hittable: Some(false),
                         ..BoxStyle::default()
                     },
-                    kind: LeafKind::Text {
-                        content: view.title.clone(),
-                        style: theme.text_style_label_sm(),
-                    },
+                    decoration: None,
+                    children: vec![
+                        Desc::Leaf {
+                            id: Cow::Owned(label_dot_id),
+                            style: BoxStyle {
+                                width: Size::Fixed(PIN_SIZE),
+                                height: Size::Fixed(PIN_SIZE),
+                                ..BoxStyle::default()
+                            },
+                            kind: LeafKind::Circle {
+                                radius: PIN_SIZE * 0.5,
+                                fill: Some(category_color(&view.category)),
+                                stroke: None,
+                            },
+                        },
+                        Desc::Leaf {
+                            id: Cow::Owned(label_text_id),
+                            style: BoxStyle {
+                                width: Size::Auto,
+                                height: Size::Auto,
+                                ..BoxStyle::default()
+                            },
+                            kind: LeafKind::Text {
+                                content: view.title.clone(),
+                                style: theme.text_style_label_sm(),
+                            },
+                        },
+                    ],
                 },
             ],
         },
-        node_body(&body_id, view, theme),
+        pin_column(
+            &view.owner_id,
+            CanvasPortSide::Output,
+            card_x + view.layout.rect.w + PIN_COLUMN_GAP,
+            &view.outputs,
+            theme,
+        ),
     ];
-    children.push(port_group(
-        &view.owner_id,
-        CanvasPortSide::Input,
-        &view.input_group,
-        &view.inputs,
-        view,
-        theme,
-    ));
-    children.push(port_group(
-        &view.owner_id,
-        CanvasPortSide::Output,
-        &view.output_group,
-        &view.outputs,
-        view,
-        theme,
-    ));
-    children.extend(
-        view.inputs
-            .iter()
-            .map(|port| port_anchor(port, view, theme)),
-    );
-    children.extend(
-        view.outputs
-            .iter()
-            .map(|port| port_anchor(port, view, theme)),
-    );
 
     Desc::Container {
         id: Cow::Owned(card_id),
         style: BoxStyle {
             position: Position::Absolute {
-                x: view.layout.rect.x,
+                x: view.layout.rect.x - card_x,
                 y: view.layout.rect.y,
             },
-            width: Size::Fixed(view.layout.rect.w),
-            height: Size::Fixed(if view.layout.collapsed {
-                48.0
-            } else {
-                view.layout.rect.h
-            }),
-            padding: Edges::all(10.0),
+            width: Size::Fixed(card_x + view.layout.rect.w + PIN_COLUMN_GAP + PIN_COLUMN_WIDTH),
+            height: Size::Fixed(outer_height(view)),
+            padding: Edges::all(0.0),
             gap: 0.0,
-            direction: Direction::Column,
+            direction: Direction::Row,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
-            ..BoxStyle::default()
-        },
-        decoration: Some(Decoration {
-            background: Some(theme.colors.surface),
-            border: Some(Border {
-                width: if view.selected { 2.0 } else { 1.0 },
-                color: if view.selected {
-                    theme.colors.text
-                } else {
-                    theme.colors.border
-                },
-            }),
-            radius: [theme.radii.md; 4],
-            shadow: None,
-        }),
-        children,
-    }
-}
-
-fn port_group(
-    owner_id: &str,
-    side: CanvasPortSide,
-    group: &CanvasPortGroupView,
-    ports: &[CanvasPortView],
-    view: &CanvasNodeView,
-    theme: &Theme,
-) -> Desc {
-    let trigger_x = match side {
-        CanvasPortSide::Input => -PORT_TRIGGER_SIZE - 6.0,
-        CanvasPortSide::Output => view.layout.rect.w + 6.0,
-    };
-    let trigger_y = view.layout.rect.h * 0.5 - PORT_TRIGGER_SIZE * 0.5;
-    let list_x = match side {
-        CanvasPortSide::Input => trigger_x - 98.0,
-        CanvasPortSide::Output => trigger_x + PORT_TRIGGER_SIZE + 6.0,
-    };
-    let list_y = trigger_y - (ports.len().max(1) as f32 * 20.0) * 0.5 + 10.0;
-
-    let mut children = vec![port_trigger(owner_id, side, trigger_x, trigger_y, theme)];
-    if group.open {
-        children.push(pin_list(side, ports, list_x, list_y, theme));
-    }
-
-    Desc::Container {
-        id: Cow::Owned(super::canvas_port_group_stable_id(owner_id, side)),
-        style: BoxStyle {
-            position: Position::Absolute { x: 0.0, y: 0.0 },
-            width: Size::Fixed(0.0),
-            height: Size::Fixed(0.0),
-            hittable: Some(false),
             ..BoxStyle::default()
         },
         decoration: None,
@@ -192,94 +165,37 @@ fn port_group(
     }
 }
 
-fn port_trigger(owner_id: &str, side: CanvasPortSide, x: f32, y: f32, theme: &Theme) -> Desc {
-    Desc::Leaf {
-        id: Cow::Owned(canvas_port_group_trigger_id(owner_id, side)),
-        style: BoxStyle {
-            position: Position::Absolute { x, y },
-            width: Size::Fixed(PORT_TRIGGER_SIZE),
-            height: Size::Fixed(PORT_TRIGGER_SIZE),
-            hittable: Some(true),
-            gestures: vec![Gesture::Tap],
-            ..BoxStyle::default()
-        },
-        kind: LeafKind::Circle {
-            radius: PORT_TRIGGER_SIZE * 0.5,
-            fill: Some(theme.colors.surface),
-            stroke: Some(Border {
-                width: 1.5,
-                color: theme.colors.border,
-            }),
-        },
-    }
-}
-
-fn pin_list(side: CanvasPortSide, ports: &[CanvasPortView], x: f32, y: f32, theme: &Theme) -> Desc {
+fn pin_column(
+    owner_id: &str,
+    side: CanvasPortSide,
+    x: f32,
+    ports: &[CanvasPortView],
+    theme: &Theme,
+) -> Desc {
     Desc::Container {
         id: Cow::Owned(format!(
-            "{}::pin_list",
-            ports
-                .first()
-                .map(|port| port.stable_id.as_str())
-                .unwrap_or(side.as_str())
+            "canvas_node::{owner_id}::pin_column::{}",
+            side.as_str()
         )),
         style: BoxStyle {
-            position: Position::Absolute { x, y },
-            width: Size::Fixed(96.0),
+            position: Position::Absolute { x, y: 0.0 },
+            width: Size::Fixed(PIN_COLUMN_WIDTH),
             height: Size::Auto,
-            padding: Edges::symmetric(6.0, 10.0),
             direction: Direction::Column,
-            gap: 4.0,
-            hittable: Some(true),
+            gap: PIN_ROW_GAP,
+            hittable: Some(false),
             ..BoxStyle::default()
         },
-        decoration: Some(Decoration {
-            background: Some(theme.colors.surface),
-            border: Some(Border {
-                width: 1.0,
-                color: theme.colors.border,
-            }),
-            radius: [theme.radii.md; 4],
-            shadow: None,
-        }),
+        decoration: None,
         children: ports
             .iter()
-            .map(|port| pin_item(side, port, theme))
+            .map(|port| pin_row(side, port, theme))
             .collect(),
     }
 }
 
-fn pin_item(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
-    let mut children = vec![
-        Desc::Leaf {
-            id: Cow::Owned(format!("{}::pin_label", port.stable_id)),
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Text {
-                content: port.name.clone(),
-                style: theme.text_style_label_sm(),
-            },
-        },
-        Desc::Leaf {
-            id: Cow::Owned(format!("{}::pin_dot", port.stable_id)),
-            style: BoxStyle {
-                width: Size::Fixed(10.0),
-                height: Size::Fixed(10.0),
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Circle {
-                radius: 5.0,
-                fill: Some(port_color(port.side, theme)),
-                stroke: Some(Border {
-                    width: 1.0,
-                    color: port_border_color(port.connection_state, theme),
-                }),
-            },
-        },
-    ];
+fn pin_row(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
+    let mut children = vec![pin_dot(port, theme), pin_label(port, theme)];
     if side == CanvasPortSide::Output {
         children.swap(0, 1);
     }
@@ -287,17 +203,60 @@ fn pin_item(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc 
     Desc::Container {
         id: Cow::Owned(format!("{}::pin_item", port.stable_id)),
         style: BoxStyle {
-            width: Size::Fill,
-            height: Size::Fixed(14.0),
+            width: Size::Fixed(PIN_COLUMN_WIDTH),
+            height: Size::Fixed(PIN_ROW_HEIGHT),
             direction: Direction::Row,
             align_items: Align::Center,
-            gap: 6.0,
+            gap: PIN_LABEL_GAP,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         decoration: None,
         children,
+    }
+}
+
+fn pin_dot(port: &CanvasPortView, theme: &Theme) -> Desc {
+    Desc::Leaf {
+        id: Cow::Owned(port.stable_id.clone()),
+        style: BoxStyle {
+            width: Size::Fixed(PIN_SIZE),
+            height: Size::Fixed(PIN_SIZE),
+            hittable: Some(true),
+            gestures: vec![Gesture::Tap, Gesture::Drag],
+            ..BoxStyle::default()
+        },
+        kind: LeafKind::Circle {
+            radius: PIN_SIZE * 0.5,
+            fill: Some(port_state_color(port, theme)),
+            stroke: Some(Border {
+                width: match port.connection_state {
+                    CanvasPortConnectionState::Idle => 1.0,
+                    CanvasPortConnectionState::Source
+                    | CanvasPortConnectionState::CompatibleTarget
+                    | CanvasPortConnectionState::IncompatibleTarget
+                    | CanvasPortConnectionState::DropTarget
+                    | CanvasPortConnectionState::RejectedDropTarget => 2.0,
+                },
+                color: port_border_color(port.connection_state, theme),
+            }),
+        },
+    }
+}
+
+fn pin_label(port: &CanvasPortView, theme: &Theme) -> Desc {
+    Desc::Leaf {
+        id: Cow::Owned(format!("{}::pin_label", port.stable_id)),
+        style: BoxStyle {
+            width: Size::Fill,
+            height: Size::Auto,
+            ..BoxStyle::default()
+        },
+        kind: LeafKind::Text {
+            content: port.name.clone(),
+            style: theme.text_style_label_sm(),
+        },
     }
 }
 
@@ -330,9 +289,9 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
         id: Cow::Owned(id.to_string()),
         style: BoxStyle {
             width: Size::Fill,
-            height: Size::Fill,
+            height: Size::Auto,
             direction: Direction::Column,
-            gap: 4.0,
+            gap: NODE_ROW_GAP,
             ..BoxStyle::default()
         },
         decoration: None,
@@ -345,13 +304,18 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
         id: Cow::Owned(format!("{id}::param::{index}")),
         style: BoxStyle {
             width: Size::Fill,
-            height: Size::Fixed(16.0),
+            height: Size::Fixed(NODE_ROW_HEIGHT),
             direction: Direction::Row,
             align_items: Align::Center,
-            gap: 6.0,
+            gap: PIN_LABEL_GAP,
             ..BoxStyle::default()
         },
-        decoration: None,
+        decoration: Some(Decoration {
+            background: Some(theme.colors.canvas_bg),
+            border: None,
+            radius: [0.0; 4],
+            shadow: None,
+        }),
         children: vec![
             Desc::Leaf {
                 id: Cow::Owned(format!("{id}::param::{index}::name")),
@@ -385,42 +349,23 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
     }
 }
 
-fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> Desc {
-    let x = match port.side {
-        CanvasPortSide::Input => -14.0,
-        CanvasPortSide::Output => view.layout.rect.w + 6.0,
-    };
-    let y = if port.count <= 1 {
-        view.layout.rect.h * 0.5 - PORT_SIZE * 0.5
+fn card_height(view: &CanvasNodeView) -> f32 {
+    if view.layout.collapsed {
+        48.0
     } else {
-        PORT_TOP + port.index as f32 * PORT_GAP
-    };
+        view.layout.rect.h
+    }
+}
 
-    Desc::Leaf {
-        id: Cow::Owned(port.stable_id.clone()),
-        style: BoxStyle {
-            position: Position::Absolute { x, y },
-            width: Size::Fixed(PORT_SIZE),
-            height: Size::Fixed(PORT_SIZE),
-            hittable: Some(true),
-            gestures: vec![Gesture::Tap, Gesture::Drag],
-            ..BoxStyle::default()
-        },
-        kind: LeafKind::Circle {
-            radius: PORT_SIZE * 0.5,
-            fill: Some(port_state_color(port, theme)),
-            stroke: Some(Border {
-                width: match port.connection_state {
-                    CanvasPortConnectionState::Idle => 1.0,
-                    CanvasPortConnectionState::Source
-                    | CanvasPortConnectionState::CompatibleTarget
-                    | CanvasPortConnectionState::IncompatibleTarget
-                    | CanvasPortConnectionState::DropTarget
-                    | CanvasPortConnectionState::RejectedDropTarget => 2.0,
-                },
-                color: port_border_color(port.connection_state, theme),
-            }),
-        },
+fn outer_height(view: &CanvasNodeView) -> f32 {
+    card_height(view).max(pin_column_height(view.inputs.len().max(view.outputs.len())))
+}
+
+fn pin_column_height(count: usize) -> f32 {
+    if count == 0 {
+        0.0
+    } else {
+        count as f32 * PIN_ROW_HEIGHT + count.saturating_sub(1) as f32 * PIN_ROW_GAP
     }
 }
 
@@ -612,17 +557,18 @@ mod tests {
 
         assert!(children
             .iter()
-            .any(|child| child.id() == "canvas_node::engine_node::7::port_group::input"));
+            .any(|child| child.id() == "canvas_node::engine_node::7::pin_column::input"));
+        assert!(children
+            .iter()
+            .any(|child| child.id() == "canvas_node::engine_node::7::pin_column::output"));
         assert!(children.iter().any(|child| contains_desc_id(
             child,
-            "canvas_node::engine_node::7::port::input::prompt::pin_list"
+            "canvas_node::engine_node::7::port::input::prompt"
         )));
-        assert!(children
-            .iter()
-            .any(|child| child.id() == "canvas_node::engine_node::7::port::input::prompt"));
-        assert!(children
-            .iter()
-            .any(|child| child.id() == "canvas_node::engine_node::7::port::output::image"));
+        assert!(children.iter().any(|child| contains_desc_id(
+            child,
+            "canvas_node::engine_node::7::port::output::image"
+        )));
     }
 
     #[test]
@@ -661,10 +607,10 @@ mod tests {
 
         assert!(children
             .iter()
-            .any(|child| child.id() == "canvas_node::engine_node::7::label"));
+            .any(|child| contains_desc_id(child, "canvas_node::engine_node::7::label")));
         assert!(children
             .iter()
-            .any(|child| child.id() == "canvas_node::engine_node::7::body"));
+            .any(|child| contains_desc_id(child, "canvas_node::engine_node::7::body")));
     }
 
     fn contains_desc_id(desc: &Desc, id: &str) -> bool {

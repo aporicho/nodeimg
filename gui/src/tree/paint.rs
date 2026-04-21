@@ -1,8 +1,7 @@
 use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{
-    bezier_control_points, find_node_by_str_id, grid_cells, rect_center_left, rect_center_right,
-    PaintTransform,
+    bezier_control_points, find_node_by_str_id, grid_cells, rect_center, PaintTransform,
 };
 use super::tree::Tree;
 use crate::interaction::InteractionState;
@@ -157,8 +156,8 @@ fn paint_node(
                 let Some(to_rect) = find_node_by_str_id(tree, to_port.as_ref()) else {
                     return;
                 };
-                let from_p = tf.apply_point(rect_center_right(from_rect));
-                let to_p = tf.apply_point(rect_center_left(to_rect));
+                let from_p = tf.apply_point(rect_center(from_rect));
+                let to_p = tf.apply_point(rect_center(to_rect));
                 let ctrl = bezier_control_points(from_p, to_p);
                 renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.connection);
             }
@@ -169,7 +168,7 @@ fn paint_node(
                 let Some(from_rect) = find_node_by_str_id(tree, from_port.as_ref()) else {
                     return;
                 };
-                let from_p = tf.apply_point(rect_center_right(from_rect));
+                let from_p = tf.apply_point(rect_center(from_rect));
                 let to_p = tf.apply_point(*cursor_canvas);
                 let ctrl = bezier_control_points(from_p, to_p);
                 renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.accent);
