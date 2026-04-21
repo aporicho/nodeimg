@@ -1,4 +1,5 @@
-use super::layout::{BoxStyle, Decoration, Transform};
+use super::layout::box_model::rect_contains;
+use super::layout::{BoxStyle, Decoration, Overflow, Transform};
 use super::node::NodeId;
 use super::tree::Tree;
 
@@ -62,8 +63,10 @@ fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<N
     let style = node.style.clone();
     let decoration = node.decoration.clone();
 
-    // 1. 自身 bounds 检查（在当前坐标空间）
-    if x < r.x || x > r.x + r.w || y < r.y || y > r.y + r.h {
+    // 1. 自身 bounds 检查（在当前坐标空间）。Overflow::Visible 允许
+    // children 在 parent bounds 外继续参与命中；Hidden/Scroll 会裁剪。
+    let inside_bounds = rect_contains(r, x, y);
+    if !inside_bounds && style.overflow != Overflow::Visible {
         return false;
     }
 
@@ -82,7 +85,7 @@ fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<N
     }
 
     // 4. 没有子命中，检查自身是否可命中
-    if is_hittable(&style, &decoration) {
+    if inside_bounds && is_hittable(&style, &decoration) {
         chain.push(node_id);
         return true;
     }
@@ -400,6 +403,127 @@ mod tests {
     }
 
     #[test]
+    fn hit_visible_overflow_child_outside_parent_bounds() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 120.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle {
+                    overflow: Overflow::Visible,
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![child_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let chain = hit_test(&tree, root_id, 125.0, 15.0);
+        let ids: Vec<_> = chain.iter().collect();
+        assert_eq!(ids, vec![child_id, root_id]);
+    }
+
+    #[test]
+    fn hit_hidden_overflow_clips_child_outside_parent_bounds() {
+        let chain = hit_overflow_child_outside_parent_bounds(Overflow::Hidden);
+
+        assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn hit_scroll_overflow_clips_child_outside_parent_bounds() {
+        let chain = hit_overflow_child_outside_parent_bounds(Overflow::Scroll);
+
+        assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn hit_visible_overflow_does_not_hit_parent_outside_its_bounds() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_with_rect(
+            BoxStyle {
+                overflow: Overflow::Visible,
+                ..Default::default()
+            },
+            Some(decor()),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+        ));
+        tree.set_root(root);
+
+        let chain = hit_test(&tree, root, 125.0, 15.0);
+        assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn hit_visible_overflow_keeps_reverse_z_order() {
+        let mut tree = Tree::new();
+        let child1_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 120.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
+        ));
+        let child2_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 120.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle {
+                    overflow: Overflow::Visible,
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![child1_id, child2_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let chain = hit_test(&tree, root_id, 125.0, 15.0);
+        assert_eq!(chain.leaf(), Some(child2_id));
+    }
+
+    #[test]
     fn hit_transform_identity() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
@@ -522,5 +646,40 @@ mod tests {
         // 屏幕 (30, 30) → 逆变换 (30/2, 30/2) = (15, 15) → 命中 child local (10,10,10,10)
         let chain = hit_test(&tree, root_id, 30.0, 30.0);
         assert_eq!(chain.leaf(), Some(child_id));
+    }
+
+    fn hit_overflow_child_outside_parent_bounds(overflow: Overflow) -> HitChain {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 120.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle {
+                    overflow,
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![child_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        hit_test(&tree, root_id, 125.0, 15.0)
     }
 }

@@ -1,5 +1,6 @@
 use crate::renderer::Rect;
 
+use super::box_model::{border_box_from_available, layout_boxes, ChildCoordinateSpace};
 use super::measure::measure;
 use super::types::*;
 
@@ -14,32 +15,26 @@ pub(crate) fn arrange<T: LayoutTree>(
     let desired_size = matches!(style.position, Position::Absolute { .. })
         .then(|| measure(&*tree, node, measure_text));
 
-    // 扣除 margin
-    let after_margin = Rect {
-        x: available.x + style.margin.left,
-        y: available.y + style.margin.top,
-        w: (available.w - style.margin.horizontal()).max(0.0),
-        h: (available.h - style.margin.vertical()).max(0.0),
-    };
+    let border_available = border_box_from_available(available, style.margin);
 
     // 节点最终 rect（margin 内的区域）
     let node_rect = Rect {
-        x: after_margin.x,
-        y: after_margin.y,
+        x: border_available.x,
+        y: border_available.y,
         w: match style.width {
             Size::Fixed(w) => w,
             _ if matches!(style.position, Position::Absolute { .. }) => desired_size
                 .map(|size| size.width)
-                .unwrap_or(after_margin.w),
-            _ => after_margin.w,
+                .unwrap_or(border_available.w),
+            _ => border_available.w,
         }
         .clamp(style.min_width, style.max_width),
         h: match style.height {
             Size::Fixed(h) => h,
             _ if matches!(style.position, Position::Absolute { .. }) => desired_size
                 .map(|size| size.height)
-                .unwrap_or(after_margin.h),
-            _ => after_margin.h,
+                .unwrap_or(border_available.h),
+            _ => border_available.h,
         }
         .clamp(style.min_height, style.max_height),
     };
@@ -57,24 +52,16 @@ pub(crate) fn arrange<T: LayoutTree>(
         .copied()
         .partition(|&c| matches!(tree.style(c).position, Position::Flow));
 
-    // 扣除 padding → 内容区域
     // Transform 节点的子节点在 local 空间，起点相对 (0, 0) + padding；
-    // 普通节点的子节点在绝对空间，起点相对 node_rect + padding。
-    let content = if style.transform.is_some() {
-        Rect {
-            x: style.padding.left,
-            y: style.padding.top,
-            w: (node_rect.w - style.padding.horizontal()).max(0.0),
-            h: (node_rect.h - style.padding.vertical()).max(0.0),
-        }
+    // 普通节点的子节点在父坐标空间，起点相对 border box + padding。
+    let child_space = if style.transform.is_some() {
+        ChildCoordinateSpace::Local
     } else {
-        Rect {
-            x: node_rect.x + style.padding.left,
-            y: node_rect.y + style.padding.top,
-            w: (node_rect.w - style.padding.horizontal()).max(0.0),
-            h: (node_rect.h - style.padding.vertical()).max(0.0),
-        }
+        ChildCoordinateSpace::Parent
     };
+    let boxes = layout_boxes(available, node_rect, style.padding, child_space);
+    let _ = (boxes.margin_box, boxes.border_box);
+    let content = boxes.content_box;
 
     // 度量子节点（提前，Scroll 分支和 Flex 分支共用）
     let is_column = style.direction == Direction::Column;
@@ -237,7 +224,7 @@ pub(crate) fn arrange<T: LayoutTree>(
             Position::Flow => unreachable!("partition 已保证这里只有 Absolute"),
         };
 
-        // Absolute 子节点的"可用空间"：从 content 偏移 abs_x/abs_y 后的区域
+        // Absolute 子节点的"可用空间"：从 content box 偏移 abs_x/abs_y 后的区域。
         let child_available = Rect {
             x: content.x + abs_x,
             y: content.y + abs_y,
@@ -545,6 +532,53 @@ mod tests {
             "Transform 父的 Flow 子应从 local origin (0,0) 开始"
         );
         assert_eq!(child.rect.y, 0.0);
+        assert_eq!(child.rect.w, 100.0);
+        assert_eq!(child.rect.h, 50.0);
+    }
+
+    #[test]
+    fn transform_node_absolute_children_use_local_content_box() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container(BoxStyle {
+            position: Position::Absolute { x: 10.0, y: 15.0 },
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(50.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(400.0),
+            height: Size::Fixed(300.0),
+            padding: Edges::all(20.0),
+            transform: Some(Transform {
+                translate: [10.0, 20.0],
+                scale: 2.0,
+                rotate: 0.0,
+            }),
+            ..Default::default()
+        });
+        root.children = vec![child_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 50.0,
+                y: 60.0,
+                w: 400.0,
+                h: 300.0,
+            },
+            &mut measure,
+        );
+
+        let child = tree.get(child_id).unwrap();
+        assert_eq!(
+            child.rect.x, 30.0,
+            "Transform 父的 Absolute 子应从 local padding + abs.x 开始"
+        );
+        assert_eq!(child.rect.y, 35.0);
         assert_eq!(child.rect.w, 100.0);
         assert_eq!(child.rect.h, 50.0);
     }
