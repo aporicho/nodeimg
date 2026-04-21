@@ -212,6 +212,14 @@ impl Context {
         self.tree.cancel_pending_canvas_connection();
     }
 
+    pub fn hovered_canvas_port_id(&self) -> Option<String> {
+        self.tree.hovered_canvas_port_id()
+    }
+
+    pub fn set_hovered_canvas_port(&mut self, port_id: Option<&str>) -> bool {
+        self.tree.set_hovered_canvas_port(port_id)
+    }
+
     pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
         self.tree.export_panel_layouts()
     }

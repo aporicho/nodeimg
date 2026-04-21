@@ -64,6 +64,7 @@ pub(crate) struct CanvasInteractionRuntime {
     selected_owner_ids: HashSet<String>,
     open_port_group_ids: HashSet<String>,
     pending_connection: Option<CanvasPendingConnectionView>,
+    hovered_port_id: Option<String>,
 }
 
 impl CanvasInteractionRuntime {
@@ -145,6 +146,20 @@ impl CanvasInteractionRuntime {
         self.pending_connection = None;
     }
 
+    pub(crate) fn hovered_port_id(&self) -> Option<&str> {
+        self.hovered_port_id.as_deref()
+    }
+
+    pub(crate) fn set_hovered_port(&mut self, port_id: Option<&str>) -> bool {
+        if let Some(port_id) = port_id {
+            if parse_canvas_port_id(port_id).is_none() {
+                return false;
+            }
+        }
+        self.hovered_port_id = port_id.map(str::to_string);
+        true
+    }
+
     pub(crate) fn retain_owner_ids(&mut self, owner_ids: &HashSet<&str>) {
         self.selected_owner_ids
             .retain(|owner_id| owner_ids.contains(owner_id.as_str()));
@@ -164,6 +179,14 @@ impl CanvasInteractionRuntime {
             .map(|port| port.owner_id);
         if pending_owner_id.is_some_and(|owner_id| !owner_ids.contains(owner_id.as_str())) {
             self.pending_connection = None;
+        }
+        let hovered_owner_id = self
+            .hovered_port_id
+            .as_ref()
+            .and_then(|port_id| parse_canvas_port_id(port_id))
+            .map(|port| port.owner_id);
+        if hovered_owner_id.is_some_and(|owner_id| !owner_ids.contains(owner_id.as_str())) {
+            self.hovered_port_id = None;
         }
     }
 }

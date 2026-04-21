@@ -92,6 +92,7 @@ impl App for DemoApp {
 
         match event {
             AppEvent::MouseMove { x, y } => {
+                self.workspace.update_canvas_hover(&mut self.gui, x, y);
                 self.update_hover_cursor(x, y, ctx);
             }
             AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {

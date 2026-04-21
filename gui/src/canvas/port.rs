@@ -26,6 +26,8 @@ pub enum CanvasPortConnectionState {
     Source,
     CompatibleTarget,
     IncompatibleTarget,
+    DropTarget,
+    RejectedDropTarget,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -335,6 +335,16 @@ impl Tree {
             .cancel_pending_connection();
     }
 
+    pub(crate) fn hovered_canvas_port_id(&self) -> Option<String> {
+        self.runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .and_then(|interaction| interaction.hovered_port_id().map(str::to_string))
+    }
+
+    pub(crate) fn set_hovered_canvas_port(&mut self, port_id: Option<&str>) -> bool {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .set_hovered_port(port_id)
+    }
+
     pub(crate) fn export_panel_layouts(&self) -> Vec<PanelLayout> {
         let mut layouts: Vec<PanelLayout> = self
             .iter()
@@ -742,6 +752,13 @@ mod tests {
             Some([2.0, 3.0])
         );
         assert!(tree.update_pending_canvas_connection([4.0, 5.0]));
+        assert!(
+            tree.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::prompt"))
+        );
+        assert_eq!(
+            tree.hovered_canvas_port_id(),
+            Some("canvas_node::engine_node::1::port::input::prompt".to_string())
+        );
 
         tree.sync_canvas_node_layouts(&[second]);
 
@@ -752,5 +769,6 @@ mod tests {
                 .open
         );
         assert!(tree.pending_canvas_connection().is_none());
+        assert!(tree.hovered_canvas_port_id().is_none());
     }
 }

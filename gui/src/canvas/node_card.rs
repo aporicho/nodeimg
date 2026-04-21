@@ -414,7 +414,9 @@ fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> D
                     CanvasPortConnectionState::Idle => 1.0,
                     CanvasPortConnectionState::Source
                     | CanvasPortConnectionState::CompatibleTarget
-                    | CanvasPortConnectionState::IncompatibleTarget => 2.0,
+                    | CanvasPortConnectionState::IncompatibleTarget
+                    | CanvasPortConnectionState::DropTarget
+                    | CanvasPortConnectionState::RejectedDropTarget => 2.0,
                 },
                 color: port_border_color(port.connection_state, theme),
             }),
@@ -425,7 +427,9 @@ fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> D
 fn port_state_color(port: &CanvasPortView, theme: &Theme) -> Color {
     match port.connection_state {
         CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
+        CanvasPortConnectionState::DropTarget => theme.colors.accent,
         CanvasPortConnectionState::IncompatibleTarget => incompatible_port_color(),
+        CanvasPortConnectionState::RejectedDropTarget => incompatible_port_color(),
         CanvasPortConnectionState::Source | CanvasPortConnectionState::Idle => {
             port_color(port.side, theme)
         }
@@ -435,7 +439,9 @@ fn port_state_color(port: &CanvasPortView, theme: &Theme) -> Color {
 fn port_border_color(state: CanvasPortConnectionState, theme: &Theme) -> Color {
     match state {
         CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
+        CanvasPortConnectionState::DropTarget => theme.colors.accent,
         CanvasPortConnectionState::IncompatibleTarget => incompatible_port_color(),
+        CanvasPortConnectionState::RejectedDropTarget => incompatible_port_color(),
         CanvasPortConnectionState::Source => theme.colors.text,
         CanvasPortConnectionState::Idle => theme.colors.surface,
     }

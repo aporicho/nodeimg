@@ -93,13 +93,22 @@ impl WorkspaceController {
         let layouts = gui.sync_canvas_node_layouts(&identities);
         let mut views = engine_adapter::canvas_node_views(&self.engine, layouts);
         let pending_connection = gui.pending_canvas_connection();
+        let hovered_port_id = gui.hovered_canvas_port_id();
         for view in &mut views {
             view.input_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Input);
             view.output_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Output);
             view.selected = gui.is_canvas_node_selected(&view.owner_id);
             if let Some(pending) = pending_connection.as_ref() {
-                self.apply_pending_connection_state(pending, &mut view.inputs);
-                self.apply_pending_connection_state(pending, &mut view.outputs);
+                self.apply_pending_connection_state(
+                    pending,
+                    hovered_port_id.as_deref(),
+                    &mut view.inputs,
+                );
+                self.apply_pending_connection_state(
+                    pending,
+                    hovered_port_id.as_deref(),
+                    &mut view.outputs,
+                );
             }
         }
         views
@@ -210,15 +219,25 @@ impl WorkspaceController {
         true
     }
 
+    pub(crate) fn update_canvas_hover(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
+        let port_id = self.port_id_at(gui, x, y);
+        gui.set_hovered_canvas_port(port_id.as_deref())
+    }
+
     fn input_port_at(&self, gui: &Context, x: f32, y: f32) -> Option<CanvasPortRef> {
-        let chain = gui.hit_test(x, y);
-        let port = chain.iter().find_map(|node_id| {
-            let id = gui.node_name(node_id)?;
-            let port_id = canvas_port_event_target_id(id)?;
-            let port = parse_canvas_port_id(port_id)?;
+        self.port_id_at(gui, x, y).and_then(|port_id| {
+            let port = parse_canvas_port_id(&port_id)?;
             (port.side == CanvasPortSide::Input).then_some(port)
+        })
+    }
+
+    fn port_id_at(&self, gui: &Context, x: f32, y: f32) -> Option<String> {
+        let chain = gui.hit_test(x, y);
+        let port_id = chain.iter().find_map(|node_id| {
+            let id = gui.node_name(node_id)?;
+            canvas_port_event_target_id(id).map(str::to_string)
         });
-        port
+        port_id
     }
 
     fn connect_canvas_ports(
@@ -256,19 +275,21 @@ impl WorkspaceController {
     fn apply_pending_connection_state(
         &self,
         pending: &CanvasPendingConnectionView,
+        hovered_port_id: Option<&str>,
         ports: &mut [CanvasPortView],
     ) {
         let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
             return;
         };
         for port in ports {
-            port.connection_state = self.pending_connection_state(&from, port);
+            port.connection_state = self.pending_connection_state(&from, hovered_port_id, port);
         }
     }
 
     fn pending_connection_state(
         &self,
         from: &CanvasPortRef,
+        hovered_port_id: Option<&str>,
         port: &CanvasPortView,
     ) -> CanvasPortConnectionState {
         if port.stable_id == canvas_port_stable_id(&from.owner_id, from.side, &from.name) {
@@ -287,8 +308,15 @@ impl WorkspaceController {
             side: port.side,
             name: port.name.clone(),
         };
+        let hovered = hovered_port_id == Some(port.stable_id.as_str());
         if self.can_connect_canvas_ports(from, &target).is_ok() {
-            CanvasPortConnectionState::CompatibleTarget
+            if hovered {
+                CanvasPortConnectionState::DropTarget
+            } else {
+                CanvasPortConnectionState::CompatibleTarget
+            }
+        } else if hovered {
+            CanvasPortConnectionState::RejectedDropTarget
         } else {
             CanvasPortConnectionState::IncompatibleTarget
         }
@@ -551,5 +579,30 @@ mod tests {
 
         assert_eq!(source, Some(CanvasPortConnectionState::Source));
         assert_eq!(target, Some(CanvasPortConnectionState::CompatibleTarget));
+    }
+
+    #[test]
+    fn canvas_node_views_mark_hovered_pending_connection_drop_target() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        controller.add_node_from_library("image_gen");
+        controller.add_node_from_library("color_adjust");
+        assert!(gui.begin_pending_canvas_connection(
+            "canvas_node::engine_node::0::port::output::image",
+            [0.0, 0.0],
+        ));
+        assert!(
+            gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
+        );
+
+        let views = controller.canvas_node_views(&mut gui);
+        let target = views
+            .iter()
+            .find(|view| view.owner_id == "engine_node::1")
+            .and_then(|view| view.inputs.iter().find(|port| port.name == "image"))
+            .map(|port| port.connection_state);
+
+        assert_eq!(target, Some(CanvasPortConnectionState::DropTarget));
     }
 }
