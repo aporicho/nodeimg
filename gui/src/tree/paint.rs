@@ -129,6 +129,27 @@ fn paint_node(
                     renderer.draw_image(screen_rect, view);
                 }
             }
+            LeafKind::Circle {
+                radius,
+                fill,
+                stroke,
+            } => {
+                let center = Point {
+                    x: screen_rect.x + screen_rect.w * 0.5,
+                    y: screen_rect.y + screen_rect.h * 0.5,
+                };
+                let scaled_radius = *radius * tf.scale;
+                if let Some(stroke) = stroke {
+                    renderer.draw_circle(center, scaled_radius, stroke.color);
+                }
+                if let Some(fill) = fill {
+                    let fill_radius = stroke
+                        .map(|stroke| scaled_radius - stroke.width * tf.scale)
+                        .unwrap_or(scaled_radius)
+                        .max(0.0);
+                    renderer.draw_circle(center, fill_radius, *fill);
+                }
+            }
             LeafKind::Connection { from_port, to_port } => {
                 let Some(from_rect) = find_node_by_str_id(tree, from_port.as_ref()) else {
                     return;

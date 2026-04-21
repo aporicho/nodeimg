@@ -388,7 +388,7 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
 fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> Desc {
     let x = match port.side {
         CanvasPortSide::Input => -14.0,
-        CanvasPortSide::Output => view.layout.rect.w - 14.0,
+        CanvasPortSide::Output => view.layout.rect.w + 6.0,
     };
     let y = if port.count <= 1 {
         view.layout.rect.h * 0.5 - PORT_SIZE * 0.5

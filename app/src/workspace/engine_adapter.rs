@@ -12,7 +12,12 @@ use gui::renderer::Rect;
 use std::collections::HashMap;
 
 const CANVAS_NODE_WIDTH: f32 = 220.0;
-const CANVAS_NODE_HEIGHT: f32 = 96.0;
+const CANVAS_NODE_MIN_HEIGHT: f32 = 96.0;
+const CANVAS_NODE_PADDING_Y: f32 = 20.0;
+const CANVAS_NODE_PARAM_ROW_HEIGHT: f32 = 20.0;
+const CANVAS_NODE_EMPTY_BODY_HEIGHT: f32 = 24.0;
+const CANVAS_NODE_PORT_ROW_HEIGHT: f32 = 18.0;
+const CANVAS_NODE_PORT_TOP: f32 = 34.0;
 const CANVAS_NODE_COLUMN_GAP: f32 = 280.0;
 const CANVAS_NODE_ROW_GAP: f32 = 140.0;
 const CANVAS_NODE_COLUMNS: usize = 3;
@@ -95,15 +100,17 @@ pub(crate) fn canvas_node_views(
                 .unwrap_or(node.type_id.as_str())
                 .to_string();
             let inputs = node_def
-                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Input, &def.inputs))
+                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Input, def))
                 .unwrap_or_default();
             let outputs = node_def
-                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Output, &def.outputs))
+                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Output, def))
                 .unwrap_or_default();
             let category = node_def
                 .map(|def| def.category.clone())
                 .unwrap_or_else(|| "node".to_string());
             let params = node_def.map(canvas_node_params).unwrap_or_default();
+            let layout =
+                layout_with_content_height(layout, params.len(), inputs.len(), outputs.len());
 
             Some(CanvasNodeView {
                 owner_id: layout.owner_id.clone(),
@@ -157,19 +164,97 @@ pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionVi
 fn canvas_ports(
     owner_id: &str,
     side: CanvasPortSide,
-    pins: &[engine::node_manager::PinDef],
+    node_def: &engine::node_manager::NodeDef,
 ) -> Vec<CanvasPortView> {
-    pins.iter()
+    let pins = exposed_ports(node_def, side);
+    let count = pins.len();
+    pins.into_iter()
         .enumerate()
         .map(|(index, pin)| CanvasPortView {
             name: pin.name.clone(),
             stable_id: canvas_port_stable_id(owner_id, side, &pin.name),
             side,
             index,
-            count: pins.len(),
+            count,
             connection_state: CanvasPortConnectionState::Idle,
         })
         .collect()
+}
+
+fn exposed_ports(
+    node_def: &engine::node_manager::NodeDef,
+    side: CanvasPortSide,
+) -> Vec<engine::node_manager::ExposedPinDef> {
+    let mut ports = match side {
+        CanvasPortSide::Input => node_def
+            .inputs
+            .iter()
+            .map(|pin| engine::node_manager::ExposedPinDef {
+                name: pin.name.clone(),
+                data_type: pin.data_type.clone(),
+                optional: pin.optional,
+                kind: engine::node_manager::ExposedPinKind::Input,
+                source: engine::node_manager::ExposedPinSource::Pin,
+            })
+            .collect::<Vec<_>>(),
+        CanvasPortSide::Output => node_def
+            .outputs
+            .iter()
+            .map(|pin| engine::node_manager::ExposedPinDef {
+                name: pin.name.clone(),
+                data_type: pin.data_type.clone(),
+                optional: false,
+                kind: engine::node_manager::ExposedPinKind::Output,
+                source: engine::node_manager::ExposedPinSource::Pin,
+            })
+            .collect::<Vec<_>>(),
+    };
+
+    ports.extend(node_def.params.iter().filter_map(|param| {
+        let exposed = match side {
+            CanvasPortSide::Input => param
+                .expose
+                .contains(&engine::node_manager::ParamExpose::Input),
+            CanvasPortSide::Output => param
+                .expose
+                .contains(&engine::node_manager::ParamExpose::Output),
+        };
+        exposed.then(|| engine::node_manager::ExposedPinDef {
+            name: param.name.clone(),
+            data_type: param.data_type.clone(),
+            optional: side == CanvasPortSide::Input,
+            kind: match side {
+                CanvasPortSide::Input => engine::node_manager::ExposedPinKind::Input,
+                CanvasPortSide::Output => engine::node_manager::ExposedPinKind::Output,
+            },
+            source: engine::node_manager::ExposedPinSource::Param,
+        })
+    }));
+    ports
+}
+
+fn layout_with_content_height(
+    mut layout: CanvasNodeLayout,
+    param_count: usize,
+    input_count: usize,
+    output_count: usize,
+) -> CanvasNodeLayout {
+    let body_height = if param_count == 0 {
+        CANVAS_NODE_EMPTY_BODY_HEIGHT
+    } else {
+        param_count.min(5) as f32 * CANVAS_NODE_PARAM_ROW_HEIGHT
+    };
+    let port_height = input_count.max(output_count).saturating_sub(1) as f32
+        * CANVAS_NODE_PORT_ROW_HEIGHT
+        + CANVAS_NODE_PORT_TOP
+        + 16.0;
+    layout.rect.h = layout
+        .rect
+        .h
+        .max(CANVAS_NODE_MIN_HEIGHT)
+        .max(CANVAS_NODE_PADDING_Y + body_height)
+        .max(port_height);
+    layout
 }
 
 fn canvas_node_params(node_def: &engine::node_manager::NodeDef) -> Vec<CanvasNodeParamView> {
@@ -216,7 +301,7 @@ fn default_canvas_node_rect(index: usize) -> Rect {
         x: column as f32 * CANVAS_NODE_COLUMN_GAP,
         y: row as f32 * CANVAS_NODE_ROW_GAP,
         w: CANVAS_NODE_WIDTH,
-        h: CANVAS_NODE_HEIGHT,
+        h: CANVAS_NODE_MIN_HEIGHT,
     }
 }
 
@@ -233,6 +318,9 @@ pub(crate) fn parse_engine_node_owner_id(owner_id: &str) -> Option<types::NodeId
 mod tests {
     use super::*;
     use engine::graph::{Connection, PinRef};
+    use engine::node_manager::{
+        ExecutionPolicy, NodeDef, NodeSourceKind, ParamDef, ParamExpose, PinDef, Purity,
+    };
 
     #[test]
     fn engine_node_owner_id_roundtrips() {
@@ -280,5 +368,69 @@ mod tests {
                 color_adjust.0
             )
         );
+    }
+
+    #[test]
+    fn exposed_param_ports_are_included_in_canvas_ports() {
+        let node_def = NodeDef {
+            type_id: "test".to_string(),
+            version: 1,
+            source: NodeSourceKind::Builtin,
+            name: "Test".to_string(),
+            category: "test".to_string(),
+            requires: Vec::new(),
+            purity: Purity::Pure,
+            cooking_sensitivity: Vec::new(),
+            realtime_capable: true,
+            execution: ExecutionPolicy::default(),
+            api: None,
+            inputs: vec![PinDef {
+                name: "image".to_string(),
+                data_type: types::DataType::image(),
+                optional: false,
+            }],
+            outputs: vec![PinDef {
+                name: "out".to_string(),
+                data_type: types::DataType::image(),
+                optional: false,
+            }],
+            params: vec![ParamDef {
+                name: "strength".to_string(),
+                data_type: types::DataType::float(),
+                constraint: None,
+                default_value: types::Value::Float(0.5),
+                expose: vec![ParamExpose::Input],
+            }],
+            execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+        };
+
+        let input_ports = canvas_ports("engine_node::1", CanvasPortSide::Input, &node_def);
+
+        assert_eq!(input_ports.len(), 2);
+        assert!(input_ports.iter().any(|port| {
+            port.stable_id == "canvas_node::engine_node::1::port::input::strength"
+        }));
+    }
+
+    #[test]
+    fn layout_height_grows_for_multiple_ports() {
+        let layout = layout_with_content_height(
+            CanvasNodeLayout {
+                owner_id: "engine_node::1".to_string(),
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: CANVAS_NODE_WIDTH,
+                    h: 40.0,
+                },
+                z_index: 0,
+                collapsed: false,
+            },
+            1,
+            5,
+            1,
+        );
+
+        assert!(layout.rect.h > CANVAS_NODE_MIN_HEIGHT);
     }
 }
