@@ -1,6 +1,7 @@
 use super::desc::Desc;
-use super::node::{NodeId, NodeKind, PanelNode};
+use super::node::{NodeId, NodeKind, NodeLocalRuntime, PanelNode};
 use super::tree::Tree;
+use super::{NodeProps, RuntimeSlots};
 use crate::renderer::Rect;
 use crate::widget::props::WidgetBuildCx;
 
@@ -125,7 +126,8 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
     };
 
     let node_id = tree.insert(PanelNode {
-        id,
+        id: id.into(),
+        props: NodeProps::default(),
         style,
         decoration,
         kind,
@@ -136,8 +138,8 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
             h: 0.0,
         },
         children: Vec::new(),
-        scroll_offset: 0.0,
-        content_height: 0.0,
+        local_runtime: NodeLocalRuntime::default(),
+        runtime_slots: RuntimeSlots::default(),
     });
 
     let child_ids: Vec<NodeId> = child_descs

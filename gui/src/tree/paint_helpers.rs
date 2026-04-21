@@ -129,20 +129,22 @@ pub fn rect_center_left(r: Rect) -> Point {
 mod tests {
     use super::*;
     use crate::tree::layout::{BoxStyle, Transform};
-    use crate::tree::node::{NodeKind, PanelNode};
+    use crate::tree::node::{NodeKind, NodeLocalRuntime, PanelNode};
     use crate::tree::tree::Tree;
+    use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
 
     fn container_at(id: &'static str, rect: Rect) -> PanelNode {
         PanelNode {
-            id: Cow::Borrowed(id),
+            id: Cow::Borrowed(id).into(),
+            props: NodeProps::default(),
             style: BoxStyle::default(),
             decoration: None,
             kind: NodeKind::Container,
             rect,
             children: Vec::new(),
-            scroll_offset: 0.0,
-            content_height: 0.0,
+            local_runtime: NodeLocalRuntime::default(),
+            runtime_slots: RuntimeSlots::default(),
         }
     }
 

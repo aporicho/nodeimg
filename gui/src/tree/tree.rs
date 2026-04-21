@@ -1,5 +1,7 @@
 use super::node::{NodeId, PanelNode};
 use super::runtime::TreeRuntime;
+use super::runtime_slots::RuntimeSlot;
+use super::StableId;
 use crate::panel::{PanelConfig, PanelRuntime};
 use crate::widget::resize_edge::ResizeEdge;
 
@@ -51,6 +53,32 @@ impl Tree {
 
     pub fn get_mut(&mut self, id: NodeId) -> Option<&mut PanelNode> {
         self.nodes.get_mut(id).and_then(|n| n.as_mut())
+    }
+
+    pub fn node_by_stable_id(&self, stable_id: &StableId) -> Option<NodeId> {
+        self.iter()
+            .find_map(|(id, node)| (node.id.as_ref() == stable_id.as_str()).then_some(id))
+    }
+
+    pub fn node_by_str(&self, stable_id: &str) -> Option<NodeId> {
+        self.iter()
+            .find_map(|(id, node)| (node.id.as_ref() == stable_id).then_some(id))
+    }
+
+    pub fn runtime_slot<T: RuntimeSlot>(&self, id: NodeId) -> Option<&T> {
+        self.get(id)?.runtime_slots.get::<T>()
+    }
+
+    pub fn runtime_slot_mut<T: RuntimeSlot>(&mut self, id: NodeId) -> Option<&mut T> {
+        self.get_mut(id)?.runtime_slots.get_mut::<T>()
+    }
+
+    pub fn ensure_runtime_slot<T: RuntimeSlot>(&mut self, id: NodeId) -> Option<&mut T> {
+        Some(self.get_mut(id)?.runtime_slots.ensure::<T>())
+    }
+
+    pub fn remove_runtime_slot<T: RuntimeSlot>(&mut self, id: NodeId) -> Option<T> {
+        self.get_mut(id)?.runtime_slots.remove::<T>()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (NodeId, &PanelNode)> {
@@ -133,5 +161,105 @@ impl Tree {
 
     pub fn end_panel_resize(&mut self) {
         self.runtime.panels.end_resize();
+    }
+}
+
+impl Default for Tree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::light_theme;
+    use crate::tree::layout::{BoxStyle, Size};
+    use crate::tree::{reconcile, Desc};
+    use crate::widget::props::WidgetBuildCx;
+    use std::borrow::Cow;
+
+    #[derive(Default)]
+    struct TestRuntime {
+        value: usize,
+    }
+
+    impl RuntimeSlot for TestRuntime {}
+
+    fn build_cx<'a>(theme: &'a crate::theme::Theme) -> WidgetBuildCx<'a> {
+        WidgetBuildCx {
+            theme,
+            force_rebuild: false,
+        }
+    }
+
+    fn root_desc(width: f32) -> Desc {
+        Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle {
+                width: Size::Fixed(width),
+                height: Size::Fixed(100.0),
+                ..BoxStyle::default()
+            },
+            decoration: None,
+            children: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn runtime_slot_roundtrips_by_type() {
+        let mut tree = Tree::new();
+        let theme = light_theme();
+        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
+        let root = tree.root().expect("root");
+
+        tree.ensure_runtime_slot::<TestRuntime>(root)
+            .expect("slot")
+            .value = 42;
+
+        assert_eq!(
+            tree.runtime_slot::<TestRuntime>(root)
+                .expect("stored runtime")
+                .value,
+            42
+        );
+
+        let removed = tree
+            .remove_runtime_slot::<TestRuntime>(root)
+            .expect("removed runtime");
+        assert_eq!(removed.value, 42);
+        assert!(tree.runtime_slot::<TestRuntime>(root).is_none());
+    }
+
+    #[test]
+    fn reconcile_preserves_runtime_for_stable_node() {
+        let mut tree = Tree::new();
+        let theme = light_theme();
+        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
+        let root = tree.root().expect("root");
+        tree.ensure_runtime_slot::<TestRuntime>(root)
+            .expect("slot")
+            .value = 7;
+
+        reconcile(&mut tree, root_desc(200.0), build_cx(&theme));
+        let root_after = tree.root().expect("root after reconcile");
+
+        assert_eq!(root_after, root);
+        assert_eq!(
+            tree.runtime_slot::<TestRuntime>(root_after)
+                .expect("runtime survives reconcile")
+                .value,
+            7
+        );
+    }
+
+    #[test]
+    fn stable_id_lookup_uses_tree_node_identity() {
+        let mut tree = Tree::new();
+        let theme = light_theme();
+        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
+
+        assert_eq!(tree.node_by_stable_id(&StableId::from("root")), tree.root());
+        assert_eq!(tree.node_by_str("root"), tree.root());
     }
 }

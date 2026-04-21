@@ -120,7 +120,8 @@ mod tests {
     use super::*;
     use crate::renderer::{Color, Rect};
     use crate::tree::layout::{BoxStyle, Decoration, Transform};
-    use crate::tree::node::{NodeKind, PanelNode};
+    use crate::tree::node::{NodeKind, NodeLocalRuntime, PanelNode};
+    use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
 
     /// 构造一个设定好 rect 的 Container 节点
@@ -130,14 +131,15 @@ mod tests {
         rect: Rect,
     ) -> PanelNode {
         PanelNode {
-            id: Cow::Borrowed("test"),
+            id: Cow::Borrowed("test").into(),
+            props: NodeProps::default(),
             style,
             decoration,
             kind: NodeKind::Container,
             rect,
             children: Vec::new(),
-            scroll_offset: 0.0,
-            content_height: 0.0,
+            local_runtime: NodeLocalRuntime::default(),
+            runtime_slots: RuntimeSlots::default(),
         }
     }
 

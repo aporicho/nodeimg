@@ -23,12 +23,12 @@ impl LayoutTree for Tree {
     }
 
     fn scroll_offset(&self, node: NodeId) -> f32 {
-        self.get(node).map(|n| n.scroll_offset).unwrap_or(0.0)
+        self.get(node).map(|n| n.scroll_offset()).unwrap_or(0.0)
     }
 
     fn set_content_height(&mut self, node: NodeId, height: f32) {
         if let Some(n) = self.get_mut(node) {
-            n.content_height = height;
+            n.set_content_height(height);
         }
     }
 

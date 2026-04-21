@@ -252,14 +252,16 @@ pub(crate) fn arrange<T: LayoutTree>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::node::{NodeKind, PanelNode};
+    use crate::tree::node::{NodeKind, NodeLocalRuntime, PanelNode};
     use crate::tree::tree::Tree;
+    use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
 
     /// 构造一个基础 Container 节点（decoration 无、子节点无）
     fn container(style: BoxStyle) -> PanelNode {
         PanelNode {
-            id: Cow::Borrowed("test"),
+            id: Cow::Borrowed("test").into(),
+            props: NodeProps::default(),
             style,
             decoration: None,
             kind: NodeKind::Container,
@@ -270,8 +272,8 @@ mod tests {
                 h: 0.0,
             },
             children: Vec::new(),
-            scroll_offset: 0.0,
-            content_height: 0.0,
+            local_runtime: NodeLocalRuntime::default(),
+            runtime_slots: RuntimeSlots::default(),
         }
     }
 
@@ -496,7 +498,8 @@ mod tests {
 
         let root = tree.get(root_id).unwrap();
         assert_eq!(
-            root.content_height, 400.0,
+            root.content_height(),
+            400.0,
             "scroll content_height 应只累计 Flow 子节点"
         );
     }
