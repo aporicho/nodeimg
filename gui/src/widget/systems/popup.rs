@@ -1,3 +1,4 @@
+use crate::overlay::{OverlayPlacement, OverlayRequest};
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::layout::{BoxStyle, Position, Size};
 use crate::tree::{Desc, Tree};
@@ -5,25 +6,6 @@ use crate::widget::systems::SystemCx;
 use std::borrow::Cow;
 
 const OVERLAY_ROOT_ID: &str = "__overlay_root";
-
-#[derive(Debug, Clone, Copy)]
-pub enum OverlayPlacement {
-    BelowStart,
-}
-
-pub struct OverlayRequest {
-    pub id: String,
-    pub anchor_id: String,
-    pub restore_focus_id: Option<String>,
-    pub placement: OverlayPlacement,
-    pub content: Desc,
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub match_anchor_width: bool,
-    pub dismiss_on_escape: bool,
-    pub dismiss_on_outside_click: bool,
-    pub restore_focus_to_anchor: bool,
-}
 
 struct OverlayState {
     request: OverlayRequest,
@@ -42,11 +24,14 @@ impl PopupSystem {
     }
 
     pub fn open(&mut self, tree: &Tree, request: OverlayRequest) {
-        let (x, y, width) = anchor_layout(tree, &request)
-            .map(|(rect_x, rect_y, rect_w, rect_h)| {
-                placement_xy(&request, rect_x, rect_y, rect_w, rect_h)
-            })
-            .unwrap_or((0.0, 0.0, None));
+        let (x, y, width) = match request.placement {
+            OverlayPlacement::AtPoint { .. } => placement_xy(&request, 0.0, 0.0, 0.0, 0.0),
+            OverlayPlacement::BelowStart => anchor_layout(tree, &request)
+                .map(|(rect_x, rect_y, rect_w, rect_h)| {
+                    placement_xy(&request, rect_x, rect_y, rect_w, rect_h)
+                })
+                .unwrap_or((0.0, 0.0, None)),
+        };
         self.current = Some(OverlayState {
             request,
             last_x: x,
@@ -134,11 +119,23 @@ impl PopupSystem {
     fn overlay_desc(&mut self, tree: &Tree, viewport: crate::renderer::Rect) -> Option<Desc> {
         let state = self.current.as_mut()?;
 
-        if let Some((rect_x, rect_y, rect_w, rect_h)) = anchor_layout(tree, &state.request) {
-            let (x, y, width) = placement_xy(&state.request, rect_x, rect_y, rect_w, rect_h);
-            state.last_x = x;
-            state.last_y = y;
-            state.last_width = width;
+        match state.request.placement {
+            OverlayPlacement::AtPoint { .. } => {
+                let (x, y, width) = placement_xy(&state.request, 0.0, 0.0, 0.0, 0.0);
+                state.last_x = x;
+                state.last_y = y;
+                state.last_width = width;
+            }
+            OverlayPlacement::BelowStart => {
+                if let Some((rect_x, rect_y, rect_w, rect_h)) = anchor_layout(tree, &state.request)
+                {
+                    let (x, y, width) =
+                        placement_xy(&state.request, rect_x, rect_y, rect_w, rect_h);
+                    state.last_x = x;
+                    state.last_y = y;
+                    state.last_width = width;
+                }
+            }
         }
 
         Some(Desc::Container {
@@ -206,6 +203,7 @@ fn placement_xy(
     h: f32,
 ) -> (f32, f32, Option<f32>) {
     match request.placement {
+        OverlayPlacement::AtPoint { x, y } => (x + request.offset_x, y + request.offset_y, None),
         OverlayPlacement::BelowStart => (
             x + request.offset_x,
             y + h + request.offset_y,

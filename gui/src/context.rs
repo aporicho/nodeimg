@@ -18,7 +18,7 @@ use crate::widget::props::WidgetBuildCx;
 pub use crate::output::{
     FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
 };
-pub use crate::widget::systems::{OverlayPlacement, OverlayRequest};
+pub use crate::overlay::{OverlayPlacement, OverlayRequest};
 
 /// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
@@ -176,7 +176,7 @@ impl Context {
     pub fn node_scroll_offset(&self, id: &str) -> Option<f32> {
         self.node_id_by_name(id)
             .and_then(|node_id| self.tree.get(node_id))
-            .map(|node| node.scroll_offset)
+            .map(|node| node.scroll_offset())
     }
 
     pub fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
@@ -1208,6 +1208,52 @@ mod tests {
             ctx.node_name(node_id)
                 .is_some_and(|id| id.starts_with("__overlay::test_popup"))
         }));
+    }
+
+    #[test]
+    fn overlay_can_be_placed_at_pointer_position() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        ctx.open_overlay(OverlayRequest {
+            id: "point_popup".to_string(),
+            anchor_id: "canvas_root".to_string(),
+            restore_focus_id: None,
+            placement: OverlayPlacement::AtPoint { x: 44.0, y: 52.0 },
+            content: popup_content_desc(),
+            offset_x: 3.0,
+            offset_y: 4.0,
+            match_anchor_width: false,
+            dismiss_on_escape: true,
+            dismiss_on_outside_click: true,
+            restore_focus_to_anchor: false,
+        });
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let popup_rect = node_rect(&ctx, "__overlay::point_popup");
+        assert_eq!(popup_rect.x, 47.0);
+        assert_eq!(popup_rect.y, 56.0);
     }
 
     #[test]

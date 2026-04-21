@@ -1,7 +1,8 @@
 use crate::interaction::InteractionState;
+use crate::overlay::OverlayRequest;
 use crate::tree::{hit_test, HitChain, NodeId, NodeKind, Tree};
 
-use super::popup::{OverlayRequest, PopupSystem};
+use super::popup::PopupSystem;
 
 pub(crate) struct SystemCx<'a> {
     tree: &'a Tree,

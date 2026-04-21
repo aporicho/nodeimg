@@ -2,7 +2,8 @@ use crate::demo_gallery::{
     build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
 use crate::image_demo::ImageDemoController;
-use crate::panels::{EnginePanelState, NodeLibraryItem, NodeLibraryPanelState};
+use crate::node_palette::{self, NodePaletteItem, NodePaletteState};
+use crate::panels::EnginePanelState;
 use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
@@ -114,7 +115,6 @@ pub struct DemoApp {
     gallery: GalleryState,
     engine: Engine,
     image_demo: ImageDemoController,
-    node_library_popup: NodeLibraryPopup,
     last_canvas_click: Option<CanvasClick>,
     last_engine_action: String,
     mouse_x: f32,
@@ -138,7 +138,6 @@ impl App for DemoApp {
             gallery: GalleryState::default(),
             engine: Engine::new(None),
             image_demo: ImageDemoController::default(),
-            node_library_popup: NodeLibraryPopup::default(),
             last_canvas_click: None,
             last_engine_action: "Ready".to_string(),
             mouse_x: 0.0,
@@ -185,7 +184,6 @@ impl App for DemoApp {
             gallery: &self.gallery,
             image: DEMO_IMAGE_HANDLE,
             engine: &self.engine_panel_state(),
-            node_library: &self.node_library_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
         let desc = build_demo_tree(viewport, &self.camera, &self.theme, panel_root);
@@ -546,14 +544,27 @@ impl DemoApp {
     }
 
     fn open_node_library(&mut self, x: f32, y: f32) {
-        self.node_library_popup.open(x, y);
+        let state = self.node_palette_state();
+        self.gui.open_overlay(OverlayRequest {
+            id: "node_palette".to_string(),
+            anchor_id: "canvas_root".to_string(),
+            restore_focus_id: None,
+            placement: OverlayPlacement::AtPoint { x, y },
+            content: node_palette::overlay_content(&state, &self.theme),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            match_anchor_width: false,
+            dismiss_on_escape: true,
+            dismiss_on_outside_click: true,
+            restore_focus_to_anchor: false,
+        });
         self.last_engine_action = "Node library opened".to_string();
     }
 
     fn add_node_from_library(&mut self, type_id: &str) {
         match self.engine.add_node(type_id) {
             Ok(node_id) => {
-                self.node_library_popup.close();
+                self.gui.close_overlay();
                 self.last_engine_action = format!("Added node {type_id} as {:?}", node_id);
             }
             Err(error) => {
@@ -582,12 +593,12 @@ impl DemoApp {
         }
     }
 
-    fn node_library_panel_state(&self) -> NodeLibraryPanelState {
+    fn node_palette_state(&self) -> NodePaletteState {
         let mut items = self
             .engine
             .list_node_defs()
             .into_iter()
-            .map(|node| NodeLibraryItem {
+            .map(|node| NodePaletteItem {
                 type_id: node.type_id.clone(),
                 name: node.name.clone(),
                 category: node.category.clone(),
@@ -601,13 +612,7 @@ impl DemoApp {
                 .then_with(|| a.type_id.cmp(&b.type_id))
         });
 
-        NodeLibraryPanelState {
-            open: self.node_library_popup.open,
-            panel_id: self.node_library_popup.panel_id(),
-            x: self.node_library_popup.x,
-            y: self.node_library_popup.y,
-            items,
-        }
+        NodePaletteState { items }
     }
 }
 
@@ -616,46 +621,6 @@ struct CanvasClick {
     at: Instant,
     x: f32,
     y: f32,
-}
-
-#[derive(Debug)]
-struct NodeLibraryPopup {
-    open: bool,
-    generation: u64,
-    x: f32,
-    y: f32,
-}
-
-impl Default for NodeLibraryPopup {
-    fn default() -> Self {
-        Self {
-            open: false,
-            generation: 0,
-            x: 0.0,
-            y: 0.0,
-        }
-    }
-}
-
-impl NodeLibraryPopup {
-    fn open(&mut self, x: f32, y: f32) {
-        self.open = true;
-        self.generation += 1;
-        self.x = x;
-        self.y = y;
-    }
-
-    fn close(&mut self) {
-        self.open = false;
-    }
-
-    fn panel_id(&self) -> String {
-        if self.open {
-            format!("node_library_{}", self.generation)
-        } else {
-            format!("node_library_closed_{}", self.generation)
-        }
-    }
 }
 
 fn distance_sq(a: [f32; 2], b: [f32; 2]) -> f32 {
