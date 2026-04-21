@@ -1,10 +1,14 @@
 use super::engine_adapter;
 use super::node_palette::NodePaletteState;
+use super::project_layout;
+use super::project_layout::ProjectLayout;
 use crate::image_demo::ImageDemoController;
 use crate::panels::EnginePanelState;
 use engine::facade::EngineFacade;
 use engine::Engine;
 use gui::action::GuiAction;
+use gui::canvas::camera::Camera;
+use gui::context::Context;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
@@ -73,6 +77,21 @@ impl WorkspaceController {
 
     pub(crate) fn note_node_library_opened(&mut self) {
         self.last_engine_action = "Node library opened".to_string();
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn export_project_layout(&self, gui: &Context, camera: &Camera) -> ProjectLayout {
+        project_layout::export_project_layout(gui, camera)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn import_project_layout(
+        &mut self,
+        gui: &mut Context,
+        camera: &mut Camera,
+        layout: ProjectLayout,
+    ) {
+        project_layout::import_project_layout(gui, camera, layout);
     }
 }
 

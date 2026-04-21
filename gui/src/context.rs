@@ -138,6 +138,14 @@ impl Context {
         crate::panel::event::apply_panel_event(&mut self.tree, event)
     }
 
+    pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
+        self.tree.export_panel_layouts()
+    }
+
+    pub fn import_panel_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
+        self.tree.import_panel_layouts(layouts);
+    }
+
     /// 命中测试，返回从叶子到根的命中链。
     pub fn hit_test(&self, x: f32, y: f32) -> HitChain {
         let Some(root) = self.tree.root() else {

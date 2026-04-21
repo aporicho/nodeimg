@@ -72,4 +72,61 @@ mod tests {
         assert_eq!(state.rect.w, 120.0);
         assert_eq!(state.rect.h, 160.0);
     }
+
+    #[test]
+    fn panel_layout_roundtrips_known_panels_and_ignores_unknown() {
+        let mut tree = crate::tree::Tree::new();
+        tree.ensure_panel(&config("preview"));
+        tree.ensure_panel(&config("tools"));
+
+        let mut layouts = tree.export_panel_layouts();
+        assert_eq!(
+            layouts
+                .iter()
+                .map(|layout| layout.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["preview", "tools"]
+        );
+
+        let preview = layouts
+            .iter_mut()
+            .find(|layout| layout.id == "preview")
+            .expect("preview layout");
+        preview.rect.x = 80.0;
+        preview.rect.y = 90.0;
+        preview.rect.w = 40.0;
+        preview.rect.h = 50.0;
+        preview.visible = false;
+        preview.z_index = 20;
+        preview.collapsed = true;
+
+        layouts.push(crate::panel::PanelLayout {
+            id: "missing".to_string(),
+            rect: Rect {
+                x: 1.0,
+                y: 2.0,
+                w: 3.0,
+                h: 4.0,
+            },
+            visible: true,
+            z_index: 100,
+            collapsed: false,
+        });
+
+        tree.import_panel_layouts(&layouts);
+
+        let state = tree.panel_state("preview").expect("preview state");
+        assert_eq!(state.rect.x, 80.0);
+        assert_eq!(state.rect.y, 90.0);
+        assert_eq!(state.rect.w, 120.0);
+        assert_eq!(state.rect.h, 80.0);
+        assert!(!state.visible);
+        assert_eq!(state.z_index, 20);
+        assert!(state.collapsed);
+        assert!(tree.panel_state("missing").is_none());
+
+        tree.bring_panel_to_front("tools");
+        let tools = tree.panel_state("tools").expect("tools state");
+        assert!(tools.z_index > 20);
+    }
 }
