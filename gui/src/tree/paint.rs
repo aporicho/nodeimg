@@ -3,6 +3,7 @@ use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{
     bezier_control_points, find_node_by_str_id, grid_cells, rect_center, PaintTransform,
 };
+use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
 use crate::interaction::InteractionState;
@@ -194,7 +195,7 @@ fn paint_node(
 
     // 3. 复合 Transform 并递归子节点
     let transform_opt = node.style.transform;
-    let children: Vec<NodeId> = node.children.clone();
+    let children = children_in_paint_order(tree, &node.children);
     // node 借用在此处结束（NLL），后面可以重新借 tree
     let child_tf = match transform_opt {
         Some(ref tf_decl) => tf.compose(tf_decl),

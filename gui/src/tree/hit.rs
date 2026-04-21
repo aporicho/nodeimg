@@ -1,6 +1,7 @@
 use super::layout::box_model::rect_contains;
 use super::layout::{BoxStyle, Decoration, Overflow, Transform};
 use super::node::NodeId;
+use super::stacking::children_in_hit_order;
 use super::tree::Tree;
 
 /// 从命中的叶子到根的节点链。
@@ -59,7 +60,7 @@ fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<N
     // 提前克隆所需数据，避免借用冲突（递归时需要重借 tree）
     let r = node.rect;
     let transform = node.style.transform;
-    let children: Vec<NodeId> = node.children.clone();
+    let children = children_in_hit_order(tree, &node.children);
     let style = node.style.clone();
     let decoration = node.decoration.clone();
 
@@ -76,8 +77,8 @@ fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<N
         None => (x, y),
     };
 
-    // 3. 反向遍历子节点（实现 z-order：后渲染的先命中）
-    for &child_id in children.iter().rev() {
+    // 3. 按 stacking order 命中：视觉上方的子节点先命中。
+    for child_id in children {
         if hit_recursive(tree, child_id, cx, cy, chain) {
             chain.push(node_id);
             return true;
@@ -294,6 +295,57 @@ mod tests {
 
         let chain = hit_test(&tree, root_id, 30.0, 30.0);
         assert_eq!(chain.leaf(), Some(child2_id), "后添加的 child2 应该先命中");
+    }
+
+    #[test]
+    fn hit_prefers_higher_z_index_over_later_source_order() {
+        let mut tree = Tree::new();
+        let lower_id = tree.insert(container_with_rect(
+            BoxStyle {
+                z_index: 0,
+                ..Default::default()
+            },
+            Some(decor()),
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 50.0,
+                h: 50.0,
+            },
+        ));
+        let higher_id = tree.insert(container_with_rect(
+            BoxStyle {
+                z_index: 10,
+                ..Default::default()
+            },
+            Some(decor()),
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 50.0,
+                h: 50.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle::default(),
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![higher_id, lower_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let chain = hit_test(&tree, root_id, 30.0, 30.0);
+
+        assert_eq!(chain.leaf(), Some(higher_id));
     }
 
     #[test]

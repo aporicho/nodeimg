@@ -10,6 +10,8 @@ use std::borrow::Cow;
 
 const GRID_SPACING: f32 = 20.0;
 const GRID_DOT_SIZE: f32 = 0.9;
+const CANVAS_GRID_Z: i32 = -20;
+const CANVAS_CONNECTION_Z: i32 = -10;
 
 pub(crate) fn build_workspace_tree(
     viewport: Rect,
@@ -31,6 +33,7 @@ pub(crate) fn build_workspace_tree(
         id: Cow::Borrowed("canvas_grid"),
         style: BoxStyle {
             position: Position::absolute_xy(grid_x, grid_y),
+            z_index: CANVAS_GRID_Z,
             width: Size::Fixed(grid_w.max(GRID_SPACING)),
             height: Size::Fixed(grid_h.max(GRID_SPACING)),
             ..BoxStyle::default()
@@ -41,7 +44,11 @@ pub(crate) fn build_workspace_tree(
             dot_size: GRID_DOT_SIZE,
         },
     }];
-    canvas_children.push(connection_layer(canvas_connections, pending_connection));
+    canvas_children.push(connection_layer(
+        canvas_connections,
+        pending_connection,
+        CANVAS_CONNECTION_Z,
+    ));
     canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
 
     Desc::Container {

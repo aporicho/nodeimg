@@ -146,6 +146,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         id: Cow::Owned(card_id),
         style: BoxStyle {
             position: Position::absolute_xy(view.layout.rect.x, view.layout.rect.y),
+            z_index: view.layout.z_index,
             width: Size::Fixed(view.layout.rect.w),
             height: Size::Fixed(card_height(view)),
             padding: Edges::all(0.0),
@@ -536,6 +537,7 @@ mod tests {
         };
 
         assert_eq!(style.position, Position::absolute_xy(10.0, 20.0));
+        assert_eq!(style.z_index, 0);
         assert_eq!(style.width, Size::Fixed(220.0));
         assert_eq!(style.height, Size::Fixed(96.0));
         assert_eq!(style.overflow, Overflow::Visible);

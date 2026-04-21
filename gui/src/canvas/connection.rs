@@ -13,6 +13,7 @@ pub struct CanvasConnectionView {
 pub fn connection_layer(
     connections: &[CanvasConnectionView],
     pending: Option<&CanvasPendingConnectionView>,
+    z_index: i32,
 ) -> Desc {
     let mut children = connections
         .iter()
@@ -45,6 +46,7 @@ pub fn connection_layer(
         id: Cow::Borrowed("canvas_connections"),
         style: BoxStyle {
             position: Position::absolute_xy(0.0, 0.0),
+            z_index,
             width: Size::Fill,
             height: Size::Fill,
             hittable: Some(false),
@@ -77,6 +79,7 @@ mod tests {
                 to_port_id: "to".to_string(),
             }],
             None,
+            -10,
         );
 
         let Desc::Container { children, .. } = desc else {
@@ -94,6 +97,7 @@ mod tests {
                 from_port_id: "from".to_string(),
                 cursor_canvas: [40.0, 50.0],
             }),
+            -10,
         );
 
         let Desc::Container { children, .. } = desc else {

@@ -17,6 +17,7 @@ use std::fmt;
 pub struct PanelProps {
     pub title: Cow<'static, str>,
     pub rect: Rect,
+    pub z_index: i32,
     pub min_size: [f32; 2],
     pub titlebar_visible: bool,
     pub draggable: bool,
@@ -30,6 +31,7 @@ impl Clone for PanelProps {
         PanelProps {
             title: self.title.clone(),
             rect: self.rect,
+            z_index: self.z_index,
             min_size: self.min_size,
             titlebar_visible: self.titlebar_visible,
             draggable: self.draggable,
@@ -70,6 +72,7 @@ impl fmt::Debug for PanelProps {
         f.debug_struct("PanelProps")
             .field("title", &self.title)
             .field("rect", &self.rect)
+            .field("z_index", &self.z_index)
             .field("min_size", &self.min_size)
             .field("titlebar_visible", &self.titlebar_visible)
             .field("draggable", &self.draggable)
@@ -97,6 +100,7 @@ impl WidgetProps for PanelProps {
         other.as_any().downcast_ref::<Self>().is_some_and(|o| {
             self.title == o.title
                 && rect_eq(self.rect, o.rect)
+                && self.z_index == o.z_index
                 && self.min_size == o.min_size
                 && self.titlebar_visible == o.titlebar_visible
                 && self.draggable == o.draggable
@@ -171,6 +175,7 @@ impl WidgetProps for PanelProps {
         WidgetBuild {
             style: BoxStyle {
                 position: Position::absolute_xy(self.rect.x, self.rect.y),
+                z_index: self.z_index,
                 width: Size::Fixed(self.rect.w),
                 height: if self.rect.h > 0.0 {
                     Size::Fixed(self.rect.h)
@@ -245,6 +250,7 @@ mod tests {
                 h: 200.0,
             },
             min_size: [120.0, 80.0],
+            z_index: 7,
             titlebar_visible: true,
             draggable: true,
             resizable: true,
@@ -317,6 +323,7 @@ mod tests {
             Size::Fixed(v) => assert_eq!(v, 200.0),
             other => panic!("expected Fixed height, got {:?}", other),
         }
+        assert_eq!(build.style.z_index, 7);
     }
 
     #[test]

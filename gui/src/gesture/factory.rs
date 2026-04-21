@@ -158,6 +158,7 @@ mod tests {
                     w: 200.0,
                     h: 120.0,
                 },
+                z_index: 0,
                 min_size: [120.0, 80.0],
                 titlebar_visible: true,
                 draggable: true,

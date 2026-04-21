@@ -50,6 +50,7 @@ pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>
                     props: Box::new(PanelProps {
                         title: panel.config.title,
                         rect: state.rect,
+                        z_index: state.z_index,
                         min_size: panel.config.min_size,
                         titlebar_visible: panel.config.titlebar_visible,
                         draggable: panel.config.draggable,

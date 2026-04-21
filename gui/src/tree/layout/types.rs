@@ -58,6 +58,7 @@ pub struct BoxStyle {
 
     // ── 定位（新增）──
     pub position: Position,
+    pub z_index: i32,
     pub transform: Option<Transform>,
 
     // ── 交互（新增）──
@@ -87,6 +88,7 @@ impl Default for BoxStyle {
             max_height: f32::INFINITY,
             overflow: Overflow::Visible,
             position: Position::Flow,
+            z_index: 0,
             transform: None,
             hittable: None,
             gestures: Vec::new(),
