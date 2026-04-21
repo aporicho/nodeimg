@@ -85,6 +85,7 @@ impl WidgetProps for CheckboxProps {
                                 size: tokens.check_font_size,
                                 ..theme.text_style_body_sm()
                             },
+                            layout: Default::default(),
                         },
                     }],
                 },
@@ -98,6 +99,7 @@ impl WidgetProps for CheckboxProps {
                             size: tokens.font_size,
                             ..theme.text_style_body_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
             ],

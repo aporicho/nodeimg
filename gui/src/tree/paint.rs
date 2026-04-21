@@ -3,6 +3,7 @@ use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{
     bezier_control_points, find_node_by_str_id, grid_cells, rect_center, PaintTransform,
 };
+use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
 use crate::interaction::InteractionState;
 use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
@@ -87,7 +88,11 @@ fn paint_node(
     // 2. Leaf 分发
     if let NodeKind::Leaf(leaf) = &node.kind {
         match leaf {
-            LeafKind::Text { content, style } => {
+            LeafKind::Text {
+                content,
+                style,
+                layout,
+            } => {
                 if paint_widget_text_leaf_override(
                     tree,
                     node_id,
@@ -101,17 +106,27 @@ fn paint_node(
                 ) {
                     return;
                 }
-                renderer.draw_text(
-                    Point {
-                        x: screen_rect.x,
-                        y: screen_rect.y,
-                    },
-                    content,
-                    &scaled_text_style(
-                        with_inherited_text_color(*style, child_text_color),
-                        tf.scale,
-                    ),
+                let text_style = scaled_text_style(
+                    with_inherited_text_color(*style, child_text_color),
+                    tf.scale,
                 );
+                let resolved = resolve_text_paint(
+                    content,
+                    &text_style,
+                    *layout,
+                    screen_rect,
+                    |text, style| renderer.text_measurer().measure_with_style(text, style),
+                );
+                if let Some(bounds) = resolved.bounds {
+                    renderer.draw_text_clipped(
+                        resolved.pos,
+                        &resolved.content,
+                        &text_style,
+                        bounds,
+                    );
+                } else {
+                    renderer.draw_text(resolved.pos, &resolved.content, &text_style);
+                }
             }
             LeafKind::Grid {
                 spacing,

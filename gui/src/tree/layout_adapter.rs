@@ -34,7 +34,7 @@ impl LayoutTree for Tree {
 
     fn text_content(&self, node: NodeId) -> Option<(&str, &crate::renderer::TextStyle)> {
         match &self.get(node)?.kind {
-            NodeKind::Leaf(LeafKind::Text { content, style }) => Some((content, style)),
+            NodeKind::Leaf(LeafKind::Text { content, style, .. }) => Some((content, style)),
             _ => None,
         }
     }

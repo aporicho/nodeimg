@@ -238,6 +238,7 @@ mod tests {
             kind: LeafKind::Text {
                 content: "x".into(),
                 style: crate::renderer::TextStyle::new(crate::renderer::Color::WHITE, 12.0),
+                layout: Default::default(),
             },
         };
         reconcile(&mut tree, desc, build_cx(&theme));

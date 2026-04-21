@@ -75,6 +75,7 @@ impl WidgetProps for GroupProps {
                         size: tokens.title_font_size,
                         ..theme.text_style_label_sm()
                     },
+                    layout: Default::default(),
                 },
             }],
         };

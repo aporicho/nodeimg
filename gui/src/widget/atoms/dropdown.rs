@@ -76,6 +76,7 @@ impl WidgetProps for DropdownProps {
                             size: tokens.font_size - 1.0,
                             ..theme.text_style_label_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
                 Desc::Container {
@@ -113,6 +114,7 @@ impl WidgetProps for DropdownProps {
                                     size: tokens.font_size,
                                     ..theme.text_style_body_sm()
                                 },
+                                layout: Default::default(),
                             },
                         },
                         Desc::Container {
@@ -138,6 +140,7 @@ impl WidgetProps for DropdownProps {
                                     size: tokens.font_size,
                                     ..theme.text_style_body_sm()
                                 },
+                                layout: Default::default(),
                             },
                         },
                     ],

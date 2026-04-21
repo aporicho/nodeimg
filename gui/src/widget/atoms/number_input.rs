@@ -70,6 +70,7 @@ impl WidgetProps for NumberInputProps {
                             size: tokens.label_size,
                             ..theme.text_style_label_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
                 Desc::Container {
@@ -101,6 +102,7 @@ impl WidgetProps for NumberInputProps {
                                 size: tokens.value_size,
                                 ..theme.text_style_mono_md()
                             },
+                            layout: Default::default(),
                         },
                     }],
                 },

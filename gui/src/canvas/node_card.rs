@@ -128,6 +128,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                             kind: LeafKind::Text {
                                 content: view.title.clone(),
                                 style: theme.text_style_label_sm(),
+                                layout: Default::default(),
                             },
                         },
                     ],
@@ -256,6 +257,7 @@ fn pin_label(port: &CanvasPortView, theme: &Theme) -> Desc {
         kind: LeafKind::Text {
             content: port.name.clone(),
             style: theme.text_style_label_sm(),
+            layout: Default::default(),
         },
     }
 }
@@ -273,6 +275,7 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
             kind: LeafKind::Text {
                 content: view.subtitle.clone(),
                 style: theme.text_style_label_sm(),
+                layout: Default::default(),
             },
         });
     } else {
@@ -327,6 +330,7 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
                 kind: LeafKind::Text {
                     content: param.name.clone(),
                     style: theme.text_style_label_sm(),
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -343,6 +347,7 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
                         param.value.clone()
                     },
                     style: theme.text_style_label_sm(),
+                    layout: Default::default(),
                 },
             },
         ],

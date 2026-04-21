@@ -88,6 +88,7 @@ impl WidgetProps for SliderProps {
                             size: tokens.font_size,
                             ..theme.text_style_body_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
                 // 轨道
@@ -172,6 +173,7 @@ impl WidgetProps for SliderProps {
                             size: tokens.font_size,
                             ..theme.text_style_mono_md()
                         },
+                        layout: Default::default(),
                     },
                 },
             ],

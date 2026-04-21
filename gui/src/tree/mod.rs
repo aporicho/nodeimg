@@ -11,6 +11,7 @@ mod props;
 mod runtime_policy;
 mod runtime_slots;
 mod scroll;
+pub(crate) mod text_layout;
 #[allow(clippy::module_inception)]
 mod tree;
 

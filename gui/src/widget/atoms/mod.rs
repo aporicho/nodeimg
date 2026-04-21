@@ -9,3 +9,4 @@ pub mod separator;
 pub mod slider;
 pub mod text_input;
 pub mod toggle;
+pub mod truncated_text;

@@ -236,7 +236,11 @@ pub trait LayoutTree {
 pub enum LeafKind {
     // ── 基础文本/图像 ──
     /// 文本图元。尺寸在 resolve 阶段由 TextMeasurer 解析，创建时使用 Size::Auto。
-    Text { content: String, style: TextStyle },
+    Text {
+        content: String,
+        style: TextStyle,
+        layout: TextLayout,
+    },
     /// 位图图像。
     Image {
         texture: TextureHandle,
@@ -293,6 +297,35 @@ pub enum LeafKind {
     // ── 逃生舱 ──
     /// 自定义绘制回调（直方图、色盘、波形图等）。
     CustomPaint(CustomPaintFn),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextOverflow {
+    Visible,
+    Clip,
+    Ellipsis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    Start,
+    Center,
+    End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextLayout {
+    pub overflow: TextOverflow,
+    pub align: TextAlign,
+}
+
+impl Default for TextLayout {
+    fn default() -> Self {
+        Self {
+            overflow: TextOverflow::Visible,
+            align: TextAlign::Start,
+        }
+    }
 }
 
 /// 视觉装饰。附加在 Container 上，纯视觉属性，不影响布局。

@@ -62,13 +62,14 @@ impl WidgetProps for LabelProps {
                 kind: LeafKind::Text {
                     content: self.text.to_string(),
                     style,
+                    layout: Default::default(),
                 },
             }],
         }
     }
 }
 
-fn label_style(theme: &Theme, variant: LabelVariant, muted: bool) -> TextStyle {
+pub(super) fn label_style(theme: &Theme, variant: LabelVariant, muted: bool) -> TextStyle {
     let base = match variant {
         LabelVariant::Body => theme.text_style_body_md(),
         LabelVariant::Caption => theme.text_style_label_sm(),

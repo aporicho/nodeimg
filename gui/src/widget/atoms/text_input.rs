@@ -69,6 +69,7 @@ impl WidgetProps for TextInputProps {
                             size: tokens.label_size,
                             ..theme.text_style_label_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
                 // field
@@ -105,6 +106,7 @@ impl WidgetProps for TextInputProps {
                                 size: tokens.value_size,
                                 ..theme.text_style_body_sm()
                             },
+                            layout: Default::default(),
                         },
                     }],
                 },

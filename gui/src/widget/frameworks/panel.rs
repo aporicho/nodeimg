@@ -149,6 +149,7 @@ impl WidgetProps for PanelProps {
                         size: tokens.title_font_size,
                         ..theme.text_style_title_sm()
                     },
+                    layout: Default::default(),
                 },
             }],
         });
@@ -429,6 +430,7 @@ mod tests {
                     },
                     12.0,
                 ),
+                layout: Default::default(),
             },
         }];
         let build = props.build("test", &build_cx(&theme));

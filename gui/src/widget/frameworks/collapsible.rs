@@ -90,6 +90,7 @@ impl WidgetProps for CollapsibleProps {
                             size: tokens.title_font_size,
                             ..cx.theme.text_style_label_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
                 Desc::Leaf {
@@ -102,6 +103,7 @@ impl WidgetProps for CollapsibleProps {
                             size: tokens.title_font_size,
                             ..cx.theme.text_style_label_sm()
                         },
+                        layout: Default::default(),
                     },
                 },
             ],

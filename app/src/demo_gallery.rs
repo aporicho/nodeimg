@@ -245,6 +245,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                 kind: LeafKind::Text {
                     content: "Body / Sans / Regular".to_string(),
                     style: theme.text_style_body_md(),
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -253,6 +254,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                 kind: LeafKind::Text {
                     content: "Title / Sans / Semibold".to_string(),
                     style: theme.text_style_title_sm(),
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -261,6 +263,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                 kind: LeafKind::Text {
                     content: "Caption / Sans / Italic".to_string(),
                     style: theme.text_style_label_sm().with_italic(true),
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -269,6 +272,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                 kind: LeafKind::Text {
                     content: "Mono / Medium / Value 42.00".to_string(),
                     style: theme.text_style_mono_md(),
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -280,6 +284,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                         color: theme.colors.text,
                         ..theme.text_style_body_md().with_weight(TextWeight::Bold)
                     },
+                    layout: Default::default(),
                 },
             },
             Desc::Leaf {
@@ -291,6 +296,7 @@ fn typography_section(theme: &Theme) -> GallerySection {
                         color: theme.colors.text_disabled,
                         ..theme.text_style_label_sm()
                     },
+                    layout: Default::default(),
                 },
             },
         ],
