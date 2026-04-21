@@ -2,12 +2,11 @@ use crate::demo_gallery::{
     build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
 };
 use crate::image_demo::ImageDemoController;
-use crate::panels::{
-    EnginePanelState, NodeLibraryItem, NodeLibraryPanelState, NODE_LIBRARY_ADD_PREFIX,
-};
+use crate::panels::{EnginePanelState, NodeLibraryItem, NodeLibraryPanelState};
 use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
+use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{
@@ -280,7 +279,17 @@ impl DemoApp {
     }
 
     fn handle_framework_output(&mut self, output: FrameworkOutput, ctx: &mut AppContext) {
+        let mut handled_node_adds = Vec::new();
+        for action in output.actions {
+            if let Some(type_id) = self.handle_gui_action(action) {
+                handled_node_adds.push(type_id);
+            }
+        }
+
         for event in output.events {
+            if self.is_duplicate_action_event(&event, &handled_node_adds) {
+                continue;
+            }
             if let GuiEvent::Panel(panel_event) = &event {
                 if self.gui.handle_panel_event(panel_event) {
                     continue;
@@ -302,6 +311,29 @@ impl DemoApp {
                 }
             }
         }
+    }
+
+    fn handle_gui_action(&mut self, action: GuiAction) -> Option<String> {
+        match action {
+            GuiAction::AddNode { type_id } => {
+                tracing::info!("GuiAction::AddNode: {type_id}");
+                self.add_node_from_library(&type_id);
+                Some(type_id)
+            }
+            GuiAction::OpenOverlay { .. }
+            | GuiAction::CloseOverlay { .. }
+            | GuiAction::WidgetClicked { .. } => None,
+        }
+    }
+
+    fn is_duplicate_action_event(&self, event: &GuiEvent, handled_node_adds: &[String]) -> bool {
+        let GuiEvent::Widget(WidgetEvent::Click { id }) = event else {
+            return false;
+        };
+        let Some(type_id) = node_library_add_type_id(id) else {
+            return false;
+        };
+        handled_node_adds.iter().any(|handled| handled == type_id)
     }
 
     fn handle_gui_event(&mut self, event: GuiEvent) {
@@ -624,10 +656,6 @@ impl NodeLibraryPopup {
             format!("node_library_closed_{}", self.generation)
         }
     }
-}
-
-fn node_library_add_type_id(id: &str) -> Option<&str> {
-    id.strip_prefix(NODE_LIBRARY_ADD_PREFIX)
 }
 
 fn distance_sq(a: [f32; 2], b: [f32; 2]) -> f32 {

@@ -1,3 +1,4 @@
+use crate::action::dispatch_widget_click;
 use crate::event::target::TargetResolver;
 use crate::gesture::GestureSignal;
 use crate::output::{FrameworkOutput, GuiEvent, OutputBuilder, PanelEvent, WidgetEvent};
@@ -19,9 +20,15 @@ enum ResizePhase {
 }
 
 pub(crate) fn gesture_signal_output(tree: &Tree, signal: &GestureSignal) -> FrameworkOutput {
-    OutputBuilder::new()
-        .event(gesture_signal_event(tree, signal))
-        .finish()
+    let event = gesture_signal_event(tree, signal);
+    let builder = OutputBuilder::new().event(event.clone());
+
+    match event {
+        GuiEvent::Widget(WidgetEvent::Click { id }) => {
+            builder.action(dispatch_widget_click(&id)).finish()
+        }
+        _ => builder.finish(),
+    }
 }
 
 fn gesture_signal_event(tree: &Tree, signal: &GestureSignal) -> GuiEvent {

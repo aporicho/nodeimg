@@ -128,5 +128,8 @@ impl Default for RuntimeSystems {
 }
 
 fn output_has_pre_gesture_work(output: &FrameworkOutput) -> bool {
-    output.consumed || !output.events.is_empty() || !output.effects.is_empty()
+    output.consumed
+        || !output.events.is_empty()
+        || !output.actions.is_empty()
+        || !output.effects.is_empty()
 }

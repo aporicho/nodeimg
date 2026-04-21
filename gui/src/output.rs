@@ -1,3 +1,4 @@
+use crate::action::GuiAction;
 use crate::widget::resize_edge::ResizeEdge;
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,7 @@ pub enum OverlayEvent {
 #[derive(Debug, Default)]
 pub struct FrameworkOutput {
     pub events: Vec<GuiEvent>,
+    pub actions: Vec<GuiAction>,
     pub effects: Vec<PlatformEffect>,
     pub consumed: bool,
 }
@@ -91,6 +93,7 @@ impl FrameworkOutput {
 
     pub(crate) fn merge(mut self, other: Self) -> Self {
         self.events.extend(other.events);
+        self.actions.extend(other.actions);
         self.effects.extend(other.effects);
         self.consumed |= other.consumed;
         self
@@ -116,13 +119,54 @@ impl OutputBuilder {
         self.event(GuiEvent::Widget(event))
     }
 
+    pub(crate) fn action(mut self, action: GuiAction) -> Self {
+        self.output.actions.push(action);
+        self
+    }
+
     pub(crate) fn effect(mut self, effect: PlatformEffect) -> Self {
         self.output.effects.push(effect);
         self
     }
 
     pub(crate) fn finish(mut self) -> FrameworkOutput {
-        self.output.consumed |= !self.output.events.is_empty() || !self.output.effects.is_empty();
+        self.output.consumed |= !self.output.events.is_empty()
+            || !self.output.actions.is_empty()
+            || !self.output.effects.is_empty();
         self.output
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_preserves_actions() {
+        let left = OutputBuilder::new()
+            .action(GuiAction::WidgetClicked {
+                id: "left".to_string(),
+            })
+            .finish();
+        let right = OutputBuilder::new()
+            .action(GuiAction::WidgetClicked {
+                id: "right".to_string(),
+            })
+            .finish();
+
+        let merged = left.merge(right);
+
+        assert_eq!(
+            merged.actions,
+            vec![
+                GuiAction::WidgetClicked {
+                    id: "left".to_string()
+                },
+                GuiAction::WidgetClicked {
+                    id: "right".to_string()
+                }
+            ]
+        );
+        assert!(merged.consumed);
     }
 }

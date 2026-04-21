@@ -1,4 +1,5 @@
 use crate::demo_gallery::GalleryState;
+pub(crate) use gui::action::NODE_LIBRARY_ADD_PREFIX;
 use gui::theme::Theme;
 use gui::tree::layout::TextureHandle;
 
@@ -21,8 +22,6 @@ pub(crate) struct EnginePanelState {
     pub(crate) execution_status: String,
     pub(crate) last_action: String,
 }
-
-pub(crate) const NODE_LIBRARY_ADD_PREFIX: &str = "node_library::add::";
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NodeLibraryPanelState {
