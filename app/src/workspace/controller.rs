@@ -6,11 +6,19 @@ use super::project_layout::ProjectLayout;
 use crate::image_demo::ImageDemoController;
 use crate::panels::EnginePanelState;
 use engine::facade::EngineFacade;
+use engine::graph::validate::validate_connection_basic;
+use engine::graph::{Connection, PinRef};
+use engine::node_manager::ParamExpose;
 use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_card::CanvasNodeView;
-use gui::canvas::{parse_canvas_port_group_trigger_id, CanvasConnectionView, CanvasPortSide};
+use gui::canvas::{
+    canvas_node_owner_id, canvas_port_event_target_id, canvas_port_stable_id,
+    parse_canvas_port_group_trigger_id, parse_canvas_port_id, CanvasConnectionView,
+    CanvasPendingConnectionView, CanvasPortConnectionState, CanvasPortRef, CanvasPortSide,
+    CanvasPortView,
+};
 use gui::context::Context;
 
 pub(crate) struct WorkspaceController {
@@ -84,9 +92,15 @@ impl WorkspaceController {
         let identities = engine_adapter::canvas_node_identities(&self.engine);
         let layouts = gui.sync_canvas_node_layouts(&identities);
         let mut views = engine_adapter::canvas_node_views(&self.engine, layouts);
+        let pending_connection = gui.pending_canvas_connection();
         for view in &mut views {
             view.input_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Input);
             view.output_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Output);
+            view.selected = gui.is_canvas_node_selected(&view.owner_id);
+            if let Some(pending) = pending_connection.as_ref() {
+                self.apply_pending_connection_state(pending, &mut view.inputs);
+                self.apply_pending_connection_state(pending, &mut view.outputs);
+            }
         }
         views
     }
@@ -134,6 +148,232 @@ impl WorkspaceController {
         };
         gui.toggle_canvas_port_group(owner_id, side);
         true
+    }
+
+    pub(crate) fn select_canvas_node(&mut self, gui: &mut Context, id: &str) -> bool {
+        let Some(owner_id) = canvas_node_owner_id(id) else {
+            return false;
+        };
+        gui.select_canvas_node(owner_id)
+    }
+
+    pub(crate) fn clear_canvas_selection(&mut self, gui: &mut Context) {
+        gui.clear_canvas_selection();
+    }
+
+    pub(crate) fn begin_canvas_port_connection(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        let Some(port_id) = canvas_port_event_target_id(id) else {
+            return false;
+        };
+        let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
+        gui.begin_pending_canvas_connection(port_id, [canvas_x, canvas_y])
+    }
+
+    pub(crate) fn update_canvas_port_connection(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
+        gui.update_pending_canvas_connection([canvas_x, canvas_y])
+    }
+
+    pub(crate) fn end_canvas_port_connection(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
+        let Some(pending) = gui.end_pending_canvas_connection() else {
+            return false;
+        };
+        let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
+            self.last_engine_action = "Connection cancelled: invalid output port".to_string();
+            return true;
+        };
+        let Some(to) = self.input_port_at(gui, x, y) else {
+            self.last_engine_action = "Connection cancelled".to_string();
+            return true;
+        };
+        match self.connect_canvas_ports(from, to) {
+            Ok(()) => {
+                self.last_engine_action = "Connected canvas ports".to_string();
+            }
+            Err(error) => {
+                self.last_engine_action = format!("Connect failed: {error}");
+            }
+        }
+        true
+    }
+
+    fn input_port_at(&self, gui: &Context, x: f32, y: f32) -> Option<CanvasPortRef> {
+        let chain = gui.hit_test(x, y);
+        let port = chain.iter().find_map(|node_id| {
+            let id = gui.node_name(node_id)?;
+            let port_id = canvas_port_event_target_id(id)?;
+            let port = parse_canvas_port_id(port_id)?;
+            (port.side == CanvasPortSide::Input).then_some(port)
+        });
+        port
+    }
+
+    fn connect_canvas_ports(
+        &mut self,
+        from: CanvasPortRef,
+        to: CanvasPortRef,
+    ) -> Result<(), engine::facade::EngineError> {
+        if from.side != CanvasPortSide::Output || to.side != CanvasPortSide::Input {
+            return Err(engine::facade::EngineError::Graph {
+                message: "canvas connections must run from output to input".to_string(),
+            });
+        }
+        let Some(from_node) = engine_adapter::parse_engine_node_owner_id(&from.owner_id) else {
+            return Err(engine::facade::EngineError::Graph {
+                message: format!("invalid source node '{}'", from.owner_id),
+            });
+        };
+        let Some(to_node) = engine_adapter::parse_engine_node_owner_id(&to.owner_id) else {
+            return Err(engine::facade::EngineError::Graph {
+                message: format!("invalid target node '{}'", to.owner_id),
+            });
+        };
+        self.engine.connect(Connection {
+            from: PinRef {
+                node: from_node,
+                interface: from.name,
+            },
+            to: PinRef {
+                node: to_node,
+                interface: to.name,
+            },
+        })
+    }
+
+    fn apply_pending_connection_state(
+        &self,
+        pending: &CanvasPendingConnectionView,
+        ports: &mut [CanvasPortView],
+    ) {
+        let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
+            return;
+        };
+        for port in ports {
+            port.connection_state = self.pending_connection_state(&from, port);
+        }
+    }
+
+    fn pending_connection_state(
+        &self,
+        from: &CanvasPortRef,
+        port: &CanvasPortView,
+    ) -> CanvasPortConnectionState {
+        if port.stable_id == canvas_port_stable_id(&from.owner_id, from.side, &from.name) {
+            return CanvasPortConnectionState::Source;
+        }
+        if port.side != CanvasPortSide::Input {
+            return CanvasPortConnectionState::Idle;
+        }
+        let target = CanvasPortRef {
+            owner_id: port
+                .stable_id
+                .strip_prefix("canvas_node::")
+                .and_then(|id| id.split_once("::port::").map(|(owner_id, _)| owner_id))
+                .unwrap_or_default()
+                .to_string(),
+            side: port.side,
+            name: port.name.clone(),
+        };
+        if self.can_connect_canvas_ports(from, &target).is_ok() {
+            CanvasPortConnectionState::CompatibleTarget
+        } else {
+            CanvasPortConnectionState::IncompatibleTarget
+        }
+    }
+
+    fn can_connect_canvas_ports(
+        &self,
+        from: &CanvasPortRef,
+        to: &CanvasPortRef,
+    ) -> Result<(), String> {
+        if from.side != CanvasPortSide::Output || to.side != CanvasPortSide::Input {
+            return Err("canvas connections must run from output to input".to_string());
+        }
+        let from_node = engine_adapter::parse_engine_node_owner_id(&from.owner_id)
+            .ok_or_else(|| format!("invalid source node '{}'", from.owner_id))?;
+        let to_node = engine_adapter::parse_engine_node_owner_id(&to.owner_id)
+            .ok_or_else(|| format!("invalid target node '{}'", to.owner_id))?;
+        let graph = self.engine.query_graph_snapshot();
+        validate_connection_basic(
+            &graph,
+            &Connection {
+                from: PinRef {
+                    node: from_node,
+                    interface: from.name.clone(),
+                },
+                to: PinRef {
+                    node: to_node,
+                    interface: to.name.clone(),
+                },
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let from_type = self
+            .canvas_port_data_type(from)
+            .ok_or_else(|| format!("invalid source port '{}'", from.name))?;
+        let to_type = self
+            .canvas_port_data_type(to)
+            .ok_or_else(|| format!("invalid target port '{}'", to.name))?;
+        if from_type == to_type {
+            Ok(())
+        } else {
+            Err(format!(
+                "type mismatch: '{}' -> '{}'",
+                from_type.0, to_type.0
+            ))
+        }
+    }
+
+    fn canvas_port_data_type(&self, port: &CanvasPortRef) -> Option<types::DataType> {
+        let node_id = engine_adapter::parse_engine_node_owner_id(&port.owner_id)?;
+        let graph = self.engine.query_graph_snapshot();
+        let node = graph.nodes.get(&node_id)?;
+        let def = self
+            .engine
+            .list_node_defs()
+            .into_iter()
+            .find(|def| def.type_id == node.type_id)?;
+        match port.side {
+            CanvasPortSide::Input => def
+                .inputs
+                .iter()
+                .find(|pin| pin.name == port.name)
+                .map(|pin| pin.data_type.clone())
+                .or_else(|| {
+                    def.params
+                        .iter()
+                        .find(|param| {
+                            param.name == port.name && param.expose.contains(&ParamExpose::Input)
+                        })
+                        .map(|param| param.data_type.clone())
+                }),
+            CanvasPortSide::Output => def
+                .outputs
+                .iter()
+                .find(|pin| pin.name == port.name)
+                .map(|pin| pin.data_type.clone())
+                .or_else(|| {
+                    def.params
+                        .iter()
+                        .find(|param| {
+                            param.name == port.name && param.expose.contains(&ParamExpose::Output)
+                        })
+                        .map(|param| param.data_type.clone())
+                }),
+        }
     }
 
     pub(crate) fn note_node_library_opened(&mut self) {
@@ -195,5 +435,121 @@ mod tests {
                 .open
         );
         assert!(!controller.toggle_canvas_port_group(&mut gui, "slider"));
+    }
+
+    #[test]
+    fn canvas_node_views_include_gui_interaction_state() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        controller.add_node_from_library("image_gen");
+        let views = controller.canvas_node_views(&mut gui);
+        let owner_id = views[0].owner_id.clone();
+        assert!(!views[0].selected);
+
+        assert!(controller.select_canvas_node(&mut gui, &format!("canvas_node::{owner_id}")));
+        assert!(controller.toggle_canvas_port_group(
+            &mut gui,
+            &format!("canvas_node::{owner_id}::port_group::output::trigger"),
+        ));
+
+        let views = controller.canvas_node_views(&mut gui);
+        assert!(views[0].selected);
+        assert!(views[0].output_group.open);
+
+        controller.clear_canvas_selection(&mut gui);
+        let views = controller.canvas_node_views(&mut gui);
+        assert!(!views[0].selected);
+    }
+
+    #[test]
+    fn canvas_port_connection_runtime_is_reached_through_controller_api() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+        let camera = Camera::new();
+
+        assert!(controller.begin_canvas_port_connection(
+            &mut gui,
+            &camera,
+            "canvas_node::engine_node::1::port::output::image::pin_item",
+            10.0,
+            20.0,
+        ));
+        assert_eq!(
+            gui.pending_canvas_connection()
+                .map(|pending| pending.from_port_id),
+            Some("canvas_node::engine_node::1::port::output::image".to_string())
+        );
+
+        assert!(controller.update_canvas_port_connection(&mut gui, &camera, 30.0, 40.0));
+        assert_eq!(
+            gui.pending_canvas_connection()
+                .map(|pending| pending.cursor_canvas),
+            Some([30.0, 40.0])
+        );
+        assert!(controller.end_canvas_port_connection(&mut gui, 30.0, 40.0));
+        assert!(gui.pending_canvas_connection().is_none());
+    }
+
+    #[test]
+    fn canvas_port_refs_connect_engine_graph() {
+        let mut controller = WorkspaceController::new();
+
+        controller.add_node_from_library("image_gen");
+        controller.add_node_from_library("color_adjust");
+
+        controller
+            .connect_canvas_ports(
+                CanvasPortRef {
+                    owner_id: "engine_node::0".to_string(),
+                    side: CanvasPortSide::Output,
+                    name: "image".to_string(),
+                },
+                CanvasPortRef {
+                    owner_id: "engine_node::1".to_string(),
+                    side: CanvasPortSide::Input,
+                    name: "image".to_string(),
+                },
+            )
+            .unwrap();
+
+        let connections = controller.canvas_connection_views();
+        assert_eq!(connections.len(), 1);
+        assert_eq!(
+            connections[0].from_port_id,
+            "canvas_node::engine_node::0::port::output::image"
+        );
+        assert_eq!(
+            connections[0].to_port_id,
+            "canvas_node::engine_node::1::port::input::image"
+        );
+    }
+
+    #[test]
+    fn canvas_node_views_mark_pending_connection_targets() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        controller.add_node_from_library("image_gen");
+        controller.add_node_from_library("color_adjust");
+        assert!(gui.begin_pending_canvas_connection(
+            "canvas_node::engine_node::0::port::output::image",
+            [0.0, 0.0],
+        ));
+
+        let views = controller.canvas_node_views(&mut gui);
+        let source = views
+            .iter()
+            .find(|view| view.owner_id == "engine_node::0")
+            .and_then(|view| view.outputs.iter().find(|port| port.name == "image"))
+            .map(|port| port.connection_state);
+        let target = views
+            .iter()
+            .find(|view| view.owner_id == "engine_node::1")
+            .and_then(|view| view.inputs.iter().find(|port| port.name == "image"))
+            .map(|port| port.connection_state);
+
+        assert_eq!(source, Some(CanvasPortConnectionState::Source));
+        assert_eq!(target, Some(CanvasPortConnectionState::CompatibleTarget));
     }
 }

@@ -1,6 +1,6 @@
 use super::{
-    canvas_node_stable_id, canvas_port_group_trigger_id, CanvasNodeLayout, CanvasPortGroupView,
-    CanvasPortSide, CanvasPortView,
+    canvas_node_stable_id, canvas_port_group_trigger_id, CanvasNodeLayout,
+    CanvasPortConnectionState, CanvasPortGroupView, CanvasPortSide, CanvasPortView,
 };
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
@@ -28,6 +28,7 @@ pub struct CanvasNodeView {
     pub output_group: CanvasPortGroupView,
     pub inputs: Vec<CanvasPortView>,
     pub outputs: Vec<CanvasPortView>,
+    pub selected: bool,
     pub layout: CanvasNodeLayout,
 }
 
@@ -133,14 +134,18 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             gap: 0.0,
             direction: Direction::Column,
             hittable: Some(true),
-            gestures: vec![Gesture::Drag],
+            gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         decoration: Some(Decoration {
             background: Some(theme.colors.surface),
             border: Some(Border {
-                width: 1.0,
-                color: theme.colors.border,
+                width: if view.selected { 2.0 } else { 1.0 },
+                color: if view.selected {
+                    theme.colors.text
+                } else {
+                    theme.colors.border
+                },
             }),
             radius: [theme.radii.md; 4],
             shadow: None,
@@ -270,7 +275,7 @@ fn pin_item(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc 
                 fill: Some(port_color(port.side, theme)),
                 stroke: Some(Border {
                     width: 1.0,
-                    color: theme.colors.surface,
+                    color: port_border_color(port.connection_state, theme),
                 }),
             },
         },
@@ -288,6 +293,7 @@ fn pin_item(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc 
             align_items: Align::Center,
             gap: 6.0,
             hittable: Some(true),
+            gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         decoration: None,
@@ -396,17 +402,51 @@ fn port_anchor(port: &CanvasPortView, view: &CanvasNodeView, theme: &Theme) -> D
             position: Position::Absolute { x, y },
             width: Size::Fixed(PORT_SIZE),
             height: Size::Fixed(PORT_SIZE),
-            hittable: Some(false),
+            hittable: Some(true),
+            gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         kind: LeafKind::Circle {
             radius: PORT_SIZE * 0.5,
-            fill: Some(port_color(port.side, theme)),
+            fill: Some(port_state_color(port, theme)),
             stroke: Some(Border {
-                width: 1.0,
-                color: theme.colors.surface,
+                width: match port.connection_state {
+                    CanvasPortConnectionState::Idle => 1.0,
+                    CanvasPortConnectionState::Source
+                    | CanvasPortConnectionState::CompatibleTarget
+                    | CanvasPortConnectionState::IncompatibleTarget => 2.0,
+                },
+                color: port_border_color(port.connection_state, theme),
             }),
         },
+    }
+}
+
+fn port_state_color(port: &CanvasPortView, theme: &Theme) -> Color {
+    match port.connection_state {
+        CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
+        CanvasPortConnectionState::IncompatibleTarget => incompatible_port_color(),
+        CanvasPortConnectionState::Source | CanvasPortConnectionState::Idle => {
+            port_color(port.side, theme)
+        }
+    }
+}
+
+fn port_border_color(state: CanvasPortConnectionState, theme: &Theme) -> Color {
+    match state {
+        CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
+        CanvasPortConnectionState::IncompatibleTarget => incompatible_port_color(),
+        CanvasPortConnectionState::Source => theme.colors.text,
+        CanvasPortConnectionState::Idle => theme.colors.surface,
+    }
+}
+
+fn incompatible_port_color() -> Color {
+    Color {
+        r: 0.863,
+        g: 0.149,
+        b: 0.149,
+        a: 1.0,
     }
 }
 
@@ -464,6 +504,7 @@ mod tests {
             output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
+            selected: false,
             layout: CanvasNodeLayout {
                 owner_id: "engine_node::7".to_string(),
                 rect: Rect {
@@ -495,6 +536,7 @@ mod tests {
             output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
+            selected: false,
             layout: CanvasNodeLayout {
                 owner_id: "engine_node::7".to_string(),
                 rect: Rect {
@@ -534,6 +576,7 @@ mod tests {
                 side: CanvasPortSide::Input,
                 index: 0,
                 count: 1,
+                connection_state: CanvasPortConnectionState::Idle,
             }],
             outputs: vec![CanvasPortView {
                 name: "image".to_string(),
@@ -541,7 +584,9 @@ mod tests {
                 side: CanvasPortSide::Output,
                 index: 0,
                 count: 1,
+                connection_state: CanvasPortConnectionState::Idle,
             }],
+            selected: false,
             layout: CanvasNodeLayout {
                 owner_id: "engine_node::7".to_string(),
                 rect: Rect {
@@ -590,6 +635,7 @@ mod tests {
             output_group: CanvasPortGroupView::default(),
             inputs: Vec::new(),
             outputs: Vec::new(),
+            selected: false,
             layout: CanvasNodeLayout {
                 owner_id: "engine_node::7".to_string(),
                 rect: Rect {

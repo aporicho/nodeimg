@@ -114,12 +114,14 @@ impl App for DemoApp {
         let panel_root = self.gui.panel_root(viewport, panels);
         let canvas_nodes = self.workspace.canvas_node_views(&mut self.gui);
         let canvas_connections = self.workspace.canvas_connection_views();
+        let pending_connection = self.gui.pending_canvas_connection();
         let desc = build_workspace_tree(
             viewport,
             &self.camera,
             &self.theme,
             &canvas_nodes,
             &canvas_connections,
+            pending_connection.as_ref(),
             panel_root,
         );
         self.gui
@@ -302,6 +304,10 @@ impl DemoApp {
                 if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
                     return;
                 }
+                if self.workspace.select_canvas_node(&mut self.gui, &id) {
+                    self.active_button = Some(id);
+                    return;
+                }
                 let _ = self.gallery.apply_click(&id);
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);
@@ -355,6 +361,15 @@ impl DemoApp {
                 let _ = self.gallery.apply_select_change(&id, selected);
             }
             DemoMessage::WidgetDragStart { id, x, y } => {
+                if self.workspace.begin_canvas_port_connection(
+                    &mut self.gui,
+                    &self.camera,
+                    &id,
+                    x,
+                    y,
+                ) {
+                    return;
+                }
                 if self
                     .workspace
                     .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y)
@@ -370,6 +385,12 @@ impl DemoApp {
             DemoMessage::WidgetDragMove { id, x, y } => {
                 if self
                     .workspace
+                    .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
+                {
+                    return;
+                }
+                if self
+                    .workspace
                     .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y)
                 {
                     return;
@@ -380,6 +401,12 @@ impl DemoApp {
                 }
             }
             DemoMessage::WidgetDragEnd { id, x, y } => {
+                if self
+                    .workspace
+                    .end_canvas_port_connection(&mut self.gui, x, y)
+                {
+                    return;
+                }
                 let _ = self
                     .workspace
                     .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
@@ -470,6 +497,7 @@ impl DemoApp {
             self.last_canvas_click = None;
             return;
         }
+        self.workspace.clear_canvas_selection(&mut self.gui);
 
         let now = Instant::now();
         let double_click = self.last_canvas_click.is_some_and(|last| {

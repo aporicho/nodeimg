@@ -6,7 +6,7 @@ use engine::Engine;
 use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
-    CanvasPortSide, CanvasPortView,
+    CanvasPortConnectionState, CanvasPortSide, CanvasPortView,
 };
 use gui::renderer::Rect;
 use std::collections::HashMap;
@@ -115,6 +115,7 @@ pub(crate) fn canvas_node_views(
                 output_group: gui::canvas::CanvasPortGroupView::default(),
                 inputs,
                 outputs,
+                selected: false,
                 layout,
             })
         })
@@ -166,6 +167,7 @@ fn canvas_ports(
             side,
             index,
             count: pins.len(),
+            connection_state: CanvasPortConnectionState::Idle,
         })
         .collect()
 }
@@ -222,7 +224,7 @@ fn engine_node_owner_id(node_id: types::NodeId) -> String {
     format!("engine_node::{}", node_id.0)
 }
 
-fn parse_engine_node_owner_id(owner_id: &str) -> Option<types::NodeId> {
+pub(crate) fn parse_engine_node_owner_id(owner_id: &str) -> Option<types::NodeId> {
     let id = owner_id.strip_prefix("engine_node::")?.parse().ok()?;
     Some(types::NodeId(id))
 }

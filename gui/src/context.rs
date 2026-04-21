@@ -173,6 +173,45 @@ impl Context {
         self.tree.toggle_canvas_port_group(owner_id, side)
     }
 
+    pub fn select_canvas_node(&mut self, owner_id: &str) -> bool {
+        self.tree.select_canvas_node(owner_id)
+    }
+
+    pub fn clear_canvas_selection(&mut self) {
+        self.tree.clear_canvas_selection();
+    }
+
+    pub fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
+        self.tree.is_canvas_node_selected(owner_id)
+    }
+
+    pub fn pending_canvas_connection(&self) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.tree.pending_canvas_connection()
+    }
+
+    pub fn begin_pending_canvas_connection(
+        &mut self,
+        from_port_id: &str,
+        cursor_canvas: [f32; 2],
+    ) -> bool {
+        self.tree
+            .begin_pending_canvas_connection(from_port_id, cursor_canvas)
+    }
+
+    pub fn update_pending_canvas_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
+        self.tree.update_pending_canvas_connection(cursor_canvas)
+    }
+
+    pub fn end_pending_canvas_connection(
+        &mut self,
+    ) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.tree.end_pending_canvas_connection()
+    }
+
+    pub fn cancel_pending_canvas_connection(&mut self) {
+        self.tree.cancel_pending_canvas_connection();
+    }
+
     pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
         self.tree.export_panel_layouts()
     }

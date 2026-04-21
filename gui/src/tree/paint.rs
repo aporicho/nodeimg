@@ -141,6 +141,18 @@ fn paint_node(
                 let ctrl = bezier_control_points(from_p, to_p);
                 renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.connection);
             }
+            LeafKind::PendingConnection {
+                from_port,
+                cursor_canvas,
+            } => {
+                let Some(from_rect) = find_node_by_str_id(tree, from_port.as_ref()) else {
+                    return;
+                };
+                let from_p = tf.apply_point(rect_center_right(from_rect));
+                let to_p = tf.apply_point(*cursor_canvas);
+                let ctrl = bezier_control_points(from_p, to_p);
+                renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.accent);
+            }
             _ => {}
         }
     }

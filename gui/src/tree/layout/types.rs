@@ -284,6 +284,11 @@ pub enum LeafKind {
         from_port: std::borrow::Cow<'static, str>,
         to_port: std::borrow::Cow<'static, str>,
     },
+    /// 正在拖拽的临时节点连线。paint 时根据起始 port id 和当前 canvas 点绘制。
+    PendingConnection {
+        from_port: std::borrow::Cow<'static, str>,
+        cursor_canvas: Point,
+    },
 
     // ── 逃生舱 ──
     /// 自定义绘制回调（直方图、色盘、波形图等）。

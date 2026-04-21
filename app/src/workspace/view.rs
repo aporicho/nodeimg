@@ -1,7 +1,7 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::connection_layer;
 use gui::canvas::node_card::{node_card, CanvasNodeView};
-use gui::canvas::CanvasConnectionView;
+use gui::canvas::{CanvasConnectionView, CanvasPendingConnectionView};
 use gui::renderer::Rect;
 use gui::theme::Theme;
 use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
@@ -17,6 +17,7 @@ pub(crate) fn build_workspace_tree(
     theme: &Theme,
     canvas_nodes: &[CanvasNodeView],
     canvas_connections: &[CanvasConnectionView],
+    pending_connection: Option<&CanvasPendingConnectionView>,
     panel_root: Desc,
 ) -> Desc {
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
@@ -43,7 +44,7 @@ pub(crate) fn build_workspace_tree(
             dot_size: GRID_DOT_SIZE,
         },
     }];
-    canvas_children.push(connection_layer(canvas_connections));
+    canvas_children.push(connection_layer(canvas_connections, pending_connection));
     canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
 
     Desc::Container {
@@ -87,12 +88,64 @@ pub(crate) fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::align_grid_start;
+    use super::{align_grid_start, build_workspace_tree};
+    use gui::canvas::camera::Camera;
+    use gui::canvas::CanvasPendingConnectionView;
+    use gui::renderer::Rect;
+    use gui::theme::light_theme;
+    use gui::tree::layout::{BoxStyle, Size};
+    use gui::tree::Desc;
+    use std::borrow::Cow;
 
     #[test]
     fn grid_alignment_snaps_to_spacing_not_single_units() {
         assert_eq!(align_grid_start(3.0, 20.0), -40.0);
         assert_eq!(align_grid_start(21.0, 20.0), -20.0);
         assert_eq!(align_grid_start(-1.0, 20.0), -60.0);
+    }
+
+    #[test]
+    fn workspace_tree_includes_pending_connection_layer_item() {
+        let theme = light_theme();
+        let desc = build_workspace_tree(
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 800.0,
+                h: 600.0,
+            },
+            &Camera::new(),
+            &theme,
+            &[],
+            &[],
+            Some(&CanvasPendingConnectionView {
+                from_port_id: "canvas_node::engine_node::1::port::output::image".to_string(),
+                cursor_canvas: [100.0, 120.0],
+            }),
+            Desc::Container {
+                id: Cow::Borrowed("panel_root"),
+                style: BoxStyle {
+                    width: Size::Fixed(0.0),
+                    height: Size::Fixed(0.0),
+                    ..BoxStyle::default()
+                },
+                decoration: None,
+                children: Vec::new(),
+            },
+        );
+
+        assert!(contains_desc_id(&desc, "canvas_connection::pending"));
+    }
+
+    fn contains_desc_id(desc: &Desc, id: &str) -> bool {
+        if desc.id() == id {
+            return true;
+        }
+        match desc {
+            Desc::Container { children, .. } => {
+                children.iter().any(|child| contains_desc_id(child, id))
+            }
+            Desc::Widget { .. } | Desc::Leaf { .. } => false,
+        }
     }
 }

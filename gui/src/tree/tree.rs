@@ -1,10 +1,10 @@
 use super::node::{NodeId, TreeNode};
 use super::runtime_slots::RuntimeSlot;
 use super::{RuntimeSlots, StableId};
-use crate::canvas::runtime::{CanvasNodeRuntime, CanvasPortGroupRuntime};
+use crate::canvas::runtime::{CanvasInteractionRuntime, CanvasNodeRuntime};
 use crate::canvas::{
-    canvas_node_stable_id, canvas_port_group_stable_id, CanvasNodeIdentity, CanvasNodeLayout,
-    CanvasPortGroupView, CanvasPortSide,
+    canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortGroupView,
+    CanvasPortSide,
 };
 use crate::panel::{
     PanelConfig, PanelLayout, PanelPointerSession, PanelResizeSession, PanelRootRuntime,
@@ -14,6 +14,7 @@ use crate::widget::resize_edge::ResizeEdge;
 use std::collections::{HashMap, HashSet};
 
 const PANEL_ROOT_ID: &str = "panel_root";
+const CANVAS_INTERACTION_ID: &str = "canvas_interaction";
 
 /// 全局控件树存储。用 Vec<Option<>> 做 arena，索引访问。
 pub struct Tree {
@@ -192,6 +193,11 @@ impl Tree {
             };
             owner_ids.contains(owner_id)
         });
+        if let Some(interaction) =
+            self.runtime_slot_by_stable_id_mut::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+        {
+            interaction.retain_owner_ids(&owner_ids);
+        }
 
         let mut layouts = Vec::with_capacity(identities.len());
         for (index, identity) in identities.iter().enumerate() {
@@ -259,9 +265,8 @@ impl Tree {
         owner_id: &str,
         side: CanvasPortSide,
     ) -> CanvasPortGroupView {
-        let stable_id = canvas_port_group_stable_id(owner_id, side);
-        self.runtime_slot_by_stable_id::<CanvasPortGroupRuntime>(&stable_id)
-            .map(CanvasPortGroupRuntime::to_view)
+        self.runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .map(|interaction| interaction.port_group_view(owner_id, side))
             .unwrap_or_default()
     }
 
@@ -270,10 +275,64 @@ impl Tree {
         owner_id: &str,
         side: CanvasPortSide,
     ) -> bool {
-        let stable_id = canvas_port_group_stable_id(owner_id, side);
-        let runtime = self.ensure_runtime_slot_by_stable_id::<CanvasPortGroupRuntime>(&stable_id);
-        runtime.open = !runtime.open;
-        runtime.open
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .toggle_port_group(owner_id, side)
+    }
+
+    pub(crate) fn select_canvas_node(&mut self, owner_id: &str) -> bool {
+        let stable_id = canvas_node_stable_id(owner_id);
+        if self
+            .runtime_slot_by_stable_id::<CanvasNodeRuntime>(&stable_id)
+            .is_none()
+        {
+            return false;
+        }
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .select_single(owner_id);
+        true
+    }
+
+    pub(crate) fn clear_canvas_selection(&mut self) {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .clear();
+    }
+
+    pub(crate) fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
+        self.runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .is_some_and(|interaction| interaction.is_selected(owner_id))
+    }
+
+    pub(crate) fn pending_canvas_connection(
+        &self,
+    ) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .and_then(|interaction| interaction.pending_connection().cloned())
+    }
+
+    pub(crate) fn begin_pending_canvas_connection(
+        &mut self,
+        from_port_id: &str,
+        cursor_canvas: [f32; 2],
+    ) -> bool {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .begin_pending_connection(from_port_id, cursor_canvas)
+    }
+
+    pub(crate) fn update_pending_canvas_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .update_pending_connection(cursor_canvas)
+    }
+
+    pub(crate) fn end_pending_canvas_connection(
+        &mut self,
+    ) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .end_pending_connection()
+    }
+
+    pub(crate) fn cancel_pending_canvas_connection(&mut self) {
+        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .cancel_pending_connection();
     }
 
     pub(crate) fn export_panel_layouts(&self) -> Vec<PanelLayout> {
@@ -478,6 +537,7 @@ fn panel_layout_from_runtime(id: &str, panel: &PanelRuntime) -> PanelLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::Rect;
     use crate::theme::light_theme;
     use crate::tree::layout::{BoxStyle, Size};
     use crate::tree::{reconcile, Desc};
@@ -633,5 +693,64 @@ mod tests {
         assert!(
             !tree.toggle_canvas_port_group("engine_node::1", crate::canvas::CanvasPortSide::Input)
         );
+    }
+
+    #[test]
+    fn canvas_interaction_state_tracks_selection_and_prunes_stale_nodes() {
+        let mut tree = Tree::new();
+        let first = CanvasNodeIdentity {
+            owner_id: "engine_node::1".to_string(),
+            default_rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 80.0,
+            },
+        };
+        let second = CanvasNodeIdentity {
+            owner_id: "engine_node::2".to_string(),
+            default_rect: Rect {
+                x: 120.0,
+                y: 0.0,
+                w: 100.0,
+                h: 80.0,
+            },
+        };
+
+        tree.sync_canvas_node_layouts(&[first.clone(), second.clone()]);
+        assert!(tree.select_canvas_node("engine_node::1"));
+        assert!(tree.is_canvas_node_selected("engine_node::1"));
+        assert!(!tree.is_canvas_node_selected("engine_node::2"));
+        assert!(
+            tree.toggle_canvas_port_group("engine_node::1", crate::canvas::CanvasPortSide::Input)
+        );
+        assert!(
+            tree.canvas_port_group_view("engine_node::1", crate::canvas::CanvasPortSide::Input)
+                .open
+        );
+        assert!(!tree.begin_pending_canvas_connection(
+            "canvas_node::engine_node::1::port::input::prompt",
+            [2.0, 3.0],
+        ));
+        assert!(tree.begin_pending_canvas_connection(
+            "canvas_node::engine_node::1::port::output::image",
+            [2.0, 3.0],
+        ));
+        assert_eq!(
+            tree.pending_canvas_connection()
+                .map(|pending| pending.cursor_canvas),
+            Some([2.0, 3.0])
+        );
+        assert!(tree.update_pending_canvas_connection([4.0, 5.0]));
+
+        tree.sync_canvas_node_layouts(&[second]);
+
+        assert!(!tree.is_canvas_node_selected("engine_node::1"));
+        assert!(
+            !tree
+                .canvas_port_group_view("engine_node::1", crate::canvas::CanvasPortSide::Input)
+                .open
+        );
+        assert!(tree.pending_canvas_connection().is_none());
     }
 }
