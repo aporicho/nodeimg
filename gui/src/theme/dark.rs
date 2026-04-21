@@ -55,6 +55,7 @@ pub fn build_theme() -> Theme {
             md: 12.0,
             lg: 16.0,
         },
+        controls: ThemeControls::default(),
         components: ThemeComponents {
             button: ButtonTheme {
                 padding_x: 16.0,

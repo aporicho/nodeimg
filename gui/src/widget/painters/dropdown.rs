@@ -28,7 +28,7 @@ pub(super) fn visual_override(
             WidgetVisualState::Normal
         });
     let surface = theme.dropdown_visual(visual);
-    let tokens = theme.components.dropdown;
+    let metrics = theme.control_metrics(dropdown.size, dropdown.density);
 
     if node_id_str == root_id {
         return Some((transparent_style(), surface.text));
@@ -39,10 +39,10 @@ pub(super) fn visual_override(
             RectStyle {
                 color: surface.background,
                 border: surface.border.map(|color| crate::renderer::Border {
-                    width: tokens.border_width,
+                    width: metrics.border_width,
                     color,
                 }),
-                radius: [tokens.radius; 4],
+                radius: [metrics.radius; 4],
                 shadow: None,
             },
             surface.text,

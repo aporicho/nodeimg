@@ -233,11 +233,19 @@ fn text_field_visual_spec(
     theme: &Theme,
 ) -> Option<(bool, TextInputTheme)> {
     if let Some(text_input) = props.as_any().downcast_ref::<TextInputProps>() {
-        return Some((text_input.disabled, theme.components.text_input));
+        return Some((
+            text_input.disabled,
+            theme.text_field_metrics(text_input.size, text_input.density),
+        ));
     }
 
     props
         .as_any()
         .downcast_ref::<NumberInputProps>()
-        .map(|number_input| (number_input.disabled, theme.components.number_input))
+        .map(|number_input| {
+            (
+                number_input.disabled,
+                theme.text_field_metrics(number_input.size, number_input.density),
+            )
+        })
 }

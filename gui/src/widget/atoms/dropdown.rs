@@ -1,4 +1,5 @@
 use crate::renderer::TextStyle;
+use crate::theme::{ControlSize, Density};
 use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -11,6 +12,8 @@ pub struct DropdownProps {
     pub options: Vec<Cow<'static, str>>,
     pub selected: usize,
     pub disabled: bool,
+    pub size: ControlSize,
+    pub density: Density,
 }
 
 impl WidgetProps for DropdownProps {
@@ -39,7 +42,7 @@ impl WidgetProps for DropdownProps {
         use crate::tree::Desc;
 
         let theme = cx.theme;
-        let tokens = theme.components.dropdown;
+        let metrics = theme.control_metrics(self.size, self.density);
         let visual = theme.dropdown_visual(if self.disabled {
             crate::interaction::WidgetVisualState::Disabled
         } else {
@@ -56,7 +59,7 @@ impl WidgetProps for DropdownProps {
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Column,
-                gap: tokens.gap,
+                gap: (metrics.gap / 2.0).max(2.0),
                 height: Size::Auto,
                 ..BoxStyle::default()
             },
@@ -73,7 +76,7 @@ impl WidgetProps for DropdownProps {
                         content: self.label.to_string(),
                         style: TextStyle {
                             color: theme.colors.text_muted,
-                            size: tokens.font_size - 1.0,
+                            size: metrics.label_font_size,
                             ..theme.text_style_label_sm()
                         },
                         layout: Default::default(),
@@ -83,9 +86,10 @@ impl WidgetProps for DropdownProps {
                     id: Cow::Owned(anatomy.field()),
                     style: BoxStyle {
                         direction: Direction::Row,
-                        gap: tokens.gap,
+                        gap: metrics.gap,
                         align_items: Align::Center,
-                        padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
+                        height: Size::Fixed(metrics.height),
+                        padding: Edges::symmetric(metrics.padding_y, metrics.padding_x),
                         gestures: vec![Gesture::Tap],
                         hittable: Some(true),
                         ..BoxStyle::default()
@@ -93,10 +97,10 @@ impl WidgetProps for DropdownProps {
                     decoration: Some(Decoration {
                         background: Some(visual.background),
                         border: Some(Border {
-                            width: tokens.border_width,
+                            width: metrics.border_width,
                             color: visual.border.unwrap_or(theme.colors.border),
                         }),
-                        radius: [tokens.radius; 4],
+                        radius: [metrics.radius; 4],
                         shadow: None,
                     }),
                     children: vec![
@@ -111,7 +115,7 @@ impl WidgetProps for DropdownProps {
                                 content: selected_text,
                                 style: TextStyle {
                                     color: visual.text,
-                                    size: tokens.font_size,
+                                    size: metrics.font_size,
                                     ..theme.text_style_body_sm()
                                 },
                                 layout: Default::default(),
@@ -137,7 +141,7 @@ impl WidgetProps for DropdownProps {
                                 content: "▾".to_string(),
                                 style: TextStyle {
                                     color: theme.colors.text_muted,
-                                    size: tokens.font_size,
+                                    size: metrics.font_size,
                                     ..theme.text_style_body_sm()
                                 },
                                 layout: Default::default(),
@@ -146,6 +150,43 @@ impl WidgetProps for DropdownProps {
                     ],
                 },
             ],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::dark_theme;
+    use crate::tree::layout::{Edges, Size};
+    use crate::tree::Desc;
+
+    #[test]
+    fn dropdown_field_uses_control_metrics() {
+        let theme = dark_theme();
+        let props = DropdownProps {
+            label: Cow::Borrowed("Mode"),
+            options: vec![Cow::Borrowed("Normal")],
+            selected: 0,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "dropdown",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        match &build.children[1] {
+            Desc::Container { style, .. } => {
+                assert_eq!(style.height, Size::Fixed(24.0));
+                assert_eq!(style.padding, Edges::symmetric(4.0, 6.0));
+            }
+            _ => panic!("expected dropdown field container"),
         }
     }
 }

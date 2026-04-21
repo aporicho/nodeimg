@@ -3,10 +3,11 @@ mod light;
 mod tokens;
 
 pub use tokens::{
-    ButtonTheme, CheckboxTheme, CollapsibleTheme, DropdownTheme, GroupTheme, ImageViewerTheme,
-    ListViewTheme, PanelTheme, PanelVisual, RadioTheme, ScrollAreaTheme, SeparatorTheme,
-    SliderTheme, SliderVisual, SurfaceVisual, TextInputTheme, Theme, ThemeColors, ThemeComponents,
-    ThemeMode, ThemeRadii, ThemeSpacing, ThemeText, ToggleTheme, ToggleVisual,
+    ButtonTheme, CheckboxTheme, CollapsibleTheme, ControlMetrics, ControlSize, Density,
+    DropdownTheme, GroupTheme, ImageViewerTheme, ListViewTheme, PanelTheme, PanelVisual,
+    RadioTheme, ScrollAreaTheme, SeparatorTheme, SliderTheme, SliderVisual, SurfaceVisual,
+    TextInputTheme, Theme, ThemeColors, ThemeComponents, ThemeControls, ThemeMode, ThemeRadii,
+    ThemeSpacing, ThemeText, ToggleTheme, ToggleVisual,
 };
 
 impl Theme {
@@ -41,6 +42,8 @@ impl Theme {
         scaled.spacing.sm *= factor;
         scaled.spacing.md *= factor;
         scaled.spacing.lg *= factor;
+
+        scaled.controls.scale(factor);
 
         scaled.components.button.padding_x *= factor;
         scaled.components.button.padding_y *= factor;
@@ -155,4 +158,82 @@ pub fn dark_theme() -> Theme {
 
 pub fn light_theme() -> Theme {
     light::build_theme()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_metrics_resolve_all_size_density_pairs() {
+        let theme = dark_theme();
+
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Small, Density::Compact)
+                .height,
+            24.0
+        );
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Small, Density::Regular)
+                .height,
+            28.0
+        );
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Medium, Density::Compact)
+                .height,
+            32.0
+        );
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Medium, Density::Regular)
+                .height,
+            36.0
+        );
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Large, Density::Compact)
+                .height,
+            40.0
+        );
+        assert_eq!(
+            theme
+                .control_metrics(ControlSize::Large, Density::Regular)
+                .height,
+            44.0
+        );
+    }
+
+    #[test]
+    fn scaled_theme_scales_control_metrics() {
+        let theme = dark_theme();
+        let scaled = theme.scaled(2.0);
+
+        assert_eq!(
+            scaled
+                .control_metrics(ControlSize::Medium, Density::Regular)
+                .height,
+            72.0
+        );
+        assert_eq!(
+            scaled
+                .control_metrics(ControlSize::Small, Density::Compact)
+                .padding_x,
+            12.0
+        );
+    }
+
+    #[test]
+    fn text_field_metrics_are_derived_from_control_metrics() {
+        let theme = dark_theme();
+        let metrics = theme.control_metrics(ControlSize::Small, Density::Compact);
+        let field = theme.text_field_metrics(ControlSize::Small, Density::Compact);
+
+        assert_eq!(field.field_height, metrics.height);
+        assert_eq!(field.padding_x, metrics.padding_x);
+        assert_eq!(field.value_size, metrics.font_size);
+        assert_eq!(field.label_size, metrics.label_font_size);
+    }
 }

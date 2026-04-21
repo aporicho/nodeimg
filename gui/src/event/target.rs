@@ -139,6 +139,8 @@ mod tests {
                 label: Cow::Borrowed("Run"),
                 icon: None,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         }]);
         let resolver = TargetResolver::new(&tree);
@@ -183,6 +185,8 @@ mod tests {
                 label: Cow::Borrowed("Prompt"),
                 value: Cow::Borrowed("hello"),
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         }]);
         let resolver = TargetResolver::new(&tree);

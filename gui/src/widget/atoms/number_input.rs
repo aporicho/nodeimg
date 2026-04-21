@@ -1,4 +1,5 @@
 use crate::renderer::TextStyle;
+use crate::theme::{ControlSize, Density};
 use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -14,6 +15,8 @@ pub struct NumberInputProps {
     pub step: f32,
     pub precision: usize,
     pub disabled: bool,
+    pub size: ControlSize,
+    pub density: Density,
 }
 
 impl WidgetProps for NumberInputProps {
@@ -43,7 +46,7 @@ impl WidgetProps for NumberInputProps {
         use crate::tree::Desc;
 
         let theme = cx.theme;
-        let tokens = theme.components.number_input;
+        let tokens = theme.text_field_metrics(self.size, self.density);
         let visual = theme.text_input_visual(if self.disabled {
             crate::interaction::WidgetVisualState::Disabled
         } else {
@@ -119,6 +122,8 @@ pub fn format_number(value: f32, precision: usize) -> String {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::{Edges, Size};
+    use crate::tree::Desc;
 
     #[test]
     fn number_input_formats_value_with_precision() {
@@ -131,6 +136,8 @@ mod tests {
             step: 0.25,
             precision: 2,
             disabled: false,
+            size: Default::default(),
+            density: Default::default(),
         };
         let build = props.build(
             "number",
@@ -141,14 +148,45 @@ mod tests {
         );
 
         match &build.children[1] {
-            crate::tree::Desc::Container { children, .. } => match &children[0] {
-                crate::tree::Desc::Leaf {
+            Desc::Container { children, .. } => match &children[0] {
+                Desc::Leaf {
                     kind: crate::tree::layout::LeafKind::Text { content, .. },
                     ..
                 } => assert_eq!(content, "1.25"),
                 _ => panic!("expected value leaf"),
             },
             _ => panic!("expected field container"),
+        }
+    }
+
+    #[test]
+    fn number_input_field_uses_control_metrics() {
+        let theme = dark_theme();
+        let props = NumberInputProps {
+            label: Cow::Borrowed("Radius"),
+            value: 1.25,
+            min: 0.0,
+            max: 10.0,
+            step: 0.25,
+            precision: 2,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+        let build = props.build(
+            "number",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        match &build.children[1] {
+            Desc::Container { style, .. } => {
+                assert_eq!(style.height, Size::Fixed(24.0));
+                assert_eq!(style.padding, Edges::symmetric(4.0, 6.0));
+            }
+            _ => panic!("expected number field container"),
         }
     }
 }

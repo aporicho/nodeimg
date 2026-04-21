@@ -485,7 +485,7 @@ fn text_field_spec(
         return Some(TextFieldSpec {
             external_text: text_input.value.to_string(),
             kind: TextFieldKind::TextInput,
-            tokens: theme.components.text_input,
+            tokens: theme.text_field_metrics(text_input.size, text_input.density),
         });
     }
 
@@ -495,7 +495,7 @@ fn text_field_spec(
         .map(|number_input| TextFieldSpec {
             external_text: format_number(number_input.value, number_input.precision),
             kind: TextFieldKind::NumberInput,
-            tokens: theme.components.number_input,
+            tokens: theme.text_field_metrics(number_input.size, number_input.density),
         })
 }
 

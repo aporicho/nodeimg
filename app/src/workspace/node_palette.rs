@@ -84,6 +84,8 @@ fn library_content(state: &NodePaletteState) -> Vec<Desc> {
                 label: Cow::Owned(format!("{}  [{}]", item.name, item.source)),
                 icon: None,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         });
     }

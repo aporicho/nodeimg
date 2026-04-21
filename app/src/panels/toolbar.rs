@@ -31,6 +31,8 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
                     label: Cow::Borrowed("Add Image Demo"),
                     icon: None,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
@@ -39,6 +41,8 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
                     label: Cow::Borrowed("Run Image Demo"),
                     icon: None,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
         ],

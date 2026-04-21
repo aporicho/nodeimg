@@ -15,6 +15,7 @@ pub struct Theme {
     pub text: ThemeText,
     pub radii: ThemeRadii,
     pub spacing: ThemeSpacing,
+    pub controls: ThemeControls,
     pub components: ThemeComponents,
 }
 
@@ -86,6 +87,152 @@ pub struct ThemeComponents {
     pub toggle: ToggleTheme,
     pub text_input: TextInputTheme,
     pub panel: PanelTheme,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Default for ControlSize {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Density {
+    Compact,
+    Regular,
+}
+
+impl Default for Density {
+    fn default() -> Self {
+        Self::Regular
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ControlMetrics {
+    pub height: f32,
+    pub padding_x: f32,
+    pub padding_y: f32,
+    pub gap: f32,
+    pub font_size: f32,
+    pub label_font_size: f32,
+    pub icon_size: f32,
+    pub radius: f32,
+    pub border_width: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThemeControls {
+    pub small_compact: ControlMetrics,
+    pub small_regular: ControlMetrics,
+    pub medium_compact: ControlMetrics,
+    pub medium_regular: ControlMetrics,
+    pub large_compact: ControlMetrics,
+    pub large_regular: ControlMetrics,
+}
+
+impl ThemeControls {
+    pub(crate) fn scale(&mut self, factor: f32) {
+        self.small_compact.scale(factor);
+        self.small_regular.scale(factor);
+        self.medium_compact.scale(factor);
+        self.medium_regular.scale(factor);
+        self.large_compact.scale(factor);
+        self.large_regular.scale(factor);
+    }
+}
+
+impl Default for ThemeControls {
+    fn default() -> Self {
+        Self {
+            small_compact: ControlMetrics {
+                height: 24.0,
+                padding_x: 6.0,
+                padding_y: 4.0,
+                gap: 4.0,
+                font_size: 11.0,
+                label_font_size: 11.0,
+                icon_size: 12.0,
+                radius: 4.0,
+                border_width: 1.0,
+            },
+            small_regular: ControlMetrics {
+                height: 28.0,
+                padding_x: 8.0,
+                padding_y: 5.0,
+                gap: 6.0,
+                font_size: 12.0,
+                label_font_size: 11.0,
+                icon_size: 14.0,
+                radius: 4.0,
+                border_width: 1.0,
+            },
+            medium_compact: ControlMetrics {
+                height: 32.0,
+                padding_x: 10.0,
+                padding_y: 6.0,
+                gap: 6.0,
+                font_size: 12.0,
+                label_font_size: 11.0,
+                icon_size: 14.0,
+                radius: 4.0,
+                border_width: 1.0,
+            },
+            medium_regular: ControlMetrics {
+                height: 36.0,
+                padding_x: 12.0,
+                padding_y: 8.0,
+                gap: 8.0,
+                font_size: 12.0,
+                label_font_size: 11.0,
+                icon_size: 16.0,
+                radius: 4.0,
+                border_width: 1.0,
+            },
+            large_compact: ControlMetrics {
+                height: 40.0,
+                padding_x: 14.0,
+                padding_y: 9.0,
+                gap: 8.0,
+                font_size: 13.0,
+                label_font_size: 12.0,
+                icon_size: 18.0,
+                radius: 6.0,
+                border_width: 1.0,
+            },
+            large_regular: ControlMetrics {
+                height: 44.0,
+                padding_x: 16.0,
+                padding_y: 10.0,
+                gap: 10.0,
+                font_size: 13.0,
+                label_font_size: 12.0,
+                icon_size: 20.0,
+                radius: 6.0,
+                border_width: 1.0,
+            },
+        }
+    }
+}
+
+impl ControlMetrics {
+    fn scale(&mut self, factor: f32) {
+        self.height *= factor;
+        self.padding_x *= factor;
+        self.padding_y *= factor;
+        self.gap *= factor;
+        self.font_size *= factor;
+        self.label_font_size *= factor;
+        self.icon_size *= factor;
+        self.radius *= factor;
+        self.border_width *= factor;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -282,6 +429,32 @@ pub struct PanelVisual {
 }
 
 impl Theme {
+    pub fn control_metrics(&self, size: ControlSize, density: Density) -> ControlMetrics {
+        match (size, density) {
+            (ControlSize::Small, Density::Compact) => self.controls.small_compact,
+            (ControlSize::Small, Density::Regular) => self.controls.small_regular,
+            (ControlSize::Medium, Density::Compact) => self.controls.medium_compact,
+            (ControlSize::Medium, Density::Regular) => self.controls.medium_regular,
+            (ControlSize::Large, Density::Compact) => self.controls.large_compact,
+            (ControlSize::Large, Density::Regular) => self.controls.large_regular,
+        }
+    }
+
+    pub fn text_field_metrics(&self, size: ControlSize, density: Density) -> TextInputTheme {
+        let metrics = self.control_metrics(size, density);
+        TextInputTheme {
+            gap: (metrics.gap / 2.0).max(2.0),
+            label_size: metrics.label_font_size,
+            value_size: metrics.font_size,
+            field_height: metrics.height,
+            padding_x: metrics.padding_x,
+            padding_y: metrics.padding_y,
+            border_width: metrics.border_width,
+            radius: metrics.radius,
+            selection_radius: 2.0,
+        }
+    }
+
     pub fn text_style_body_sm(&self) -> TextStyle {
         TextStyle::new(self.colors.text, self.text.body_sm)
             .with_family(self.text.body_family)

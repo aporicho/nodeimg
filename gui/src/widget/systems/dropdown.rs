@@ -201,6 +201,8 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
                     label: Cow::Owned(format!("{prefix}{option}")),
                     icon: None,
                     disabled: false,
+                    size: props.size,
+                    density: props.density,
                 }),
             }
         })

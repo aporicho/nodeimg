@@ -407,6 +407,8 @@ mod tests {
                     label: Cow::Borrowed("Prompt"),
                     value: Cow::Owned(value.to_string()),
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -427,6 +429,8 @@ mod tests {
                     label: Cow::Borrowed("Run"),
                     icon: None,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -535,6 +539,8 @@ mod tests {
                             label: Cow::Borrowed("Prompt"),
                             value: Cow::Borrowed("hello"),
                             disabled: false,
+                            size: Default::default(),
+                            density: Default::default(),
                         }),
                     }],
                 }),
@@ -549,6 +555,8 @@ mod tests {
                 label: Cow::Borrowed("Overlay"),
                 icon: None,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         }
     }
@@ -602,6 +610,8 @@ mod tests {
                     step: 0.5,
                     precision: 2,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -627,6 +637,8 @@ mod tests {
                     ],
                     selected,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -816,7 +828,7 @@ mod tests {
         let dark = dark_theme();
         let mut updated = dark_theme();
         updated.revision = 99;
-        updated.components.text_input.field_height = 52.0;
+        updated.controls.medium_regular.height = 52.0;
 
         ctx.update(
             test_desc("hello"),
@@ -846,8 +858,8 @@ mod tests {
 
         let after_height = ctx.node_rect("input::field").expect("text input field").h;
 
-        assert_eq!(before_height, dark.components.text_input.field_height);
-        assert_eq!(after_height, updated.components.text_input.field_height);
+        assert_eq!(before_height, dark.controls.medium_regular.height);
+        assert_eq!(after_height, updated.controls.medium_regular.height);
     }
 
     #[test]
