@@ -44,6 +44,7 @@ pub struct BoxStyle {
     pub align_items: Align,
     pub justify_content: Justify,
     pub flex_grow: f32,
+    pub flex_shrink: f32,
 
     // ── 尺寸约束 ──
     pub min_width: f32,
@@ -77,6 +78,7 @@ impl Default for BoxStyle {
             align_items: Align::Stretch,
             justify_content: Justify::Start,
             flex_grow: 0.0,
+            flex_shrink: 0.0,
             min_width: 0.0,
             max_width: f32::INFINITY,
             min_height: 0.0,

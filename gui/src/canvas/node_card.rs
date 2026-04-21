@@ -6,7 +6,8 @@ use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
 use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size, TextLayout,
+    TextOverflow,
 };
 use crate::tree::Desc;
 use std::borrow::Cow;
@@ -252,12 +253,13 @@ fn pin_label(port: &CanvasPortView, theme: &Theme) -> Desc {
         style: BoxStyle {
             width: Size::Fill,
             height: Size::Auto,
+            flex_shrink: 1.0,
             ..BoxStyle::default()
         },
         kind: LeafKind::Text {
             content: port.name.clone(),
             style: theme.text_style_label_sm(),
-            layout: Default::default(),
+            layout: ellipsis_text_layout(),
         },
     }
 }
@@ -270,12 +272,13 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
             style: BoxStyle {
                 width: Size::Fill,
                 height: Size::Auto,
+                flex_shrink: 1.0,
                 ..BoxStyle::default()
             },
             kind: LeafKind::Text {
                 content: view.subtitle.clone(),
                 style: theme.text_style_label_sm(),
-                layout: Default::default(),
+                layout: ellipsis_text_layout(),
             },
         });
     } else {
@@ -325,12 +328,13 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
                 style: BoxStyle {
                     width: Size::Fill,
                     height: Size::Auto,
+                    flex_shrink: 1.0,
                     ..BoxStyle::default()
                 },
                 kind: LeafKind::Text {
                     content: param.name.clone(),
                     style: theme.text_style_label_sm(),
-                    layout: Default::default(),
+                    layout: ellipsis_text_layout(),
                 },
             },
             Desc::Leaf {
@@ -359,6 +363,13 @@ fn card_height(view: &CanvasNodeView) -> f32 {
         48.0
     } else {
         view.layout.rect.h
+    }
+}
+
+fn ellipsis_text_layout() -> TextLayout {
+    TextLayout {
+        overflow: TextOverflow::Ellipsis,
+        ..Default::default()
     }
 }
 

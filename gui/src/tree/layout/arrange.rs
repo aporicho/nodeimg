@@ -4,6 +4,19 @@ use super::box_model::{border_box_from_available, layout_boxes, ChildCoordinateS
 use super::measure::measure;
 use super::types::*;
 
+#[derive(Debug, Clone, Copy)]
+struct FlexChildStyle {
+    grow: f32,
+    shrink: f32,
+    width: Size,
+    height: Size,
+    min_width: f32,
+    max_width: f32,
+    min_height: f32,
+    max_height: f32,
+    main_margin: f32,
+}
+
 /// 自顶向下分配位置，直接写入树节点。
 pub(crate) fn arrange<T: LayoutTree>(
     tree: &mut T,
@@ -90,7 +103,7 @@ pub(crate) fn arrange<T: LayoutTree>(
     } else {
         0.0
     };
-    let child_styles: Vec<(f32, Size, Size, f32)> = flow_children
+    let child_styles: Vec<FlexChildStyle> = flow_children
         .iter()
         .map(|&c| {
             let s = tree.style(c);
@@ -99,7 +112,17 @@ pub(crate) fn arrange<T: LayoutTree>(
             } else {
                 s.margin.horizontal()
             };
-            (s.flex_grow, s.width, s.height, main_margin)
+            FlexChildStyle {
+                grow: s.flex_grow,
+                shrink: s.flex_shrink,
+                width: s.width,
+                height: s.height,
+                min_width: s.min_width,
+                max_width: s.max_width,
+                min_height: s.min_height,
+                max_height: s.max_height,
+                main_margin,
+            }
         })
         .collect();
 
@@ -112,31 +135,48 @@ pub(crate) fn arrange<T: LayoutTree>(
 
     // 主轴可用空间
     let main_available = if is_column { content.h } else { content.w };
+    let base_main_sizes: Vec<f32> = child_sizes
+        .iter()
+        .map(|size| if is_column { size.height } else { size.width })
+        .collect();
+    let total_base_main = base_main_sizes.iter().sum::<f32>() + total_gap;
+    let should_shrink = total_base_main > main_available;
 
     // 计算固定子节点占用 + 收集 flex_grow
     let mut fixed_main: f32 = total_gap;
     let mut total_grow: f32 = 0.0;
-    for (i, &(grow, width, height, main_margin)) in child_styles.iter().enumerate() {
-        let child_main = if is_column {
-            child_sizes[i].height
-        } else {
-            child_sizes[i].width
-        };
+    for (i, child_style) in child_styles.iter().enumerate() {
+        let child_main = base_main_sizes[i];
         let is_fill = if is_column {
-            matches!(height, Size::Fill)
+            matches!(child_style.height, Size::Fill)
         } else {
-            matches!(width, Size::Fill)
+            matches!(child_style.width, Size::Fill)
         };
 
-        if grow > 0.0 || is_fill {
-            total_grow += if grow > 0.0 { grow } else { 1.0 };
-            fixed_main += main_margin; // flex 子节点的 margin 也要从剩余空间扣除
+        if !should_shrink && (child_style.grow > 0.0 || is_fill) {
+            total_grow += if child_style.grow > 0.0 {
+                child_style.grow
+            } else {
+                1.0
+            };
+            fixed_main += child_style.main_margin; // flex 子节点的 margin 也要从剩余空间扣除
         } else {
             fixed_main += child_main;
         }
     }
 
     let remaining = (main_available - fixed_main).max(0.0);
+    let shrink_main_sizes = if should_shrink {
+        Some(resolve_shrink_main_sizes(
+            &base_main_sizes,
+            &child_styles,
+            is_column,
+            main_available,
+            total_gap,
+        ))
+    } else {
+        None
+    };
 
     // justify_content 偏移
     let (mut main_offset, extra_gap) = match style.justify_content {
@@ -157,21 +197,25 @@ pub(crate) fn arrange<T: LayoutTree>(
     // 排列子节点
     for (i, &child) in flow_children.iter().enumerate() {
         let child_desired = &child_sizes[i];
-        let (grow, width, height, _) = child_styles[i];
+        let child_style = child_styles[i];
         let is_fill = if is_column {
-            matches!(height, Size::Fill)
+            matches!(child_style.height, Size::Fill)
         } else {
-            matches!(width, Size::Fill)
+            matches!(child_style.width, Size::Fill)
         };
-        let effective_grow = if grow > 0.0 {
-            grow
+        let effective_grow = if should_shrink {
+            0.0
+        } else if child_style.grow > 0.0 {
+            child_style.grow
         } else if is_fill {
             1.0
         } else {
             0.0
         };
 
-        let child_main = if effective_grow > 0.0 {
+        let child_main = if let Some(shrink_sizes) = &shrink_main_sizes {
+            shrink_sizes[i]
+        } else if effective_grow > 0.0 {
             remaining * effective_grow / total_grow
         } else if is_column {
             child_desired.height
@@ -236,6 +280,51 @@ pub(crate) fn arrange<T: LayoutTree>(
     }
 }
 
+fn resolve_shrink_main_sizes(
+    base_sizes: &[f32],
+    styles: &[FlexChildStyle],
+    is_column: bool,
+    main_available: f32,
+    total_gap: f32,
+) -> Vec<f32> {
+    let target_children_main = (main_available - total_gap).max(0.0);
+    let base_children_main = base_sizes.iter().sum::<f32>();
+    let overflow = (base_children_main - target_children_main).max(0.0);
+    if overflow <= 0.0 {
+        return base_sizes.to_vec();
+    }
+
+    let shrink_factors: Vec<f32> = base_sizes
+        .iter()
+        .zip(styles.iter())
+        .map(|(base, style)| (style.shrink.max(0.0)) * *base)
+        .collect();
+    let total_shrink_factor = shrink_factors.iter().sum::<f32>();
+    if total_shrink_factor <= 0.0 {
+        return base_sizes.to_vec();
+    }
+
+    base_sizes
+        .iter()
+        .zip(styles.iter())
+        .zip(shrink_factors.iter())
+        .map(|((base, style), factor)| {
+            let shrink = overflow * *factor / total_shrink_factor;
+            let min_main = if is_column {
+                style.min_height
+            } else {
+                style.min_width
+            };
+            let max_main = if is_column {
+                style.max_height
+            } else {
+                style.max_width
+            };
+            (*base - shrink).clamp(min_main, max_main)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +356,22 @@ mod tests {
     /// 不依赖字体的 measure 回调
     fn no_measure(_text: &str, _style: &crate::renderer::TextStyle) -> (f32, f32) {
         (0.0, 0.0)
+    }
+
+    fn auto_wrapper_with_fixed_child(
+        tree: &mut Tree,
+        fixed_width: f32,
+        fixed_height: f32,
+        style: BoxStyle,
+    ) -> crate::tree::NodeId {
+        let inner_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(fixed_width),
+            height: Size::Fixed(fixed_height),
+            ..Default::default()
+        }));
+        let mut wrapper = container(style);
+        wrapper.children = vec![inner_id];
+        tree.insert(wrapper)
     }
 
     #[test]
@@ -305,6 +410,235 @@ mod tests {
         assert_eq!(child.rect.y, 50.0);
         assert_eq!(child.rect.w, 100.0);
         assert_eq!(child.rect.h, 80.0);
+    }
+
+    #[test]
+    fn row_shrinks_flexible_child_when_content_overflows() {
+        let mut tree = Tree::new();
+        let shrink_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            120.0,
+            10.0,
+            BoxStyle {
+                flex_shrink: 1.0,
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let fixed_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(20.0),
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        root.children = vec![shrink_id, fixed_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 20.0,
+            },
+            &mut measure,
+        );
+
+        assert_eq!(tree.get(shrink_id).unwrap().rect.w, 60.0);
+        assert_eq!(tree.get(fixed_id).unwrap().rect.w, 40.0);
+    }
+
+    #[test]
+    fn row_keeps_default_non_shrinking_child_width() {
+        let mut tree = Tree::new();
+        let first_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            120.0,
+            10.0,
+            BoxStyle {
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let second_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(20.0),
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        root.children = vec![first_id, second_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 20.0,
+            },
+            &mut measure,
+        );
+
+        assert_eq!(tree.get(first_id).unwrap().rect.w, 120.0);
+        assert_eq!(tree.get(second_id).unwrap().rect.x, 120.0);
+    }
+
+    #[test]
+    fn row_distributes_shrink_by_weighted_base_size() {
+        let mut tree = Tree::new();
+        let first_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            100.0,
+            10.0,
+            BoxStyle {
+                flex_shrink: 2.0,
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let second_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            100.0,
+            10.0,
+            BoxStyle {
+                flex_shrink: 1.0,
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(150.0),
+            height: Size::Fixed(20.0),
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        root.children = vec![first_id, second_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 150.0,
+                h: 20.0,
+            },
+            &mut measure,
+        );
+
+        assert!((tree.get(first_id).unwrap().rect.w - 66.66667).abs() < 0.001);
+        assert!((tree.get(second_id).unwrap().rect.w - 83.33333).abs() < 0.001);
+    }
+
+    #[test]
+    fn row_shrink_respects_min_width() {
+        let mut tree = Tree::new();
+        let shrink_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            120.0,
+            10.0,
+            BoxStyle {
+                flex_shrink: 1.0,
+                min_width: 80.0,
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let fixed_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(20.0),
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        root.children = vec![shrink_id, fixed_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 20.0,
+            },
+            &mut measure,
+        );
+
+        assert_eq!(tree.get(shrink_id).unwrap().rect.w, 80.0);
+    }
+
+    #[test]
+    fn column_shrinks_height_and_respects_min_height() {
+        let mut tree = Tree::new();
+        let shrink_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            10.0,
+            120.0,
+            BoxStyle {
+                flex_shrink: 1.0,
+                min_height: 70.0,
+                width: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let fixed_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(10.0),
+            height: Size::Fixed(40.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(20.0),
+            height: Size::Fixed(100.0),
+            direction: Direction::Column,
+            ..Default::default()
+        });
+        root.children = vec![shrink_id, fixed_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 20.0,
+                h: 100.0,
+            },
+            &mut measure,
+        );
+
+        assert_eq!(tree.get(shrink_id).unwrap().rect.h, 70.0);
     }
 
     #[test]

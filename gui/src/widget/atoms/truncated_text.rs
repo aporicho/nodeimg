@@ -55,6 +55,7 @@ impl WidgetProps for TruncatedTextProps {
             style: BoxStyle {
                 width: self.width,
                 height: Size::Auto,
+                flex_shrink: 1.0,
                 ..BoxStyle::default()
             },
             decoration: None,
@@ -63,6 +64,7 @@ impl WidgetProps for TruncatedTextProps {
                 style: BoxStyle {
                     width: self.width,
                     height: Size::Auto,
+                    flex_shrink: 1.0,
                     ..BoxStyle::default()
                 },
                 kind: LeafKind::Text {
@@ -122,6 +124,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(style.width, Size::Fixed(72.0));
+                assert_eq!(style.flex_shrink, 1.0);
                 assert_eq!(content, "Long label");
                 assert_eq!(layout.overflow, TextOverflow::Clip);
                 assert_eq!(layout.align, TextAlign::End);
