@@ -41,7 +41,7 @@ fn overlay_desc(state: &OverlayState, viewport: crate::renderer::Rect) -> Desc {
     Desc::Container {
         id: Cow::Borrowed(OVERLAY_ROOT_ID),
         style: BoxStyle {
-            position: Position::Absolute { x: 0.0, y: 0.0 },
+            position: Position::absolute_xy(0.0, 0.0),
             width: Size::Fixed(viewport.w),
             height: Size::Fixed(viewport.h),
             hittable: Some(false),
@@ -51,10 +51,7 @@ fn overlay_desc(state: &OverlayState, viewport: crate::renderer::Rect) -> Desc {
         children: vec![Desc::Container {
             id: Cow::Owned(format!("__overlay::{}", state.request.id)),
             style: BoxStyle {
-                position: Position::Absolute {
-                    x: state.last_x,
-                    y: state.last_y,
-                },
+                position: Position::absolute_xy(state.last_x, state.last_y),
                 width: state.last_width.map(Size::Fixed).unwrap_or(Size::Auto),
                 height: Size::Auto,
                 ..BoxStyle::default()

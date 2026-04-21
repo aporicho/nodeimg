@@ -34,7 +34,7 @@ pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>
     Desc::Container {
         id: Cow::Borrowed("panel_root"),
         style: BoxStyle {
-            position: Position::Absolute { x: 0.0, y: 0.0 },
+            position: Position::absolute_xy(0.0, 0.0),
             width: Size::Fixed(viewport.w),
             height: Size::Fixed(viewport.h),
             hittable: Some(false),

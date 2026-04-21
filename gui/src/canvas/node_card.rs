@@ -65,7 +65,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         Desc::Container {
             id: Cow::Owned(card_body_id),
             style: BoxStyle {
-                position: Position::Absolute { x: 0.0, y: 0.0 },
+                position: Position::absolute_xy(0.0, 0.0),
                 width: Size::Fixed(view.layout.rect.w),
                 height: Size::Fixed(card_height(view)),
                 padding: Edges::all(NODE_PADDING),
@@ -92,10 +92,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                 Desc::Container {
                     id: Cow::Owned(label_id),
                     style: BoxStyle {
-                        position: Position::Absolute {
-                            x: 0.0,
-                            y: NODE_LABEL_TOP,
-                        },
+                        position: Position::absolute_xy(0.0, NODE_LABEL_TOP),
                         width: Size::Auto,
                         height: Size::Fixed(NODE_LABEL_HEIGHT),
                         direction: Direction::Row,
@@ -148,10 +145,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
     Desc::Container {
         id: Cow::Owned(card_id),
         style: BoxStyle {
-            position: Position::Absolute {
-                x: view.layout.rect.x,
-                y: view.layout.rect.y,
-            },
+            position: Position::absolute_xy(view.layout.rect.x, view.layout.rect.y),
             width: Size::Fixed(view.layout.rect.w),
             height: Size::Fixed(card_height(view)),
             padding: Edges::all(0.0),
@@ -180,7 +174,7 @@ fn pin_column(
             side.as_str()
         )),
         style: BoxStyle {
-            position: Position::Absolute { x, y: 0.0 },
+            position: Position::absolute_xy(x, 0.0),
             width: Size::Fixed(PIN_COLUMN_WIDTH),
             height: Size::Auto,
             direction: Direction::Column,
@@ -541,7 +535,7 @@ mod tests {
             panic!("node card should build a container");
         };
 
-        assert_eq!(style.position, Position::Absolute { x: 10.0, y: 20.0 });
+        assert_eq!(style.position, Position::absolute_xy(10.0, 20.0));
         assert_eq!(style.width, Size::Fixed(220.0));
         assert_eq!(style.height, Size::Fixed(96.0));
         assert_eq!(style.overflow, Overflow::Visible);

@@ -99,8 +99,74 @@ impl Default for BoxStyle {
 pub enum Position {
     /// 参与 Flexbox 流式布局（默认）。
     Flow,
-    /// 自由定位：相对于父容器的绝对坐标。
-    Absolute { x: f32, y: f32 },
+    /// 自由定位：相对于 containing block 的 CSS-style inset。
+    Absolute(AbsolutePosition),
+}
+
+impl Position {
+    pub fn absolute_xy(x: f32, y: f32) -> Self {
+        Self::Absolute(AbsolutePosition::xy(x, y))
+    }
+
+    pub fn absolute_inset(inset: Inset) -> Self {
+        Self::Absolute(AbsolutePosition { inset })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AbsolutePosition {
+    pub inset: Inset,
+}
+
+impl AbsolutePosition {
+    pub fn xy(x: f32, y: f32) -> Self {
+        Self {
+            inset: Inset::xy(x, y),
+        }
+    }
+
+    pub fn has_horizontal_stretch(&self) -> bool {
+        self.inset.left.is_some() && self.inset.right.is_some()
+    }
+
+    pub fn has_vertical_stretch(&self) -> bool {
+        self.inset.top.is_some() && self.inset.bottom.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Inset {
+    pub top: Option<f32>,
+    pub right: Option<f32>,
+    pub bottom: Option<f32>,
+    pub left: Option<f32>,
+}
+
+impl Inset {
+    pub const ZERO: Self = Self {
+        top: Some(0.0),
+        right: Some(0.0),
+        bottom: Some(0.0),
+        left: Some(0.0),
+    };
+
+    pub fn xy(x: f32, y: f32) -> Self {
+        Self {
+            top: Some(y),
+            right: None,
+            bottom: None,
+            left: Some(x),
+        }
+    }
+
+    pub fn all(v: f32) -> Self {
+        Self {
+            top: Some(v),
+            right: Some(v),
+            bottom: Some(v),
+            left: Some(v),
+        }
+    }
 }
 
 /// 仿射变换。阶段 A 仅定义类型，paint/hit 不实际应用。

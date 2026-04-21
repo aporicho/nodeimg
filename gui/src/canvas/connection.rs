@@ -44,7 +44,7 @@ pub fn connection_layer(
     Desc::Container {
         id: Cow::Borrowed("canvas_connections"),
         style: BoxStyle {
-            position: Position::Absolute { x: 0.0, y: 0.0 },
+            position: Position::absolute_xy(0.0, 0.0),
             width: Size::Fill,
             height: Size::Fill,
             hittable: Some(false),
@@ -57,7 +57,7 @@ pub fn connection_layer(
 
 fn connection_leaf_style() -> BoxStyle {
     BoxStyle {
-        position: Position::Absolute { x: 0.0, y: 0.0 },
+        position: Position::absolute_xy(0.0, 0.0),
         width: Size::Fixed(0.0),
         height: Size::Fixed(0.0),
         hittable: Some(false),

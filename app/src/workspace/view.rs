@@ -30,10 +30,7 @@ pub(crate) fn build_workspace_tree(
     let mut canvas_children = vec![Desc::Leaf {
         id: Cow::Borrowed("canvas_grid"),
         style: BoxStyle {
-            position: Position::Absolute {
-                x: grid_x,
-                y: grid_y,
-            },
+            position: Position::absolute_xy(grid_x, grid_y),
             width: Size::Fixed(grid_w.max(GRID_SPACING)),
             height: Size::Fixed(grid_h.max(GRID_SPACING)),
             ..BoxStyle::default()
@@ -64,7 +61,7 @@ pub(crate) fn build_workspace_tree(
             Desc::Container {
                 id: Cow::Borrowed("canvas_root"),
                 style: BoxStyle {
-                    position: Position::Absolute { x: 0.0, y: 0.0 },
+                    position: Position::absolute_xy(0.0, 0.0),
                     width: Size::Fixed(viewport.w),
                     height: Size::Fixed(viewport.h),
                     transform: Some(Transform {

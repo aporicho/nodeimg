@@ -170,10 +170,7 @@ impl WidgetProps for PanelProps {
 
         WidgetBuild {
             style: BoxStyle {
-                position: Position::Absolute {
-                    x: self.rect.x,
-                    y: self.rect.y,
-                },
+                position: Position::absolute_xy(self.rect.x, self.rect.y),
                 width: Size::Fixed(self.rect.w),
                 height: if self.rect.h > 0.0 {
                     Size::Fixed(self.rect.h)
@@ -306,9 +303,9 @@ mod tests {
         let theme = dark_theme();
         let build = sample_props().build("test", &build_cx(&theme));
         match build.style.position {
-            Position::Absolute { x, y } => {
-                assert_eq!(x, 10.0);
-                assert_eq!(y, 20.0);
+            Position::Absolute(position) => {
+                assert_eq!(position.inset.left, Some(10.0));
+                assert_eq!(position.inset.top, Some(20.0));
             }
             other => panic!("expected Absolute, got {:?}", other),
         }

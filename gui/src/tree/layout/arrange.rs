@@ -1,6 +1,8 @@
 use crate::renderer::Rect;
 
-use super::box_model::{border_box_from_available, layout_boxes, ChildCoordinateSpace};
+use super::box_model::{
+    absolute_available_rect, border_box_from_available, layout_boxes, ChildCoordinateSpace,
+};
 use super::measure::measure;
 use super::types::*;
 
@@ -26,7 +28,7 @@ pub(crate) fn arrange<T: LayoutTree>(
     measure_text: &mut dyn FnMut(&str, &crate::renderer::TextStyle) -> (f32, f32),
 ) {
     let style = tree.style(node).clone();
-    let desired_size = matches!(style.position, Position::Absolute { .. })
+    let desired_size = matches!(style.position, Position::Absolute(_))
         .then(|| measure(&*tree, node, measure_text));
 
     let border_available = border_box_from_available(available, style.margin);
@@ -37,7 +39,16 @@ pub(crate) fn arrange<T: LayoutTree>(
         y: border_available.y,
         w: match style.width {
             Size::Fixed(w) => w,
-            _ if matches!(style.position, Position::Absolute { .. }) => desired_size
+            Size::Fill => border_available.w,
+            Size::Auto
+                if matches!(
+                    style.position,
+                    Position::Absolute(pos) if pos.has_horizontal_stretch()
+                ) =>
+            {
+                border_available.w
+            }
+            Size::Auto if matches!(style.position, Position::Absolute(_)) => desired_size
                 .map(|size| size.width)
                 .unwrap_or(border_available.w),
             _ => border_available.w,
@@ -45,7 +56,16 @@ pub(crate) fn arrange<T: LayoutTree>(
         .clamp(style.min_width, style.max_width),
         h: match style.height {
             Size::Fixed(h) => h,
-            _ if matches!(style.position, Position::Absolute { .. }) => desired_size
+            Size::Fill => border_available.h,
+            Size::Auto
+                if matches!(
+                    style.position,
+                    Position::Absolute(pos) if pos.has_vertical_stretch()
+                ) =>
+            {
+                border_available.h
+            }
+            Size::Auto if matches!(style.position, Position::Absolute(_)) => desired_size
                 .map(|size| size.height)
                 .unwrap_or(border_available.h),
             _ => border_available.h,
@@ -266,18 +286,19 @@ pub(crate) fn arrange<T: LayoutTree>(
     // ── Absolute 阶段：每个 Absolute 子节点独立 arrange ──
     for child in abs_children {
         let child_style = tree.style(child).clone();
-        let (abs_x, abs_y) = match child_style.position {
-            Position::Absolute { x, y } => (x, y),
+        let position = match child_style.position {
+            Position::Absolute(position) => position,
             Position::Flow => unreachable!("partition 已保证这里只有 Absolute"),
         };
+        let desired = measure(&*tree, child, measure_text);
 
-        // Absolute 子节点的"可用空间"：从 content box 偏移 abs_x/abs_y 后的区域。
-        let child_available = Rect {
-            x: content.x + abs_x,
-            y: content.y + abs_y,
-            w: (content.w - abs_x).max(0.0),
-            h: (content.h - abs_y).max(0.0),
-        };
+        let child_available = absolute_available_rect(
+            content,
+            position,
+            child_style.width,
+            child_style.height,
+            (desired.width, desired.height),
+        );
 
         arrange(tree, child, child_available, measure_text);
     }
@@ -396,7 +417,7 @@ mod tests {
     fn absolute_simple() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 100.0, y: 50.0 },
+            position: Position::absolute_xy(100.0, 50.0),
             width: Size::Fixed(100.0),
             height: Size::Fixed(80.0),
             ..Default::default()
@@ -428,6 +449,70 @@ mod tests {
         assert_eq!(child.rect.y, 50.0);
         assert_eq!(child.rect.w, 100.0);
         assert_eq!(child.rect.h, 80.0);
+    }
+
+    #[test]
+    fn absolute_left_right_auto_width_stretches_between_insets() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container(BoxStyle {
+            position: Position::absolute_inset(Inset {
+                top: Some(10.0),
+                right: Some(25.0),
+                bottom: None,
+                left: Some(15.0),
+            }),
+            width: Size::Auto,
+            height: Size::Fixed(30.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(200.0),
+            height: Size::Fixed(100.0),
+            ..Default::default()
+        });
+        root.children = vec![child_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 200.0, 100.0);
+
+        let child = tree.get(child_id).unwrap();
+        assert_eq!(child.rect.x, 15.0);
+        assert_eq!(child.rect.y, 10.0);
+        assert_eq!(child.rect.w, 160.0);
+        assert_eq!(child.rect.h, 30.0);
+    }
+
+    #[test]
+    fn absolute_right_bottom_positions_from_containing_block_end() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container(BoxStyle {
+            position: Position::absolute_inset(Inset {
+                top: None,
+                right: Some(25.0),
+                bottom: Some(10.0),
+                left: None,
+            }),
+            width: Size::Fixed(50.0),
+            height: Size::Fixed(30.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(200.0),
+            height: Size::Fixed(100.0),
+            ..Default::default()
+        });
+        root.children = vec![child_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 200.0, 100.0);
+
+        let child = tree.get(child_id).unwrap();
+        assert_eq!(child.rect.x, 125.0);
+        assert_eq!(child.rect.y, 60.0);
+        assert_eq!(child.rect.w, 50.0);
+        assert_eq!(child.rect.h, 30.0);
     }
 
     #[test]
@@ -721,7 +806,7 @@ mod tests {
     fn absolute_with_padding() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 100.0, y: 50.0 },
+            position: Position::absolute_xy(100.0, 50.0),
             width: Size::Fixed(100.0),
             height: Size::Fixed(80.0),
             ..Default::default()
@@ -772,7 +857,7 @@ mod tests {
             ..Default::default()
         }));
         let abs_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 200.0, y: 200.0 },
+            position: Position::absolute_xy(200.0, 200.0),
             width: Size::Fixed(50.0),
             height: Size::Fixed(50.0),
             ..Default::default()
@@ -817,7 +902,7 @@ mod tests {
     fn absolute_fixed_size() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 50.0, y: 50.0 },
+            position: Position::absolute_xy(50.0, 50.0),
             width: Size::Fixed(200.0),
             height: Size::Fixed(150.0),
             ..Default::default()
@@ -863,7 +948,7 @@ mod tests {
             ..Default::default()
         }));
         let abs_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 10.0, y: 10.0 },
+            position: Position::absolute_xy(10.0, 10.0),
             width: Size::Fixed(100.0),
             height: Size::Fixed(999.0),
             ..Default::default()
@@ -950,7 +1035,7 @@ mod tests {
     fn transform_node_absolute_children_use_local_content_box() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container(BoxStyle {
-            position: Position::Absolute { x: 10.0, y: 15.0 },
+            position: Position::absolute_xy(10.0, 15.0),
             width: Size::Fixed(100.0),
             height: Size::Fixed(50.0),
             ..Default::default()

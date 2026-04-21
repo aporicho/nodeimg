@@ -1,6 +1,6 @@
 use crate::renderer::Rect;
 
-use super::types::Edges;
+use super::types::{AbsolutePosition, Edges, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChildCoordinateSpace {
@@ -54,8 +54,85 @@ pub(crate) fn layout_boxes(
     }
 }
 
+pub(crate) fn absolute_available_rect(
+    containing_block: Rect,
+    position: AbsolutePosition,
+    width: Size,
+    height: Size,
+    desired_size: (f32, f32),
+) -> Rect {
+    let w = absolute_axis_size(
+        containing_block.w,
+        position.inset.left,
+        position.inset.right,
+        width,
+        desired_size.0,
+    );
+    let h = absolute_axis_size(
+        containing_block.h,
+        position.inset.top,
+        position.inset.bottom,
+        height,
+        desired_size.1,
+    );
+    Rect {
+        x: absolute_axis_origin(
+            containing_block.x,
+            containing_block.w,
+            position.inset.left,
+            position.inset.right,
+            w,
+        ),
+        y: absolute_axis_origin(
+            containing_block.y,
+            containing_block.h,
+            position.inset.top,
+            position.inset.bottom,
+            h,
+        ),
+        w,
+        h,
+    }
+}
+
 pub(crate) fn rect_contains(rect: Rect, x: f32, y: f32) -> bool {
     x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
+}
+
+fn absolute_axis_size(
+    containing_size: f32,
+    start: Option<f32>,
+    end: Option<f32>,
+    size: Size,
+    desired_size: f32,
+) -> f32 {
+    match size {
+        Size::Fixed(v) => v,
+        Size::Fill => match (start, end) {
+            (Some(s), Some(e)) => (containing_size - s - e).max(0.0),
+            _ => containing_size,
+        },
+        Size::Auto => match (start, end) {
+            (Some(s), Some(e)) => (containing_size - s - e).max(0.0),
+            _ => desired_size,
+        },
+    }
+}
+
+fn absolute_axis_origin(
+    containing_origin: f32,
+    containing_size: f32,
+    start: Option<f32>,
+    end: Option<f32>,
+    size: f32,
+) -> f32 {
+    if let Some(start) = start {
+        containing_origin + start
+    } else if let Some(end) = end {
+        containing_origin + containing_size - end - size
+    } else {
+        containing_origin
+    }
 }
 
 fn inset_rect(rect: Rect, edges: Edges) -> Rect {
@@ -76,6 +153,7 @@ fn content_size(border_box: Rect, padding: Edges) -> (f32, f32) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{AbsolutePosition, Inset, Size};
     use super::*;
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
@@ -159,5 +237,93 @@ mod tests {
         assert!(rect_contains(r, 40.0, 60.0));
         assert!(!rect_contains(r, 9.9, 20.0));
         assert!(!rect_contains(r, 40.1, 60.0));
+    }
+
+    #[test]
+    fn absolute_xy_uses_containing_block_origin() {
+        let actual = absolute_available_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            AbsolutePosition::xy(10.0, 15.0),
+            Size::Fixed(40.0),
+            Size::Fixed(30.0),
+            (0.0, 0.0),
+        );
+
+        assert_rect(actual, rect(30.0, 45.0, 40.0, 30.0));
+    }
+
+    #[test]
+    fn absolute_right_bottom_positions_from_containing_block_end() {
+        let actual = absolute_available_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            AbsolutePosition {
+                inset: Inset {
+                    top: None,
+                    right: Some(12.0),
+                    bottom: Some(8.0),
+                    left: None,
+                },
+            },
+            Size::Fixed(40.0),
+            Size::Fixed(30.0),
+            (0.0, 0.0),
+        );
+
+        assert_rect(actual, rect(168.0, 92.0, 40.0, 30.0));
+    }
+
+    #[test]
+    fn absolute_left_right_auto_width_stretches_between_insets() {
+        let actual = absolute_available_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            AbsolutePosition {
+                inset: Inset {
+                    top: Some(5.0),
+                    right: Some(12.0),
+                    bottom: None,
+                    left: Some(10.0),
+                },
+            },
+            Size::Auto,
+            Size::Fixed(30.0),
+            (60.0, 0.0),
+        );
+
+        assert_rect(actual, rect(30.0, 35.0, 178.0, 30.0));
+    }
+
+    #[test]
+    fn absolute_top_bottom_auto_height_stretches_between_insets() {
+        let actual = absolute_available_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            AbsolutePosition {
+                inset: Inset {
+                    top: Some(5.0),
+                    right: None,
+                    bottom: Some(8.0),
+                    left: Some(10.0),
+                },
+            },
+            Size::Fixed(40.0),
+            Size::Auto,
+            (0.0, 30.0),
+        );
+
+        assert_rect(actual, rect(30.0, 35.0, 40.0, 87.0));
+    }
+
+    #[test]
+    fn absolute_fixed_size_prefers_left_top_when_both_edges_set() {
+        let actual = absolute_available_rect(
+            rect(20.0, 30.0, 200.0, 100.0),
+            AbsolutePosition {
+                inset: Inset::all(10.0),
+            },
+            Size::Fixed(40.0),
+            Size::Fixed(30.0),
+            (0.0, 0.0),
+        );
+
+        assert_rect(actual, rect(30.0, 40.0, 40.0, 30.0));
     }
 }
