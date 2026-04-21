@@ -10,6 +10,7 @@ struct FlexChildStyle {
     shrink: f32,
     width: Size,
     height: Size,
+    align_self: Option<Align>,
     min_width: f32,
     max_width: f32,
     min_height: f32,
@@ -117,6 +118,7 @@ pub(crate) fn arrange<T: LayoutTree>(
                 shrink: s.flex_shrink,
                 width: s.width,
                 height: s.height,
+                align_self: s.align_self,
                 min_width: s.min_width,
                 max_width: s.max_width,
                 min_height: s.min_height,
@@ -229,7 +231,8 @@ pub(crate) fn arrange<T: LayoutTree>(
         } else {
             child_desired.height
         };
-        let (cross_offset, child_cross) = match style.align_items {
+        let child_align = child_style.align_self.unwrap_or(style.align_items);
+        let (cross_offset, child_cross) = match child_align {
             Align::Stretch => (0.0, cross_available),
             Align::Start => (0.0, child_cross_desired),
             Align::End => (cross_available - child_cross_desired, child_cross_desired),
@@ -374,6 +377,21 @@ mod tests {
         tree.insert(wrapper)
     }
 
+    fn arrange_root(tree: &mut Tree, root_id: crate::tree::NodeId, w: f32, h: f32) {
+        let mut measure = no_measure;
+        arrange(
+            tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h,
+            },
+            &mut measure,
+        );
+    }
+
     #[test]
     fn absolute_simple() {
         let mut tree = Tree::new();
@@ -410,6 +428,64 @@ mod tests {
         assert_eq!(child.rect.y, 50.0);
         assert_eq!(child.rect.w, 100.0);
         assert_eq!(child.rect.h, 80.0);
+    }
+
+    #[test]
+    fn align_self_stretches_child_when_parent_centers_items() {
+        let mut tree = Tree::new();
+        let child_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            20.0,
+            10.0,
+            BoxStyle {
+                width: Size::Fixed(20.0),
+                align_self: Some(Align::Stretch),
+                ..Default::default()
+            },
+        );
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(60.0),
+            direction: Direction::Row,
+            align_items: Align::Center,
+            ..Default::default()
+        });
+        root.children = vec![child_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 100.0, 60.0);
+
+        let child = tree.get(child_id).unwrap();
+        assert_eq!(child.rect.y, 0.0);
+        assert_eq!(child.rect.h, 60.0);
+    }
+
+    #[test]
+    fn align_self_start_overrides_parent_stretch() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(20.0),
+            height: Size::Fixed(10.0),
+            align_self: Some(Align::Start),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(60.0),
+            direction: Direction::Row,
+            align_items: Align::Stretch,
+            ..Default::default()
+        });
+        root.children = vec![child_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 100.0, 60.0);
+
+        let child = tree.get(child_id).unwrap();
+        assert_eq!(child.rect.y, 0.0);
+        assert_eq!(child.rect.h, 10.0);
     }
 
     #[test]
