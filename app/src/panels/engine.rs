@@ -2,6 +2,7 @@ use super::PanelBuildContext;
 use gui::panel::{PanelConfig, PanelDeclaration, PanelId};
 use gui::renderer::Rect;
 use gui::tree::Desc;
+use gui::ui;
 use gui::widget::atoms::label::{LabelProps, LabelVariant};
 use gui::widget::frameworks::group::GroupProps;
 use std::borrow::Cow;
@@ -37,7 +38,7 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             closable: false,
             initially_visible: true,
         },
-        content: vec![Desc::Widget(gui::widget::WidgetDesc::new(
+        content: vec![ui::widget(
             Cow::Borrowed("engine_status_group"),
             GroupProps {
                 title: Cow::Borrowed("Runtime"),
@@ -47,17 +48,19 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
                     status_label("engine_last_action", last_action, true),
                 ],
             },
-        ))],
+        )
+        .build()],
     }
 }
 
 fn status_label(id: &'static str, text: String, muted: bool) -> Desc {
-    Desc::Widget(gui::widget::WidgetDesc::new(
+    ui::widget(
         Cow::Borrowed(id),
         LabelProps {
             text: Cow::Owned(text),
             variant: LabelVariant::Caption,
             muted,
         },
-    ))
+    )
+    .build()
 }

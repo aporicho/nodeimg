@@ -51,3 +51,9 @@ impl Desc {
         }
     }
 }
+
+impl From<WidgetDesc> for Desc {
+    fn from(widget: WidgetDesc) -> Self {
+        Desc::Widget(widget)
+    }
+}

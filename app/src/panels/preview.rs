@@ -1,7 +1,7 @@
 use super::PanelBuildContext;
 use gui::panel::{PanelConfig, PanelDeclaration, PanelId};
 use gui::renderer::Rect;
-use gui::tree::Desc;
+use gui::ui;
 use gui::widget::atoms::image_viewer::ImageViewerProps;
 use std::borrow::Cow;
 
@@ -23,12 +23,13 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             closable: false,
             initially_visible: true,
         },
-        content: vec![Desc::Widget(gui::widget::WidgetDesc::new(
+        content: vec![ui::widget(
             Cow::Borrowed("preview_image"),
             ImageViewerProps {
                 texture: ctx.image,
                 height: 208.0,
             },
-        ))],
+        )
+        .build()],
     }
 }

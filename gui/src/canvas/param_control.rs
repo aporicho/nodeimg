@@ -1,6 +1,7 @@
 use crate::theme::{ControlSize, Density, Theme};
-use crate::tree::layout::{Align, BoxStyle, Direction, Justify, Size, TextAlign, TextOverflow};
+use crate::tree::layout::{Align, Justify, Size, TextAlign, TextOverflow};
 use crate::tree::Desc;
+use crate::ui::{self, StyleBuilder};
 use crate::widget::atoms::color_swatch::ColorSwatchProps;
 use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::label::LabelVariant;
@@ -10,7 +11,6 @@ use crate::widget::atoms::slider::SliderProps;
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::atoms::truncated_text::TruncatedTextProps;
-use crate::widget::WidgetDesc;
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,7 +87,7 @@ pub fn param_control(
     let base = id.to_string();
     let child_id = format!("{base}::widget");
     let child = match control {
-        CanvasNodeParamControl::ReadOnly { value } => Desc::Widget(WidgetDesc::new(
+        CanvasNodeParamControl::ReadOnly { value } => ui::widget(
             child_id,
             TruncatedTextProps {
                 text: Cow::Owned(value.clone()),
@@ -97,8 +97,9 @@ pub fn param_control(
                 align: TextAlign::Start,
                 width: Size::Fill,
             },
-        )),
-        CanvasNodeParamControl::Text { value } => Desc::Widget(WidgetDesc::new(
+        )
+        .build(),
+        CanvasNodeParamControl::Text { value } => ui::widget(
             child_id,
             TextInputProps {
                 label: None,
@@ -107,14 +108,15 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
+        )
+        .build(),
         CanvasNodeParamControl::Number {
             value,
             min,
             max,
             step,
             precision,
-        } => Desc::Widget(WidgetDesc::new(
+        } => ui::widget(
             child_id,
             NumberInputProps {
                 label: None,
@@ -127,13 +129,14 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
+        )
+        .build(),
         CanvasNodeParamControl::Slider {
             value,
             min,
             max,
             step,
-        } => Desc::Widget(WidgetDesc::new(
+        } => ui::widget(
             child_id,
             SliderProps {
                 label: None,
@@ -145,8 +148,9 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
-        CanvasNodeParamControl::Toggle { checked } => Desc::Widget(WidgetDesc::new(
+        )
+        .build(),
+        CanvasNodeParamControl::Toggle { checked } => ui::widget(
             child_id,
             ToggleProps {
                 label: None,
@@ -155,8 +159,9 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
-        CanvasNodeParamControl::Select { options, selected } => Desc::Widget(WidgetDesc::new(
+        )
+        .build(),
+        CanvasNodeParamControl::Select { options, selected } => ui::widget(
             child_id,
             DropdownProps {
                 label: None,
@@ -166,8 +171,9 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
-        CanvasNodeParamControl::Color { rgba } => Desc::Widget(WidgetDesc::new(
+        )
+        .build(),
+        CanvasNodeParamControl::Color { rgba } => ui::widget(
             child_id,
             ColorSwatchProps {
                 rgba: *rgba,
@@ -177,8 +183,9 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
-        CanvasNodeParamControl::FilePath { path, extensions } => Desc::Widget(WidgetDesc::new(
+        )
+        .build(),
+        CanvasNodeParamControl::FilePath { path, extensions } => ui::widget(
             child_id,
             PathInputProps {
                 label: None,
@@ -188,22 +195,17 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        )),
+        )
+        .build(),
     };
 
-    Desc::Container {
-        id,
-        style: BoxStyle {
-            width: Size::Fixed(metrics.control_width),
-            height: Size::Fixed(metrics.control_height),
-            direction: Direction::Row,
-            justify_content: Justify::Start,
-            align_items: Align::Center,
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children: vec![child],
-    }
+    ui::row(id)
+        .fixed_width(metrics.control_width)
+        .fixed_height(metrics.control_height)
+        .justify_content(Justify::Start)
+        .align_items(Align::Center)
+        .child(child)
+        .build()
 }
 
 #[cfg(test)]

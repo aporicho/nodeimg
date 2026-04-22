@@ -1,9 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
-use crate::tree::layout::{
-    BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size,
-};
+use crate::tree::layout::{BoxStyle, LeafKind, Overflow, Size};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -99,96 +98,77 @@ impl WidgetProps for PanelProps {
         let anatomy = Anatomy::new(id);
 
         // 标题栏
-        let titlebar = self.titlebar_visible.then(|| Desc::Container {
-            id: Cow::Owned(anatomy.titlebar()),
-            style: BoxStyle {
-                height: Size::Fixed(tokens.title_bar_height),
-                padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
-                direction: Direction::Row,
-                gestures: self
-                    .draggable
-                    .then_some(Gesture::Drag)
-                    .into_iter()
-                    .collect(),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.titlebar_background),
-                border: None,
-                radius: [tokens.radius, tokens.radius, 0.0, 0.0],
-                shadow: None,
-            }),
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(anatomy.title()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: self.title.to_string(),
-                    style: TextStyle {
-                        color: visual.title_text,
-                        size: tokens.title_font_size,
-                        ..theme.text_style_title_sm()
+        let titlebar = self.titlebar_visible.then(|| {
+            let mut titlebar = ui::row(anatomy.titlebar())
+                .fixed_height(tokens.title_bar_height)
+                .padding_symmetric(tokens.title_padding_y, tokens.title_padding_x)
+                .background(visual.titlebar_background)
+                .radius([tokens.radius, tokens.radius, 0.0, 0.0])
+                .child(ui::leaf(
+                    anatomy.title(),
+                    LeafKind::Text {
+                        content: self.title.to_string(),
+                        style: TextStyle {
+                            color: visual.title_text,
+                            size: tokens.title_font_size,
+                            ..theme.text_style_title_sm()
+                        },
+                        layout: Default::default(),
                     },
-                    layout: Default::default(),
-                },
-            }],
+                ));
+            if self.draggable {
+                titlebar = titlebar.gesture(Gesture::Drag);
+            }
+            titlebar.build()
         });
 
         // 内容区（透明，事件穿透到子控件）
-        let content_area = Desc::Container {
-            id: Cow::Owned(anatomy.content()),
-            style: BoxStyle {
-                flex_grow: 1.0,
-                direction: Direction::Column,
-                gap: tokens.content_padding,
-                padding: Edges::all(tokens.content_padding),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: self.content.iter().map(desc_clone).collect(),
+        let content_area = ui::column(anatomy.content())
+            .flex_grow(1.0)
+            .gap(tokens.content_padding)
+            .padding_all(tokens.content_padding)
+            .children(self.content.iter().map(desc_clone))
+            .build();
+
+        let mut style = BoxStyle::default();
+        style.position = crate::tree::layout::Position::absolute_xy(self.rect.x, self.rect.y);
+        style.z_index = self.z_index;
+        style.width = Size::Fixed(self.rect.w);
+        style.height = if self.rect.h > 0.0 {
+            Size::Fixed(self.rect.h)
+        } else {
+            Size::Auto
         };
+        style.direction = crate::tree::layout::Direction::Column;
+        style.overflow = Overflow::Hidden;
+        if self.resizable {
+            style.gestures.push(Gesture::Resize);
+        }
 
         WidgetBuild {
-            style: BoxStyle {
-                position: Position::absolute_xy(self.rect.x, self.rect.y),
-                z_index: self.z_index,
-                width: Size::Fixed(self.rect.w),
-                height: if self.rect.h > 0.0 {
-                    Size::Fixed(self.rect.h)
-                } else {
-                    Size::Auto
-                },
-                direction: Direction::Column,
-                overflow: Overflow::Hidden,
-                gestures: self
-                    .resizable
-                    .then_some(Gesture::Resize)
-                    .into_iter()
-                    .collect(),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.frame_background),
-                border: Some(Border {
-                    width: tokens.border_width,
-                    color: visual.frame_border,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: Some(Shadow {
-                    color: Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.18,
-                    },
-                    offset: [0.0, 10.0],
-                    blur: 24.0,
-                    spread: 1.0,
-                }),
-            }),
+            style,
+            decoration: Some(
+                ui::container("_")
+                    .background(visual.frame_background)
+                    .border(Border {
+                        width: tokens.border_width,
+                        color: visual.frame_border,
+                    })
+                    .radius_all(tokens.radius)
+                    .shadow(Shadow {
+                        color: Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.18,
+                        },
+                        offset: [0.0, 10.0],
+                        blur: 24.0,
+                        spread: 1.0,
+                    })
+                    .build_decoration()
+                    .expect("panel frame decoration is set"),
+            ),
             children: titlebar
                 .into_iter()
                 .chain(std::iter::once(content_area))
@@ -242,10 +222,7 @@ mod tests {
     /// 返回可直接 hit_test 的 Tree + root NodeId。
     fn build_tree_for_hit(props: PanelProps) -> (Tree, NodeId) {
         let theme = dark_theme();
-        let desc = Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("test_panel"),
-            props,
-        ));
+        let desc = ui::widget(Cow::Borrowed("test_panel"), props).build();
 
         let mut tree = Tree::new();
         reconcile(&mut tree, desc, build_cx(&theme));
@@ -399,10 +376,9 @@ mod tests {
     fn build_content_flex_grow_holds_user_children() {
         let theme = dark_theme();
         let mut props = sample_props();
-        props.content = vec![Desc::Leaf {
-            id: Cow::Borrowed("user_child"),
-            style: BoxStyle::default(),
-            kind: LeafKind::Text {
+        props.content = vec![ui::leaf(
+            "user_child",
+            LeafKind::Text {
                 content: "inner".to_string(),
                 style: TextStyle::new(
                     Color {
@@ -415,7 +391,8 @@ mod tests {
                 ),
                 layout: Default::default(),
             },
-        }];
+        )
+        .build()];
         let build = props.build("test", &build_cx(&theme));
         match &build.children[1] {
             Desc::Container {

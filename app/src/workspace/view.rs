@@ -4,9 +4,9 @@ use gui::canvas::node_card::{node_card, CanvasNodeView};
 use gui::canvas::{CanvasConnectionView, CanvasPendingConnectionView};
 use gui::renderer::Rect;
 use gui::theme::Theme;
-use gui::tree::layout::{BoxStyle, Decoration, LeafKind, Position, Size, Transform};
+use gui::tree::layout::{LeafKind, Transform};
 use gui::tree::Desc;
-use std::borrow::Cow;
+use gui::ui::{self, DecorationBuilder, StyleBuilder};
 
 const GRID_SPACING: f32 = 20.0;
 const GRID_DOT_SIZE: f32 = 0.9;
@@ -29,21 +29,19 @@ pub(crate) fn build_workspace_tree(
     let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
     let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
 
-    let mut canvas_children = vec![Desc::Leaf {
-        id: Cow::Borrowed("canvas_grid"),
-        style: BoxStyle {
-            position: Position::absolute_xy(grid_x, grid_y),
-            z_index: CANVAS_GRID_Z,
-            width: Size::Fixed(grid_w.max(GRID_SPACING)),
-            height: Size::Fixed(grid_h.max(GRID_SPACING)),
-            ..BoxStyle::default()
-        },
-        kind: LeafKind::Grid {
+    let mut canvas_children = vec![ui::leaf(
+        "canvas_grid",
+        LeafKind::Grid {
             spacing: GRID_SPACING,
             dot_color: theme.colors.canvas_grid,
             dot_size: GRID_DOT_SIZE,
         },
-    }];
+    )
+    .absolute_xy(grid_x, grid_y)
+    .z_index(CANVAS_GRID_Z)
+    .fixed_width(grid_w.max(GRID_SPACING))
+    .fixed_height(grid_h.max(GRID_SPACING))
+    .build()];
     canvas_children.push(connection_layer(
         canvas_connections,
         pending_connection,
@@ -51,39 +49,25 @@ pub(crate) fn build_workspace_tree(
     ));
     canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
 
-    Desc::Container {
-        id: Cow::Borrowed("root"),
-        style: BoxStyle {
-            width: Size::Fixed(viewport.w),
-            height: Size::Fixed(viewport.h),
-            ..BoxStyle::default()
-        },
-        decoration: Some(Decoration {
-            background: Some(theme.colors.canvas_bg),
-            border: None,
-            radius: [0.0; 4],
-            shadow: None,
-        }),
-        children: vec![
-            Desc::Container {
-                id: Cow::Borrowed("canvas_root"),
-                style: BoxStyle {
-                    position: Position::absolute_xy(0.0, 0.0),
-                    width: Size::Fixed(viewport.w),
-                    height: Size::Fixed(viewport.h),
-                    transform: Some(Transform {
-                        translate: [camera.x, camera.y],
-                        scale: camera.zoom,
-                        rotate: 0.0,
-                    }),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children: canvas_children,
-            },
+    ui::container("root")
+        .fixed_width(viewport.w)
+        .fixed_height(viewport.h)
+        .background(theme.colors.canvas_bg)
+        .children(vec![
+            ui::container("canvas_root")
+                .absolute_xy(0.0, 0.0)
+                .fixed_width(viewport.w)
+                .fixed_height(viewport.h)
+                .transform(Transform {
+                    translate: [camera.x, camera.y],
+                    scale: camera.zoom,
+                    rotate: 0.0,
+                })
+                .children(canvas_children)
+                .build(),
             panel_root,
-        ],
-    }
+        ])
+        .build()
 }
 
 pub(crate) fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
@@ -97,9 +81,8 @@ mod tests {
     use gui::canvas::CanvasPendingConnectionView;
     use gui::renderer::Rect;
     use gui::theme::light_theme;
-    use gui::tree::layout::{BoxStyle, Size};
     use gui::tree::Desc;
-    use std::borrow::Cow;
+    use gui::ui::{self, StyleBuilder};
 
     #[test]
     fn grid_alignment_snaps_to_spacing_not_single_units() {
@@ -126,16 +109,10 @@ mod tests {
                 from_port_id: "canvas_node::engine_node::1::port::output::image".to_string(),
                 cursor_canvas: [100.0, 120.0],
             }),
-            Desc::Container {
-                id: Cow::Borrowed("panel_root"),
-                style: BoxStyle {
-                    width: Size::Fixed(0.0),
-                    height: Size::Fixed(0.0),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children: Vec::new(),
-            },
+            ui::container("panel_root")
+                .fixed_width(0.0)
+                .fixed_height(0.0)
+                .build(),
         );
 
         assert!(contains_desc_id(&desc, "canvas_connection::pending"));

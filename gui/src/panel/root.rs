@@ -1,8 +1,7 @@
 use crate::renderer::Rect;
-use crate::tree::layout::{BoxStyle, Position, Size};
 use crate::tree::{Desc, Tree};
+use crate::ui::{self, StyleBuilder};
 use crate::widget::frameworks::panel::PanelProps;
-use std::borrow::Cow;
 
 use super::PanelConfig;
 
@@ -31,35 +30,32 @@ pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>
             .unwrap_or_default()
     });
 
-    Desc::Container {
-        id: Cow::Borrowed("panel_root"),
-        style: BoxStyle {
-            position: Position::absolute_xy(0.0, 0.0),
-            width: Size::Fixed(viewport.w),
-            height: Size::Fixed(viewport.h),
-            hittable: Some(false),
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children: visible
-            .into_iter()
-            .filter_map(|panel| {
-                let state = tree.panel_state(panel.config.id.as_str())?;
-                Some(Desc::Widget(crate::widget::WidgetDesc::new(
-                    panel.config.id.clone().into_cow(),
-                    PanelProps {
-                        title: panel.config.title,
-                        rect: state.rect,
-                        z_index: state.z_index,
-                        min_size: panel.config.min_size,
-                        titlebar_visible: panel.config.titlebar_visible,
-                        draggable: panel.config.draggable,
-                        resizable: panel.config.resizable,
-                        closable: panel.config.closable,
-                        content: panel.content,
-                    },
-                )))
-            })
-            .collect(),
-    }
+    ui::container("panel_root")
+        .absolute_xy(0.0, 0.0)
+        .fixed_width(viewport.w)
+        .fixed_height(viewport.h)
+        .hittable(false)
+        .children(
+            visible
+                .into_iter()
+                .filter_map(|panel| {
+                    let state = tree.panel_state(panel.config.id.as_str())?;
+                    Some(ui::widget(
+                        panel.config.id.clone().into_cow(),
+                        PanelProps {
+                            title: panel.config.title,
+                            rect: state.rect,
+                            z_index: state.z_index,
+                            min_size: panel.config.min_size,
+                            titlebar_visible: panel.config.titlebar_visible,
+                            draggable: panel.config.draggable,
+                            resizable: panel.config.resizable,
+                            closable: panel.config.closable,
+                            content: panel.content,
+                        },
+                    ))
+                })
+                .collect::<Vec<_>>(),
+        )
+        .build()
 }

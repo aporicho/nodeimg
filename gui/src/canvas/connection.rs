@@ -1,7 +1,8 @@
 use super::CanvasPendingConnectionView;
 use crate::renderer::Point;
-use crate::tree::layout::{BoxStyle, LeafKind, Position, Size};
+use crate::tree::layout::LeafKind;
 use crate::tree::Desc;
+use crate::ui::{self, StyleBuilder};
 use std::borrow::Cow;
 
 #[derive(Clone, Debug)]
@@ -18,53 +19,47 @@ pub fn connection_layer(
     let mut children = connections
         .iter()
         .enumerate()
-        .map(|(index, connection)| Desc::Leaf {
-            id: Cow::Owned(format!("canvas_connection::{index}")),
-            style: connection_leaf_style(),
-            kind: LeafKind::Connection {
-                from_port: Cow::Owned(connection.from_port_id.clone()),
-                to_port: Cow::Owned(connection.to_port_id.clone()),
-            },
+        .map(|(index, connection)| {
+            connection_leaf(
+                format!("canvas_connection::{index}"),
+                LeafKind::Connection {
+                    from_port: Cow::Owned(connection.from_port_id.clone()),
+                    to_port: Cow::Owned(connection.to_port_id.clone()),
+                },
+            )
         })
         .collect::<Vec<_>>();
 
     if let Some(pending) = pending {
-        children.push(Desc::Leaf {
-            id: Cow::Borrowed("canvas_connection::pending"),
-            style: connection_leaf_style(),
-            kind: LeafKind::PendingConnection {
+        children.push(connection_leaf(
+            "canvas_connection::pending",
+            LeafKind::PendingConnection {
                 from_port: Cow::Owned(pending.from_port_id.clone()),
                 cursor_canvas: Point {
                     x: pending.cursor_canvas[0],
                     y: pending.cursor_canvas[1],
                 },
             },
-        });
+        ));
     }
 
-    Desc::Container {
-        id: Cow::Borrowed("canvas_connections"),
-        style: BoxStyle {
-            position: Position::absolute_xy(0.0, 0.0),
-            z_index,
-            width: Size::Fill,
-            height: Size::Fill,
-            hittable: Some(false),
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children,
-    }
+    ui::container("canvas_connections")
+        .absolute_xy(0.0, 0.0)
+        .z_index(z_index)
+        .fill_width()
+        .fill_height()
+        .hittable(false)
+        .children(children)
+        .build()
 }
 
-fn connection_leaf_style() -> BoxStyle {
-    BoxStyle {
-        position: Position::absolute_xy(0.0, 0.0),
-        width: Size::Fixed(0.0),
-        height: Size::Fixed(0.0),
-        hittable: Some(false),
-        ..BoxStyle::default()
-    }
+fn connection_leaf(id: impl Into<Cow<'static, str>>, kind: LeafKind) -> Desc {
+    ui::leaf(id, kind)
+        .absolute_xy(0.0, 0.0)
+        .fixed_width(0.0)
+        .fixed_height(0.0)
+        .hittable(false)
+        .build()
 }
 
 #[cfg(test)]

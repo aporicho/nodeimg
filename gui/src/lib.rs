@@ -12,4 +12,5 @@ pub(crate) mod runtime;
 pub mod shell;
 pub mod theme;
 pub mod tree;
+pub mod ui;
 pub mod widget;

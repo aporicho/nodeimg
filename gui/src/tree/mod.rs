@@ -1,3 +1,4 @@
+pub mod build;
 mod desc;
 mod diff;
 mod hit;

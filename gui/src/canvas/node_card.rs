@@ -8,11 +8,9 @@ use crate::canvas::param_control::{
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
-use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Overflow, Position, Size,
-    TextLayout, TextOverflow,
-};
+use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOverflow};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,82 +98,64 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             theme,
             metrics,
         ),
-        Desc::Container {
-            id: Cow::Owned(card_body_id),
-            style: BoxStyle {
-                position: Position::relative(),
-                width: Size::Fixed(metrics.card_width),
-                height: Size::Auto,
-                padding: Edges::all(metrics.card_padding),
-                direction: Direction::Column,
-                justify_content: Justify::Start,
-                align_items: Align::Start,
-                gap: metrics.row_gap,
-                overflow: Overflow::Visible,
-                hittable: Some(true),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(theme.colors.surface),
-                border: Some(Border {
-                    width: if view.selected { 2.0 } else { 1.0 },
-                    color: if view.selected {
-                        theme.colors.text
-                    } else {
-                        theme.colors.border
-                    },
-                }),
-                radius: [metrics.card_radius; 4],
-                shadow: None,
-            }),
-            children: vec![
+        ui::column(card_body_id)
+            .relative()
+            .fixed_width(metrics.card_width)
+            .auto_height()
+            .padding_all(metrics.card_padding)
+            .justify_content(Justify::Start)
+            .align_items(Align::Start)
+            .gap(metrics.row_gap)
+            .overflow(Overflow::Visible)
+            .hittable(true)
+            .background(theme.colors.surface)
+            .border(Border {
+                width: if view.selected { 2.0 } else { 1.0 },
+                color: if view.selected {
+                    theme.colors.text
+                } else {
+                    theme.colors.border
+                },
+            })
+            .radius_all(metrics.card_radius)
+            .children(vec![
                 node_body(&body_id, view, theme, metrics),
-                Desc::Container {
-                    id: Cow::Owned(label_id),
-                    style: BoxStyle {
-                        position: Position::absolute_xy(0.0, -metrics.title_lift),
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        direction: Direction::Row,
-                        justify_content: Justify::Start,
-                        align_items: Align::Center,
-                        gap: metrics.title_label_gap,
-                        hittable: Some(false),
-                        ..BoxStyle::default()
-                    },
-                    decoration: None,
-                    children: vec![
-                        Desc::Leaf {
-                            id: Cow::Owned(label_dot_id),
-                            style: BoxStyle {
-                                width: Size::Fixed(metrics.title_dot_diameter),
-                                height: Size::Fixed(metrics.title_dot_diameter),
-                                ..BoxStyle::default()
-                            },
-                            kind: LeafKind::Circle {
+                ui::row(label_id)
+                    .absolute_xy(0.0, -metrics.title_lift)
+                    .auto_width()
+                    .auto_height()
+                    .justify_content(Justify::Start)
+                    .align_items(Align::Center)
+                    .gap(metrics.title_label_gap)
+                    .hittable(false)
+                    .children(vec![
+                        ui::leaf(
+                            label_dot_id,
+                            LeafKind::Circle {
                                 radius: metrics.title_dot_diameter * 0.5,
                                 fill: Some(category_color(&view.category)),
                                 stroke: None,
                             },
-                        },
-                        Desc::Leaf {
-                            id: Cow::Owned(label_text_id),
-                            style: BoxStyle {
-                                width: Size::Fixed(metrics.title_label_width),
-                                height: Size::Auto,
-                                flex_shrink: 1.0,
-                                ..BoxStyle::default()
-                            },
-                            kind: LeafKind::Text {
+                        )
+                        .fixed_width(metrics.title_dot_diameter)
+                        .fixed_height(metrics.title_dot_diameter)
+                        .build(),
+                        ui::leaf(
+                            label_text_id,
+                            LeafKind::Text {
                                 content: view.title.clone(),
                                 style: theme.text_style_label_sm(),
                                 layout: ellipsis_text_layout(),
                             },
-                        },
-                    ],
-                },
-            ],
-        },
+                        )
+                        .fixed_width(metrics.title_label_width)
+                        .auto_height()
+                        .flex_shrink(1.0)
+                        .build(),
+                    ])
+                    .build(),
+            ])
+            .build(),
         pin_column(
             &view.owner_id,
             CanvasPortSide::Output,
@@ -185,26 +165,21 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         ),
     ];
 
-    Desc::Container {
-        id: Cow::Owned(card_id),
-        style: BoxStyle {
-            position: Position::absolute_xy(view.layout.rect.x, view.layout.rect.y),
-            z_index: view.layout.z_index,
-            width: Size::Auto,
-            height: Size::Auto,
-            padding: Edges::all(0.0),
-            gap: metrics.column_gap,
-            direction: Direction::Row,
-            justify_content: Justify::Start,
-            align_items: Align::Center,
-            overflow: Overflow::Visible,
-            hittable: Some(true),
-            gestures: vec![Gesture::Tap, Gesture::Drag],
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children,
-    }
+    ui::row(card_id)
+        .absolute_xy(view.layout.rect.x, view.layout.rect.y)
+        .z_index(view.layout.z_index)
+        .auto_width()
+        .auto_height()
+        .padding_all(0.0)
+        .gap(metrics.column_gap)
+        .justify_content(Justify::Start)
+        .align_items(Align::Center)
+        .overflow(Overflow::Visible)
+        .hittable(true)
+        .gesture(Gesture::Tap)
+        .gesture(Gesture::Drag)
+        .children(children)
+        .build()
 }
 
 fn pin_column(
@@ -214,28 +189,24 @@ fn pin_column(
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Desc {
-    Desc::Container {
-        id: Cow::Owned(format!(
-            "canvas_node::{owner_id}::pin_column::{}",
-            side.as_str()
-        )),
-        style: BoxStyle {
-            width: Size::Auto,
-            height: Size::Auto,
-            direction: Direction::Column,
-            justify_content: Justify::Start,
-            align_items: Align::Start,
-            gap: metrics.pin_row_gap,
-            overflow: Overflow::Hidden,
-            hittable: Some(false),
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children: ports
+    ui::column(format!(
+        "canvas_node::{owner_id}::pin_column::{}",
+        side.as_str()
+    ))
+    .auto_width()
+    .auto_height()
+    .justify_content(Justify::Start)
+    .align_items(Align::Start)
+    .gap(metrics.pin_row_gap)
+    .overflow(Overflow::Hidden)
+    .hittable(false)
+    .children(
+        ports
             .iter()
             .map(|port| pin_row(side, port, theme, metrics))
-            .collect(),
-    }
+            .collect::<Vec<_>>(),
+    )
+    .build()
 }
 
 fn pin_row(
@@ -252,35 +223,23 @@ fn pin_row(
         children.swap(0, 1);
     }
 
-    Desc::Container {
-        id: Cow::Owned(format!("{}::pin_item", port.stable_id)),
-        style: BoxStyle {
-            width: Size::Auto,
-            height: Size::Auto,
-            direction: Direction::Row,
-            justify_content: Justify::Start,
-            align_items: Align::Center,
-            gap: metrics.pin_label_gap,
-            hittable: Some(true),
-            gestures: vec![Gesture::Tap, Gesture::Drag],
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children,
-    }
+    ui::row(format!("{}::pin_item", port.stable_id))
+        .auto_width()
+        .auto_height()
+        .justify_content(Justify::Start)
+        .align_items(Align::Center)
+        .gap(metrics.pin_label_gap)
+        .hittable(true)
+        .gesture(Gesture::Tap)
+        .gesture(Gesture::Drag)
+        .children(children)
+        .build()
 }
 
 fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
-    Desc::Leaf {
-        id: Cow::Owned(port.stable_id.clone()),
-        style: BoxStyle {
-            width: Size::Fixed(metrics.pin_dot_diameter),
-            height: Size::Fixed(metrics.pin_dot_diameter),
-            hittable: Some(true),
-            gestures: vec![Gesture::Tap, Gesture::Drag],
-            ..BoxStyle::default()
-        },
-        kind: LeafKind::Circle {
+    ui::leaf(
+        Cow::Owned(port.stable_id.clone()),
+        LeafKind::Circle {
             radius: metrics.pin_dot_diameter * 0.5,
             fill: Some(port_state_color(port, theme)),
             stroke: Some(Border {
@@ -295,24 +254,28 @@ fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> De
                 color: port_border_color(port.connection_state, theme),
             }),
         },
-    }
+    )
+    .fixed_width(metrics.pin_dot_diameter)
+    .fixed_height(metrics.pin_dot_diameter)
+    .hittable(true)
+    .gesture(Gesture::Tap)
+    .gesture(Gesture::Drag)
+    .build()
 }
 
 fn pin_label(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
-    Desc::Leaf {
-        id: Cow::Owned(format!("{}::pin_label", port.stable_id)),
-        style: BoxStyle {
-            width: Size::Fixed(metrics.pin_label_width),
-            height: Size::Auto,
-            flex_shrink: 1.0,
-            ..BoxStyle::default()
-        },
-        kind: LeafKind::Text {
+    ui::leaf(
+        Cow::Owned(format!("{}::pin_label", port.stable_id)),
+        LeafKind::Text {
             content: port.name.clone(),
             style: theme.text_style_label_sm(),
             layout: ellipsis_text_layout(),
         },
-    }
+    )
+    .fixed_width(metrics.pin_label_width)
+    .auto_height()
+    .flex_shrink(1.0)
+    .build()
 }
 
 fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
@@ -328,40 +291,30 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMe
         );
     }
 
-    Desc::Container {
-        id: Cow::Owned(id.to_string()),
-        style: BoxStyle {
-            width: Size::Fill,
-            height: Size::Auto,
-            direction: Direction::Column,
-            gap: metrics.row_gap,
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children,
-    }
+    ui::column(id.to_string())
+        .fill_width()
+        .auto_height()
+        .gap(metrics.row_gap)
+        .children(children)
+        .build()
 }
 
 fn summary_row(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
-    Desc::Container {
-        id: Cow::Owned(format!("{id}::summary")),
-        style: body_row_style(metrics),
-        decoration: body_row_decoration(theme, metrics),
-        children: vec![Desc::Leaf {
-            id: Cow::Owned(format!("{id}::summary::text")),
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Auto,
-                flex_shrink: 1.0,
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Text {
-                content: view.subtitle.clone(),
-                style: theme.text_style_label_sm(),
-                layout: ellipsis_text_layout(),
-            },
-        }],
-    }
+    body_row(format!("{id}::summary"), theme, metrics)
+        .child(
+            ui::leaf(
+                format!("{id}::summary::text"),
+                LeafKind::Text {
+                    content: view.subtitle.clone(),
+                    style: theme.text_style_label_sm(),
+                    layout: ellipsis_text_layout(),
+                },
+            )
+            .fill_width()
+            .auto_height()
+            .flex_shrink(1.0),
+        )
+        .build()
 }
 
 fn param_row(
@@ -371,33 +324,23 @@ fn param_row(
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Desc {
-    Desc::Container {
-        id: Cow::Owned(format!("{id}::param::{index}")),
-        style: body_row_style(metrics),
-        decoration: body_row_decoration(theme, metrics),
-        children: vec![
-            Desc::Leaf {
-                id: Cow::Owned(format!("{id}::param::{index}::name")),
-                style: BoxStyle {
-                    width: Size::Fill,
-                    height: Size::Auto,
-                    flex_shrink: 1.0,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
+    body_row(format!("{id}::param::{index}"), theme, metrics)
+        .children(vec![
+            ui::leaf(
+                format!("{id}::param::{index}::name"),
+                LeafKind::Text {
                     content: param.name.clone(),
                     style: theme.text_style_label_sm(),
                     layout: ellipsis_text_layout(),
                 },
-            },
-            Desc::Leaf {
-                id: Cow::Owned(format!("{id}::param::{index}::value")),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
+            )
+            .fill_width()
+            .auto_height()
+            .flex_shrink(1.0)
+            .build(),
+            ui::leaf(
+                format!("{id}::param::{index}::value"),
+                LeafKind::Text {
                     content: if param.value.is_empty() {
                         param.kind.clone()
                     } else {
@@ -406,36 +349,33 @@ fn param_row(
                     style: theme.text_style_label_sm(),
                     layout: ellipsis_text_layout(),
                 },
-            },
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
             param_control(
                 Cow::Owned(format!("{id}::param::{index}::control")),
                 &param.control,
                 theme,
                 metrics.control,
             ),
-        ],
-    }
+        ])
+        .build()
 }
 
-fn body_row_style(metrics: NodeCardMetrics) -> BoxStyle {
-    BoxStyle {
-        width: Size::Fill,
-        height: Size::Fixed(metrics.param_row_height),
-        direction: Direction::Row,
-        justify_content: Justify::Start,
-        align_items: Align::Center,
-        gap: metrics.param_label_gap,
-        ..BoxStyle::default()
-    }
-}
-
-fn body_row_decoration(theme: &Theme, metrics: NodeCardMetrics) -> Option<Decoration> {
-    Some(Decoration {
-        background: Some(theme.colors.canvas_bg),
-        border: None,
-        radius: [metrics.row_radius; 4],
-        shadow: None,
-    })
+fn body_row(
+    id: impl Into<Cow<'static, str>>,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+) -> ui::ContainerBuilder {
+    ui::row(id)
+        .fill_width()
+        .fixed_height(metrics.param_row_height)
+        .justify_content(Justify::Start)
+        .align_items(Align::Center)
+        .gap(metrics.param_label_gap)
+        .background(theme.colors.canvas_bg)
+        .radius_all(metrics.row_radius)
 }
 
 fn ellipsis_text_layout() -> TextLayout {
@@ -518,6 +458,7 @@ mod tests {
     use super::*;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
+    use crate::tree::layout::{Direction, Edges, Position, Size};
 
     #[test]
     fn node_card_uses_canvas_node_stable_id() {

@@ -2,7 +2,7 @@ use super::PanelBuildContext;
 use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
 use gui::panel::{PanelConfig, PanelDeclaration, PanelId};
 use gui::renderer::Rect;
-use gui::tree::Desc;
+use gui::ui;
 use gui::widget::atoms::button::ButtonProps;
 use std::borrow::Cow;
 
@@ -25,7 +25,7 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             initially_visible: true,
         },
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            ui::widget(
                 Cow::Borrowed(ADD_IMAGE_DEMO_GRAPH_ID),
                 ButtonProps {
                     label: Cow::Borrowed("Add Image Demo"),
@@ -34,8 +34,9 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            )
+            .build(),
+            ui::widget(
                 Cow::Borrowed(RUN_IMAGE_DEMO_ID),
                 ButtonProps {
                     label: Cow::Borrowed("Run Image Demo"),
@@ -44,7 +45,8 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            )),
+            )
+            .build(),
         ],
     }
 }
