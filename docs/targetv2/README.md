@@ -103,6 +103,7 @@ targetv2 现在新增 GUI 架构基线文档，用于承接首版 demo 的 UI / 
 | `2.1.0` | `2.1.0-gui-runtime.draft.md` | RuntimeSystems 过渡边界 |
 | `2.2.0` | `2.2.0-gui-tree.draft.md` | GUI Tree 状态模型 |
 | `2.3.0` | `2.3.0-gui-modules.draft.md` | GUI 文件结构与模块边界 |
+| `2.4.0` | `2.4.0-gui-layering.md` | GUI 从业务状态到 GPU 绘制的分层边界 |
 
 ---
 
@@ -118,6 +119,7 @@ targetv2 现在新增 GUI 架构基线文档，用于承接首版 demo 的 UI / 
 6. `extensibility.md` —— 扩展入口
 7. `roadmap.md` —— 落地顺序
 8. `2.0.0-gui.md` —— GUI 总览与 Tree 架构入口
+9. `2.4.0-gui-layering.md` —— GUI 从业务状态到 GPU 绘制的分层边界
 
 **日常查询,按问题分:**
 
