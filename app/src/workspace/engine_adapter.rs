@@ -4,6 +4,7 @@ use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
 use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
+use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortConnectionState, CanvasPortSide, CanvasPortView,
@@ -273,8 +274,112 @@ fn canvas_node_params(node_def: &engine::node_manager::NodeDef) -> Vec<CanvasNod
             name: param.name.clone(),
             kind: param.data_type.to_string(),
             value: compact_value(&param.default_value),
+            control: canvas_param_control(param),
         })
         .collect()
+}
+
+fn canvas_param_control(param: &engine::node_manager::ParamDef) -> CanvasNodeParamControl {
+    if let Some(constraint) = &param.constraint {
+        match constraint.type_id.as_str() {
+            "enum" => {
+                let options = constraint
+                    .params
+                    .get("options")
+                    .and_then(|value| value.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|value| value.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let selected_value = match &param.default_value {
+                    types::Value::String(value) => value.as_str(),
+                    _ => "",
+                };
+                let selected = options
+                    .iter()
+                    .position(|option| option == selected_value)
+                    .unwrap_or(0);
+                return CanvasNodeParamControl::Select { options, selected };
+            }
+            "range" => {
+                let min = constraint
+                    .params
+                    .get("min")
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(0.0) as f32;
+                let max = constraint
+                    .params
+                    .get("max")
+                    .and_then(|value| value.as_f64())
+                    .unwrap_or(1.0) as f32;
+                return match &param.default_value {
+                    types::Value::Float(value) => CanvasNodeParamControl::Slider {
+                        value: *value,
+                        min,
+                        max,
+                        step: 0.01,
+                    },
+                    types::Value::Int(value) => CanvasNodeParamControl::Number {
+                        value: *value as f32,
+                        min,
+                        max,
+                        step: 1.0,
+                        precision: 0,
+                    },
+                    _ => CanvasNodeParamControl::ReadOnly {
+                        value: compact_value(&param.default_value),
+                    },
+                };
+            }
+            "file_path" => {
+                let extensions = constraint
+                    .params
+                    .get("extensions")
+                    .and_then(|value| value.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|value| value.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let path = match &param.default_value {
+                    types::Value::String(value) => value.clone(),
+                    _ => String::new(),
+                };
+                return CanvasNodeParamControl::FilePath { path, extensions };
+            }
+            _ => {}
+        }
+    }
+
+    match &param.default_value {
+        types::Value::Float(value) => CanvasNodeParamControl::Number {
+            value: *value,
+            min: f32::MIN,
+            max: f32::MAX,
+            step: 0.01,
+            precision: 2,
+        },
+        types::Value::Int(value) => CanvasNodeParamControl::Number {
+            value: *value as f32,
+            min: i32::MIN as f32,
+            max: i32::MAX as f32,
+            step: 1.0,
+            precision: 0,
+        },
+        types::Value::Bool(value) => CanvasNodeParamControl::Toggle { checked: *value },
+        types::Value::Color(rgba) => CanvasNodeParamControl::Color { rgba: *rgba },
+        types::Value::String(value) => CanvasNodeParamControl::Text {
+            value: value.clone(),
+        },
+        types::Value::Image(_) | types::Value::Handle(_) => CanvasNodeParamControl::ReadOnly {
+            value: compact_value(&param.default_value),
+        },
+    }
 }
 
 fn compact_value(value: &types::Value) -> String {

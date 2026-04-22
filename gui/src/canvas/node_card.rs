@@ -2,6 +2,9 @@ use super::{
     canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView,
     CanvasPortSide, CanvasPortView,
 };
+use crate::canvas::param_control::{
+    param_control, CanvasNodeParamControl, CanvasParamControlMetrics,
+};
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
@@ -26,6 +29,7 @@ struct NodeCardMetrics {
     title_lift: f32,
     card_radius: f32,
     row_radius: f32,
+    control: CanvasParamControlMetrics,
 }
 
 impl NodeCardMetrics {
@@ -43,6 +47,7 @@ impl NodeCardMetrics {
             title_lift: 37.0,
             card_radius: 24.0,
             row_radius: 0.0,
+            control: CanvasParamControlMetrics::from_theme(_theme),
         }
     }
 }
@@ -67,6 +72,7 @@ pub struct CanvasNodeParamView {
     pub name: String,
     pub kind: String,
     pub value: String,
+    pub control: CanvasNodeParamControl,
 }
 
 pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
@@ -309,7 +315,6 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMe
         children.extend(
             view.params
                 .iter()
-                .take(5)
                 .enumerate()
                 .map(|(index, param)| param_row(id, index, param, theme, metrics)),
         );
@@ -394,6 +399,12 @@ fn param_row(
                     layout: ellipsis_text_layout(),
                 },
             },
+            param_control(
+                Cow::Owned(format!("{id}::param::{index}::control")),
+                &param.control,
+                theme,
+                metrics.control,
+            ),
         ],
     }
 }
@@ -615,6 +626,7 @@ mod tests {
                 name: "prompt".to_string(),
                 kind: "string".to_string(),
                 value: "text".to_string(),
+                control: CanvasNodeParamControl::default(),
             }],
             input_group: CanvasPortGroupView { open: true },
             output_group: CanvasPortGroupView::default(),
@@ -679,6 +691,7 @@ mod tests {
                 name: "prompt".to_string(),
                 kind: "string".to_string(),
                 value: "text".to_string(),
+                control: CanvasNodeParamControl::default(),
             }],
             input_group: CanvasPortGroupView::default(),
             output_group: CanvasPortGroupView::default(),
@@ -872,6 +885,7 @@ mod tests {
                 name: "prompt".to_string(),
                 kind: "string".to_string(),
                 value: "text".to_string(),
+                control: CanvasNodeParamControl::default(),
             }],
             input_group: CanvasPortGroupView::default(),
             output_group: CanvasPortGroupView::default(),
@@ -917,6 +931,7 @@ mod tests {
                 name: "prompt".to_string(),
                 kind: "string".to_string(),
                 value: "text".to_string(),
+                control: CanvasNodeParamControl::default(),
             }],
             input_group: CanvasPortGroupView { open: true },
             output_group: CanvasPortGroupView::default(),

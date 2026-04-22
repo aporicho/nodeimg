@@ -3,6 +3,7 @@ use super::engine_adapter;
 use super::node_palette::NodePaletteState;
 use super::project_layout;
 use super::project_layout::ProjectLayout;
+use super::showcase_node;
 use crate::image_demo::ImageDemoController;
 use crate::panels::EnginePanelState;
 use engine::facade::EngineFacade;
@@ -89,9 +90,21 @@ impl WorkspaceController {
     }
 
     pub(crate) fn canvas_node_views(&self, gui: &mut Context) -> Vec<CanvasNodeView> {
-        let identities = engine_adapter::canvas_node_identities(&self.engine);
+        let mut identities = engine_adapter::canvas_node_identities(&self.engine);
+        identities.push(showcase_node::showcase_node_identity());
         let layouts = gui.sync_canvas_node_layouts(&identities);
-        let mut views = engine_adapter::canvas_node_views(&self.engine, layouts);
+        let showcase_layout = layouts
+            .iter()
+            .find(|layout| showcase_node::is_showcase_node(&layout.owner_id))
+            .cloned();
+        let engine_layouts = layouts
+            .into_iter()
+            .filter(|layout| !showcase_node::is_showcase_node(&layout.owner_id))
+            .collect::<Vec<_>>();
+        let mut views = engine_adapter::canvas_node_views(&self.engine, engine_layouts);
+        if let Some(layout) = showcase_layout {
+            views.push(showcase_node::showcase_node_view(layout));
+        }
         let pending_connection = gui.pending_canvas_connection();
         let hovered_port_id = gui.hovered_canvas_port_id();
         for view in &mut views {
@@ -496,6 +509,18 @@ mod tests {
         controller.clear_canvas_selection(&mut gui);
         let views = controller.canvas_node_views(&mut gui);
         assert!(!views[0].selected);
+    }
+
+    #[test]
+    fn canvas_node_views_include_showcase_node() {
+        let controller = WorkspaceController::new();
+        let mut gui = Context::new();
+
+        let views = controller.canvas_node_views(&mut gui);
+
+        assert!(views
+            .iter()
+            .any(|view| view.owner_id == showcase_node::SHOWCASE_OWNER_ID));
     }
 
     #[test]

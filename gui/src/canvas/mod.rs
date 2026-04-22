@@ -5,6 +5,7 @@ mod layout;
 pub mod navigation;
 pub mod node_card;
 pub mod pan;
+pub mod param_control;
 pub mod port;
 pub(crate) mod runtime;
 
