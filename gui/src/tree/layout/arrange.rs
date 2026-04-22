@@ -1015,6 +1015,53 @@ mod tests {
     }
 
     #[test]
+    fn absolute_child_does_not_contribute_to_auto_parent_size() {
+        let mut tree = Tree::new();
+        let flow_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(30.0),
+            height: Size::Fixed(20.0),
+            ..Default::default()
+        }));
+        let abs_id = tree.insert(container(BoxStyle {
+            position: Position::absolute_xy(0.0, 0.0),
+            width: Size::Fixed(200.0),
+            height: Size::Fixed(100.0),
+            ..Default::default()
+        }));
+        let mut auto_parent = container(BoxStyle {
+            width: Size::Auto,
+            height: Size::Auto,
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        auto_parent.children = vec![flow_id, abs_id];
+        let auto_parent_id = tree.insert(auto_parent);
+        let sibling_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(10.0),
+            height: Size::Fixed(20.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(300.0),
+            height: Size::Fixed(100.0),
+            direction: Direction::Row,
+            align_items: Align::Start,
+            ..Default::default()
+        });
+        root.children = vec![auto_parent_id, sibling_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        arrange_root(&mut tree, root_id, 300.0, 100.0);
+
+        let auto_parent = tree.get(auto_parent_id).unwrap();
+        let sibling = tree.get(sibling_id).unwrap();
+        assert_eq!(auto_parent.rect.w, 30.0);
+        assert_eq!(auto_parent.rect.h, 20.0);
+        assert_eq!(sibling.rect.x, 30.0);
+    }
+
+    #[test]
     fn absolute_fixed_size() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container(BoxStyle {

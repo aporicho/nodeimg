@@ -6,23 +6,46 @@ use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
 use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size, TextLayout,
-    TextOverflow,
+    Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Overflow, Position, Size,
+    TextLayout, TextOverflow,
 };
 use crate::tree::Desc;
 use std::borrow::Cow;
 
-const PIN_SIZE: f32 = 32.0;
-const PIN_ROW_HEIGHT: f32 = 32.0;
-const PIN_ROW_GAP: f32 = 12.0;
-const PIN_LABEL_GAP: f32 = 10.0;
-const PIN_COLUMN_WIDTH: f32 = 120.0;
-const PIN_COLUMN_GAP: f32 = 24.0;
-const NODE_PADDING: f32 = 24.0;
-const NODE_LABEL_TOP: f32 = -37.0;
-const NODE_LABEL_HEIGHT: f32 = 32.0;
-const NODE_ROW_HEIGHT: f32 = 36.0;
-const NODE_ROW_GAP: f32 = 12.0;
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NodeCardMetrics {
+    card_width: f32,
+    pin_diameter: f32,
+    pin_label_width: f32,
+    title_label_width: f32,
+    param_row_height: f32,
+    card_padding: f32,
+    column_gap: f32,
+    row_gap: f32,
+    label_gap: f32,
+    title_lift: f32,
+    card_radius: f32,
+    row_radius: f32,
+}
+
+impl NodeCardMetrics {
+    fn from_theme(_theme: &Theme) -> Self {
+        Self {
+            card_width: 304.0,
+            pin_diameter: 32.0,
+            pin_label_width: 78.0,
+            title_label_width: 262.0,
+            param_row_height: 36.0,
+            card_padding: 24.0,
+            column_gap: 24.0,
+            row_gap: 12.0,
+            label_gap: 10.0,
+            title_lift: 37.0,
+            card_radius: 24.0,
+            row_radius: 0.0,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeView {
@@ -47,6 +70,7 @@ pub struct CanvasNodeParamView {
 }
 
 pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
+    let metrics = NodeCardMetrics::from_theme(theme);
     let card_id = canvas_node_stable_id(&view.owner_id);
     let label_id = format!("{card_id}::label");
     let label_dot_id = format!("{card_id}::label_dot");
@@ -58,19 +82,22 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         pin_column(
             &view.owner_id,
             CanvasPortSide::Input,
-            -PIN_COLUMN_WIDTH - PIN_COLUMN_GAP,
             &view.inputs,
             theme,
+            metrics,
         ),
         Desc::Container {
             id: Cow::Owned(card_body_id),
             style: BoxStyle {
-                position: Position::absolute_xy(0.0, 0.0),
-                width: Size::Fixed(view.layout.rect.w),
-                height: Size::Fixed(card_height(view)),
-                padding: Edges::all(NODE_PADDING),
+                position: Position::relative(),
+                width: Size::Fixed(metrics.card_width),
+                height: Size::Auto,
+                padding: Edges::all(metrics.card_padding),
                 direction: Direction::Column,
-                gap: NODE_ROW_GAP,
+                justify_content: Justify::Start,
+                align_items: Align::Start,
+                gap: metrics.row_gap,
+                overflow: Overflow::Visible,
                 hittable: Some(true),
                 ..BoxStyle::default()
             },
@@ -84,20 +111,21 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                         theme.colors.border
                     },
                 }),
-                radius: [24.0; 4],
+                radius: [metrics.card_radius; 4],
                 shadow: None,
             }),
             children: vec![
-                node_body(&body_id, view, theme),
+                node_body(&body_id, view, theme, metrics),
                 Desc::Container {
                     id: Cow::Owned(label_id),
                     style: BoxStyle {
-                        position: Position::absolute_xy(0.0, NODE_LABEL_TOP),
+                        position: Position::absolute_xy(0.0, -metrics.title_lift),
                         width: Size::Auto,
-                        height: Size::Fixed(NODE_LABEL_HEIGHT),
+                        height: Size::Auto,
                         direction: Direction::Row,
+                        justify_content: Justify::Start,
                         align_items: Align::Center,
-                        gap: PIN_LABEL_GAP,
+                        gap: metrics.label_gap,
                         hittable: Some(false),
                         ..BoxStyle::default()
                     },
@@ -106,12 +134,12 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                         Desc::Leaf {
                             id: Cow::Owned(label_dot_id),
                             style: BoxStyle {
-                                width: Size::Fixed(PIN_SIZE),
-                                height: Size::Fixed(PIN_SIZE),
+                                width: Size::Fixed(metrics.pin_diameter),
+                                height: Size::Fixed(metrics.pin_diameter),
                                 ..BoxStyle::default()
                             },
                             kind: LeafKind::Circle {
-                                radius: PIN_SIZE * 0.5,
+                                radius: metrics.pin_diameter * 0.5,
                                 fill: Some(category_color(&view.category)),
                                 stroke: None,
                             },
@@ -119,14 +147,15 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                         Desc::Leaf {
                             id: Cow::Owned(label_text_id),
                             style: BoxStyle {
-                                width: Size::Auto,
+                                width: Size::Fixed(metrics.title_label_width),
                                 height: Size::Auto,
+                                flex_shrink: 1.0,
                                 ..BoxStyle::default()
                             },
                             kind: LeafKind::Text {
                                 content: view.title.clone(),
                                 style: theme.text_style_label_sm(),
-                                layout: Default::default(),
+                                layout: ellipsis_text_layout(),
                             },
                         },
                     ],
@@ -136,9 +165,9 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         pin_column(
             &view.owner_id,
             CanvasPortSide::Output,
-            view.layout.rect.w + PIN_COLUMN_GAP,
             &view.outputs,
             theme,
+            metrics,
         ),
     ];
 
@@ -147,11 +176,13 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
         style: BoxStyle {
             position: Position::absolute_xy(view.layout.rect.x, view.layout.rect.y),
             z_index: view.layout.z_index,
-            width: Size::Fixed(view.layout.rect.w),
-            height: Size::Fixed(card_height(view)),
+            width: Size::Auto,
+            height: Size::Auto,
             padding: Edges::all(0.0),
-            gap: 0.0,
+            gap: metrics.column_gap,
             direction: Direction::Row,
+            justify_content: Justify::Start,
+            align_items: Align::Center,
             overflow: Overflow::Visible,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
@@ -165,9 +196,9 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
 fn pin_column(
     owner_id: &str,
     side: CanvasPortSide,
-    x: f32,
     ports: &[CanvasPortView],
     theme: &Theme,
+    metrics: NodeCardMetrics,
 ) -> Desc {
     Desc::Container {
         id: Cow::Owned(format!(
@@ -175,24 +206,34 @@ fn pin_column(
             side.as_str()
         )),
         style: BoxStyle {
-            position: Position::absolute_xy(x, 0.0),
-            width: Size::Fixed(PIN_COLUMN_WIDTH),
+            width: Size::Auto,
             height: Size::Auto,
             direction: Direction::Column,
-            gap: PIN_ROW_GAP,
+            justify_content: Justify::Start,
+            align_items: Align::Start,
+            gap: metrics.row_gap,
+            overflow: Overflow::Hidden,
             hittable: Some(false),
             ..BoxStyle::default()
         },
         decoration: None,
         children: ports
             .iter()
-            .map(|port| pin_row(side, port, theme))
+            .map(|port| pin_row(side, port, theme, metrics))
             .collect(),
     }
 }
 
-fn pin_row(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
-    let mut children = vec![pin_dot(port, theme), pin_label(port, theme)];
+fn pin_row(
+    side: CanvasPortSide,
+    port: &CanvasPortView,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+) -> Desc {
+    let mut children = vec![
+        pin_dot(port, theme, metrics),
+        pin_label(port, theme, metrics),
+    ];
     if side == CanvasPortSide::Output {
         children.swap(0, 1);
     }
@@ -200,11 +241,12 @@ fn pin_row(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
     Desc::Container {
         id: Cow::Owned(format!("{}::pin_item", port.stable_id)),
         style: BoxStyle {
-            width: Size::Fixed(PIN_COLUMN_WIDTH),
-            height: Size::Fixed(PIN_ROW_HEIGHT),
+            width: Size::Auto,
+            height: Size::Auto,
             direction: Direction::Row,
+            justify_content: Justify::Start,
             align_items: Align::Center,
-            gap: PIN_LABEL_GAP,
+            gap: metrics.label_gap,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
@@ -214,18 +256,18 @@ fn pin_row(side: CanvasPortSide, port: &CanvasPortView, theme: &Theme) -> Desc {
     }
 }
 
-fn pin_dot(port: &CanvasPortView, theme: &Theme) -> Desc {
+fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     Desc::Leaf {
         id: Cow::Owned(port.stable_id.clone()),
         style: BoxStyle {
-            width: Size::Fixed(PIN_SIZE),
-            height: Size::Fixed(PIN_SIZE),
+            width: Size::Fixed(metrics.pin_diameter),
+            height: Size::Fixed(metrics.pin_diameter),
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         kind: LeafKind::Circle {
-            radius: PIN_SIZE * 0.5,
+            radius: metrics.pin_diameter * 0.5,
             fill: Some(port_state_color(port, theme)),
             stroke: Some(Border {
                 width: match port.connection_state {
@@ -242,11 +284,11 @@ fn pin_dot(port: &CanvasPortView, theme: &Theme) -> Desc {
     }
 }
 
-fn pin_label(port: &CanvasPortView, theme: &Theme) -> Desc {
+fn pin_label(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     Desc::Leaf {
         id: Cow::Owned(format!("{}::pin_label", port.stable_id)),
         style: BoxStyle {
-            width: Size::Fill,
+            width: Size::Fixed(metrics.pin_label_width),
             height: Size::Auto,
             flex_shrink: 1.0,
             ..BoxStyle::default()
@@ -259,11 +301,41 @@ fn pin_label(port: &CanvasPortView, theme: &Theme) -> Desc {
     }
 }
 
-fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
+fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     let mut children = Vec::new();
     if view.params.is_empty() {
-        children.push(Desc::Leaf {
-            id: Cow::Owned(format!("{id}::summary")),
+        children.push(summary_row(id, view, theme, metrics));
+    } else {
+        children.extend(
+            view.params
+                .iter()
+                .take(5)
+                .enumerate()
+                .map(|(index, param)| param_row(id, index, param, theme, metrics)),
+        );
+    }
+
+    Desc::Container {
+        id: Cow::Owned(id.to_string()),
+        style: BoxStyle {
+            width: Size::Fill,
+            height: Size::Auto,
+            direction: Direction::Column,
+            gap: metrics.row_gap,
+            ..BoxStyle::default()
+        },
+        decoration: None,
+        children,
+    }
+}
+
+fn summary_row(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
+    Desc::Container {
+        id: Cow::Owned(format!("{id}::summary")),
+        style: body_row_style(metrics),
+        decoration: body_row_decoration(theme, metrics),
+        children: vec![Desc::Leaf {
+            id: Cow::Owned(format!("{id}::summary::text")),
             style: BoxStyle {
                 width: Size::Fill,
                 height: Size::Auto,
@@ -275,48 +347,21 @@ fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme) -> Desc {
                 style: theme.text_style_label_sm(),
                 layout: ellipsis_text_layout(),
             },
-        });
-    } else {
-        children.extend(
-            view.params
-                .iter()
-                .take(5)
-                .enumerate()
-                .map(|(index, param)| param_row(id, index, param, theme)),
-        );
-    }
-
-    Desc::Container {
-        id: Cow::Owned(id.to_string()),
-        style: BoxStyle {
-            width: Size::Fill,
-            height: Size::Auto,
-            direction: Direction::Column,
-            gap: NODE_ROW_GAP,
-            ..BoxStyle::default()
-        },
-        decoration: None,
-        children,
+        }],
     }
 }
 
-fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme) -> Desc {
+fn param_row(
+    id: &str,
+    index: usize,
+    param: &CanvasNodeParamView,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+) -> Desc {
     Desc::Container {
         id: Cow::Owned(format!("{id}::param::{index}")),
-        style: BoxStyle {
-            width: Size::Fill,
-            height: Size::Fixed(NODE_ROW_HEIGHT),
-            direction: Direction::Row,
-            align_items: Align::Center,
-            gap: PIN_LABEL_GAP,
-            ..BoxStyle::default()
-        },
-        decoration: Some(Decoration {
-            background: Some(theme.colors.canvas_bg),
-            border: None,
-            radius: [0.0; 4],
-            shadow: None,
-        }),
+        style: body_row_style(metrics),
+        decoration: body_row_decoration(theme, metrics),
         children: vec![
             Desc::Leaf {
                 id: Cow::Owned(format!("{id}::param::{index}::name")),
@@ -346,19 +391,32 @@ fn param_row(id: &str, index: usize, param: &CanvasNodeParamView, theme: &Theme)
                         param.value.clone()
                     },
                     style: theme.text_style_label_sm(),
-                    layout: Default::default(),
+                    layout: ellipsis_text_layout(),
                 },
             },
         ],
     }
 }
 
-fn card_height(view: &CanvasNodeView) -> f32 {
-    if view.layout.collapsed {
-        48.0
-    } else {
-        view.layout.rect.h
+fn body_row_style(metrics: NodeCardMetrics) -> BoxStyle {
+    BoxStyle {
+        width: Size::Fill,
+        height: Size::Fixed(metrics.param_row_height),
+        direction: Direction::Row,
+        justify_content: Justify::Start,
+        align_items: Align::Center,
+        gap: metrics.label_gap,
+        ..BoxStyle::default()
     }
+}
+
+fn body_row_decoration(theme: &Theme, metrics: NodeCardMetrics) -> Option<Decoration> {
+    Some(Decoration {
+        background: Some(theme.colors.canvas_bg),
+        border: None,
+        radius: [metrics.row_radius; 4],
+        shadow: None,
+    })
 }
 
 fn ellipsis_text_layout() -> TextLayout {
@@ -507,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn node_card_shell_uses_center_card_layout_rect() {
+    fn node_card_shell_uses_root_layout_origin() {
         let view = CanvasNodeView {
             owner_id: "engine_node::7".to_string(),
             title: "Image".to_string(),
@@ -538,8 +596,11 @@ mod tests {
 
         assert_eq!(style.position, Position::absolute_xy(10.0, 20.0));
         assert_eq!(style.z_index, 0);
-        assert_eq!(style.width, Size::Fixed(220.0));
-        assert_eq!(style.height, Size::Fixed(96.0));
+        assert_eq!(style.width, Size::Auto);
+        assert_eq!(style.height, Size::Auto);
+        assert_eq!(style.direction, Direction::Row);
+        assert_eq!(style.justify_content, Justify::Start);
+        assert_eq!(style.align_items, Align::Center);
         assert_eq!(style.overflow, Overflow::Visible);
     }
 
@@ -647,6 +708,278 @@ mod tests {
         assert!(children
             .iter()
             .any(|child| contains_desc_id(child, "canvas_node::engine_node::7::body")));
+    }
+
+    #[test]
+    fn node_card_uses_figma_flow_structure() {
+        let theme = light_theme();
+        let metrics = NodeCardMetrics::from_theme(&theme);
+        let view = node_view_with_ports();
+
+        let Desc::Container {
+            style, children, ..
+        } = node_card(&view, &theme)
+        else {
+            panic!("node card should build a container");
+        };
+
+        assert_eq!(style.gap, metrics.column_gap);
+        assert_eq!(children.len(), 3);
+        assert_eq!(
+            children[0].id(),
+            "canvas_node::engine_node::7::pin_column::input"
+        );
+        assert_eq!(children[1].id(), "canvas_node::engine_node::7::card");
+        assert_eq!(
+            children[2].id(),
+            "canvas_node::engine_node::7::pin_column::output"
+        );
+
+        let Desc::Container {
+            style: input_style, ..
+        } = &children[0]
+        else {
+            panic!("input pin column should be a container");
+        };
+        assert_eq!(input_style.position, Position::Flow);
+        assert_eq!(input_style.width, Size::Auto);
+        assert_eq!(input_style.height, Size::Auto);
+        assert_eq!(input_style.direction, Direction::Column);
+        assert_eq!(input_style.gap, metrics.row_gap);
+        assert_eq!(input_style.overflow, Overflow::Hidden);
+
+        let Desc::Container {
+            style: card_style,
+            decoration,
+            ..
+        } = &children[1]
+        else {
+            panic!("center node card should be a container");
+        };
+        assert_eq!(card_style.position, Position::relative());
+        assert_eq!(card_style.width, Size::Fixed(metrics.card_width));
+        assert_eq!(card_style.height, Size::Auto);
+        assert_eq!(card_style.padding, Edges::all(metrics.card_padding));
+        assert_eq!(card_style.direction, Direction::Column);
+        assert_eq!(card_style.gap, metrics.row_gap);
+        assert_eq!(card_style.overflow, Overflow::Visible);
+        assert_eq!(
+            decoration.as_ref().unwrap().radius,
+            [metrics.card_radius; 4]
+        );
+    }
+
+    #[test]
+    fn node_card_title_is_absolute_card_child() {
+        let theme = light_theme();
+        let metrics = NodeCardMetrics::from_theme(&theme);
+        let view = node_view_with_ports();
+
+        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+            panic!("node card should build a container");
+        };
+        let Desc::Container {
+            children: card_children,
+            ..
+        } = &children[1]
+        else {
+            panic!("center node card should be a container");
+        };
+        let title = card_children
+            .iter()
+            .find(|child| child.id() == "canvas_node::engine_node::7::label")
+            .expect("card should contain an absolute title row");
+        let Desc::Container {
+            style, children, ..
+        } = title
+        else {
+            panic!("title should be a container");
+        };
+
+        assert_eq!(
+            style.position,
+            Position::absolute_xy(0.0, -metrics.title_lift)
+        );
+        assert_eq!(style.direction, Direction::Row);
+        assert_eq!(style.align_items, Align::Center);
+        assert_eq!(style.gap, metrics.label_gap);
+        assert_eq!(children[0].id(), "canvas_node::engine_node::7::label_dot");
+        assert_eq!(children[1].id(), "canvas_node::engine_node::7::label_text");
+    }
+
+    #[test]
+    fn node_card_pin_rows_keep_side_order_and_metrics() {
+        let theme = light_theme();
+        let metrics = NodeCardMetrics::from_theme(&theme);
+        let view = node_view_with_ports();
+
+        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+            panic!("node card should build a container");
+        };
+        let input_row = first_pin_row(&children[0]);
+        let output_row = first_pin_row(&children[2]);
+
+        let Desc::Container {
+            style: input_style,
+            children: input_children,
+            ..
+        } = input_row
+        else {
+            panic!("input pin row should be a container");
+        };
+        assert_eq!(input_style.direction, Direction::Row);
+        assert_eq!(input_style.align_items, Align::Center);
+        assert_eq!(input_style.gap, metrics.label_gap);
+        assert_eq!(
+            input_children[0].id(),
+            "canvas_node::engine_node::7::port::input::prompt"
+        );
+        assert_eq!(
+            input_children[1].id(),
+            "canvas_node::engine_node::7::port::input::prompt::pin_label"
+        );
+
+        let Desc::Container {
+            children: output_children,
+            ..
+        } = output_row
+        else {
+            panic!("output pin row should be a container");
+        };
+        assert_eq!(
+            output_children[0].id(),
+            "canvas_node::engine_node::7::port::output::image::pin_label"
+        );
+        assert_eq!(
+            output_children[1].id(),
+            "canvas_node::engine_node::7::port::output::image"
+        );
+
+        assert_pin_dot_metrics(&input_children[0], metrics);
+        assert_pin_dot_metrics(&output_children[1], metrics);
+    }
+
+    #[test]
+    fn node_card_param_rows_use_fixed_control_height() {
+        let theme = light_theme();
+        let metrics = NodeCardMetrics::from_theme(&theme);
+        let view = CanvasNodeView {
+            owner_id: "engine_node::7".to_string(),
+            title: "Image".to_string(),
+            subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: vec![CanvasNodeParamView {
+                name: "prompt".to_string(),
+                kind: "string".to_string(),
+                value: "text".to_string(),
+            }],
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            selected: false,
+            layout: CanvasNodeLayout {
+                owner_id: "engine_node::7".to_string(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 220.0,
+                    h: 96.0,
+                },
+                z_index: 0,
+                collapsed: false,
+            },
+        };
+
+        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+            panic!("node card should build a container");
+        };
+        let param = find_desc(&children[1], "canvas_node::engine_node::7::body::param::0")
+            .expect("card body should contain the first param row");
+        let Desc::Container { style, .. } = param else {
+            panic!("param row should be a container");
+        };
+
+        assert_eq!(style.width, Size::Fill);
+        assert_eq!(style.height, Size::Fixed(metrics.param_row_height));
+        assert_eq!(style.direction, Direction::Row);
+        assert_eq!(style.align_items, Align::Center);
+        assert_eq!(style.gap, metrics.label_gap);
+    }
+
+    fn node_view_with_ports() -> CanvasNodeView {
+        CanvasNodeView {
+            owner_id: "engine_node::7".to_string(),
+            title: "Image".to_string(),
+            subtitle: "image_gen".to_string(),
+            category: "image/generation".to_string(),
+            params: vec![CanvasNodeParamView {
+                name: "prompt".to_string(),
+                kind: "string".to_string(),
+                value: "text".to_string(),
+            }],
+            input_group: CanvasPortGroupView { open: true },
+            output_group: CanvasPortGroupView::default(),
+            inputs: vec![CanvasPortView {
+                name: "prompt".to_string(),
+                stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
+                side: CanvasPortSide::Input,
+                index: 0,
+                count: 1,
+                connection_state: CanvasPortConnectionState::Idle,
+            }],
+            outputs: vec![CanvasPortView {
+                name: "image".to_string(),
+                stable_id: "canvas_node::engine_node::7::port::output::image".to_string(),
+                side: CanvasPortSide::Output,
+                index: 0,
+                count: 1,
+                connection_state: CanvasPortConnectionState::Idle,
+            }],
+            selected: false,
+            layout: CanvasNodeLayout {
+                owner_id: "engine_node::7".to_string(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: 220.0,
+                    h: 96.0,
+                },
+                z_index: 0,
+                collapsed: false,
+            },
+        }
+    }
+
+    fn first_pin_row(column: &Desc) -> &Desc {
+        let Desc::Container { children, .. } = column else {
+            panic!("pin column should be a container");
+        };
+        children.first().expect("pin column should contain a row")
+    }
+
+    fn assert_pin_dot_metrics(desc: &Desc, metrics: NodeCardMetrics) {
+        let Desc::Leaf { style, kind, .. } = desc else {
+            panic!("pin dot should be a leaf");
+        };
+        assert_eq!(style.width, Size::Fixed(metrics.pin_diameter));
+        assert_eq!(style.height, Size::Fixed(metrics.pin_diameter));
+        assert!(matches!(
+            kind,
+            LeafKind::Circle { radius, .. } if *radius == metrics.pin_diameter * 0.5
+        ));
+    }
+
+    fn find_desc<'a>(desc: &'a Desc, id: &str) -> Option<&'a Desc> {
+        if desc.id() == id {
+            return Some(desc);
+        }
+        match desc {
+            Desc::Container { children, .. } => {
+                children.iter().find_map(|child| find_desc(child, id))
+            }
+            Desc::Leaf { .. } | Desc::Widget { .. } => None,
+        }
     }
 
     fn contains_desc_id(desc: &Desc, id: &str) -> bool {

@@ -27,7 +27,12 @@ pub(crate) fn measure<T: LayoutTree>(
         };
     }
 
-    let child_sizes: Vec<DesiredSize> = children
+    let flow_children: Vec<_> = children
+        .iter()
+        .copied()
+        .filter(|&c| !tree.style(c).position.is_absolute())
+        .collect();
+    let child_sizes: Vec<DesiredSize> = flow_children
         .iter()
         .map(|&c| measure(tree, c, measure_text))
         .collect();
