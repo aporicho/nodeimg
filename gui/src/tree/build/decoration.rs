@@ -1,6 +1,7 @@
 use crate::renderer::{Border, Color, Shadow};
 use crate::tree::build::ContainerBuilder;
 use crate::tree::layout::Decoration;
+use crate::widget::build::WidgetBuildBuilder;
 
 pub trait DecorationBuilder: Sized {
     fn decoration_mut(&mut self) -> &mut Option<Decoration>;
@@ -38,6 +39,12 @@ pub trait DecorationBuilder: Sized {
 }
 
 impl DecorationBuilder for ContainerBuilder {
+    fn decoration_mut(&mut self) -> &mut Option<Decoration> {
+        &mut self.decoration
+    }
+}
+
+impl DecorationBuilder for WidgetBuildBuilder {
     fn decoration_mut(&mut self) -> &mut Option<Decoration> {
         &mut self.decoration
     }

@@ -1,5 +1,6 @@
 pub mod anatomy;
 pub mod atoms;
+pub mod build;
 pub mod desc;
 pub mod frameworks;
 pub mod props;

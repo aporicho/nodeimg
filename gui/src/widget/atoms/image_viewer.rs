@@ -1,5 +1,6 @@
-use crate::tree::layout::{BoxStyle, LeafKind, Size, TextureHandle};
+use crate::tree::layout::{LeafKind, TextureHandle};
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -34,31 +35,27 @@ impl WidgetProps for ImageViewerProps {
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let tokens = cx.theme.components.image_viewer;
 
-        WidgetBuild {
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Fixed(self.height),
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(tokens.background)
-                .border(crate::renderer::Border {
-                    width: tokens.border_width,
-                    color: tokens.border,
-                })
-                .radius_all(tokens.radius)
-                .build_decoration(),
-            children: vec![ui::leaf(
-                format!("{id}::image"),
-                LeafKind::Image {
-                    texture: self.texture,
-                    tint: None,
-                },
-            )
+        build::root()
             .fill_width()
-            .fill_height()
-            .build()],
-        }
+            .fixed_height(self.height)
+            .background(tokens.background)
+            .border(crate::renderer::Border {
+                width: tokens.border_width,
+                color: tokens.border,
+            })
+            .radius_all(tokens.radius)
+            .child(
+                ui::leaf(
+                    format!("{id}::image"),
+                    LeafKind::Image {
+                        texture: self.texture,
+                        tint: None,
+                    },
+                )
+                .fill_width()
+                .fill_height(),
+            )
+            .build()
     }
 }
 

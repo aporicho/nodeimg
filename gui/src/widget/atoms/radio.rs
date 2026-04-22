@@ -1,8 +1,9 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{Align, BoxStyle, Direction};
+use crate::tree::layout::Align;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -88,17 +89,12 @@ impl WidgetProps for RadioProps {
             );
         }
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Row,
-                gap: tokens.gap,
-                align_items: Align::Center,
-                gestures: vec![Gesture::Tap],
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children,
-        }
+        build::row()
+            .gap(tokens.gap)
+            .align_items(Align::Center)
+            .gesture(Gesture::Tap)
+            .children(children)
+            .build()
     }
 }
 

@@ -1,6 +1,7 @@
-use crate::tree::layout::{BoxStyle, Direction, Edges, Overflow, Size};
+use crate::tree::layout::Overflow;
 use crate::tree::Desc;
-use crate::ui::{self, DecorationBuilder};
+use crate::ui::{DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -55,25 +56,19 @@ impl WidgetProps for ScrollAreaProps {
     fn build(&self, _id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let tokens = cx.theme.components.scroll_area;
 
-        WidgetBuild {
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Fixed(self.height),
-                overflow: Overflow::Scroll,
-                padding: Edges::all(tokens.padding),
-                direction: Direction::Column,
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(tokens.background)
-                .border(crate::renderer::Border {
-                    width: tokens.border_width,
-                    color: tokens.border,
-                })
-                .radius_all(tokens.radius)
-                .build_decoration(),
-            children: self.content.clone(),
-        }
+        build::column()
+            .fill_width()
+            .fixed_height(self.height)
+            .overflow(Overflow::Scroll)
+            .padding_all(tokens.padding)
+            .background(tokens.background)
+            .border(crate::renderer::Border {
+                width: tokens.border_width,
+                color: tokens.border,
+            })
+            .radius_all(tokens.radius)
+            .children(self.content.clone())
+            .build()
     }
 }
 
@@ -85,6 +80,7 @@ fn desc_clone(d: &Desc) -> Desc {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::Size;
 
     #[test]
     fn scroll_area_sets_overflow_scroll() {

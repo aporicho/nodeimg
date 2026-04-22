@@ -1,6 +1,7 @@
-use crate::tree::layout::{BoxStyle, Size, TextAlign, TextLayout, TextOverflow};
+use crate::tree::layout::{Size, TextAlign, TextLayout, TextOverflow};
 use crate::ui::{self, StyleBuilder};
 use crate::widget::atoms::label::{label_style, LabelVariant};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -51,28 +52,25 @@ impl WidgetProps for TruncatedTextProps {
     }
 
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        WidgetBuild {
-            style: BoxStyle {
-                width: self.width,
-                height: Size::Auto,
-                flex_shrink: 1.0,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![ui::text_with_layout(
-                format!("{id}::text"),
-                self.text.to_string(),
-                label_style(cx.theme, self.variant, self.muted),
-                TextLayout {
-                    overflow: self.overflow,
-                    align: self.align,
-                },
-            )
+        build::root()
             .width(self.width)
             .auto_height()
             .flex_shrink(1.0)
-            .build()],
-        }
+            .child(
+                ui::text_with_layout(
+                    format!("{id}::text"),
+                    self.text.to_string(),
+                    label_style(cx.theme, self.variant, self.muted),
+                    TextLayout {
+                        overflow: self.overflow,
+                        align: self.align,
+                    },
+                )
+                .width(self.width)
+                .auto_height()
+                .flex_shrink(1.0),
+            )
+            .build()
     }
 }
 

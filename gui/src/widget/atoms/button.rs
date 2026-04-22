@@ -1,7 +1,9 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -37,8 +39,7 @@ impl WidgetProps for ButtonProps {
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::renderer::Border;
-        use crate::tree::layout::{Align, BoxStyle, Direction, Edges, Justify, Size};
-        use crate::ui::{self, DecorationBuilder, StyleBuilder};
+        use crate::tree::layout::{Align, Justify};
 
         let theme = cx.theme;
         let metrics = theme.control_metrics(self.size, self.density);
@@ -49,26 +50,20 @@ impl WidgetProps for ButtonProps {
         });
         let anatomy = Anatomy::new(id);
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Row,
-                align_items: Align::Center,
-                justify_content: Justify::Center,
-                gap: metrics.gap,
-                height: Size::Fixed(metrics.height),
-                padding: Edges::symmetric(metrics.padding_y, metrics.padding_x),
-                gestures: vec![Gesture::Tap],
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(visual.background)
-                .border(Border {
-                    width: metrics.border_width,
-                    color: visual.border.unwrap_or(theme.colors.border),
-                })
-                .radius_all(metrics.radius)
-                .build_decoration(),
-            children: vec![ui::text(
+        build::row()
+            .align_items(Align::Center)
+            .justify_content(Justify::Center)
+            .gap(metrics.gap)
+            .fixed_height(metrics.height)
+            .padding_symmetric(metrics.padding_y, metrics.padding_x)
+            .gesture(Gesture::Tap)
+            .background(visual.background)
+            .border(Border {
+                width: metrics.border_width,
+                color: visual.border.unwrap_or(theme.colors.border),
+            })
+            .radius_all(metrics.radius)
+            .child(ui::text(
                 anatomy.label(),
                 self.label.to_string(),
                 TextStyle {
@@ -76,11 +71,8 @@ impl WidgetProps for ButtonProps {
                     size: metrics.font_size,
                     ..theme.text_style_body_sm()
                 },
-            )
-            .auto_width()
-            .auto_height()
-            .build()],
-        }
+            ))
+            .build()
     }
 }
 

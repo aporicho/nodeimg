@@ -1,9 +1,10 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, TextStyle};
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{Align, BoxStyle, Direction, Size, TextAlign, TextLayout, TextOverflow};
+use crate::tree::layout::{Align, TextAlign, TextLayout, TextOverflow};
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -119,16 +120,11 @@ impl WidgetProps for PathInputProps {
                 .build(),
         );
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Column,
-                gap: (metrics.gap / 2.0).max(2.0),
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children,
-        }
+        build::column()
+            .gap((metrics.gap / 2.0).max(2.0))
+            .auto_height()
+            .children(children)
+            .build()
     }
 }
 

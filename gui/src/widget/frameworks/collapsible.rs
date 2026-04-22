@@ -1,8 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
-use crate::tree::layout::{BoxStyle, Direction};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -111,21 +111,15 @@ impl WidgetProps for CollapsibleProps {
             );
         }
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Column,
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(tokens.background)
-                .border(crate::renderer::Border {
-                    width: tokens.border_width,
-                    color: tokens.border,
-                })
-                .radius_all(tokens.radius)
-                .build_decoration(),
-            children,
-        }
+        build::column()
+            .background(tokens.background)
+            .border(crate::renderer::Border {
+                width: tokens.border_width,
+                color: tokens.border,
+            })
+            .radius_all(tokens.radius)
+            .children(children)
+            .build()
     }
 }
 

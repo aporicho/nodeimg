@@ -1,7 +1,8 @@
 use crate::renderer::TextStyle;
-use crate::tree::layout::{BoxStyle, Direction, Edges, LeafKind};
+use crate::tree::layout::LeafKind;
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -79,23 +80,17 @@ impl WidgetProps for GroupProps {
             .children(self.content.iter().cloned())
             .build();
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Column,
-                gap: tokens.title_gap,
-                padding: Edges::all(tokens.padding),
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(tokens.background)
-                .border(crate::renderer::Border {
-                    width: tokens.border_width,
-                    color: tokens.border,
-                })
-                .radius_all(tokens.radius)
-                .build_decoration(),
-            children: vec![title, content],
-        }
+        build::column()
+            .gap(tokens.title_gap)
+            .padding_all(tokens.padding)
+            .background(tokens.background)
+            .border(crate::renderer::Border {
+                width: tokens.border_width,
+                color: tokens.border,
+            })
+            .radius_all(tokens.radius)
+            .children([title, content])
+            .build()
     }
 }
 

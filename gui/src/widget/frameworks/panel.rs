@@ -1,9 +1,10 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
-use crate::tree::layout::{BoxStyle, LeafKind, Overflow, Size};
+use crate::tree::layout::{LeafKind, Overflow, Size};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -130,50 +131,38 @@ impl WidgetProps for PanelProps {
             .children(self.content.iter().map(desc_clone))
             .build();
 
-        let mut style = BoxStyle::default();
-        style.position = crate::tree::layout::Position::absolute_xy(self.rect.x, self.rect.y);
-        style.z_index = self.z_index;
-        style.width = Size::Fixed(self.rect.w);
-        style.height = if self.rect.h > 0.0 {
-            Size::Fixed(self.rect.h)
-        } else {
-            Size::Auto
-        };
-        style.direction = crate::tree::layout::Direction::Column;
-        style.overflow = Overflow::Hidden;
+        let mut root = build::column()
+            .absolute_xy(self.rect.x, self.rect.y)
+            .z_index(self.z_index)
+            .fixed_width(self.rect.w)
+            .height(if self.rect.h > 0.0 {
+                Size::Fixed(self.rect.h)
+            } else {
+                Size::Auto
+            })
+            .overflow(Overflow::Hidden)
+            .background(visual.frame_background)
+            .border(Border {
+                width: tokens.border_width,
+                color: visual.frame_border,
+            })
+            .radius_all(tokens.radius)
+            .shadow(Shadow {
+                color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.18,
+                },
+                offset: [0.0, 10.0],
+                blur: 24.0,
+                spread: 1.0,
+            })
+            .children(titlebar.into_iter().chain(std::iter::once(content_area)));
         if self.resizable {
-            style.gestures.push(Gesture::Resize);
+            root = root.gesture(Gesture::Resize);
         }
-
-        WidgetBuild {
-            style,
-            decoration: Some(
-                ui::container("_")
-                    .background(visual.frame_background)
-                    .border(Border {
-                        width: tokens.border_width,
-                        color: visual.frame_border,
-                    })
-                    .radius_all(tokens.radius)
-                    .shadow(Shadow {
-                        color: Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.18,
-                        },
-                        offset: [0.0, 10.0],
-                        blur: 24.0,
-                        spread: 1.0,
-                    })
-                    .build_decoration()
-                    .expect("panel frame decoration is set"),
-            ),
-            children: titlebar
-                .into_iter()
-                .chain(std::iter::once(content_area))
-                .collect(),
-        }
+        root.build()
     }
 }
 

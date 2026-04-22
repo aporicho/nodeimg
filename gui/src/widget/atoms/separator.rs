@@ -1,5 +1,6 @@
-use crate::tree::layout::{BoxStyle, Size};
-use crate::ui::{self, DecorationBuilder};
+use crate::tree::layout::Size;
+use crate::ui::{DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -43,18 +44,12 @@ impl WidgetProps for SeparatorProps {
             SeparatorOrientation::Vertical => (Size::Fixed(tokens.thickness), Size::Fill),
         };
 
-        WidgetBuild {
-            style: BoxStyle {
-                width,
-                height,
-                hittable: Some(false),
-                ..BoxStyle::default()
-            },
-            decoration: ui::container("_")
-                .background(tokens.color)
-                .build_decoration(),
-            children: vec![],
-        }
+        build::root()
+            .width(width)
+            .height(height)
+            .hittable(false)
+            .background(tokens.color)
+            .build()
     }
 }
 

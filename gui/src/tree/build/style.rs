@@ -3,6 +3,7 @@ use crate::tree::build::{ContainerBuilder, LeafBuilder};
 use crate::tree::layout::{
     Align, BoxStyle, Direction, Edges, Inset, Justify, Overflow, Position, Size, Transform,
 };
+use crate::widget::build::WidgetBuildBuilder;
 
 pub trait StyleBuilder: Sized {
     fn style_mut(&mut self) -> &mut BoxStyle;
@@ -153,6 +154,12 @@ impl StyleBuilder for ContainerBuilder {
 }
 
 impl StyleBuilder for LeafBuilder {
+    fn style_mut(&mut self) -> &mut BoxStyle {
+        &mut self.style
+    }
+}
+
+impl StyleBuilder for WidgetBuildBuilder {
     fn style_mut(&mut self) -> &mut BoxStyle {
         &mut self.style
     }

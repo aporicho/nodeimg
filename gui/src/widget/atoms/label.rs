@@ -1,7 +1,7 @@
 use crate::renderer::TextStyle;
 use crate::theme::Theme;
-use crate::tree::layout::{BoxStyle, Size};
 use crate::ui::{self, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -45,20 +45,15 @@ impl WidgetProps for LabelProps {
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let style = label_style(cx.theme, self.variant, self.muted);
 
-        WidgetBuild {
-            style: BoxStyle {
-                width: Size::Auto,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![
+        build::root()
+            .auto_width()
+            .auto_height()
+            .child(
                 ui::text(format!("{id}::text"), self.text.to_string(), style)
                     .auto_width()
-                    .auto_height()
-                    .build(),
-            ],
-        }
+                    .auto_height(),
+            )
+            .build()
     }
 }
 

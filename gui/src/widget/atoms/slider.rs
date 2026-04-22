@@ -1,7 +1,9 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -39,8 +41,7 @@ impl WidgetProps for SliderProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        use crate::tree::layout::{Align, BoxStyle, Direction, Size};
-        use crate::ui::{self, DecorationBuilder, StyleBuilder};
+        use crate::tree::layout::Align;
 
         let theme = cx.theme;
         let _metrics = theme.control_metrics(self.size, self.density);
@@ -133,17 +134,12 @@ impl WidgetProps for SliderProps {
             .build(),
         ]);
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Row,
-                gap: tokens.gap,
-                align_items: Align::Center,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children,
-        }
+        build::row()
+            .gap(tokens.gap)
+            .align_items(Align::Center)
+            .auto_height()
+            .children(children)
+            .build()
     }
 }
 

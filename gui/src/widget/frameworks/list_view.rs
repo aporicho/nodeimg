@@ -1,6 +1,6 @@
-use crate::tree::layout::{BoxStyle, Size};
 use crate::tree::Desc;
 use crate::ui::{self, StyleBuilder};
+use crate::widget::build;
 use crate::widget::frameworks::scroll_area::ScrollAreaProps;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -57,27 +57,25 @@ impl WidgetProps for ListViewProps {
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let list_tokens = cx.theme.components.list_view;
 
-        WidgetBuild {
-            style: BoxStyle {
-                width: Size::Fill,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![ui::widget(
-                Cow::Owned(format!("{id}::scroll")),
-                ScrollAreaProps {
-                    height: self.height,
-                    content: vec![ui::column(format!("{id}::items"))
-                        .fill_width()
-                        .auto_height()
-                        .gap(list_tokens.item_gap)
-                        .children(self.items.iter().cloned())
-                        .build()],
-                },
+        build::root()
+            .fill_width()
+            .auto_height()
+            .child(
+                ui::widget(
+                    Cow::Owned(format!("{id}::scroll")),
+                    ScrollAreaProps {
+                        height: self.height,
+                        content: vec![ui::column(format!("{id}::items"))
+                            .fill_width()
+                            .auto_height()
+                            .gap(list_tokens.item_gap)
+                            .children(self.items.iter().cloned())
+                            .build()],
+                    },
+                )
+                .build(),
             )
-            .build()],
-        }
+            .build()
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
-use crate::tree::layout::{BoxStyle, Size};
-use crate::ui::{self, DecorationBuilder};
+use crate::ui::{DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -37,25 +37,15 @@ impl WidgetProps for DotProps {
     }
 
     fn build(&self, _id: &str, _cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        WidgetBuild {
-            style: BoxStyle {
-                width: Size::Fixed(self.diameter),
-                height: Size::Fixed(self.diameter),
-                hittable: Some(self.hittable),
-                gestures: self.gestures.clone(),
-                ..BoxStyle::default()
-            },
-            decoration: {
-                let mut decoration = ui::container("_")
-                    .background(self.fill)
-                    .radius_all(self.diameter * 0.5)
-                    .build_decoration()
-                    .expect("dot decoration is set");
-                decoration.border = self.border;
-                Some(decoration)
-            },
-            children: Vec::new(),
-        }
+        build::root()
+            .fixed_width(self.diameter)
+            .fixed_height(self.diameter)
+            .hittable(self.hittable)
+            .map_style(|style| style.gestures = self.gestures.clone())
+            .background(self.fill)
+            .radius_all(self.diameter * 0.5)
+            .map_decoration(|decoration| decoration.border = self.border)
+            .build()
     }
 }
 

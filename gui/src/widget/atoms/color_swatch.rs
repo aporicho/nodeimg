@@ -1,8 +1,9 @@
 use crate::renderer::{Border, Color, TextStyle};
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{Align, BoxStyle, Direction, Size, TextAlign, TextLayout, TextOverflow};
+use crate::tree::layout::{Align, Size, TextAlign, TextLayout, TextOverflow};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -87,17 +88,12 @@ impl WidgetProps for ColorSwatchProps {
             ));
         }
 
-        WidgetBuild {
-            style: BoxStyle {
-                height: Size::Fixed(metrics.height),
-                direction: Direction::Row,
-                align_items: Align::Center,
-                gap: metrics.gap,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children,
-        }
+        build::row()
+            .fixed_height(metrics.height)
+            .align_items(Align::Center)
+            .gap(metrics.gap)
+            .children(children)
+            .build()
     }
 }
 

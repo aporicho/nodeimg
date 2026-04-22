@@ -1,7 +1,8 @@
 use crate::interaction::WidgetVisualState;
 use crate::renderer::{Border, Color, Shadow};
 use crate::tree::layout::BoxStyle;
-use crate::ui::{self, DecorationBuilder};
+use crate::ui::{DecorationBuilder, StyleBuilder};
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -63,23 +64,20 @@ impl WidgetProps for SurfaceProps {
         };
         let fallback = theme.button_visual(visual);
 
-        WidgetBuild {
-            style: self.style.clone(),
-            decoration: ui::container("_")
-                .background(self.background.unwrap_or(fallback.background))
-                .border(
-                    self.border.unwrap_or(Border {
-                        width: theme
-                            .control_metrics(Default::default(), Default::default())
-                            .border_width,
-                        color: fallback.border.unwrap_or(theme.colors.border),
-                    }),
-                )
-                .radius(self.radius)
-                .map_decoration(|decoration| decoration.shadow = self.shadow)
-                .build_decoration(),
-            children: Vec::new(),
-        }
+        build::root()
+            .style(self.style.clone())
+            .background(self.background.unwrap_or(fallback.background))
+            .border(
+                self.border.unwrap_or(Border {
+                    width: theme
+                        .control_metrics(Default::default(), Default::default())
+                        .border_width,
+                    color: fallback.border.unwrap_or(theme.colors.border),
+                }),
+            )
+            .radius(self.radius)
+            .map_decoration(|decoration| decoration.shadow = self.shadow)
+            .build()
     }
 }
 

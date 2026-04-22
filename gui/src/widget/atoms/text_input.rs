@@ -1,6 +1,8 @@
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -36,8 +38,7 @@ impl WidgetProps for TextInputProps {
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::renderer::Border;
-        use crate::tree::layout::{Align, BoxStyle, Direction, Size};
-        use crate::ui::{self, DecorationBuilder, StyleBuilder};
+        use crate::tree::layout::Align;
 
         let theme = cx.theme;
         let tokens = theme.text_field_metrics(self.size, self.density);
@@ -93,16 +94,11 @@ impl WidgetProps for TextInputProps {
                 .build(),
         );
 
-        WidgetBuild {
-            style: BoxStyle {
-                direction: Direction::Column,
-                gap: tokens.gap,
-                height: Size::Auto,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children,
-        }
+        build::column()
+            .gap(tokens.gap)
+            .auto_height()
+            .children(children)
+            .build()
     }
 }
 
