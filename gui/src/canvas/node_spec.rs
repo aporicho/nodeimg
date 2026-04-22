@@ -1,9 +1,9 @@
 use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
+use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
 use crate::renderer::Color;
 use crate::theme::Theme;
 use crate::widget::mapping::ParamControlSpec;
-use crate::widget::param_control::ParamControlMetrics;
 
 #[derive(Debug, Clone)]
 pub(crate) struct NodeRenderSpec {
@@ -61,51 +61,6 @@ pub(crate) struct NodePortSpec {
     pub name: String,
     pub side: CanvasPortSide,
     pub connection_state: CanvasPortConnectionState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct NodeCardMetrics {
-    pub card_width: f32,
-    pub pin_dot_diameter: f32,
-    pub title_dot_diameter: f32,
-    pub pin_label_width: f32,
-    pub title_label_width: f32,
-    pub param_row_height: f32,
-    pub card_padding: f32,
-    pub column_gap: f32,
-    pub row_gap: f32,
-    pub pin_row_gap: f32,
-    pub pin_label_gap: f32,
-    pub title_label_gap: f32,
-    pub param_label_gap: f32,
-    pub title_lift: f32,
-    pub card_radius: f32,
-    pub row_radius: f32,
-    pub control: ParamControlMetrics,
-}
-
-impl NodeCardMetrics {
-    pub(crate) fn from_theme(theme: &Theme) -> Self {
-        Self {
-            card_width: 304.0,
-            pin_dot_diameter: 10.0,
-            title_dot_diameter: 6.0,
-            pin_label_width: 78.0,
-            title_label_width: 180.0,
-            param_row_height: 36.0,
-            card_padding: 24.0,
-            column_gap: 24.0,
-            row_gap: 12.0,
-            pin_row_gap: 4.0,
-            pin_label_gap: 6.0,
-            title_label_gap: 5.0,
-            param_label_gap: 10.0,
-            title_lift: 20.0,
-            card_radius: 8.0,
-            row_radius: 0.0,
-            control: ParamControlMetrics::from_theme(theme),
-        }
-    }
 }
 
 pub(crate) fn node_render_spec(

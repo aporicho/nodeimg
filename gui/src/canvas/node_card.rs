@@ -1,8 +1,8 @@
 use super::{CanvasPortConnectionState, CanvasPortSide};
 use crate::canvas::node_spec::{
-    node_render_spec, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec, NodePortSpec,
-    NodeRenderSpec,
+    node_render_spec, NodeBodyRowSpec, NodeHeaderSpec, NodePortSpec, NodeRenderSpec,
 };
+use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
