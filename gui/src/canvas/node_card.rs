@@ -18,14 +18,18 @@ use std::borrow::Cow;
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct NodeCardMetrics {
     card_width: f32,
-    pin_diameter: f32,
+    pin_dot_diameter: f32,
+    title_dot_diameter: f32,
     pin_label_width: f32,
     title_label_width: f32,
     param_row_height: f32,
     card_padding: f32,
     column_gap: f32,
     row_gap: f32,
-    label_gap: f32,
+    pin_row_gap: f32,
+    pin_label_gap: f32,
+    title_label_gap: f32,
+    param_label_gap: f32,
     title_lift: f32,
     card_radius: f32,
     row_radius: f32,
@@ -36,16 +40,20 @@ impl NodeCardMetrics {
     fn from_theme(_theme: &Theme) -> Self {
         Self {
             card_width: 304.0,
-            pin_diameter: 32.0,
+            pin_dot_diameter: 10.0,
+            title_dot_diameter: 6.0,
             pin_label_width: 78.0,
-            title_label_width: 262.0,
+            title_label_width: 180.0,
             param_row_height: 36.0,
             card_padding: 24.0,
             column_gap: 24.0,
             row_gap: 12.0,
-            label_gap: 10.0,
-            title_lift: 37.0,
-            card_radius: 24.0,
+            pin_row_gap: 4.0,
+            pin_label_gap: 6.0,
+            title_label_gap: 5.0,
+            param_label_gap: 10.0,
+            title_lift: 20.0,
+            card_radius: 8.0,
             row_radius: 0.0,
             control: CanvasParamControlMetrics::from_theme(_theme),
         }
@@ -131,7 +139,7 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                         direction: Direction::Row,
                         justify_content: Justify::Start,
                         align_items: Align::Center,
-                        gap: metrics.label_gap,
+                        gap: metrics.title_label_gap,
                         hittable: Some(false),
                         ..BoxStyle::default()
                     },
@@ -140,12 +148,12 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
                         Desc::Leaf {
                             id: Cow::Owned(label_dot_id),
                             style: BoxStyle {
-                                width: Size::Fixed(metrics.pin_diameter),
-                                height: Size::Fixed(metrics.pin_diameter),
+                                width: Size::Fixed(metrics.title_dot_diameter),
+                                height: Size::Fixed(metrics.title_dot_diameter),
                                 ..BoxStyle::default()
                             },
                             kind: LeafKind::Circle {
-                                radius: metrics.pin_diameter * 0.5,
+                                radius: metrics.title_dot_diameter * 0.5,
                                 fill: Some(category_color(&view.category)),
                                 stroke: None,
                             },
@@ -217,7 +225,7 @@ fn pin_column(
             direction: Direction::Column,
             justify_content: Justify::Start,
             align_items: Align::Start,
-            gap: metrics.row_gap,
+            gap: metrics.pin_row_gap,
             overflow: Overflow::Hidden,
             hittable: Some(false),
             ..BoxStyle::default()
@@ -252,7 +260,7 @@ fn pin_row(
             direction: Direction::Row,
             justify_content: Justify::Start,
             align_items: Align::Center,
-            gap: metrics.label_gap,
+            gap: metrics.pin_label_gap,
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
@@ -266,14 +274,14 @@ fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> De
     Desc::Leaf {
         id: Cow::Owned(port.stable_id.clone()),
         style: BoxStyle {
-            width: Size::Fixed(metrics.pin_diameter),
-            height: Size::Fixed(metrics.pin_diameter),
+            width: Size::Fixed(metrics.pin_dot_diameter),
+            height: Size::Fixed(metrics.pin_dot_diameter),
             hittable: Some(true),
             gestures: vec![Gesture::Tap, Gesture::Drag],
             ..BoxStyle::default()
         },
         kind: LeafKind::Circle {
-            radius: metrics.pin_diameter * 0.5,
+            radius: metrics.pin_dot_diameter * 0.5,
             fill: Some(port_state_color(port, theme)),
             stroke: Some(Border {
                 width: match port.connection_state {
@@ -416,7 +424,7 @@ fn body_row_style(metrics: NodeCardMetrics) -> BoxStyle {
         direction: Direction::Row,
         justify_content: Justify::Start,
         align_items: Align::Center,
-        gap: metrics.label_gap,
+        gap: metrics.param_label_gap,
         ..BoxStyle::default()
     }
 }
@@ -758,7 +766,7 @@ mod tests {
         assert_eq!(input_style.width, Size::Auto);
         assert_eq!(input_style.height, Size::Auto);
         assert_eq!(input_style.direction, Direction::Column);
-        assert_eq!(input_style.gap, metrics.row_gap);
+        assert_eq!(input_style.gap, metrics.pin_row_gap);
         assert_eq!(input_style.overflow, Overflow::Hidden);
 
         let Desc::Container {
@@ -815,9 +823,23 @@ mod tests {
         );
         assert_eq!(style.direction, Direction::Row);
         assert_eq!(style.align_items, Align::Center);
-        assert_eq!(style.gap, metrics.label_gap);
+        assert_eq!(style.gap, metrics.title_label_gap);
         assert_eq!(children[0].id(), "canvas_node::engine_node::7::label_dot");
         assert_eq!(children[1].id(), "canvas_node::engine_node::7::label_text");
+        let Desc::Leaf {
+            style: dot_style,
+            kind: dot_kind,
+            ..
+        } = &children[0]
+        else {
+            panic!("title dot should be a leaf");
+        };
+        assert_eq!(dot_style.width, Size::Fixed(metrics.title_dot_diameter));
+        assert_eq!(dot_style.height, Size::Fixed(metrics.title_dot_diameter));
+        assert!(matches!(
+            dot_kind,
+            LeafKind::Circle { radius, .. } if *radius == metrics.title_dot_diameter * 0.5
+        ));
     }
 
     #[test]
@@ -842,7 +864,7 @@ mod tests {
         };
         assert_eq!(input_style.direction, Direction::Row);
         assert_eq!(input_style.align_items, Align::Center);
-        assert_eq!(input_style.gap, metrics.label_gap);
+        assert_eq!(input_style.gap, metrics.pin_label_gap);
         assert_eq!(
             input_children[0].id(),
             "canvas_node::engine_node::7::port::input::prompt"
@@ -918,7 +940,7 @@ mod tests {
         assert_eq!(style.height, Size::Fixed(metrics.param_row_height));
         assert_eq!(style.direction, Direction::Row);
         assert_eq!(style.align_items, Align::Center);
-        assert_eq!(style.gap, metrics.label_gap);
+        assert_eq!(style.gap, metrics.param_label_gap);
     }
 
     fn node_view_with_ports() -> CanvasNodeView {
@@ -977,11 +999,11 @@ mod tests {
         let Desc::Leaf { style, kind, .. } = desc else {
             panic!("pin dot should be a leaf");
         };
-        assert_eq!(style.width, Size::Fixed(metrics.pin_diameter));
-        assert_eq!(style.height, Size::Fixed(metrics.pin_diameter));
+        assert_eq!(style.width, Size::Fixed(metrics.pin_dot_diameter));
+        assert_eq!(style.height, Size::Fixed(metrics.pin_dot_diameter));
         assert!(matches!(
             kind,
-            LeafKind::Circle { radius, .. } if *radius == metrics.pin_diameter * 0.5
+            LeafKind::Circle { radius, .. } if *radius == metrics.pin_dot_diameter * 0.5
         ));
     }
 

@@ -7,7 +7,7 @@ use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
 use crate::interaction::InteractionState;
-use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
+use crate::renderer::{Border, Color, Point, RectStyle, Renderer, Shadow, TextStyle};
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
@@ -61,25 +61,23 @@ fn paint_node(
     let clip_radius = node
         .decoration
         .as_ref()
-        .map(|dec| dec.radius[0])
+        .map(|dec| dec.radius[0] * tf.scale)
         .unwrap_or(0.0);
     let should_clip_children = matches!(node.style.overflow, Overflow::Hidden | Overflow::Scroll);
 
     if let Some((style, text_color)) =
         paint_widget_visual_override(tree, node_id, interaction, theme)
     {
-        renderer.draw_rect(screen_rect, &style);
+        renderer.draw_rect(screen_rect, &scaled_rect_style(&style, tf.scale));
         child_text_color = Some(text_color);
     } else if let Some(dec) = &node.decoration {
-        renderer.draw_rect(
-            screen_rect,
-            &RectStyle {
-                color: dec.background.unwrap_or(Color::TRANSPARENT),
-                border: dec.border,
-                radius: dec.radius,
-                shadow: dec.shadow,
-            },
-        );
+        let style = RectStyle {
+            color: dec.background.unwrap_or(Color::TRANSPARENT),
+            border: dec.border,
+            radius: dec.radius,
+            shadow: dec.shadow,
+        };
+        renderer.draw_rect(screen_rect, &scaled_rect_style(&style, tf.scale));
     }
 
     if should_clip_children {
@@ -230,4 +228,58 @@ fn with_inherited_text_color(mut style: TextStyle, inherited: Option<Color>) -> 
 fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
     style.size *= scale;
     style
+}
+
+fn scaled_rect_style(style: &RectStyle, scale: f32) -> RectStyle {
+    RectStyle {
+        color: style.color,
+        border: style.border.map(|border| Border {
+            width: border.width * scale,
+            color: border.color,
+        }),
+        radius: style.radius.map(|radius| radius * scale),
+        shadow: style.shadow.map(|shadow| scaled_shadow(shadow, scale)),
+    }
+}
+
+fn scaled_shadow(shadow: Shadow, scale: f32) -> Shadow {
+    Shadow {
+        color: shadow.color,
+        offset: [shadow.offset[0] * scale, shadow.offset[1] * scale],
+        blur: shadow.blur * scale,
+        spread: shadow.spread * scale,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::{Border, Color, Shadow};
+
+    #[test]
+    fn scaled_rect_style_scales_radius_border_and_shadow_metrics() {
+        let style = RectStyle {
+            color: Color::WHITE,
+            border: Some(Border {
+                width: 1.5,
+                color: Color::BLACK,
+            }),
+            radius: [2.0, 4.0, 6.0, 8.0],
+            shadow: Some(Shadow {
+                color: Color::BLACK,
+                offset: [1.0, 2.0],
+                blur: 3.0,
+                spread: 4.0,
+            }),
+        };
+
+        let scaled = scaled_rect_style(&style, 2.0);
+
+        assert_eq!(scaled.radius, [4.0, 8.0, 12.0, 16.0]);
+        assert_eq!(scaled.border.unwrap().width, 3.0);
+        let shadow = scaled.shadow.unwrap();
+        assert_eq!(shadow.offset, [2.0, 4.0]);
+        assert_eq!(shadow.blur, 6.0);
+        assert_eq!(shadow.spread, 8.0);
+    }
 }
