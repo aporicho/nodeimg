@@ -19,5 +19,5 @@ pub use port::{
     canvas_port_event_target_id, canvas_port_group_stable_id, canvas_port_group_trigger_id,
     canvas_port_stable_id, parse_canvas_port_group_trigger_id, parse_canvas_port_id,
     CanvasPendingConnectionView, CanvasPortConnectionState, CanvasPortGroupView, CanvasPortRef,
-    CanvasPortSide, CanvasPortView,
+    CanvasPortSide,
 };

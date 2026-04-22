@@ -4,16 +4,6 @@ pub enum CanvasPortSide {
     Output,
 }
 
-#[derive(Clone, Debug)]
-pub struct CanvasPortView {
-    pub name: String,
-    pub stable_id: String,
-    pub side: CanvasPortSide,
-    pub index: usize,
-    pub count: usize,
-    pub connection_state: CanvasPortConnectionState,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CanvasPortGroupView {
     pub open: bool,
