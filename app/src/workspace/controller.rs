@@ -92,19 +92,23 @@ impl WorkspaceController {
     pub(crate) fn canvas_node_views(&self, gui: &mut Context) -> Vec<CanvasNodeView> {
         let mut identities = engine_adapter::canvas_node_identities(&self.engine);
         identities.push(showcase_node::showcase_node_identity());
+        identities.push(showcase_node::solo_node_identity());
         let layouts = gui.sync_canvas_node_layouts(&identities);
-        let showcase_layout = layouts
+        let showcase_layouts = layouts
             .iter()
-            .find(|layout| showcase_node::is_showcase_node(&layout.owner_id))
-            .cloned();
+            .filter(|layout| showcase_node::is_showcase_node(&layout.owner_id))
+            .cloned()
+            .collect::<Vec<_>>();
         let engine_layouts = layouts
             .into_iter()
             .filter(|layout| !showcase_node::is_showcase_node(&layout.owner_id))
             .collect::<Vec<_>>();
         let mut views = engine_adapter::canvas_node_views(&self.engine, engine_layouts);
-        if let Some(layout) = showcase_layout {
-            views.push(showcase_node::showcase_node_view(layout));
-        }
+        views.extend(
+            showcase_layouts
+                .into_iter()
+                .filter_map(showcase_node::showcase_view_for_layout),
+        );
         let pending_connection = gui.pending_canvas_connection();
         let hovered_port_id = gui.hovered_canvas_port_id();
         for view in &mut views {
@@ -521,6 +525,9 @@ mod tests {
         assert!(views
             .iter()
             .any(|view| view.owner_id == showcase_node::SHOWCASE_OWNER_ID));
+        assert!(views
+            .iter()
+            .any(|view| view.owner_id == showcase_node::SOLO_OWNER_ID));
     }
 
     #[test]

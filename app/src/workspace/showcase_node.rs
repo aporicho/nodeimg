@@ -7,6 +7,7 @@ use gui::canvas::{
 use gui::renderer::Rect;
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
+pub(crate) const SOLO_OWNER_ID: &str = "showcase_node::solo_control";
 
 pub(crate) fn showcase_node_identity() -> CanvasNodeIdentity {
     CanvasNodeIdentity {
@@ -20,8 +21,28 @@ pub(crate) fn showcase_node_identity() -> CanvasNodeIdentity {
     }
 }
 
+pub(crate) fn solo_node_identity() -> CanvasNodeIdentity {
+    CanvasNodeIdentity {
+        owner_id: SOLO_OWNER_ID.to_string(),
+        default_rect: Rect {
+            x: -1040.0,
+            y: 0.0,
+            w: 304.0,
+            h: 132.0,
+        },
+    }
+}
+
 pub(crate) fn is_showcase_node(owner_id: &str) -> bool {
-    owner_id == SHOWCASE_OWNER_ID
+    owner_id == SHOWCASE_OWNER_ID || owner_id == SOLO_OWNER_ID
+}
+
+pub(crate) fn showcase_view_for_layout(layout: CanvasNodeLayout) -> Option<CanvasNodeView> {
+    match layout.owner_id.as_str() {
+        SHOWCASE_OWNER_ID => Some(showcase_node_view(layout)),
+        SOLO_OWNER_ID => Some(solo_node_view(layout)),
+        _ => None,
+    }
 }
 
 pub(crate) fn showcase_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
@@ -110,23 +131,54 @@ pub(crate) fn showcase_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
         input_group: CanvasPortGroupView { open: true },
         output_group: CanvasPortGroupView { open: true },
         inputs: showcase_ports(
+            SHOWCASE_OWNER_ID,
             CanvasPortSide::Input,
             &["image", "mask", "prompt", "strength", "seed", "enabled"],
         ),
-        outputs: showcase_ports(CanvasPortSide::Output, &["image", "preview", "metadata"]),
+        outputs: showcase_ports(
+            SHOWCASE_OWNER_ID,
+            CanvasPortSide::Output,
+            &["image", "preview", "metadata"],
+        ),
         selected: false,
         layout,
     }
 }
 
-fn showcase_ports(side: CanvasPortSide, names: &[&str]) -> Vec<CanvasPortView> {
+pub(crate) fn solo_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
+    CanvasNodeView {
+        owner_id: SOLO_OWNER_ID.to_string(),
+        title: "Solo Control".to_string(),
+        subtitle: "single control tuning".to_string(),
+        category: "ui/showcase".to_string(),
+        params: vec![CanvasNodeParamView {
+            name: "Strength".to_string(),
+            kind: "float".to_string(),
+            value: "0.65".to_string(),
+            control: CanvasNodeParamControl::Slider {
+                value: 0.65,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+            },
+        }],
+        input_group: CanvasPortGroupView { open: true },
+        output_group: CanvasPortGroupView { open: true },
+        inputs: showcase_ports(SOLO_OWNER_ID, CanvasPortSide::Input, &["in"]),
+        outputs: showcase_ports(SOLO_OWNER_ID, CanvasPortSide::Output, &["out"]),
+        selected: false,
+        layout,
+    }
+}
+
+fn showcase_ports(owner_id: &str, side: CanvasPortSide, names: &[&str]) -> Vec<CanvasPortView> {
     let count = names.len();
     names
         .iter()
         .enumerate()
         .map(|(index, name)| CanvasPortView {
             name: (*name).to_string(),
-            stable_id: canvas_port_stable_id(SHOWCASE_OWNER_ID, side, name),
+            stable_id: canvas_port_stable_id(owner_id, side, name),
             side,
             index,
             count,
@@ -181,5 +233,25 @@ mod tests {
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::FilePath { .. })));
+    }
+
+    #[test]
+    fn solo_node_contains_one_tunable_control() {
+        let identity = solo_node_identity();
+        let view = solo_node_view(CanvasNodeLayout {
+            owner_id: identity.owner_id,
+            rect: identity.default_rect,
+            z_index: 0,
+            collapsed: false,
+        });
+
+        assert_eq!(view.owner_id, SOLO_OWNER_ID);
+        assert_eq!(view.params.len(), 1);
+        assert!(matches!(
+            view.params[0].control,
+            CanvasNodeParamControl::Slider { .. }
+        ));
+        assert_eq!(view.inputs.len(), 1);
+        assert_eq!(view.outputs.len(), 1);
     }
 }
