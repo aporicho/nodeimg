@@ -1,10 +1,12 @@
 use super::{
-    canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView,
-    CanvasPortSide, CanvasPortView,
+    CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView, CanvasPortSide,
+    CanvasPortView,
 };
-use crate::canvas::param_control::{
-    param_control, CanvasNodeParamControl, CanvasParamControlMetrics,
+use crate::canvas::node_spec::{
+    node_render_spec, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec, NodePortSpec,
+    NodeRenderSpec,
 };
+use crate::canvas::param_control::{param_control, CanvasNodeParamControl};
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
@@ -12,51 +14,6 @@ use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOv
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use std::borrow::Cow;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct NodeCardMetrics {
-    card_width: f32,
-    pin_dot_diameter: f32,
-    title_dot_diameter: f32,
-    pin_label_width: f32,
-    title_label_width: f32,
-    param_row_height: f32,
-    card_padding: f32,
-    column_gap: f32,
-    row_gap: f32,
-    pin_row_gap: f32,
-    pin_label_gap: f32,
-    title_label_gap: f32,
-    param_label_gap: f32,
-    title_lift: f32,
-    card_radius: f32,
-    row_radius: f32,
-    control: CanvasParamControlMetrics,
-}
-
-impl NodeCardMetrics {
-    fn from_theme(_theme: &Theme) -> Self {
-        Self {
-            card_width: 304.0,
-            pin_dot_diameter: 10.0,
-            title_dot_diameter: 6.0,
-            pin_label_width: 78.0,
-            title_label_width: 180.0,
-            param_row_height: 36.0,
-            card_padding: 24.0,
-            column_gap: 24.0,
-            row_gap: 12.0,
-            pin_row_gap: 4.0,
-            pin_label_gap: 6.0,
-            title_label_gap: 5.0,
-            param_label_gap: 10.0,
-            title_lift: 20.0,
-            card_radius: 8.0,
-            row_radius: 0.0,
-            control: CanvasParamControlMetrics::from_theme(_theme),
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeView {
@@ -82,23 +39,21 @@ pub struct CanvasNodeParamView {
 }
 
 pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
-    let metrics = NodeCardMetrics::from_theme(theme);
-    let card_id = canvas_node_stable_id(&view.owner_id);
-    let label_id = format!("{card_id}::label");
-    let label_dot_id = format!("{card_id}::label_dot");
-    let label_text_id = format!("{card_id}::label_text");
-    let card_body_id = format!("{card_id}::card");
-    let body_id = format!("{card_id}::body");
+    let spec = node_render_spec(view, theme);
+    node_card_from_spec(&spec, theme)
+}
 
+pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc {
+    let metrics = spec.metrics;
     let children = vec![
         pin_column(
-            &view.owner_id,
+            &spec.input_column_id,
             CanvasPortSide::Input,
-            &view.inputs,
+            &spec.inputs,
             theme,
             metrics,
         ),
-        ui::column(card_body_id)
+        ui::column(Cow::Owned(spec.card_id.clone()))
             .relative()
             .fixed_width(metrics.card_width)
             .auto_height()
@@ -110,8 +65,8 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             .hittable(true)
             .background(theme.colors.surface)
             .border(Border {
-                width: if view.selected { 2.0 } else { 1.0 },
-                color: if view.selected {
+                width: if spec.selected { 2.0 } else { 1.0 },
+                color: if spec.selected {
                     theme.colors.text
                 } else {
                     theme.colors.border
@@ -119,55 +74,22 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
             })
             .radius_all(metrics.card_radius)
             .children(vec![
-                node_body(&body_id, view, theme, metrics),
-                ui::row(label_id)
-                    .absolute_xy(0.0, -metrics.title_lift)
-                    .auto_width()
-                    .auto_height()
-                    .justify_content(Justify::Start)
-                    .align_items(Align::Center)
-                    .gap(metrics.title_label_gap)
-                    .hittable(false)
-                    .children(vec![
-                        ui::leaf(
-                            label_dot_id,
-                            LeafKind::Circle {
-                                radius: metrics.title_dot_diameter * 0.5,
-                                fill: Some(category_color(&view.category)),
-                                stroke: None,
-                            },
-                        )
-                        .fixed_width(metrics.title_dot_diameter)
-                        .fixed_height(metrics.title_dot_diameter)
-                        .build(),
-                        ui::leaf(
-                            label_text_id,
-                            LeafKind::Text {
-                                content: view.title.clone(),
-                                style: theme.text_style_label_sm(),
-                                layout: ellipsis_text_layout(),
-                            },
-                        )
-                        .fixed_width(metrics.title_label_width)
-                        .auto_height()
-                        .flex_shrink(1.0)
-                        .build(),
-                    ])
-                    .build(),
+                node_body(&spec.body, theme, metrics),
+                node_header(&spec.header, theme, metrics),
             ])
             .build(),
         pin_column(
-            &view.owner_id,
+            &spec.output_column_id,
             CanvasPortSide::Output,
-            &view.outputs,
+            &spec.outputs,
             theme,
             metrics,
         ),
     ];
 
-    ui::row(card_id)
-        .absolute_xy(view.layout.rect.x, view.layout.rect.y)
-        .z_index(view.layout.z_index)
+    ui::row(Cow::Owned(spec.id.clone()))
+        .absolute_xy(spec.layout.rect.x, spec.layout.rect.y)
+        .z_index(spec.layout.z_index)
         .auto_width()
         .auto_height()
         .padding_all(0.0)
@@ -183,35 +105,32 @@ pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
 }
 
 fn pin_column(
-    owner_id: &str,
+    id: &str,
     side: CanvasPortSide,
-    ports: &[CanvasPortView],
+    ports: &[NodePortSpec],
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Desc {
-    ui::column(format!(
-        "canvas_node::{owner_id}::pin_column::{}",
-        side.as_str()
-    ))
-    .auto_width()
-    .auto_height()
-    .justify_content(Justify::Start)
-    .align_items(Align::Start)
-    .gap(metrics.pin_row_gap)
-    .overflow(Overflow::Hidden)
-    .hittable(false)
-    .children(
-        ports
-            .iter()
-            .map(|port| pin_row(side, port, theme, metrics))
-            .collect::<Vec<_>>(),
-    )
-    .build()
+    ui::column(id.to_string())
+        .auto_width()
+        .auto_height()
+        .justify_content(Justify::Start)
+        .align_items(Align::Start)
+        .gap(metrics.pin_row_gap)
+        .overflow(Overflow::Hidden)
+        .hittable(false)
+        .children(
+            ports
+                .iter()
+                .map(|port| pin_row(side, port, theme, metrics))
+                .collect::<Vec<_>>(),
+        )
+        .build()
 }
 
 fn pin_row(
     side: CanvasPortSide,
-    port: &CanvasPortView,
+    port: &NodePortSpec,
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Desc {
@@ -223,7 +142,7 @@ fn pin_row(
         children.swap(0, 1);
     }
 
-    ui::row(format!("{}::pin_item", port.stable_id))
+    ui::row(Cow::Owned(port.row_id.clone()))
         .auto_width()
         .auto_height()
         .justify_content(Justify::Start)
@@ -236,9 +155,9 @@ fn pin_row(
         .build()
 }
 
-fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
+fn pin_dot(port: &NodePortSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     ui::leaf(
-        Cow::Owned(port.stable_id.clone()),
+        Cow::Owned(port.dot_id.clone()),
         LeafKind::Circle {
             radius: metrics.pin_dot_diameter * 0.5,
             fill: Some(port_state_color(port, theme)),
@@ -263,9 +182,9 @@ fn pin_dot(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> De
     .build()
 }
 
-fn pin_label(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
+fn pin_label(port: &NodePortSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     ui::leaf(
-        Cow::Owned(format!("{}::pin_label", port.stable_id)),
+        Cow::Owned(port.label_id.clone()),
         LeafKind::Text {
             content: port.name.clone(),
             style: theme.text_style_label_sm(),
@@ -278,87 +197,118 @@ fn pin_label(port: &CanvasPortView, theme: &Theme, metrics: NodeCardMetrics) -> 
     .build()
 }
 
-fn node_body(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
-    let mut children = Vec::new();
-    if view.params.is_empty() {
-        children.push(summary_row(id, view, theme, metrics));
-    } else {
-        children.extend(
-            view.params
-                .iter()
-                .enumerate()
-                .map(|(index, param)| param_row(id, index, param, theme, metrics)),
-        );
-    }
-
-    ui::column(id.to_string())
+fn node_body(
+    body: &crate::canvas::node_spec::NodeBodySpec,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+) -> Desc {
+    ui::column(Cow::Owned(body.id.clone()))
         .fill_width()
         .auto_height()
         .gap(metrics.row_gap)
-        .children(children)
-        .build()
-}
-
-fn summary_row(id: &str, view: &CanvasNodeView, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
-    body_row(format!("{id}::summary"), theme, metrics)
-        .child(
-            ui::leaf(
-                format!("{id}::summary::text"),
-                LeafKind::Text {
-                    content: view.subtitle.clone(),
-                    style: theme.text_style_label_sm(),
-                    layout: ellipsis_text_layout(),
-                },
-            )
-            .fill_width()
-            .auto_height()
-            .flex_shrink(1.0),
+        .children(
+            body.rows
+                .iter()
+                .map(|row| body_row_from_spec(row, theme, metrics))
+                .collect::<Vec<_>>(),
         )
         .build()
 }
 
-fn param_row(
-    id: &str,
-    index: usize,
-    param: &CanvasNodeParamView,
-    theme: &Theme,
-    metrics: NodeCardMetrics,
-) -> Desc {
-    body_row(format!("{id}::param::{index}"), theme, metrics)
+fn body_row_from_spec(row: &NodeBodyRowSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
+    match row {
+        NodeBodyRowSpec::Summary { id, text_id, text } => body_row(id.clone(), theme, metrics)
+            .child(
+                ui::leaf(
+                    text_id.clone(),
+                    LeafKind::Text {
+                        content: text.clone(),
+                        style: theme.text_style_label_sm(),
+                        layout: ellipsis_text_layout(),
+                    },
+                )
+                .fill_width()
+                .auto_height()
+                .flex_shrink(1.0),
+            )
+            .build(),
+        NodeBodyRowSpec::Param {
+            id,
+            name_id,
+            value_id,
+            control_id,
+            name,
+            value,
+            control,
+        } => body_row(id.clone(), theme, metrics)
+            .children(vec![
+                ui::leaf(
+                    name_id.clone(),
+                    LeafKind::Text {
+                        content: name.clone(),
+                        style: theme.text_style_label_sm(),
+                        layout: ellipsis_text_layout(),
+                    },
+                )
+                .fill_width()
+                .auto_height()
+                .flex_shrink(1.0)
+                .build(),
+                ui::leaf(
+                    value_id.clone(),
+                    LeafKind::Text {
+                        content: value.clone(),
+                        style: theme.text_style_label_sm(),
+                        layout: ellipsis_text_layout(),
+                    },
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+                param_control(
+                    Cow::Owned(control_id.clone()),
+                    control,
+                    theme,
+                    metrics.control,
+                ),
+            ])
+            .build(),
+    }
+}
+
+fn node_header(header: &NodeHeaderSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
+    ui::row(Cow::Owned(header.row_id.clone()))
+        .absolute_xy(0.0, -metrics.title_lift)
+        .auto_width()
+        .auto_height()
+        .justify_content(Justify::Start)
+        .align_items(Align::Center)
+        .gap(metrics.title_label_gap)
+        .hittable(false)
         .children(vec![
             ui::leaf(
-                format!("{id}::param::{index}::name"),
+                Cow::Owned(header.dot_id.clone()),
+                LeafKind::Circle {
+                    radius: metrics.title_dot_diameter * 0.5,
+                    fill: Some(header.category_color),
+                    stroke: None,
+                },
+            )
+            .fixed_width(metrics.title_dot_diameter)
+            .fixed_height(metrics.title_dot_diameter)
+            .build(),
+            ui::leaf(
+                Cow::Owned(header.text_id.clone()),
                 LeafKind::Text {
-                    content: param.name.clone(),
+                    content: header.title.clone(),
                     style: theme.text_style_label_sm(),
                     layout: ellipsis_text_layout(),
                 },
             )
-            .fill_width()
+            .fixed_width(metrics.title_label_width)
             .auto_height()
             .flex_shrink(1.0)
             .build(),
-            ui::leaf(
-                format!("{id}::param::{index}::value"),
-                LeafKind::Text {
-                    content: if param.value.is_empty() {
-                        param.kind.clone()
-                    } else {
-                        param.value.clone()
-                    },
-                    style: theme.text_style_label_sm(),
-                    layout: ellipsis_text_layout(),
-                },
-            )
-            .auto_width()
-            .auto_height()
-            .build(),
-            param_control(
-                Cow::Owned(format!("{id}::param::{index}::control")),
-                &param.control,
-                theme,
-                metrics.control,
-            ),
         ])
         .build()
 }
@@ -385,7 +335,7 @@ fn ellipsis_text_layout() -> TextLayout {
     }
 }
 
-fn port_state_color(port: &CanvasPortView, theme: &Theme) -> Color {
+fn port_state_color(port: &NodePortSpec, theme: &Theme) -> Color {
     match port.connection_state {
         CanvasPortConnectionState::CompatibleTarget => theme.colors.accent,
         CanvasPortConnectionState::DropTarget => theme.colors.accent,
@@ -421,35 +371,6 @@ fn port_color(side: CanvasPortSide, theme: &Theme) -> Color {
     match side {
         CanvasPortSide::Input => theme.colors.text_muted,
         CanvasPortSide::Output => theme.colors.accent,
-    }
-}
-
-fn category_color(category: &str) -> Color {
-    match category.split('/').next().unwrap_or(category) {
-        "image" => Color {
-            r: 0.976,
-            g: 0.451,
-            b: 0.086,
-            a: 1.0,
-        },
-        "ai" => Color {
-            r: 0.741,
-            g: 0.094,
-            b: 0.365,
-            a: 1.0,
-        },
-        "io" => Color {
-            r: 0.235,
-            g: 0.510,
-            b: 0.965,
-            a: 1.0,
-        },
-        _ => Color {
-            r: 0.388,
-            g: 0.400,
-            b: 0.945,
-            a: 1.0,
-        },
     }
 }
 
@@ -882,6 +803,41 @@ mod tests {
         assert_eq!(style.direction, Direction::Row);
         assert_eq!(style.align_items, Align::Center);
         assert_eq!(style.gap, metrics.param_label_gap);
+    }
+
+    #[test]
+    fn node_card_facade_matches_explicit_spec_builder() {
+        let theme = light_theme();
+        let view = node_view_with_ports();
+        let spec = node_render_spec(&view, &theme);
+
+        let facade = node_card(&view, &theme);
+        let explicit = node_card_from_spec(&spec, &theme);
+
+        assert_eq!(facade.id(), explicit.id());
+        let Desc::Container {
+            children: facade_children,
+            ..
+        } = facade
+        else {
+            panic!("facade should build a container");
+        };
+        let Desc::Container {
+            children: explicit_children,
+            ..
+        } = explicit
+        else {
+            panic!("explicit builder should build a container");
+        };
+        let facade_ids = facade_children
+            .iter()
+            .map(|child| child.id().to_string())
+            .collect::<Vec<_>>();
+        let explicit_ids = explicit_children
+            .iter()
+            .map(|child| child.id().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(facade_ids, explicit_ids);
     }
 
     fn node_view_with_ports() -> CanvasNodeView {
