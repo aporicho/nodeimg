@@ -25,6 +25,7 @@ pub(crate) struct WorkspaceController {
     engine: Engine,
     image_demo: ImageDemoController,
     canvas_node_drag: CanvasNodeDragController,
+    canvas_node_templates: engine_adapter::CanvasNodeTemplateCache,
     last_engine_action: String,
 }
 
@@ -40,6 +41,7 @@ impl WorkspaceController {
             engine: Engine::new(None),
             image_demo: ImageDemoController::default(),
             canvas_node_drag: CanvasNodeDragController::default(),
+            canvas_node_templates: engine_adapter::CanvasNodeTemplateCache::default(),
             last_engine_action: "Ready".to_string(),
         }
     }
@@ -88,7 +90,10 @@ impl WorkspaceController {
         engine_adapter::node_palette_state(&self.engine)
     }
 
-    pub(crate) fn canvas_node_render_views(&self, gui: &mut Context) -> Vec<CanvasNodeRenderView> {
+    pub(crate) fn canvas_node_render_views(
+        &mut self,
+        gui: &mut Context,
+    ) -> Vec<CanvasNodeRenderView> {
         let mut identities = engine_adapter::canvas_node_identities(&self.engine);
         identities.push(showcase_node::showcase_node_identity());
         identities.push(showcase_node::solo_node_identity());
@@ -102,7 +107,11 @@ impl WorkspaceController {
             .into_iter()
             .filter(|layout| !showcase_node::is_showcase_node(&layout.owner_id))
             .collect::<Vec<_>>();
-        let mut views = engine_adapter::canvas_node_render_views(&self.engine, engine_layouts);
+        let mut views = engine_adapter::canvas_node_render_views(
+            &self.engine,
+            engine_layouts,
+            &mut self.canvas_node_templates,
+        );
         views.extend(
             showcase_layouts
                 .into_iter()
@@ -498,7 +507,7 @@ mod tests {
 
     #[test]
     fn canvas_node_render_views_include_showcase_node() {
-        let controller = WorkspaceController::new();
+        let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
 
         let views = controller.canvas_node_render_views(&mut gui);

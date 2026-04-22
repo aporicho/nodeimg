@@ -15,6 +15,17 @@ use gui::canvas::{
 use gui::renderer::Rect;
 use std::collections::HashMap;
 
+#[derive(Default)]
+pub(crate) struct CanvasNodeTemplateCache {
+    templates: HashMap<CanvasNodeTemplateKey, CanvasNodeTemplate>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct CanvasNodeTemplateKey {
+    type_id: String,
+    version: u32,
+}
+
 const CANVAS_NODE_WIDTH: f32 = 304.0;
 const CANVAS_NODE_MIN_HEIGHT: f32 = 96.0;
 const CANVAS_NODE_PADDING_Y: f32 = 48.0;
@@ -25,6 +36,24 @@ const CANVAS_NODE_PIN_ROW_GAP: f32 = 12.0;
 const CANVAS_NODE_COLUMN_GAP: f32 = 680.0;
 const CANVAS_NODE_ROW_GAP: f32 = 180.0;
 const CANVAS_NODE_COLUMNS: usize = 3;
+
+impl CanvasNodeTemplateCache {
+    fn template_for_def(&mut self, def: &engine::node_manager::NodeDef) -> CanvasNodeTemplate {
+        let key = CanvasNodeTemplateKey {
+            type_id: def.type_id.clone(),
+            version: def.version,
+        };
+        self.templates
+            .entry(key)
+            .or_insert_with(|| canvas_node_template(def))
+            .clone()
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.templates.len()
+    }
+}
 
 pub(crate) fn engine_panel_state(engine: &Engine, last_action: &str) -> EnginePanelState {
     let graph = engine.query_graph_snapshot();
@@ -86,36 +115,41 @@ pub(crate) fn canvas_node_templates(engine: &Engine) -> HashMap<String, CanvasNo
     engine
         .list_node_defs()
         .into_iter()
-        .map(|def| {
-            (
-                def.type_id.clone(),
-                CanvasNodeTemplate {
-                    type_id: def.type_id.clone(),
-                    title: def.name.clone(),
-                    subtitle: def.type_id.clone(),
-                    category: def.category.clone(),
-                    inputs: canvas_port_templates(CanvasPortSide::Input, def),
-                    outputs: canvas_port_templates(CanvasPortSide::Output, def),
-                    params: canvas_node_param_templates(def),
-                },
-            )
-        })
+        .map(|def| (def.type_id.clone(), canvas_node_template(def)))
         .collect()
+}
+
+fn canvas_node_template(def: &engine::node_manager::NodeDef) -> CanvasNodeTemplate {
+    CanvasNodeTemplate {
+        type_id: def.type_id.clone(),
+        title: def.name.clone(),
+        subtitle: def.type_id.clone(),
+        category: def.category.clone(),
+        inputs: canvas_port_templates(CanvasPortSide::Input, def),
+        outputs: canvas_port_templates(CanvasPortSide::Output, def),
+        params: canvas_node_param_templates(def),
+    }
 }
 
 pub(crate) fn canvas_node_render_views(
     engine: &Engine,
     layouts: Vec<CanvasNodeLayout>,
+    template_cache: &mut CanvasNodeTemplateCache,
 ) -> Vec<CanvasNodeRenderView> {
     let graph = engine.query_graph_snapshot();
-    let templates_by_type = canvas_node_templates(engine);
+    let defs_by_type = engine
+        .list_node_defs()
+        .into_iter()
+        .map(|def| (def.type_id.as_str(), def))
+        .collect::<HashMap<_, _>>();
 
     let mut views = layouts
         .into_iter()
         .filter_map(|layout| {
             let node_id = parse_engine_node_owner_id(&layout.owner_id)?;
             let node = graph.nodes.get(&node_id)?;
-            let template = templates_by_type.get(node.type_id.as_str())?.clone();
+            let node_def = defs_by_type.get(node.type_id.as_str()).copied()?;
+            let template = template_cache.template_for_def(node_def);
             let layout = layout_with_content_height(
                 layout,
                 template.params.len(),
@@ -545,6 +579,7 @@ mod tests {
         let mut engine = Engine::new(None);
         let node_id = engine.add_node("image_gen").unwrap();
         let owner_id = engine_node_owner_id(node_id);
+        let mut template_cache = CanvasNodeTemplateCache::default();
 
         let views = canvas_node_render_views(
             &engine,
@@ -559,6 +594,7 @@ mod tests {
                 z_index: 7,
                 collapsed: false,
             }],
+            &mut template_cache,
         );
 
         assert_eq!(views.len(), 1);
@@ -567,6 +603,32 @@ mod tests {
         assert_eq!(views[0].state.layout.z_index, 7);
         assert!(!views[0].state.port_states.is_empty());
         assert!(views[0].state.layout.rect.h > 40.0);
+        assert_eq!(template_cache.len(), 1);
+    }
+
+    #[test]
+    fn template_cache_reuses_same_type_version() {
+        let mut cache = CanvasNodeTemplateCache::default();
+        let def = test_node_def("cache_test", 1);
+
+        let first = cache.template_for_def(&def);
+        let second = cache.template_for_def(&def);
+
+        assert_eq!(first.type_id, "cache_test");
+        assert_eq!(second.type_id, "cache_test");
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn template_cache_rebuilds_changed_version() {
+        let mut cache = CanvasNodeTemplateCache::default();
+        let first = test_node_def("cache_test", 1);
+        let second = test_node_def("cache_test", 2);
+
+        cache.template_for_def(&first);
+        cache.template_for_def(&second);
+
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]
@@ -589,5 +651,25 @@ mod tests {
         );
 
         assert!(layout.rect.h > CANVAS_NODE_MIN_HEIGHT);
+    }
+
+    fn test_node_def(type_id: &str, version: u32) -> NodeDef {
+        NodeDef {
+            type_id: type_id.to_string(),
+            version,
+            source: NodeSourceKind::Builtin,
+            name: "Cache Test".to_string(),
+            category: "test".to_string(),
+            requires: Vec::new(),
+            purity: Purity::Pure,
+            cooking_sensitivity: Vec::new(),
+            realtime_capable: true,
+            execution: ExecutionPolicy::default(),
+            api: None,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            params: Vec::new(),
+            execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+        }
     }
 }
