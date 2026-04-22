@@ -1,4 +1,5 @@
-use crate::tree::layout::{BoxStyle, Decoration, Size};
+use crate::tree::layout::{BoxStyle, Size};
+use crate::ui::{self, DecorationBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -49,12 +50,9 @@ impl WidgetProps for SeparatorProps {
                 hittable: Some(false),
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(tokens.color),
-                border: None,
-                radius: [0.0; 4],
-                shadow: None,
-            }),
+            decoration: ui::container("_")
+                .background(tokens.color)
+                .build_decoration(),
             children: vec![],
         }
     }

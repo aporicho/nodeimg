@@ -1,7 +1,8 @@
 use gui::renderer::{TextStyle, TextWeight};
 use gui::theme::Theme;
-use gui::tree::layout::{BoxStyle, LeafKind, TextureHandle};
+use gui::tree::layout::TextureHandle;
 use gui::tree::Desc;
+use gui::ui::{self, StyleBuilder};
 use gui::widget::atoms::button::ButtonProps;
 use gui::widget::atoms::checkbox::CheckboxProps;
 use gui::widget::atoms::dropdown::DropdownProps;
@@ -169,12 +170,12 @@ pub(crate) fn build_gallery_sections(
 }
 
 pub(crate) fn build_demo_popup() -> Desc {
-    Desc::Widget(gui::widget::WidgetDesc::new(
+    Desc::from(ui::widget(
         Cow::Borrowed("demo_popup_group"),
         gui::widget::frameworks::group::GroupProps {
             title: Cow::Borrowed("Quick Actions"),
             content: vec![
-                Desc::Widget(gui::widget::WidgetDesc::new(
+                Desc::from(ui::widget(
                     Cow::Borrowed("popup_label"),
                     LabelProps {
                         text: Cow::Borrowed(
@@ -184,13 +185,13 @@ pub(crate) fn build_demo_popup() -> Desc {
                         muted: true,
                     },
                 )),
-                Desc::Widget(gui::widget::WidgetDesc::new(
+                Desc::from(ui::widget(
                     Cow::Borrowed("popup_separator"),
                     SeparatorProps {
                         orientation: SeparatorOrientation::Horizontal,
                     },
                 )),
-                Desc::Widget(gui::widget::WidgetDesc::new(
+                Desc::from(ui::widget(
                     Cow::Borrowed(POPUP_CLOSE_ID),
                     ButtonProps {
                         label: Cow::Borrowed("Close Popup"),
@@ -212,7 +213,7 @@ fn overview_section() -> GallerySection {
         column: 0,
         estimated_height: 150.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("intro_label"),
                 LabelProps {
                     text: Cow::Borrowed("GUI Component Gallery"),
@@ -220,7 +221,7 @@ fn overview_section() -> GallerySection {
                     muted: false,
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("intro_caption"),
                 LabelProps {
                     text: Cow::Borrowed(
@@ -241,66 +242,60 @@ fn typography_section(theme: &Theme) -> GallerySection {
         column: 1,
         estimated_height: 260.0,
         content: vec![
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_body"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Body / Sans / Regular".to_string(),
-                    style: theme.text_style_body_md(),
-                    layout: Default::default(),
+            ui::text(
+                "text_style_body",
+                "Body / Sans / Regular",
+                theme.text_style_body_md(),
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
+            ui::text(
+                "text_style_title",
+                "Title / Sans / Semibold",
+                theme.text_style_title_sm(),
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
+            ui::text(
+                "text_style_italic",
+                "Caption / Sans / Italic",
+                theme.text_style_label_sm().with_italic(true),
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
+            ui::text(
+                "text_style_mono",
+                "Mono / Medium / Value 42.00",
+                theme.text_style_mono_md(),
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
+            ui::text(
+                "text_style_bold",
+                "Body / Sans / Bold override",
+                TextStyle {
+                    color: theme.colors.text,
+                    ..theme.text_style_body_md().with_weight(TextWeight::Bold)
                 },
-            },
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_title"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Title / Sans / Semibold".to_string(),
-                    style: theme.text_style_title_sm(),
-                    layout: Default::default(),
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
+            ui::text(
+                "text_style_disabled",
+                "Caption / Disabled text color",
+                TextStyle {
+                    color: theme.colors.text_disabled,
+                    ..theme.text_style_label_sm()
                 },
-            },
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_italic"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Caption / Sans / Italic".to_string(),
-                    style: theme.text_style_label_sm().with_italic(true),
-                    layout: Default::default(),
-                },
-            },
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_mono"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Mono / Medium / Value 42.00".to_string(),
-                    style: theme.text_style_mono_md(),
-                    layout: Default::default(),
-                },
-            },
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_bold"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Body / Sans / Bold override".to_string(),
-                    style: TextStyle {
-                        color: theme.colors.text,
-                        ..theme.text_style_body_md().with_weight(TextWeight::Bold)
-                    },
-                    layout: Default::default(),
-                },
-            },
-            Desc::Leaf {
-                id: Cow::Borrowed("text_style_disabled"),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: "Caption / Disabled text color".to_string(),
-                    style: TextStyle {
-                        color: theme.colors.text_disabled,
-                        ..theme.text_style_label_sm()
-                    },
-                    layout: Default::default(),
-                },
-            },
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
         ],
     }
 }
@@ -312,7 +307,7 @@ fn button_section() -> GallerySection {
         column: 2,
         estimated_height: 220.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("btn_primary"),
                 ButtonProps {
                     label: Cow::Borrowed("Primary Action"),
@@ -322,7 +317,7 @@ fn button_section() -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("btn_long"),
                 ButtonProps {
                     label: Cow::Borrowed("A very long button label to test horizontal layout"),
@@ -332,7 +327,7 @@ fn button_section() -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("btn_disabled"),
                 ButtonProps {
                     label: Cow::Borrowed("Disabled Action"),
@@ -353,7 +348,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
         column: 3,
         estimated_height: 420.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(TEXT_PROMPT_ID),
                 TextInputProps {
                     label: Some(Cow::Borrowed("Prompt")),
@@ -363,7 +358,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("text_prompt_disabled"),
                 TextInputProps {
                     label: Some(Cow::Borrowed("Disabled Prompt")),
@@ -373,7 +368,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(SLIDER_RADIUS_ID),
                 SliderProps {
                     label: Some(Cow::Borrowed("Radius")),
@@ -386,7 +381,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(NUMBER_RADIUS_ID),
                 NumberInputProps {
                     label: Some(Cow::Borrowed("Radius value")),
@@ -400,7 +395,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("number_radius_disabled"),
                 NumberInputProps {
                     label: Some(Cow::Borrowed("Disabled Number")),
@@ -425,7 +420,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
         column: 0,
         estimated_height: 420.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(TOGGLE_GRID_ID),
                 ToggleProps {
                     label: Some(Cow::Borrowed("Show Grid")),
@@ -435,7 +430,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("toggle_grid_disabled"),
                 ToggleProps {
                     label: Some(Cow::Borrowed("Disabled Toggle")),
@@ -445,7 +440,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(CHECKBOX_SNAP_ID),
                 CheckboxProps {
                     label: Some(Cow::Borrowed("Snap to grid")),
@@ -455,7 +450,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("checkbox_disabled"),
                 CheckboxProps {
                     label: Some(Cow::Borrowed("Disabled checkbox")),
@@ -465,7 +460,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(DROPDOWN_BLEND_ID),
                 DropdownProps {
                     label: Some(Cow::Borrowed("Blend Mode")),
@@ -480,7 +475,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("dropdown_disabled"),
                 DropdownProps {
                     label: Some(Cow::Borrowed("Disabled Select")),
@@ -491,7 +486,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(RADIO_FAST_ID),
                 RadioProps {
                     label: Some(Cow::Borrowed("Fast quality")),
@@ -501,7 +496,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
                     density: Default::default(),
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(RADIO_BALANCED_ID),
                 RadioProps {
                     label: Some(Cow::Borrowed("Balanced quality")),
@@ -518,7 +513,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
 fn media_section(state: &GalleryState, image: TextureHandle) -> GallerySection {
     let list_items = (1..=18)
         .map(|index| {
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Owned(format!("history_item_{index}")),
                 LabelProps {
                     text: Cow::Owned(format!("Preset #{index:02} · Gaussian Blur")),
@@ -535,7 +530,7 @@ fn media_section(state: &GalleryState, image: TextureHandle) -> GallerySection {
         column: 1,
         estimated_height: 360.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("preview_label"),
                 LabelProps {
                     text: Cow::Borrowed("Preview"),
@@ -543,21 +538,21 @@ fn media_section(state: &GalleryState, image: TextureHandle) -> GallerySection {
                     muted: true,
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("preview_image"),
                 ImageViewerProps {
                     texture: image,
                     height: 96.0,
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("history_list"),
                 ListViewProps {
                     height: 128.0,
                     items: list_items,
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("history_caption"),
                 LabelProps {
                     text: Cow::Owned(format!(
@@ -579,14 +574,14 @@ fn container_section(state: &GalleryState) -> GallerySection {
         column: 2,
         estimated_height: if state.advanced_open { 320.0 } else { 210.0 },
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(ADVANCED_SECTION_ID),
                 CollapsibleProps {
                     title: Cow::Borrowed("Advanced"),
                     expanded: state.advanced_open,
                     disabled: false,
                     content: vec![
-                        Desc::Widget(gui::widget::WidgetDesc::new(
+                        Desc::from(ui::widget(
                             Cow::Borrowed("advanced_label"),
                             LabelProps {
                                 text: Cow::Borrowed(
@@ -596,7 +591,7 @@ fn container_section(state: &GalleryState) -> GallerySection {
                                 muted: true,
                             },
                         )),
-                        Desc::Widget(gui::widget::WidgetDesc::new(
+                        Desc::from(ui::widget(
                             Cow::Borrowed(ADVANCED_TOGGLE_ID),
                             ToggleProps {
                                 label: Some(Cow::Borrowed("Use denoise pass")),
@@ -609,7 +604,7 @@ fn container_section(state: &GalleryState) -> GallerySection {
                     ],
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("collapsible_disabled"),
                 CollapsibleProps {
                     title: Cow::Borrowed("Disabled / collapsed preview"),
@@ -629,7 +624,7 @@ fn overlay_section() -> GallerySection {
         column: 3,
         estimated_height: 170.0,
         content: vec![
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed("overlay_label"),
                 LabelProps {
                     text: Cow::Borrowed(
@@ -639,7 +634,7 @@ fn overlay_section() -> GallerySection {
                     muted: true,
                 },
             )),
-            Desc::Widget(gui::widget::WidgetDesc::new(
+            Desc::from(ui::widget(
                 Cow::Borrowed(POPUP_TRIGGER_ID),
                 ButtonProps {
                     label: Cow::Borrowed("Open Popup"),

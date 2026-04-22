@@ -1,7 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges};
+use crate::tree::layout::{BoxStyle, Direction};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -63,27 +64,17 @@ impl WidgetProps for CollapsibleProps {
         let tokens = cx.theme.components.collapsible;
         let chevron = if self.expanded { "▾" } else { "▸" };
 
-        let mut children = vec![Desc::Container {
-            id: Cow::Owned(format!("{id}::header")),
-            style: BoxStyle {
-                direction: Direction::Row,
-                align_items: crate::tree::layout::Align::Center,
-                gap: tokens.gap,
-                padding: Edges::symmetric(tokens.header_padding_y, tokens.header_padding_x),
-                gestures: vec![Gesture::Tap],
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(tokens.header_background),
-                border: None,
-                radius: [tokens.radius, tokens.radius, 0.0, 0.0],
-                shadow: None,
-            }),
-            children: vec![
-                Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::chevron")),
-                    style: BoxStyle::default(),
-                    kind: crate::tree::layout::LeafKind::Text {
+        let mut children = vec![ui::row(format!("{id}::header"))
+            .align_items(crate::tree::layout::Align::Center)
+            .gap(tokens.gap)
+            .padding_symmetric(tokens.header_padding_y, tokens.header_padding_x)
+            .gesture(Gesture::Tap)
+            .background(tokens.header_background)
+            .radius([tokens.radius, tokens.radius, 0.0, 0.0])
+            .children(vec![
+                ui::leaf(
+                    format!("{id}::chevron"),
+                    crate::tree::layout::LeafKind::Text {
                         content: chevron.to_string(),
                         style: TextStyle {
                             color: tokens.title_text,
@@ -92,11 +83,11 @@ impl WidgetProps for CollapsibleProps {
                         },
                         layout: Default::default(),
                     },
-                },
-                Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::title")),
-                    style: BoxStyle::default(),
-                    kind: crate::tree::layout::LeafKind::Text {
+                )
+                .build(),
+                ui::leaf(
+                    format!("{id}::title"),
+                    crate::tree::layout::LeafKind::Text {
                         content: self.title.to_string(),
                         style: TextStyle {
                             color: tokens.title_text,
@@ -105,22 +96,19 @@ impl WidgetProps for CollapsibleProps {
                         },
                         layout: Default::default(),
                     },
-                },
-            ],
-        }];
+                )
+                .build(),
+            ])
+            .build()];
 
         if self.expanded {
-            children.push(Desc::Container {
-                id: Cow::Owned(format!("{id}::content")),
-                style: BoxStyle {
-                    direction: Direction::Column,
-                    gap: tokens.gap,
-                    padding: Edges::all(tokens.content_padding),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children: self.content.iter().map(desc_clone).collect(),
-            });
+            children.push(
+                ui::column(format!("{id}::content"))
+                    .gap(tokens.gap)
+                    .padding_all(tokens.content_padding)
+                    .children(self.content.iter().cloned())
+                    .build(),
+            );
         }
 
         WidgetBuild {
@@ -128,15 +116,14 @@ impl WidgetProps for CollapsibleProps {
                 direction: Direction::Column,
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(tokens.background),
-                border: Some(crate::renderer::Border {
+            decoration: ui::container("_")
+                .background(tokens.background)
+                .border(crate::renderer::Border {
                     width: tokens.border_width,
                     color: tokens.border,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
+                })
+                .radius_all(tokens.radius)
+                .build_decoration(),
             children,
         }
     }

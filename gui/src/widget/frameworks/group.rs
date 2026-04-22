@@ -1,6 +1,7 @@
 use crate::renderer::TextStyle;
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, LeafKind};
+use crate::tree::layout::{BoxStyle, Direction, Edges, LeafKind};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -57,18 +58,11 @@ impl WidgetProps for GroupProps {
         let theme = cx.theme;
         let tokens = theme.components.group;
 
-        let title = Desc::Container {
-            id: Cow::Owned(format!("{id}::titlebar")),
-            style: BoxStyle {
-                direction: Direction::Row,
-                padding: Edges::symmetric(tokens.title_padding_y, tokens.title_padding_x),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::title")),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
+        let title = ui::row(format!("{id}::titlebar"))
+            .padding_symmetric(tokens.title_padding_y, tokens.title_padding_x)
+            .child(ui::leaf(
+                format!("{id}::title"),
+                LeafKind::Text {
                     content: self.title.to_string(),
                     style: TextStyle {
                         color: tokens.title_text,
@@ -77,19 +71,13 @@ impl WidgetProps for GroupProps {
                     },
                     layout: Default::default(),
                 },
-            }],
-        };
+            ))
+            .build();
 
-        let content = Desc::Container {
-            id: Cow::Owned(format!("{id}::content")),
-            style: BoxStyle {
-                direction: Direction::Column,
-                gap: tokens.gap,
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: self.content.iter().map(desc_clone).collect(),
-        };
+        let content = ui::column(format!("{id}::content"))
+            .gap(tokens.gap)
+            .children(self.content.iter().cloned())
+            .build();
 
         WidgetBuild {
             style: BoxStyle {
@@ -98,15 +86,14 @@ impl WidgetProps for GroupProps {
                 padding: Edges::all(tokens.padding),
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(tokens.background),
-                border: Some(crate::renderer::Border {
+            decoration: ui::container("_")
+                .background(tokens.background)
+                .border(crate::renderer::Border {
                     width: tokens.border_width,
                     color: tokens.border,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
+                })
+                .radius_all(tokens.radius)
+                .build_decoration(),
             children: vec![title, content],
         }
     }

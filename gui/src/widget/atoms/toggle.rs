@@ -35,10 +35,8 @@ impl WidgetProps for ToggleProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        use crate::tree::layout::{
-            Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size,
-        };
-        use crate::tree::Desc;
+        use crate::tree::layout::{Align, BoxStyle, Direction, Justify, Size};
+        use crate::ui::{self, DecorationBuilder, StyleBuilder};
 
         let theme = cx.theme;
         let _metrics = theme.control_metrics(self.size, self.density);
@@ -57,58 +55,38 @@ impl WidgetProps for ToggleProps {
             Justify::Start
         };
 
-        let mut children = vec![Desc::Container {
-            id: Cow::Owned(format!("{id}::track")),
-            style: BoxStyle {
-                width: Size::Fixed(tokens.track_width),
-                height: Size::Fixed(tokens.track_height),
-                padding: Edges::all(tokens.track_padding),
-                direction: Direction::Row,
-                justify_content: thumb_justify,
-                align_items: Align::Center,
-                gestures: vec![Gesture::Tap],
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.track_background),
-                border: None,
-                radius: [tokens.track_radius; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Container {
-                id: Cow::Owned(format!("{id}::thumb")),
-                style: BoxStyle {
-                    width: Size::Fixed(tokens.thumb_size),
-                    height: Size::Fixed(tokens.thumb_size),
-                    ..BoxStyle::default()
-                },
-                decoration: Some(Decoration {
-                    background: Some(visual.thumb),
-                    border: None,
-                    radius: [tokens.thumb_size / 2.0; 4],
-                    shadow: None,
-                }),
-                children: vec![],
-            }],
-        }];
+        let mut children = vec![ui::row(format!("{id}::track"))
+            .fixed_width(tokens.track_width)
+            .fixed_height(tokens.track_height)
+            .padding_all(tokens.track_padding)
+            .justify_content(thumb_justify)
+            .align_items(Align::Center)
+            .gesture(Gesture::Tap)
+            .background(visual.track_background)
+            .radius_all(tokens.track_radius)
+            .child(
+                ui::container(format!("{id}::thumb"))
+                    .fixed_width(tokens.thumb_size)
+                    .fixed_height(tokens.thumb_size)
+                    .background(visual.thumb)
+                    .radius_all(tokens.thumb_size / 2.0),
+            )
+            .build()];
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(format!("{id}::label")),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    format!("{id}::label"),
+                    label.to_string(),
+                    TextStyle {
                         color: visual.text,
                         size: tokens.font_size,
                         ..theme.text_style_body_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+            );
         }
 
         WidgetBuild {

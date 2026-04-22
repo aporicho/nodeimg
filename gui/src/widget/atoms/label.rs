@@ -1,7 +1,7 @@
 use crate::renderer::TextStyle;
 use crate::theme::Theme;
-use crate::tree::layout::{BoxStyle, LeafKind, Size};
-use crate::tree::Desc;
+use crate::tree::layout::{BoxStyle, Size};
+use crate::ui::{self, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -52,19 +52,12 @@ impl WidgetProps for LabelProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::text")),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: self.text.to_string(),
-                    style,
-                    layout: Default::default(),
-                },
-            }],
+            children: vec![
+                ui::text(format!("{id}::text"), self.text.to_string(), style)
+                    .auto_width()
+                    .auto_height()
+                    .build(),
+            ],
         }
     }
 }
@@ -89,6 +82,8 @@ pub(super) fn label_style(theme: &Theme, variant: LabelVariant, muted: bool) -> 
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::LeafKind;
+    use crate::tree::Desc;
 
     #[test]
     fn label_uses_variant_typography() {

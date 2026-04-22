@@ -37,10 +37,8 @@ impl WidgetProps for ButtonProps {
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::renderer::Border;
-        use crate::tree::layout::{
-            Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size,
-        };
-        use crate::tree::Desc;
+        use crate::tree::layout::{Align, BoxStyle, Direction, Edges, Justify, Size};
+        use crate::ui::{self, DecorationBuilder, StyleBuilder};
 
         let theme = cx.theme;
         let metrics = theme.control_metrics(self.size, self.density);
@@ -62,32 +60,26 @@ impl WidgetProps for ButtonProps {
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(visual.background),
-                border: Some(Border {
+            decoration: ui::container("_")
+                .background(visual.background)
+                .border(Border {
                     width: metrics.border_width,
                     color: visual.border.unwrap_or(theme.colors.border),
-                }),
-                radius: [metrics.radius; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(anatomy.label()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
+                })
+                .radius_all(metrics.radius)
+                .build_decoration(),
+            children: vec![ui::text(
+                anatomy.label(),
+                self.label.to_string(),
+                TextStyle {
+                    color: visual.text,
+                    size: metrics.font_size,
+                    ..theme.text_style_body_sm()
                 },
-                kind: LeafKind::Text {
-                    content: self.label.to_string(),
-                    style: TextStyle {
-                        color: visual.text,
-                        size: metrics.font_size,
-                        ..theme.text_style_body_sm()
-                    },
-                    layout: Default::default(),
-                },
-            }],
+            )
+            .auto_width()
+            .auto_height()
+            .build()],
         }
     }
 }

@@ -380,7 +380,7 @@ mod tests {
     use crate::renderer::TextMeasurer;
     use crate::shell::{Key, Modifiers, MouseButton};
     use crate::theme::dark_theme;
-    use crate::tree::layout::{BoxStyle, Size};
+    use crate::ui::{self, StyleBuilder};
     use crate::widget::atoms::button::ButtonProps;
     use crate::widget::atoms::dropdown::DropdownProps;
     use crate::widget::atoms::label::{LabelProps, LabelVariant};
@@ -390,19 +390,26 @@ mod tests {
     use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
     use crate::widget::frameworks::scroll_area::ScrollAreaProps;
+    use crate::widget::props::WidgetProps;
     use std::borrow::Cow;
 
+    fn root_desc(height: f32, child: impl Into<Desc>) -> Desc {
+        ui::container("root")
+            .fixed_width(320.0)
+            .fixed_height(height)
+            .child(child)
+            .build()
+    }
+
+    fn widget(id: impl Into<Cow<'static, str>>, props: impl WidgetProps) -> Desc {
+        ui::widget(id, props).build()
+    }
+
     fn test_desc(value: &str) -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(120.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("input"),
+        root_desc(
+            120.0,
+            widget(
+                "input",
                 TextInputProps {
                     label: Some(Cow::Borrowed("Prompt")),
                     value: Cow::Owned(value.to_string()),
@@ -410,21 +417,15 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn button_desc() -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(120.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("button"),
+        root_desc(
+            120.0,
+            widget(
+                "button",
                 ButtonProps {
                     label: Cow::Borrowed("Run"),
                     icon: None,
@@ -432,21 +433,15 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn toggle_desc() -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(120.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("toggle"),
+        root_desc(
+            120.0,
+            widget(
+                "toggle",
                 ToggleProps {
                     label: Some(Cow::Borrowed("Grid")),
                     value: true,
@@ -454,21 +449,15 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn slider_desc() -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(120.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("slider"),
+        root_desc(
+            120.0,
+            widget(
+                "slider",
                 SliderProps {
                     label: Some(Cow::Borrowed("Radius")),
                     min: 0.0,
@@ -479,21 +468,15 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn panel_desc() -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(180.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("panel"),
+        root_desc(
+            180.0,
+            widget(
+                "panel",
                 PanelProps {
                     title: Cow::Borrowed("Panel"),
                     rect: Rect {
@@ -510,21 +493,15 @@ mod tests {
                     closable: false,
                     content: vec![],
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn panel_with_input_desc() -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(240.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("panel"),
+        root_desc(
+            240.0,
+            widget(
+                "panel",
                 PanelProps {
                     title: Cow::Borrowed("Panel"),
                     rect: Rect {
@@ -539,8 +516,8 @@ mod tests {
                     draggable: true,
                     resizable: true,
                     closable: false,
-                    content: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                        Cow::Borrowed("input"),
+                    content: vec![widget(
+                        "input",
                         TextInputProps {
                             label: Some(Cow::Borrowed("Prompt")),
                             value: Cow::Borrowed("hello"),
@@ -548,15 +525,15 @@ mod tests {
                             size: Default::default(),
                             density: Default::default(),
                         },
-                    ))],
+                    )],
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn popup_content_desc() -> Desc {
-        Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("popup_button"),
+        widget(
+            "popup_button",
             ButtonProps {
                 label: Cow::Borrowed("Overlay"),
                 icon: None,
@@ -564,52 +541,40 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ))
+        )
     }
 
     fn scroll_desc() -> Desc {
         let items = (0..20)
             .map(|index| {
-                Desc::Widget(crate::widget::WidgetDesc::new(
-                    Cow::Owned(format!("item_{index}")),
+                widget(
+                    format!("item_{index}"),
                     LabelProps {
                         text: Cow::Owned(format!("Item {index}")),
                         variant: LabelVariant::Body,
                         muted: false,
                     },
-                ))
+                )
             })
             .collect();
 
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(200.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("scroll"),
+        root_desc(
+            200.0,
+            widget(
+                "scroll",
                 ScrollAreaProps {
                     height: 80.0,
                     content: items,
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn number_desc(value: f32) -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(120.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("number"),
+        root_desc(
+            120.0,
+            widget(
+                "number",
                 NumberInputProps {
                     label: Some(Cow::Borrowed("Radius")),
                     value,
@@ -621,21 +586,15 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn dropdown_desc(selected: usize) -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(320.0),
-                height: Size::Fixed(180.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
-                Cow::Borrowed("dropdown"),
+        root_desc(
+            180.0,
+            widget(
+                "dropdown",
                 DropdownProps {
                     label: Some(Cow::Borrowed("Mode")),
                     options: vec![
@@ -648,8 +607,8 @@ mod tests {
                     size: Default::default(),
                     density: Default::default(),
                 },
-            ))],
-        }
+            ),
+        )
     }
 
     fn test_context(value: &str) -> Context {

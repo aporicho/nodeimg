@@ -38,8 +38,8 @@ impl WidgetProps for DropdownProps {
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::gesture::Gesture;
         use crate::renderer::Border;
-        use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
-        use crate::tree::Desc;
+        use crate::tree::layout::{Align, BoxStyle, Direction, Size};
+        use crate::ui::{self, DecorationBuilder, StyleBuilder};
 
         let theme = cx.theme;
         let metrics = theme.control_metrics(self.size, self.density);
@@ -58,91 +58,64 @@ impl WidgetProps for DropdownProps {
 
         let mut children = Vec::new();
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(anatomy.label()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    anatomy.label(),
+                    label.to_string(),
+                    TextStyle {
                         color: theme.colors.text_muted,
                         size: metrics.label_font_size,
                         ..theme.text_style_label_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+            );
         }
-        children.push(Desc::Container {
-            id: Cow::Owned(anatomy.field()),
-            style: BoxStyle {
-                direction: Direction::Row,
-                gap: metrics.gap,
-                align_items: Align::Center,
-                height: Size::Fixed(metrics.height),
-                padding: Edges::symmetric(metrics.padding_y, metrics.padding_x),
-                gestures: vec![Gesture::Tap],
-                hittable: Some(true),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.background),
-                border: Some(Border {
+        children.push(
+            ui::row(anatomy.field())
+                .gap(metrics.gap)
+                .align_items(Align::Center)
+                .fixed_height(metrics.height)
+                .padding_symmetric(metrics.padding_y, metrics.padding_x)
+                .gesture(Gesture::Tap)
+                .hittable(true)
+                .background(visual.background)
+                .border(Border {
                     width: metrics.border_width,
                     color: visual.border.unwrap_or(theme.colors.border),
-                }),
-                radius: [metrics.radius; 4],
-                shadow: None,
-            }),
-            children: vec![
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.part("selected")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: selected_text,
-                        style: TextStyle {
+                })
+                .radius_all(metrics.radius)
+                .children(vec![
+                    ui::text(
+                        anatomy.part("selected"),
+                        selected_text,
+                        TextStyle {
                             color: visual.text,
                             size: metrics.font_size,
                             ..theme.text_style_body_sm()
                         },
-                        layout: Default::default(),
-                    },
-                },
-                Desc::Container {
-                    id: Cow::Owned(anatomy.part("spacer")),
-                    style: BoxStyle {
-                        flex_grow: 1.0,
-                        ..BoxStyle::default()
-                    },
-                    decoration: None,
-                    children: vec![],
-                },
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.part("arrow")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: "▾".to_string(),
-                        style: TextStyle {
+                    )
+                    .auto_width()
+                    .auto_height()
+                    .build(),
+                    ui::container(anatomy.part("spacer")).flex_grow(1.0).build(),
+                    ui::text(
+                        anatomy.part("arrow"),
+                        "▾",
+                        TextStyle {
                             color: theme.colors.text_muted,
                             size: metrics.font_size,
                             ..theme.text_style_body_sm()
                         },
-                        layout: Default::default(),
-                    },
-                },
-            ],
-        });
+                    )
+                    .auto_width()
+                    .auto_height()
+                    .build(),
+                ])
+                .build(),
+        );
 
         WidgetBuild {
             style: BoxStyle {

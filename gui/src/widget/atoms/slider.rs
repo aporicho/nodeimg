@@ -39,8 +39,8 @@ impl WidgetProps for SliderProps {
         fmt::Debug::fmt(self, f)
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
-        use crate::tree::Desc;
+        use crate::tree::layout::{Align, BoxStyle, Direction, Size};
+        use crate::ui::{self, DecorationBuilder, StyleBuilder};
 
         let theme = cx.theme;
         let _metrics = theme.control_metrics(self.size, self.density);
@@ -69,105 +69,68 @@ impl WidgetProps for SliderProps {
 
         let mut children = Vec::new();
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(anatomy.label()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    anatomy.label(),
+                    label.to_string(),
+                    TextStyle {
                         color: theme.colors.text_muted,
                         size: tokens.font_size,
                         ..theme.text_style_body_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+            );
         }
         children.extend([
-            Desc::Container {
-                id: Cow::Owned(anatomy.track()),
-                style: BoxStyle {
-                    flex_grow: 1.0,
-                    height: Size::Fixed(tokens.track_height),
-                    padding: crate::tree::layout::Edges::all(tokens.track_padding),
-                    direction: Direction::Row,
-                    gestures: vec![Gesture::Tap, Gesture::Drag],
-                    align_items: Align::Center,
-                    ..BoxStyle::default()
+            ui::row(anatomy.track())
+                .flex_grow(1.0)
+                .fixed_height(tokens.track_height)
+                .padding_all(tokens.track_padding)
+                .gesture(Gesture::Tap)
+                .gesture(Gesture::Drag)
+                .align_items(Align::Center)
+                .background(visual.track_background)
+                .radius_all(tokens.track_radius)
+                .children(vec![
+                    ui::container(anatomy.part("fill"))
+                        .flex_grow(ratio)
+                        .fill_height()
+                        .gesture(Gesture::Tap)
+                        .gesture(Gesture::Drag)
+                        .background(visual.fill)
+                        .radius_all(tokens.track_radius)
+                        .build(),
+                    ui::container(anatomy.thumb())
+                        .fixed_width(tokens.thumb_size)
+                        .fixed_height(tokens.thumb_size)
+                        .gesture(Gesture::Tap)
+                        .gesture(Gesture::Drag)
+                        .background(visual.thumb)
+                        .radius_all(tokens.thumb_size / 2.0)
+                        .build(),
+                    ui::container(anatomy.part("spacer"))
+                        .flex_grow(1.0 - ratio)
+                        .fill_height()
+                        .gesture(Gesture::Tap)
+                        .gesture(Gesture::Drag)
+                        .build(),
+                ])
+                .build(),
+            ui::text(
+                anatomy.part("value"),
+                value_text,
+                TextStyle {
+                    color: visual.text,
+                    size: tokens.font_size,
+                    ..theme.text_style_mono_md()
                 },
-                decoration: Some(Decoration {
-                    background: Some(visual.track_background),
-                    border: None,
-                    radius: [tokens.track_radius; 4],
-                    shadow: None,
-                }),
-                children: vec![
-                    Desc::Container {
-                        id: Cow::Owned(anatomy.part("fill")),
-                        style: BoxStyle {
-                            flex_grow: ratio,
-                            height: Size::Fill,
-                            gestures: vec![Gesture::Tap, Gesture::Drag],
-                            ..BoxStyle::default()
-                        },
-                        decoration: Some(Decoration {
-                            background: Some(visual.fill),
-                            border: None,
-                            radius: [tokens.track_radius; 4],
-                            shadow: None,
-                        }),
-                        children: vec![],
-                    },
-                    Desc::Container {
-                        id: Cow::Owned(anatomy.thumb()),
-                        style: BoxStyle {
-                            width: Size::Fixed(tokens.thumb_size),
-                            height: Size::Fixed(tokens.thumb_size),
-                            gestures: vec![Gesture::Tap, Gesture::Drag],
-                            ..BoxStyle::default()
-                        },
-                        decoration: Some(Decoration {
-                            background: Some(visual.thumb),
-                            border: None,
-                            radius: [tokens.thumb_size / 2.0; 4],
-                            shadow: None,
-                        }),
-                        children: vec![],
-                    },
-                    Desc::Container {
-                        id: Cow::Owned(anatomy.part("spacer")),
-                        style: BoxStyle {
-                            flex_grow: 1.0 - ratio,
-                            height: Size::Fill,
-                            gestures: vec![Gesture::Tap, Gesture::Drag],
-                            ..BoxStyle::default()
-                        },
-                        decoration: None,
-                        children: vec![],
-                    },
-                ],
-            },
-            Desc::Leaf {
-                id: Cow::Owned(anatomy.part("value")),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: value_text,
-                    style: TextStyle {
-                        color: visual.text,
-                        size: tokens.font_size,
-                        ..theme.text_style_mono_md()
-                    },
-                    layout: Default::default(),
-                },
-            },
+            )
+            .auto_width()
+            .auto_height()
+            .build(),
         ]);
 
         WidgetBuild {

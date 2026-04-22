@@ -1,5 +1,6 @@
-use crate::tree::layout::{BoxStyle, Decoration, Direction, Edges, Overflow, Size};
+use crate::tree::layout::{BoxStyle, Direction, Edges, Overflow, Size};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -63,16 +64,15 @@ impl WidgetProps for ScrollAreaProps {
                 direction: Direction::Column,
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(tokens.background),
-                border: Some(crate::renderer::Border {
+            decoration: ui::container("_")
+                .background(tokens.background)
+                .border(crate::renderer::Border {
                     width: tokens.border_width,
                     color: tokens.border,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
-            children: self.content.iter().map(desc_clone).collect(),
+                })
+                .radius_all(tokens.radius)
+                .build_decoration(),
+            children: self.content.clone(),
         }
     }
 }

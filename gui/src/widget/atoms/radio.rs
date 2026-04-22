@@ -1,8 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Size};
-use crate::tree::Desc;
+use crate::tree::layout::{Align, BoxStyle, Direction};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -51,54 +51,41 @@ impl WidgetProps for RadioProps {
             },
         );
 
-        let mut children = vec![Desc::Container {
-            id: Cow::Owned(format!("{id}::ring")),
-            style: BoxStyle {
-                width: Size::Fixed(tokens.ring_size),
-                height: Size::Fixed(tokens.ring_size),
-                align_items: Align::Center,
-                justify_content: crate::tree::layout::Justify::Center,
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.ring_background),
-                border: visual.ring_border.map(|color| crate::renderer::Border {
-                    width: tokens.border_width,
-                    color,
-                }),
-                radius: [tokens.ring_size / 2.0; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Container {
-                id: Cow::Owned(format!("{id}::dot")),
-                style: BoxStyle {
-                    width: Size::Fixed(tokens.dot_size),
-                    height: Size::Fixed(tokens.dot_size),
-                    ..BoxStyle::default()
-                },
-                decoration: Some(Decoration {
-                    background: Some(visual.dot),
-                    border: None,
-                    radius: [tokens.dot_size / 2.0; 4],
-                    shadow: None,
-                }),
-                children: vec![],
-            }],
-        }];
+        let mut ring = ui::container(format!("{id}::ring"))
+            .fixed_width(tokens.ring_size)
+            .fixed_height(tokens.ring_size)
+            .align_items(Align::Center)
+            .justify_content(crate::tree::layout::Justify::Center)
+            .background(visual.ring_background)
+            .radius_all(tokens.ring_size / 2.0)
+            .child(
+                ui::container(format!("{id}::dot"))
+                    .fixed_width(tokens.dot_size)
+                    .fixed_height(tokens.dot_size)
+                    .background(visual.dot)
+                    .radius_all(tokens.dot_size / 2.0),
+            );
+        if let Some(color) = visual.ring_border {
+            ring = ring.border(crate::renderer::Border {
+                width: tokens.border_width,
+                color,
+            });
+        }
+
+        let mut children = vec![ring.build()];
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(format!("{id}::label")),
-                style: BoxStyle::default(),
-                kind: crate::tree::layout::LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    format!("{id}::label"),
+                    label.to_string(),
+                    TextStyle {
                         color: visual.text,
                         size: tokens.font_size,
                         ..theme.text_style_body_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .build(),
+            );
         }
 
         WidgetBuild {

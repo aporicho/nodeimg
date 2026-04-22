@@ -1,5 +1,6 @@
-use crate::tree::layout::{BoxStyle, Direction, Size};
+use crate::tree::layout::{BoxStyle, Size};
 use crate::tree::Desc;
+use crate::ui::{self, StyleBuilder};
 use crate::widget::frameworks::scroll_area::ScrollAreaProps;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -63,52 +64,25 @@ impl WidgetProps for ListViewProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+            children: vec![ui::widget(
                 Cow::Owned(format!("{id}::scroll")),
                 ScrollAreaProps {
                     height: self.height,
-                    content: vec![Desc::Container {
-                        id: Cow::Owned(format!("{id}::items")),
-                        style: BoxStyle {
-                            width: Size::Fill,
-                            height: Size::Auto,
-                            direction: Direction::Column,
-                            gap: list_tokens.item_gap,
-                            ..BoxStyle::default()
-                        },
-                        decoration: None,
-                        children: self.items.iter().map(desc_clone).collect(),
-                    }],
+                    content: vec![ui::column(format!("{id}::items"))
+                        .fill_width()
+                        .auto_height()
+                        .gap(list_tokens.item_gap)
+                        .children(self.items.iter().cloned())
+                        .build()],
                 },
-            ))],
+            )
+            .build()],
         }
     }
 }
 
 fn desc_clone(d: &Desc) -> Desc {
-    match d {
-        Desc::Container {
-            id,
-            style,
-            decoration,
-            children,
-        } => Desc::Container {
-            id: id.clone(),
-            style: style.clone(),
-            decoration: decoration.clone(),
-            children: children.iter().map(desc_clone).collect(),
-        },
-        Desc::Leaf { id, style, kind } => Desc::Leaf {
-            id: id.clone(),
-            style: style.clone(),
-            kind: kind.clone(),
-        },
-        Desc::Widget(widget) => Desc::Widget(crate::widget::WidgetDesc::from_boxed(
-            widget.id().to_string(),
-            widget.props().clone_box(),
-            widget.children().iter().map(desc_clone).collect(),
-        )),
-    }
+    d.clone()
 }
 
 #[cfg(test)]

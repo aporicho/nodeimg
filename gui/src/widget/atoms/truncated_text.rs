@@ -1,5 +1,5 @@
-use crate::tree::layout::{BoxStyle, LeafKind, Size, TextAlign, TextLayout, TextOverflow};
-use crate::tree::Desc;
+use crate::tree::layout::{BoxStyle, Size, TextAlign, TextLayout, TextOverflow};
+use crate::ui::{self, StyleBuilder};
 use crate::widget::atoms::label::{label_style, LabelVariant};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -59,23 +59,19 @@ impl WidgetProps for TruncatedTextProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::text")),
-                style: BoxStyle {
-                    width: self.width,
-                    height: Size::Auto,
-                    flex_shrink: 1.0,
-                    ..BoxStyle::default()
+            children: vec![ui::text_with_layout(
+                format!("{id}::text"),
+                self.text.to_string(),
+                label_style(cx.theme, self.variant, self.muted),
+                TextLayout {
+                    overflow: self.overflow,
+                    align: self.align,
                 },
-                kind: LeafKind::Text {
-                    content: self.text.to_string(),
-                    style: label_style(cx.theme, self.variant, self.muted),
-                    layout: TextLayout {
-                        overflow: self.overflow,
-                        align: self.align,
-                    },
-                },
-            }],
+            )
+            .width(self.width)
+            .auto_height()
+            .flex_shrink(1.0)
+            .build()],
         }
     }
 }
@@ -84,6 +80,8 @@ impl WidgetProps for TruncatedTextProps {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::LeafKind;
+    use crate::tree::Desc;
 
     #[test]
     fn truncated_text_defaults_to_fill_ellipsis_start() {

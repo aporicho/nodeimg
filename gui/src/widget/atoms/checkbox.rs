@@ -1,8 +1,8 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
-use crate::tree::Desc;
+use crate::tree::layout::{Align, BoxStyle, Direction};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -51,52 +51,43 @@ impl WidgetProps for CheckboxProps {
             },
         );
 
-        let mut children = vec![Desc::Container {
-            id: Cow::Owned(format!("{id}::box")),
-            style: BoxStyle {
-                width: Size::Fixed(tokens.box_size),
-                height: Size::Fixed(tokens.box_size),
-                align_items: Align::Center,
-                justify_content: crate::tree::layout::Justify::Center,
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.box_background),
-                border: visual.box_border.map(|color| crate::renderer::Border {
-                    width: tokens.border_width,
-                    color,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::check")),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: if self.checked { "✓" } else { "" }.to_string(),
-                    style: TextStyle {
-                        color: visual.check,
-                        size: tokens.check_font_size,
-                        ..theme.text_style_body_sm()
-                    },
-                    layout: Default::default(),
+        let mut box_builder = ui::container(format!("{id}::box"))
+            .fixed_width(tokens.box_size)
+            .fixed_height(tokens.box_size)
+            .align_items(Align::Center)
+            .justify_content(crate::tree::layout::Justify::Center)
+            .background(visual.box_background)
+            .radius_all(tokens.radius)
+            .child(ui::text(
+                format!("{id}::check"),
+                if self.checked { "✓" } else { "" },
+                TextStyle {
+                    color: visual.check,
+                    size: tokens.check_font_size,
+                    ..theme.text_style_body_sm()
                 },
-            }],
-        }];
+            ));
+        if let Some(color) = visual.box_border {
+            box_builder = box_builder.border(crate::renderer::Border {
+                width: tokens.border_width,
+                color,
+            });
+        }
+
+        let mut children = vec![box_builder.build()];
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(format!("{id}::label")),
-                style: BoxStyle::default(),
-                kind: LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    format!("{id}::label"),
+                    label.to_string(),
+                    TextStyle {
                         color: visual.text,
                         size: tokens.font_size,
                         ..theme.text_style_body_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .build(),
+            );
         }
 
         WidgetBuild {

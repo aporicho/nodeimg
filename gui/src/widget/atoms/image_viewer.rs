@@ -1,8 +1,7 @@
-use crate::tree::layout::{BoxStyle, Decoration, LeafKind, Size, TextureHandle};
-use crate::tree::Desc;
+use crate::tree::layout::{BoxStyle, LeafKind, Size, TextureHandle};
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
-use std::borrow::Cow;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,27 +40,24 @@ impl WidgetProps for ImageViewerProps {
                 height: Size::Fixed(self.height),
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(tokens.background),
-                border: Some(crate::renderer::Border {
+            decoration: ui::container("_")
+                .background(tokens.background)
+                .border(crate::renderer::Border {
                     width: tokens.border_width,
                     color: tokens.border,
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(format!("{id}::image")),
-                style: BoxStyle {
-                    width: Size::Fill,
-                    height: Size::Fill,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Image {
+                })
+                .radius_all(tokens.radius)
+                .build_decoration(),
+            children: vec![ui::leaf(
+                format!("{id}::image"),
+                LeafKind::Image {
                     texture: self.texture,
                     tint: None,
                 },
-            }],
+            )
+            .fill_width()
+            .fill_height()
+            .build()],
         }
     }
 }
@@ -70,6 +66,8 @@ impl WidgetProps for ImageViewerProps {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::LeafKind;
+    use crate::tree::Desc;
 
     #[test]
     fn image_viewer_builds_image_leaf() {

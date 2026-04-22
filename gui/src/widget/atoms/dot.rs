@@ -1,6 +1,7 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
-use crate::tree::layout::{BoxStyle, Decoration, Size};
+use crate::tree::layout::{BoxStyle, Size};
+use crate::ui::{self, DecorationBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::fmt;
@@ -44,12 +45,15 @@ impl WidgetProps for DotProps {
                 gestures: self.gestures.clone(),
                 ..BoxStyle::default()
             },
-            decoration: Some(Decoration {
-                background: Some(self.fill),
-                border: self.border,
-                radius: [self.diameter * 0.5; 4],
-                shadow: None,
-            }),
+            decoration: {
+                let mut decoration = ui::container("_")
+                    .background(self.fill)
+                    .radius_all(self.diameter * 0.5)
+                    .build_decoration()
+                    .expect("dot decoration is set");
+                decoration.border = self.border;
+                Some(decoration)
+            },
             children: Vec::new(),
         }
     }

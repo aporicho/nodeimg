@@ -81,30 +81,29 @@ mod tests {
     use super::*;
     use crate::renderer::Rect;
     use crate::theme::dark_theme;
-    use crate::tree::layout::{BoxStyle, Size};
     use crate::tree::{layout, reconcile, Desc};
+    use crate::ui::{self, StyleBuilder};
     use crate::widget::atoms::button::ButtonProps;
     use crate::widget::atoms::slider::SliderProps;
     use crate::widget::atoms::text_input::TextInputProps;
     use crate::widget::frameworks::panel::PanelProps;
-    use crate::widget::props::WidgetBuildCx;
+    use crate::widget::props::{WidgetBuildCx, WidgetProps};
     use std::borrow::Cow;
+
+    fn widget(id: impl Into<Cow<'static, str>>, props: impl WidgetProps) -> Desc {
+        ui::widget(id, props).build()
+    }
 
     fn build_tree(children: Vec<Desc>) -> Tree {
         let theme = dark_theme();
         let mut tree = Tree::new();
         reconcile(
             &mut tree,
-            Desc::Container {
-                id: Cow::Borrowed("root"),
-                style: BoxStyle {
-                    width: Size::Fixed(640.0),
-                    height: Size::Fixed(480.0),
-                    ..BoxStyle::default()
-                },
-                decoration: None,
-                children,
-            },
+            ui::container("root")
+                .fixed_width(640.0)
+                .fixed_height(480.0)
+                .children(children)
+                .build(),
             WidgetBuildCx {
                 theme: &theme,
                 force_rebuild: false,
@@ -133,8 +132,8 @@ mod tests {
 
     #[test]
     fn button_label_resolves_to_button() {
-        let tree = build_tree(vec![Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("button"),
+        let tree = build_tree(vec![widget(
+            "button",
             ButtonProps {
                 label: Cow::Borrowed("Run"),
                 icon: None,
@@ -142,7 +141,7 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ))]);
+        )]);
         let resolver = TargetResolver::new(&tree);
         let label = node_by_name(&tree, "button::label");
 
@@ -152,8 +151,8 @@ mod tests {
 
     #[test]
     fn panel_titlebar_resolves_to_panel() {
-        let tree = build_tree(vec![Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("panel"),
+        let tree = build_tree(vec![widget(
+            "panel",
             PanelProps {
                 title: Cow::Borrowed("Panel"),
                 rect: Rect {
@@ -170,7 +169,7 @@ mod tests {
                 closable: false,
                 content: vec![],
             },
-        ))]);
+        )]);
         let resolver = TargetResolver::new(&tree);
         let titlebar = node_by_name(&tree, "panel::titlebar");
 
@@ -180,8 +179,8 @@ mod tests {
 
     #[test]
     fn text_input_field_resolves_to_text_input() {
-        let tree = build_tree(vec![Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("input"),
+        let tree = build_tree(vec![widget(
+            "input",
             TextInputProps {
                 label: Some(Cow::Borrowed("Prompt")),
                 value: Cow::Borrowed("hello"),
@@ -189,7 +188,7 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ))]);
+        )]);
         let resolver = TargetResolver::new(&tree);
         let field = node_by_name(&tree, "input::field");
 
@@ -199,8 +198,8 @@ mod tests {
 
     #[test]
     fn slider_thumb_resolves_to_slider() {
-        let tree = build_tree(vec![Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("slider"),
+        let tree = build_tree(vec![widget(
+            "slider",
             SliderProps {
                 label: Some(Cow::Borrowed("Radius")),
                 min: 0.0,
@@ -211,7 +210,7 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ))]);
+        )]);
         let resolver = TargetResolver::new(&tree);
         let thumb = node_by_name(&tree, "slider::thumb");
 
@@ -221,8 +220,8 @@ mod tests {
 
     #[test]
     fn longest_widget_prefix_supports_existing_ids_with_separator() {
-        let tree = build_tree(vec![Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("gallery_panel::basic"),
+        let tree = build_tree(vec![widget(
+            "gallery_panel::basic",
             PanelProps {
                 title: Cow::Borrowed("Panel"),
                 rect: Rect {
@@ -239,7 +238,7 @@ mod tests {
                 closable: false,
                 content: vec![],
             },
-        ))]);
+        )]);
         let resolver = TargetResolver::new(&tree);
 
         assert_eq!(

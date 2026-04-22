@@ -36,8 +36,8 @@ impl WidgetProps for TextInputProps {
     }
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         use crate::renderer::Border;
-        use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
-        use crate::tree::Desc;
+        use crate::tree::layout::{Align, BoxStyle, Direction, Size};
+        use crate::ui::{self, DecorationBuilder, StyleBuilder};
 
         let theme = cx.theme;
         let tokens = theme.text_field_metrics(self.size, self.density);
@@ -50,61 +50,48 @@ impl WidgetProps for TextInputProps {
 
         let mut children = Vec::new();
         if let Some(label) = &self.label {
-            children.push(Desc::Leaf {
-                id: Cow::Owned(anatomy.label()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: label.to_string(),
-                    style: TextStyle {
+            children.push(
+                ui::text(
+                    anatomy.label(),
+                    label.to_string(),
+                    TextStyle {
                         color: theme.colors.text_muted,
                         size: tokens.label_size,
                         ..theme.text_style_label_sm()
                     },
-                    layout: Default::default(),
-                },
-            });
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+            );
         }
-        children.push(Desc::Container {
-            id: Cow::Owned(anatomy.field()),
-            style: BoxStyle {
-                height: Size::Fixed(tokens.field_height),
-                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
-                direction: Direction::Row,
-                align_items: Align::Center,
-                hittable: Some(true),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(visual.background),
-                border: Some(Border {
+        children.push(
+            ui::row(anatomy.field())
+                .fixed_height(tokens.field_height)
+                .padding_symmetric(tokens.padding_y, tokens.padding_x)
+                .align_items(Align::Center)
+                .hittable(true)
+                .background(visual.background)
+                .border(Border {
                     width: tokens.border_width,
                     color: visual.border.unwrap_or(theme.colors.border),
-                }),
-                radius: [tokens.radius; 4],
-                shadow: None,
-            }),
-            children: vec![Desc::Leaf {
-                id: Cow::Owned(anatomy.part("value")),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
-                kind: LeafKind::Text {
-                    content: self.value.to_string(),
-                    style: TextStyle {
-                        color: visual.text,
-                        size: tokens.value_size,
-                        ..theme.text_style_body_sm()
-                    },
-                    layout: Default::default(),
-                },
-            }],
-        });
+                })
+                .radius_all(tokens.radius)
+                .child(
+                    ui::text(
+                        anatomy.part("value"),
+                        self.value.to_string(),
+                        TextStyle {
+                            color: visual.text,
+                            size: tokens.value_size,
+                            ..theme.text_style_body_sm()
+                        },
+                    )
+                    .auto_width()
+                    .auto_height(),
+                )
+                .build(),
+        );
 
         WidgetBuild {
             style: BoxStyle {

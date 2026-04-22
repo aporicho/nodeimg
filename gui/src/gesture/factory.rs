@@ -133,12 +133,12 @@ mod tests {
     use crate::gesture::{Gesture, GestureSignal};
     use crate::renderer::Rect;
     use crate::theme::{dark_theme, Theme};
-    use crate::tree::layout::{BoxStyle, LeafKind, Size};
     use crate::tree::{hit_test, reconcile, Desc, Tree};
+    use crate::ui::{self, StyleBuilder};
     use crate::widget::atoms::slider::SliderProps;
     use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
-    use crate::widget::props::WidgetBuildCx;
+    use crate::widget::props::{WidgetBuildCx, WidgetProps};
 
     fn build_cx<'a>(theme: &'a Theme) -> WidgetBuildCx<'a> {
         WidgetBuildCx {
@@ -147,9 +147,13 @@ mod tests {
         }
     }
 
+    fn widget(id: impl Into<Cow<'static, str>>, props: impl WidgetProps) -> Desc {
+        ui::widget(id, props).build()
+    }
+
     fn test_panel_desc() -> Desc {
-        Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("demo_panel"),
+        widget(
+            "demo_panel",
             PanelProps {
                 title: Cow::Borrowed("Demo"),
                 rect: Rect {
@@ -166,7 +170,7 @@ mod tests {
                 closable: false,
                 content: vec![],
             },
-        ))
+        )
     }
 
     #[test]
@@ -227,21 +231,16 @@ mod tests {
     fn tap_declared_leaf_creates_arena() {
         let theme = dark_theme();
         let mut tree = Tree::new();
-        let desc = Desc::Leaf {
-            id: Cow::Borrowed("tap_target"),
-            style: BoxStyle {
-                width: Size::Fixed(20.0),
-                height: Size::Fixed(20.0),
-                hittable: Some(true),
-                gestures: vec![Gesture::Tap],
-                ..BoxStyle::default()
-            },
-            kind: LeafKind::Text {
-                content: "x".into(),
-                style: crate::renderer::TextStyle::new(crate::renderer::Color::WHITE, 12.0),
-                layout: Default::default(),
-            },
-        };
+        let desc = ui::text(
+            "tap_target",
+            "x",
+            crate::renderer::TextStyle::new(crate::renderer::Color::WHITE, 12.0),
+        )
+        .fixed_width(20.0)
+        .fixed_height(20.0)
+        .hittable(true)
+        .gesture(Gesture::Tap)
+        .build();
         reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
         tree.get_mut(root).unwrap().rect = Rect {
@@ -260,8 +259,8 @@ mod tests {
     #[test]
     fn toggle_track_click_emits_click_signal() {
         let theme = dark_theme();
-        let desc = Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("toggle_grid"),
+        let desc = widget(
+            "toggle_grid",
             ToggleProps {
                 label: Some(Cow::Borrowed("Grid")),
                 value: true,
@@ -269,7 +268,7 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ));
+        );
         let mut tree = Tree::new();
         reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
@@ -303,8 +302,8 @@ mod tests {
     #[test]
     fn slider_track_drag_emits_slider_target_not_panel() {
         let theme = dark_theme();
-        let desc = Desc::Widget(crate::widget::WidgetDesc::new(
-            Cow::Borrowed("slider_radius"),
+        let desc = widget(
+            "slider_radius",
             SliderProps {
                 label: Some(Cow::Borrowed("Radius")),
                 min: 0.0,
@@ -315,7 +314,7 @@ mod tests {
                 size: Default::default(),
                 density: Default::default(),
             },
-        ));
+        );
         let mut tree = Tree::new();
         reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();

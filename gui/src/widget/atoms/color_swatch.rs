@@ -1,9 +1,8 @@
 use crate::renderer::{Border, Color, TextStyle};
 use crate::theme::{ControlSize, Density};
-use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, LeafKind, Size, TextLayout, TextOverflow,
-};
+use crate::tree::layout::{Align, BoxStyle, Direction, Size, TextAlign, TextLayout, TextOverflow};
 use crate::tree::Desc;
+use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -60,29 +59,23 @@ impl WidgetProps for ColorSwatchProps {
             ));
         }
 
-        children.push(Desc::Container {
-            id: Cow::Owned(format!("{id}::swatch")),
-            style: BoxStyle {
-                width: Size::Fixed(metrics.icon_size.max(18.0)),
-                height: Size::Fixed(metrics.icon_size.max(18.0)),
-                ..BoxStyle::default()
-            },
-            decoration: Some(Decoration {
-                background: Some(Color {
+        children.push(
+            ui::container(format!("{id}::swatch"))
+                .fixed_width(metrics.icon_size.max(18.0))
+                .fixed_height(metrics.icon_size.max(18.0))
+                .background(Color {
                     r: self.rgba[0],
                     g: self.rgba[1],
                     b: self.rgba[2],
                     a: self.rgba[3],
-                }),
-                border: Some(Border {
+                })
+                .border(Border {
                     width: metrics.border_width,
                     color: visual.border.unwrap_or(theme.colors.border),
-                }),
-                radius: [metrics.radius; 4],
-                shadow: None,
-            }),
-            children: Vec::new(),
-        });
+                })
+                .radius_all(metrics.radius)
+                .build(),
+        );
 
         if self.show_value {
             children.push(text_leaf(
@@ -110,23 +103,20 @@ impl WidgetProps for ColorSwatchProps {
 
 fn text_leaf(id: String, content: &str, color: Color, mut style: TextStyle, width: Size) -> Desc {
     style.color = color;
-    Desc::Leaf {
-        id: Cow::Owned(id),
-        style: BoxStyle {
-            width,
-            height: Size::Auto,
-            flex_shrink: 1.0,
-            ..BoxStyle::default()
+    ui::text_with_layout(
+        id,
+        content.to_string(),
+        style,
+        TextLayout {
+            overflow: TextOverflow::Ellipsis,
+            align: TextAlign::Start,
+            ..Default::default()
         },
-        kind: LeafKind::Text {
-            content: content.to_string(),
-            style,
-            layout: TextLayout {
-                overflow: TextOverflow::Ellipsis,
-                ..Default::default()
-            },
-        },
-    }
+    )
+    .width(width)
+    .auto_height()
+    .flex_shrink(1.0)
+    .build()
 }
 
 pub fn format_color(rgba: [f32; 4]) -> String {
