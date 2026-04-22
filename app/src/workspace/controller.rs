@@ -14,6 +14,7 @@ use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_card::CanvasNodeView;
+use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{
     canvas_node_owner_id, canvas_port_event_target_id, canvas_port_stable_id,
     parse_canvas_port_group_trigger_id, parse_canvas_port_id, CanvasConnectionView,
@@ -126,6 +127,58 @@ impl WorkspaceController {
                     hovered_port_id.as_deref(),
                     &mut view.outputs,
                 );
+            }
+        }
+        views
+    }
+
+    pub(crate) fn canvas_node_render_views(&self, gui: &mut Context) -> Vec<CanvasNodeRenderView> {
+        let mut identities = engine_adapter::canvas_node_identities(&self.engine);
+        identities.push(showcase_node::showcase_node_identity());
+        identities.push(showcase_node::solo_node_identity());
+        let layouts = gui.sync_canvas_node_layouts(&identities);
+        let showcase_layouts = layouts
+            .iter()
+            .filter(|layout| showcase_node::is_showcase_node(&layout.owner_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let engine_layouts = layouts
+            .into_iter()
+            .filter(|layout| !showcase_node::is_showcase_node(&layout.owner_id))
+            .collect::<Vec<_>>();
+        let mut views = engine_adapter::canvas_node_render_views(&self.engine, engine_layouts);
+        views.extend(
+            showcase_layouts
+                .into_iter()
+                .filter_map(showcase_node::showcase_render_view_for_layout),
+        );
+
+        let pending_connection = gui.pending_canvas_connection();
+        let hovered_port_id = gui.hovered_canvas_port_id();
+        for view in &mut views {
+            view.state.selected = gui.is_canvas_node_selected(&view.state.owner_id);
+            if let Some(pending) = pending_connection.as_ref() {
+                let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
+                    continue;
+                };
+                for port_state in &mut view.state.port_states {
+                    let port_id = canvas_port_stable_id(
+                        &view.state.owner_id,
+                        port_state.side,
+                        &port_state.key,
+                    );
+                    let target = CanvasPortRef {
+                        owner_id: view.state.owner_id.clone(),
+                        side: port_state.side,
+                        name: port_state.key.clone(),
+                    };
+                    port_state.connection_state = self.pending_connection_state(
+                        &from,
+                        hovered_port_id.as_deref(),
+                        &port_id,
+                        &target,
+                    );
+                }
             }
         }
         views
@@ -307,7 +360,11 @@ impl WorkspaceController {
             return;
         };
         for port in ports {
-            port.connection_state = self.pending_connection_state(&from, hovered_port_id, port);
+            let Some(target) = parse_canvas_port_id(&port.stable_id) else {
+                continue;
+            };
+            port.connection_state =
+                self.pending_connection_state(&from, hovered_port_id, &port.stable_id, &target);
         }
     }
 
@@ -315,26 +372,17 @@ impl WorkspaceController {
         &self,
         from: &CanvasPortRef,
         hovered_port_id: Option<&str>,
-        port: &CanvasPortView,
+        port_id: &str,
+        target: &CanvasPortRef,
     ) -> CanvasPortConnectionState {
-        if port.stable_id == canvas_port_stable_id(&from.owner_id, from.side, &from.name) {
+        if port_id == canvas_port_stable_id(&from.owner_id, from.side, &from.name) {
             return CanvasPortConnectionState::Source;
         }
-        if port.side != CanvasPortSide::Input {
+        if target.side != CanvasPortSide::Input {
             return CanvasPortConnectionState::Idle;
         }
-        let target = CanvasPortRef {
-            owner_id: port
-                .stable_id
-                .strip_prefix("canvas_node::")
-                .and_then(|id| id.split_once("::port::").map(|(owner_id, _)| owner_id))
-                .unwrap_or_default()
-                .to_string(),
-            side: port.side,
-            name: port.name.clone(),
-        };
-        let hovered = hovered_port_id == Some(port.stable_id.as_str());
-        if self.can_connect_canvas_ports(from, &target).is_ok() {
+        let hovered = hovered_port_id == Some(port_id);
+        if self.can_connect_canvas_ports(from, target).is_ok() {
             if hovered {
                 CanvasPortConnectionState::DropTarget
             } else {

@@ -120,7 +120,7 @@ impl App for DemoApp {
             engine: &self.workspace.engine_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
-        let canvas_nodes = self.workspace.canvas_node_views(&mut self.gui);
+        let canvas_nodes = self.workspace.canvas_node_render_views(&mut self.gui);
         let canvas_connections = self.workspace.canvas_connection_views();
         let pending_connection = self.gui.pending_canvas_connection();
         let desc = build_workspace_tree(

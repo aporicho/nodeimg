@@ -1,5 +1,6 @@
 use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
 use crate::canvas::node_card::CanvasNodeView;
+use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
 use crate::canvas::param_control::{CanvasNodeParamControl, CanvasParamControlMetrics};
 use crate::renderer::Color;
 use crate::theme::Theme;
@@ -107,51 +108,61 @@ impl NodeCardMetrics {
     }
 }
 
-pub(crate) fn node_render_spec(view: &CanvasNodeView, theme: &Theme) -> NodeRenderSpec {
+pub(crate) fn node_render_spec_from_view(view: &CanvasNodeView, theme: &Theme) -> NodeRenderSpec {
+    let template = CanvasNodeTemplate::from_legacy_view(view);
+    let state = CanvasNodeInstanceState::from_legacy_view(view);
+    node_render_spec(&template, &state, theme)
+}
+
+pub(crate) fn node_render_spec(
+    template: &CanvasNodeTemplate,
+    state: &CanvasNodeInstanceState,
+    theme: &Theme,
+) -> NodeRenderSpec {
     let metrics = NodeCardMetrics::from_theme(theme);
-    let id = canvas_node_stable_id(&view.owner_id);
+    let id = canvas_node_stable_id(&state.owner_id);
     let body_id = format!("{id}::body");
 
     NodeRenderSpec {
         id: id.clone(),
-        selected: view.selected,
-        layout: view.layout.clone(),
+        selected: state.selected,
+        layout: state.layout.clone(),
         metrics,
-        input_column_id: pin_column_id(&view.owner_id, CanvasPortSide::Input),
-        output_column_id: pin_column_id(&view.owner_id, CanvasPortSide::Output),
+        input_column_id: pin_column_id(&state.owner_id, CanvasPortSide::Input),
+        output_column_id: pin_column_id(&state.owner_id, CanvasPortSide::Output),
         card_id: format!("{id}::card"),
         header: NodeHeaderSpec {
             row_id: format!("{id}::label"),
             dot_id: format!("{id}::label_dot"),
             text_id: format!("{id}::label_text"),
-            title: view.title.clone(),
-            category_color: category_color(&view.category),
+            title: template.title.clone(),
+            category_color: category_color(&template.category),
         },
         body: NodeBodySpec {
             id: body_id.clone(),
-            rows: body_rows(&body_id, view),
+            rows: body_rows(&body_id, template),
         },
-        inputs: view
+        inputs: template
             .inputs
             .iter()
             .map(|port| {
                 port_spec(
                     port.name.clone(),
-                    &port.stable_id,
+                    &state.port_id(port.side, &port.key),
                     port.side,
-                    port.connection_state,
+                    state.connection_state(port.side, &port.key),
                 )
             })
             .collect(),
-        outputs: view
+        outputs: template
             .outputs
             .iter()
             .map(|port| {
                 port_spec(
                     port.name.clone(),
-                    &port.stable_id,
+                    &state.port_id(port.side, &port.key),
                     port.side,
-                    port.connection_state,
+                    state.connection_state(port.side, &port.key),
                 )
             })
             .collect(),
@@ -178,16 +189,17 @@ fn port_spec(
     }
 }
 
-fn body_rows(body_id: &str, view: &CanvasNodeView) -> Vec<NodeBodyRowSpec> {
-    if view.params.is_empty() {
+fn body_rows(body_id: &str, template: &CanvasNodeTemplate) -> Vec<NodeBodyRowSpec> {
+    if template.params.is_empty() {
         return vec![NodeBodyRowSpec::Summary {
             id: format!("{body_id}::summary"),
             text_id: format!("{body_id}::summary::text"),
-            text: view.subtitle.clone(),
+            text: template.subtitle.clone(),
         }];
     }
 
-    view.params
+    template
+        .params
         .iter()
         .enumerate()
         .map(|(index, param)| {
@@ -198,10 +210,10 @@ fn body_rows(body_id: &str, view: &CanvasNodeView) -> Vec<NodeBodyRowSpec> {
                 control_id: format!("{id}::control"),
                 id,
                 name: param.name.clone(),
-                value: if param.value.is_empty() {
+                value: if param.default_value.is_empty() {
                     param.kind.clone()
                 } else {
-                    param.value.clone()
+                    param.default_value.clone()
                 },
                 control: param.control.clone(),
             }
@@ -249,7 +261,8 @@ mod tests {
 
     #[test]
     fn spec_root_id_uses_canvas_node_stable_id() {
-        let spec = node_render_spec(&node_view_with_ports(), &light_theme());
+        let (template, state) = template_and_state_with_ports();
+        let spec = node_render_spec(&template, &state, &light_theme());
 
         assert_eq!(spec.id, "canvas_node::engine_node::7");
         assert_eq!(spec.card_id, "canvas_node::engine_node::7::card");
@@ -257,7 +270,8 @@ mod tests {
 
     #[test]
     fn spec_preserves_port_order_and_ids() {
-        let spec = node_render_spec(&node_view_with_ports(), &light_theme());
+        let (template, state) = template_and_state_with_ports();
+        let spec = node_render_spec(&template, &state, &light_theme());
 
         assert_eq!(
             spec.input_column_id,
@@ -279,10 +293,10 @@ mod tests {
 
     #[test]
     fn param_value_falls_back_to_kind_when_empty() {
-        let mut view = node_view_with_ports();
-        view.params[0].value.clear();
+        let (mut template, state) = template_and_state_with_ports();
+        template.params[0].default_value.clear();
 
-        let spec = node_render_spec(&view, &light_theme());
+        let spec = node_render_spec(&template, &state, &light_theme());
 
         let NodeBodyRowSpec::Param { value, .. } = &spec.body.rows[0] else {
             panic!("expected param row");
@@ -292,7 +306,8 @@ mod tests {
 
     #[test]
     fn header_spec_includes_category_color() {
-        let spec = node_render_spec(&node_view_with_ports(), &light_theme());
+        let (template, state) = template_and_state_with_ports();
+        let spec = node_render_spec(&template, &state, &light_theme());
 
         assert_eq!(
             spec.header.category_color,
@@ -303,6 +318,31 @@ mod tests {
                 a: 1.0,
             }
         );
+    }
+
+    #[test]
+    fn legacy_facade_splits_template_and_instance_state() {
+        let view = node_view_with_ports();
+        let template = CanvasNodeTemplate::from_legacy_view(&view);
+        let state = CanvasNodeInstanceState::from_legacy_view(&view);
+
+        assert_eq!(template.title, "Image");
+        assert_eq!(template.inputs[0].key, "prompt");
+        assert_eq!(template.outputs[0].side, CanvasPortSide::Output);
+        assert_eq!(state.owner_id, "engine_node::7");
+        assert_eq!(state.port_states.len(), 2);
+        assert_eq!(
+            state.connection_state(CanvasPortSide::Input, "prompt"),
+            CanvasPortConnectionState::Idle
+        );
+    }
+
+    fn template_and_state_with_ports() -> (CanvasNodeTemplate, CanvasNodeInstanceState) {
+        let view = node_view_with_ports();
+        (
+            CanvasNodeTemplate::from_legacy_view(&view),
+            CanvasNodeInstanceState::from_legacy_view(&view),
+        )
     }
 
     fn node_view_with_ports() -> CanvasNodeView {

@@ -1,4 +1,7 @@
 use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
+use gui::canvas::node_template::{
+    CanvasNodeInstanceState, CanvasNodeRenderView, CanvasNodeTemplate,
+};
 use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     canvas_port_stable_id, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState,
@@ -43,6 +46,15 @@ pub(crate) fn showcase_view_for_layout(layout: CanvasNodeLayout) -> Option<Canva
         SOLO_OWNER_ID => Some(solo_node_view(layout)),
         _ => None,
     }
+}
+
+pub(crate) fn showcase_render_view_for_layout(
+    layout: CanvasNodeLayout,
+) -> Option<CanvasNodeRenderView> {
+    showcase_view_for_layout(layout).map(|view| CanvasNodeRenderView {
+        template: CanvasNodeTemplate::from_legacy_view(&view),
+        state: CanvasNodeInstanceState::from_legacy_view(&view),
+    })
 }
 
 pub(crate) fn showcase_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {

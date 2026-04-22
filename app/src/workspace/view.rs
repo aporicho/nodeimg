@@ -1,6 +1,7 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::connection_layer;
-use gui::canvas::node_card::{node_card, CanvasNodeView};
+use gui::canvas::node_card::node_card_from_render_view;
+use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{CanvasConnectionView, CanvasPendingConnectionView};
 use gui::renderer::Rect;
 use gui::theme::Theme;
@@ -17,7 +18,7 @@ pub(crate) fn build_workspace_tree(
     viewport: Rect,
     camera: &Camera,
     theme: &Theme,
-    canvas_nodes: &[CanvasNodeView],
+    canvas_nodes: &[CanvasNodeRenderView],
     canvas_connections: &[CanvasConnectionView],
     pending_connection: Option<&CanvasPendingConnectionView>,
     panel_root: Desc,
@@ -47,7 +48,11 @@ pub(crate) fn build_workspace_tree(
         pending_connection,
         CANVAS_CONNECTION_Z,
     ));
-    canvas_children.extend(canvas_nodes.iter().map(|node| node_card(node, theme)));
+    canvas_children.extend(
+        canvas_nodes
+            .iter()
+            .map(|node| node_card_from_render_view(node, theme)),
+    );
 
     ui::container("root")
         .fixed_width(viewport.w)

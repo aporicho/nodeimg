@@ -3,9 +3,10 @@ use super::{
     CanvasPortView,
 };
 use crate::canvas::node_spec::{
-    node_render_spec, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec, NodePortSpec,
-    NodeRenderSpec,
+    node_render_spec, node_render_spec_from_view, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec,
+    NodePortSpec, NodeRenderSpec,
 };
+use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::canvas::param_control::{param_control, CanvasNodeParamControl};
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
@@ -39,7 +40,12 @@ pub struct CanvasNodeParamView {
 }
 
 pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
-    let spec = node_render_spec(view, theme);
+    let spec = node_render_spec_from_view(view, theme);
+    node_card_from_spec(&spec, theme)
+}
+
+pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
+    let spec = node_render_spec(&view.template, &view.state, theme);
     node_card_from_spec(&spec, theme)
 }
 
@@ -809,7 +815,7 @@ mod tests {
     fn node_card_facade_matches_explicit_spec_builder() {
         let theme = light_theme();
         let view = node_view_with_ports();
-        let spec = node_render_spec(&view, &theme);
+        let spec = node_render_spec_from_view(&view, &theme);
 
         let facade = node_card(&view, &theme);
         let explicit = node_card_from_spec(&spec, &theme);

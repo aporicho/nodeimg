@@ -4,6 +4,10 @@ use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
 use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
+use gui::canvas::node_template::{
+    CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
+    CanvasNodeRenderView, CanvasNodeTemplate,
+};
 use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
@@ -138,6 +142,75 @@ pub(crate) fn canvas_node_views(
     views
 }
 
+pub(crate) fn canvas_node_templates(engine: &Engine) -> HashMap<String, CanvasNodeTemplate> {
+    engine
+        .list_node_defs()
+        .into_iter()
+        .map(|def| {
+            (
+                def.type_id.clone(),
+                CanvasNodeTemplate {
+                    type_id: def.type_id.clone(),
+                    title: def.name.clone(),
+                    subtitle: def.type_id.clone(),
+                    category: def.category.clone(),
+                    inputs: canvas_port_templates(CanvasPortSide::Input, def),
+                    outputs: canvas_port_templates(CanvasPortSide::Output, def),
+                    params: canvas_node_param_templates(def),
+                },
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn canvas_node_render_views(
+    engine: &Engine,
+    layouts: Vec<CanvasNodeLayout>,
+) -> Vec<CanvasNodeRenderView> {
+    let graph = engine.query_graph_snapshot();
+    let templates_by_type = canvas_node_templates(engine);
+
+    let mut views = layouts
+        .into_iter()
+        .filter_map(|layout| {
+            let node_id = parse_engine_node_owner_id(&layout.owner_id)?;
+            let node = graph.nodes.get(&node_id)?;
+            let template = templates_by_type.get(node.type_id.as_str())?.clone();
+            let layout = layout_with_content_height(
+                layout,
+                template.params.len(),
+                template.inputs.len(),
+                template.outputs.len(),
+            );
+            let state = CanvasNodeInstanceState {
+                owner_id: layout.owner_id.clone(),
+                layout,
+                selected: false,
+                port_states: template
+                    .inputs
+                    .iter()
+                    .chain(template.outputs.iter())
+                    .map(|port| CanvasNodePortState {
+                        key: port.key.clone(),
+                        side: port.side,
+                        connection_state: CanvasPortConnectionState::Idle,
+                    })
+                    .collect(),
+            };
+            Some(CanvasNodeRenderView { template, state })
+        })
+        .collect::<Vec<_>>();
+
+    views.sort_by(|a, b| {
+        a.state
+            .layout
+            .z_index
+            .cmp(&b.state.layout.z_index)
+            .then_with(|| a.state.owner_id.cmp(&b.state.owner_id))
+    });
+    views
+}
+
 pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionView> {
     let graph = engine.query_graph_snapshot();
     graph
@@ -179,6 +252,16 @@ fn canvas_ports(
             count,
             connection_state: CanvasPortConnectionState::Idle,
         })
+        .collect()
+}
+
+fn canvas_port_templates(
+    side: CanvasPortSide,
+    node_def: &engine::node_manager::NodeDef,
+) -> Vec<CanvasNodePortTemplate> {
+    exposed_ports(node_def, side)
+        .into_iter()
+        .map(|pin| CanvasNodePortTemplate::new(pin.name.clone(), pin.name, side))
         .collect()
 }
 
@@ -275,6 +358,32 @@ fn canvas_node_params(node_def: &engine::node_manager::NodeDef) -> Vec<CanvasNod
             kind: param.data_type.to_string(),
             value: compact_value(&param.default_value),
             control: canvas_param_control(param),
+        })
+        .collect()
+}
+
+fn canvas_node_param_templates(
+    node_def: &engine::node_manager::NodeDef,
+) -> Vec<CanvasNodeParamTemplate> {
+    node_def
+        .params
+        .iter()
+        .filter(|param| {
+            param
+                .expose
+                .iter()
+                .any(|expose| matches!(expose, engine::node_manager::ParamExpose::Control))
+        })
+        .take(5)
+        .map(|param| {
+            let value = compact_value(&param.default_value);
+            CanvasNodeParamTemplate::new(
+                param.name.clone(),
+                param.name.clone(),
+                param.data_type.to_string(),
+                value,
+                canvas_param_control(param),
+            )
         })
         .collect()
 }
@@ -516,6 +625,48 @@ mod tests {
         assert!(input_ports.iter().any(|port| {
             port.stable_id == "canvas_node::engine_node::1::port::input::strength"
         }));
+    }
+
+    #[test]
+    fn canvas_node_templates_hold_static_node_shape() {
+        let engine = Engine::new(None);
+
+        let templates = canvas_node_templates(&engine);
+        let image_gen = templates.get("image_gen").expect("image_gen template");
+
+        assert_eq!(image_gen.type_id, "image_gen");
+        assert_eq!(image_gen.subtitle, "image_gen");
+        assert!(image_gen.outputs.iter().any(|port| port.name == "image"));
+        assert!(image_gen.params.iter().any(|param| param.key == "prompt"));
+    }
+
+    #[test]
+    fn canvas_node_render_views_keep_instance_state_outside_template() {
+        let mut engine = Engine::new(None);
+        let node_id = engine.add_node("image_gen").unwrap();
+        let owner_id = engine_node_owner_id(node_id);
+
+        let views = canvas_node_render_views(
+            &engine,
+            vec![CanvasNodeLayout {
+                owner_id: owner_id.clone(),
+                rect: Rect {
+                    x: 10.0,
+                    y: 20.0,
+                    w: CANVAS_NODE_WIDTH,
+                    h: 40.0,
+                },
+                z_index: 7,
+                collapsed: false,
+            }],
+        );
+
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].template.type_id, "image_gen");
+        assert_eq!(views[0].state.owner_id, owner_id);
+        assert_eq!(views[0].state.layout.z_index, 7);
+        assert!(!views[0].state.port_states.is_empty());
+        assert!(views[0].state.layout.rect.h > 40.0);
     }
 
     #[test]
