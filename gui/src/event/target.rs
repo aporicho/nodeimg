@@ -183,7 +183,7 @@ mod tests {
         let tree = build_tree(vec![Desc::Widget {
             id: Cow::Borrowed("input"),
             props: Box::new(TextInputProps {
-                label: Cow::Borrowed("Prompt"),
+                label: Some(Cow::Borrowed("Prompt")),
                 value: Cow::Borrowed("hello"),
                 disabled: false,
                 size: Default::default(),
@@ -202,12 +202,14 @@ mod tests {
         let tree = build_tree(vec![Desc::Widget {
             id: Cow::Borrowed("slider"),
             props: Box::new(SliderProps {
-                label: Cow::Borrowed("Radius"),
+                label: Some(Cow::Borrowed("Radius")),
                 min: 0.0,
                 max: 10.0,
                 step: 1.0,
                 value: 5.0,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         }]);
         let resolver = TargetResolver::new(&tree);

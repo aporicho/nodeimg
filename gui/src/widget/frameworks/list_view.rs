@@ -107,6 +107,15 @@ fn desc_clone(d: &Desc) -> Desc {
             id: id.clone(),
             props: props.clone_box(),
         },
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => Desc::WidgetContainer {
+            id: id.clone(),
+            props: props.clone_box(),
+            children: children.iter().map(desc_clone).collect(),
+        },
     }
 }
 
@@ -132,7 +141,9 @@ mod tests {
 
         assert_eq!(build.children.len(), 1);
         match &build.children[0] {
-            Desc::Widget { id, .. } => assert_eq!(id.as_ref(), "list::scroll"),
+            Desc::Widget { id, .. } | Desc::WidgetContainer { id, .. } => {
+                assert_eq!(id.as_ref(), "list::scroll")
+            }
             _ => panic!("expected scroll area child"),
         }
     }

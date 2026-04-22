@@ -1015,7 +1015,7 @@ mod tests {
             Desc::Container { children, .. } => {
                 children.iter().find_map(|child| find_desc(child, id))
             }
-            Desc::Leaf { .. } | Desc::Widget { .. } => None,
+            Desc::Leaf { .. } | Desc::Widget { .. } | Desc::WidgetContainer { .. } => None,
         }
     }
 
@@ -1027,7 +1027,7 @@ mod tests {
             Desc::Container { children, .. } => {
                 children.iter().any(|child| contains_desc_id(child, id))
             }
-            Desc::Leaf { .. } | Desc::Widget { .. } => false,
+            Desc::Leaf { .. } | Desc::Widget { .. } | Desc::WidgetContainer { .. } => false,
         }
     }
 }

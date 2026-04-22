@@ -19,6 +19,11 @@ pub enum Desc {
         id: Cow<'static, str>,
         props: Box<dyn WidgetProps>,
     },
+    WidgetContainer {
+        id: Cow<'static, str>,
+        props: Box<dyn WidgetProps>,
+        children: Vec<Desc>,
+    },
 }
 
 impl Desc {
@@ -26,7 +31,7 @@ impl Desc {
         match self {
             Desc::Container { id, .. } => id,
             Desc::Leaf { id, .. } => id,
-            Desc::Widget { id, .. } => id,
+            Desc::Widget { id, .. } | Desc::WidgetContainer { id, .. } => id,
         }
     }
 }

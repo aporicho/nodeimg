@@ -193,7 +193,7 @@ pub(crate) fn build_demo_popup() -> Desc {
                 Desc::Widget {
                     id: Cow::Borrowed(POPUP_CLOSE_ID),
                     props: Box::new(ButtonProps {
-                        label: "Close Popup".into(),
+                        label: Cow::Borrowed("Close Popup"),
                         icon: None,
                         disabled: false,
                         size: Default::default(),
@@ -315,7 +315,7 @@ fn button_section() -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("btn_primary"),
                 props: Box::new(ButtonProps {
-                    label: "Primary Action".into(),
+                    label: Cow::Borrowed("Primary Action"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
@@ -325,7 +325,7 @@ fn button_section() -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("btn_long"),
                 props: Box::new(ButtonProps {
-                    label: "A very long button label to test horizontal layout".into(),
+                    label: Cow::Borrowed("A very long button label to test horizontal layout"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
@@ -335,7 +335,7 @@ fn button_section() -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("btn_disabled"),
                 props: Box::new(ButtonProps {
-                    label: "Disabled Action".into(),
+                    label: Cow::Borrowed("Disabled Action"),
                     icon: None,
                     disabled: true,
                     size: Default::default(),
@@ -356,7 +356,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed(TEXT_PROMPT_ID),
                 props: Box::new(TextInputProps {
-                    label: "Prompt".into(),
+                    label: Some(Cow::Borrowed("Prompt")),
                     value: Cow::Owned(state.text_value.clone()),
                     disabled: false,
                     size: Default::default(),
@@ -366,7 +366,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("text_prompt_disabled"),
                 props: Box::new(TextInputProps {
-                    label: "Disabled Prompt".into(),
+                    label: Some(Cow::Borrowed("Disabled Prompt")),
                     value: Cow::Borrowed("Disabled but visible"),
                     disabled: true,
                     size: Default::default(),
@@ -376,18 +376,20 @@ fn input_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed(SLIDER_RADIUS_ID),
                 props: Box::new(SliderProps {
-                    label: "Radius".into(),
+                    label: Some(Cow::Borrowed("Radius")),
                     min: 0.0,
                     max: 10.0,
                     step: 0.1,
                     value: state.slider_value,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed(NUMBER_RADIUS_ID),
                 props: Box::new(NumberInputProps {
-                    label: "Radius value".into(),
+                    label: Some(Cow::Borrowed("Radius value")),
                     value: state.slider_value,
                     min: 0.0,
                     max: 10.0,
@@ -401,7 +403,7 @@ fn input_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("number_radius_disabled"),
                 props: Box::new(NumberInputProps {
-                    label: "Disabled Number".into(),
+                    label: Some(Cow::Borrowed("Disabled Number")),
                     value: 42.0,
                     min: 0.0,
                     max: 100.0,
@@ -426,39 +428,47 @@ fn selection_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed(TOGGLE_GRID_ID),
                 props: Box::new(ToggleProps {
-                    label: "Show Grid".into(),
+                    label: Some(Cow::Borrowed("Show Grid")),
                     value: state.toggle_value,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed("toggle_grid_disabled"),
                 props: Box::new(ToggleProps {
-                    label: "Disabled Toggle".into(),
+                    label: Some(Cow::Borrowed("Disabled Toggle")),
                     value: true,
                     disabled: true,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed(CHECKBOX_SNAP_ID),
                 props: Box::new(CheckboxProps {
-                    label: "Snap to grid".into(),
+                    label: Some(Cow::Borrowed("Snap to grid")),
                     checked: state.snap_to_grid,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed("checkbox_disabled"),
                 props: Box::new(CheckboxProps {
-                    label: "Disabled checkbox".into(),
+                    label: Some(Cow::Borrowed("Disabled checkbox")),
                     checked: true,
                     disabled: true,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed(DROPDOWN_BLEND_ID),
                 props: Box::new(DropdownProps {
-                    label: Cow::Borrowed("Blend Mode"),
+                    label: Some(Cow::Borrowed("Blend Mode")),
                     options: vec![
                         Cow::Borrowed("Normal"),
                         Cow::Borrowed("Multiply"),
@@ -473,7 +483,7 @@ fn selection_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed("dropdown_disabled"),
                 props: Box::new(DropdownProps {
-                    label: Cow::Borrowed("Disabled Select"),
+                    label: Some(Cow::Borrowed("Disabled Select")),
                     options: vec![Cow::Borrowed("One"), Cow::Borrowed("Two")],
                     selected: 1,
                     disabled: true,
@@ -484,17 +494,21 @@ fn selection_section(state: &GalleryState) -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed(RADIO_FAST_ID),
                 props: Box::new(RadioProps {
-                    label: "Fast quality".into(),
+                    label: Some(Cow::Borrowed("Fast quality")),
                     selected: state.quality_mode == QualityMode::Fast,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
             Desc::Widget {
                 id: Cow::Borrowed(RADIO_BALANCED_ID),
                 props: Box::new(RadioProps {
-                    label: "Balanced quality".into(),
+                    label: Some(Cow::Borrowed("Balanced quality")),
                     selected: state.quality_mode == QualityMode::Balanced,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             },
         ],
@@ -583,9 +597,11 @@ fn container_section(state: &GalleryState) -> GallerySection {
                         Desc::Widget {
                             id: Cow::Borrowed(ADVANCED_TOGGLE_ID),
                             props: Box::new(ToggleProps {
-                                label: "Use denoise pass".into(),
+                                label: Some(Cow::Borrowed("Use denoise pass")),
                                 value: state.toggle_value,
                                 disabled: false,
+                                size: Default::default(),
+                                density: Default::default(),
                             }),
                         },
                     ],
@@ -624,7 +640,7 @@ fn overlay_section() -> GallerySection {
             Desc::Widget {
                 id: Cow::Borrowed(POPUP_TRIGGER_ID),
                 props: Box::new(ButtonProps {
-                    label: "Open Popup".into(),
+                    label: Cow::Borrowed("Open Popup"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
@@ -656,6 +672,15 @@ fn clone_desc(desc: &Desc) -> Desc {
         Desc::Widget { id, props } => Desc::Widget {
             id: id.clone(),
             props: props.clone_box(),
+        },
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => Desc::WidgetContainer {
+            id: id.clone(),
+            props: props.clone_box(),
+            children: children.iter().map(clone_desc).collect(),
         },
     }
 }

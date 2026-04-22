@@ -404,7 +404,7 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("input"),
                 props: Box::new(TextInputProps {
-                    label: Cow::Borrowed("Prompt"),
+                    label: Some(Cow::Borrowed("Prompt")),
                     value: Cow::Owned(value.to_string()),
                     disabled: false,
                     size: Default::default(),
@@ -448,9 +448,11 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("toggle"),
                 props: Box::new(ToggleProps {
-                    label: Cow::Borrowed("Grid"),
+                    label: Some(Cow::Borrowed("Grid")),
                     value: true,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -468,12 +470,14 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("slider"),
                 props: Box::new(SliderProps {
-                    label: Cow::Borrowed("Radius"),
+                    label: Some(Cow::Borrowed("Radius")),
                     min: 0.0,
                     max: 10.0,
                     step: 1.0,
                     value: 5.0,
                     disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
                 }),
             }],
         }
@@ -538,7 +542,7 @@ mod tests {
                     content: vec![Desc::Widget {
                         id: Cow::Borrowed("input"),
                         props: Box::new(TextInputProps {
-                            label: Cow::Borrowed("Prompt"),
+                            label: Some(Cow::Borrowed("Prompt")),
                             value: Cow::Borrowed("hello"),
                             disabled: false,
                             size: Default::default(),
@@ -605,7 +609,7 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("number"),
                 props: Box::new(NumberInputProps {
-                    label: Cow::Borrowed("Radius"),
+                    label: Some(Cow::Borrowed("Radius")),
                     value,
                     min: 0.0,
                     max: 10.0,
@@ -631,7 +635,7 @@ mod tests {
             children: vec![Desc::Widget {
                 id: Cow::Borrowed("dropdown"),
                 props: Box::new(DropdownProps {
-                    label: Cow::Borrowed("Mode"),
+                    label: Some(Cow::Borrowed("Mode")),
                     options: vec![
                         Cow::Borrowed("Normal"),
                         Cow::Borrowed("Multiply"),

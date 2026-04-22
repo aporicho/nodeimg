@@ -1,5 +1,6 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
+use crate::theme::{ControlSize, Density};
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
 use crate::tree::Desc;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
@@ -9,9 +10,11 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CheckboxProps {
-    pub label: Cow<'static, str>,
+    pub label: Option<Cow<'static, str>>,
     pub checked: bool,
     pub disabled: bool,
+    pub size: ControlSize,
+    pub density: Density,
 }
 
 impl WidgetProps for CheckboxProps {
@@ -37,6 +40,7 @@ impl WidgetProps for CheckboxProps {
 
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let theme = cx.theme;
+        let _metrics = theme.control_metrics(self.size, self.density);
         let tokens = theme.components.checkbox;
         let visual = theme.checkbox_visual(
             self.checked,
@@ -47,6 +51,54 @@ impl WidgetProps for CheckboxProps {
             },
         );
 
+        let mut children = vec![Desc::Container {
+            id: Cow::Owned(format!("{id}::box")),
+            style: BoxStyle {
+                width: Size::Fixed(tokens.box_size),
+                height: Size::Fixed(tokens.box_size),
+                align_items: Align::Center,
+                justify_content: crate::tree::layout::Justify::Center,
+                ..BoxStyle::default()
+            },
+            decoration: Some(Decoration {
+                background: Some(visual.box_background),
+                border: visual.box_border.map(|color| crate::renderer::Border {
+                    width: tokens.border_width,
+                    color,
+                }),
+                radius: [tokens.radius; 4],
+                shadow: None,
+            }),
+            children: vec![Desc::Leaf {
+                id: Cow::Owned(format!("{id}::check")),
+                style: BoxStyle::default(),
+                kind: LeafKind::Text {
+                    content: if self.checked { "✓" } else { "" }.to_string(),
+                    style: TextStyle {
+                        color: visual.check,
+                        size: tokens.check_font_size,
+                        ..theme.text_style_body_sm()
+                    },
+                    layout: Default::default(),
+                },
+            }],
+        }];
+        if let Some(label) = &self.label {
+            children.push(Desc::Leaf {
+                id: Cow::Owned(format!("{id}::label")),
+                style: BoxStyle::default(),
+                kind: LeafKind::Text {
+                    content: label.to_string(),
+                    style: TextStyle {
+                        color: visual.text,
+                        size: tokens.font_size,
+                        ..theme.text_style_body_sm()
+                    },
+                    layout: Default::default(),
+                },
+            });
+        }
+
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
@@ -56,53 +108,7 @@ impl WidgetProps for CheckboxProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![
-                Desc::Container {
-                    id: Cow::Owned(format!("{id}::box")),
-                    style: BoxStyle {
-                        width: Size::Fixed(tokens.box_size),
-                        height: Size::Fixed(tokens.box_size),
-                        align_items: Align::Center,
-                        justify_content: crate::tree::layout::Justify::Center,
-                        ..BoxStyle::default()
-                    },
-                    decoration: Some(Decoration {
-                        background: Some(visual.box_background),
-                        border: visual.box_border.map(|color| crate::renderer::Border {
-                            width: tokens.border_width,
-                            color,
-                        }),
-                        radius: [tokens.radius; 4],
-                        shadow: None,
-                    }),
-                    children: vec![Desc::Leaf {
-                        id: Cow::Owned(format!("{id}::check")),
-                        style: BoxStyle::default(),
-                        kind: LeafKind::Text {
-                            content: if self.checked { "✓" } else { "" }.to_string(),
-                            style: TextStyle {
-                                color: visual.check,
-                                size: tokens.check_font_size,
-                                ..theme.text_style_body_sm()
-                            },
-                            layout: Default::default(),
-                        },
-                    }],
-                },
-                Desc::Leaf {
-                    id: Cow::Owned(format!("{id}::label")),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: self.label.to_string(),
-                        style: TextStyle {
-                            color: visual.text,
-                            size: tokens.font_size,
-                            ..theme.text_style_body_sm()
-                        },
-                        layout: Default::default(),
-                    },
-                },
-            ],
+            children,
         }
     }
 }
@@ -116,9 +122,11 @@ mod tests {
     fn checkbox_builds_box_and_label() {
         let theme = dark_theme();
         let props = CheckboxProps {
-            label: Cow::Borrowed("Snap to grid"),
+            label: Some(Cow::Borrowed("Snap to grid")),
             checked: true,
             disabled: false,
+            size: ControlSize::default(),
+            density: Density::default(),
         };
 
         let build = props.build(
@@ -130,5 +138,28 @@ mod tests {
         );
 
         assert_eq!(build.children.len(), 2);
+    }
+
+    #[test]
+    fn checkbox_can_hide_label() {
+        let theme = dark_theme();
+        let props = CheckboxProps {
+            label: None,
+            checked: true,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "checkbox",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(build.children.len(), 1);
+        assert_eq!(build.children[0].id(), "checkbox::box");
     }
 }

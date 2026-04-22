@@ -1,5 +1,6 @@
 use crate::gesture::Gesture;
 use crate::renderer::TextStyle;
+use crate::theme::{ControlSize, Density};
 use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -8,12 +9,14 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SliderProps {
-    pub label: Cow<'static, str>,
+    pub label: Option<Cow<'static, str>>,
     pub min: f32,
     pub max: f32,
     pub step: f32,
     pub value: f32,
     pub disabled: bool,
+    pub size: ControlSize,
+    pub density: Density,
 }
 
 impl WidgetProps for SliderProps {
@@ -40,6 +43,7 @@ impl WidgetProps for SliderProps {
         use crate::tree::Desc;
 
         let theme = cx.theme;
+        let _metrics = theme.control_metrics(self.size, self.density);
         let tokens = theme.components.slider;
         let visual = theme.slider_visual(if self.disabled {
             crate::interaction::WidgetVisualState::Disabled
@@ -63,6 +67,109 @@ impl WidgetProps for SliderProps {
         };
         let anatomy = Anatomy::new(id);
 
+        let mut children = Vec::new();
+        if let Some(label) = &self.label {
+            children.push(Desc::Leaf {
+                id: Cow::Owned(anatomy.label()),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: label.to_string(),
+                    style: TextStyle {
+                        color: theme.colors.text_muted,
+                        size: tokens.font_size,
+                        ..theme.text_style_body_sm()
+                    },
+                    layout: Default::default(),
+                },
+            });
+        }
+        children.extend([
+            Desc::Container {
+                id: Cow::Owned(anatomy.track()),
+                style: BoxStyle {
+                    flex_grow: 1.0,
+                    height: Size::Fixed(tokens.track_height),
+                    padding: crate::tree::layout::Edges::all(tokens.track_padding),
+                    direction: Direction::Row,
+                    gestures: vec![Gesture::Tap, Gesture::Drag],
+                    align_items: Align::Center,
+                    ..BoxStyle::default()
+                },
+                decoration: Some(Decoration {
+                    background: Some(visual.track_background),
+                    border: None,
+                    radius: [tokens.track_radius; 4],
+                    shadow: None,
+                }),
+                children: vec![
+                    Desc::Container {
+                        id: Cow::Owned(anatomy.part("fill")),
+                        style: BoxStyle {
+                            flex_grow: ratio,
+                            height: Size::Fill,
+                            gestures: vec![Gesture::Tap, Gesture::Drag],
+                            ..BoxStyle::default()
+                        },
+                        decoration: Some(Decoration {
+                            background: Some(visual.fill),
+                            border: None,
+                            radius: [tokens.track_radius; 4],
+                            shadow: None,
+                        }),
+                        children: vec![],
+                    },
+                    Desc::Container {
+                        id: Cow::Owned(anatomy.thumb()),
+                        style: BoxStyle {
+                            width: Size::Fixed(tokens.thumb_size),
+                            height: Size::Fixed(tokens.thumb_size),
+                            gestures: vec![Gesture::Tap, Gesture::Drag],
+                            ..BoxStyle::default()
+                        },
+                        decoration: Some(Decoration {
+                            background: Some(visual.thumb),
+                            border: None,
+                            radius: [tokens.thumb_size / 2.0; 4],
+                            shadow: None,
+                        }),
+                        children: vec![],
+                    },
+                    Desc::Container {
+                        id: Cow::Owned(anatomy.part("spacer")),
+                        style: BoxStyle {
+                            flex_grow: 1.0 - ratio,
+                            height: Size::Fill,
+                            gestures: vec![Gesture::Tap, Gesture::Drag],
+                            ..BoxStyle::default()
+                        },
+                        decoration: None,
+                        children: vec![],
+                    },
+                ],
+            },
+            Desc::Leaf {
+                id: Cow::Owned(anatomy.part("value")),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: value_text,
+                    style: TextStyle {
+                        color: visual.text,
+                        size: tokens.font_size,
+                        ..theme.text_style_mono_md()
+                    },
+                    layout: Default::default(),
+                },
+            },
+        ]);
+
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Row,
@@ -72,111 +179,39 @@ impl WidgetProps for SliderProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![
-                // 标签
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.label()),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: self.label.to_string(),
-                        style: TextStyle {
-                            color: theme.colors.text_muted,
-                            size: tokens.font_size,
-                            ..theme.text_style_body_sm()
-                        },
-                        layout: Default::default(),
-                    },
-                },
-                // 轨道
-                Desc::Container {
-                    id: Cow::Owned(anatomy.track()),
-                    style: BoxStyle {
-                        flex_grow: 1.0,
-                        height: Size::Fixed(tokens.track_height),
-                        padding: crate::tree::layout::Edges::all(tokens.track_padding),
-                        direction: Direction::Row,
-                        gestures: vec![Gesture::Tap, Gesture::Drag],
-                        align_items: Align::Center,
-                        ..BoxStyle::default()
-                    },
-                    decoration: Some(Decoration {
-                        background: Some(visual.track_background),
-                        border: None,
-                        radius: [tokens.track_radius; 4],
-                        shadow: None,
-                    }),
-                    children: vec![
-                        // 填充条（按比例占空间）
-                        Desc::Container {
-                            id: Cow::Owned(anatomy.part("fill")),
-                            style: BoxStyle {
-                                flex_grow: ratio,
-                                height: Size::Fill,
-                                gestures: vec![Gesture::Tap, Gesture::Drag],
-                                ..BoxStyle::default()
-                            },
-                            decoration: Some(Decoration {
-                                background: Some(visual.fill),
-                                border: None,
-                                radius: [tokens.track_radius; 4],
-                                shadow: None,
-                            }),
-                            children: vec![],
-                        },
-                        // Thumb（明确可拖拽的圆点）
-                        Desc::Container {
-                            id: Cow::Owned(anatomy.thumb()),
-                            style: BoxStyle {
-                                width: Size::Fixed(tokens.thumb_size),
-                                height: Size::Fixed(tokens.thumb_size),
-                                gestures: vec![Gesture::Tap, Gesture::Drag],
-                                ..BoxStyle::default()
-                            },
-                            decoration: Some(Decoration {
-                                background: Some(visual.thumb),
-                                border: None,
-                                radius: [tokens.thumb_size / 2.0; 4],
-                                shadow: None,
-                            }),
-                            children: vec![],
-                        },
-                        // 空白（剩余空间）
-                        Desc::Container {
-                            id: Cow::Owned(anatomy.part("spacer")),
-                            style: BoxStyle {
-                                flex_grow: 1.0 - ratio,
-                                height: Size::Fill,
-                                gestures: vec![Gesture::Tap, Gesture::Drag],
-                                ..BoxStyle::default()
-                            },
-                            decoration: None,
-                            children: vec![],
-                        },
-                    ],
-                },
-                // 值显示
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.part("value")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: value_text,
-                        style: TextStyle {
-                            color: visual.text,
-                            size: tokens.font_size,
-                            ..theme.text_style_mono_md()
-                        },
-                        layout: Default::default(),
-                    },
-                },
-            ],
+            children,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::dark_theme;
+
+    #[test]
+    fn slider_can_hide_label() {
+        let theme = dark_theme();
+        let props = SliderProps {
+            label: None,
+            min: 0.0,
+            max: 1.0,
+            step: 0.1,
+            value: 0.5,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "slider",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(build.children.len(), 2);
+        assert_eq!(build.children[0].id(), "slider::track");
     }
 }

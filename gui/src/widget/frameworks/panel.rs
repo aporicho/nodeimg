@@ -64,6 +64,15 @@ fn desc_clone(d: &Desc) -> Desc {
             id: id.clone(),
             props: props.clone_box(),
         },
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => Desc::WidgetContainer {
+            id: id.clone(),
+            props: props.clone_box(),
+            children: children.iter().map(desc_clone).collect(),
+        },
     }
 }
 
@@ -293,7 +302,7 @@ mod tests {
         match d {
             Desc::Container { .. } => "Container",
             Desc::Leaf { .. } => "Leaf",
-            Desc::Widget { .. } => "Widget",
+            Desc::Widget { .. } | Desc::WidgetContainer { .. } => "Widget",
         }
     }
 

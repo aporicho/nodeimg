@@ -84,5 +84,14 @@ fn clone_desc(desc: &Desc) -> Desc {
             id: id.clone(),
             props: props.clone_box(),
         },
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => Desc::WidgetContainer {
+            id: id.clone(),
+            props: props.clone_box(),
+            children: children.iter().map(clone_desc).collect(),
+        },
     }
 }

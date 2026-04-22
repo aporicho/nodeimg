@@ -1,5 +1,10 @@
-use crate::renderer::TextStyle;
+use crate::gesture::Gesture;
+use crate::renderer::{Border, TextStyle};
 use crate::theme::{ControlSize, Density};
+use crate::tree::layout::{
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size, TextLayout, TextOverflow,
+};
+use crate::tree::Desc;
 use crate::widget::anatomy::Anatomy;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -7,64 +12,51 @@ use std::borrow::Cow;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct DropdownProps {
+pub struct PathInputProps {
     pub label: Option<Cow<'static, str>>,
-    pub options: Vec<Cow<'static, str>>,
-    pub selected: usize,
+    pub value: Cow<'static, str>,
+    pub extensions: Vec<Cow<'static, str>>,
     pub disabled: bool,
     pub size: ControlSize,
     pub density: Density,
 }
 
-impl WidgetProps for DropdownProps {
+impl WidgetProps for PathInputProps {
     fn widget_type(&self) -> &'static str {
-        "Dropdown"
+        "PathInput"
     }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
+
     fn clone_box(&self) -> Box<dyn WidgetProps> {
         Box::new(self.clone())
     }
+
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |o| self == o)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
+
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)
     }
-    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        use crate::gesture::Gesture;
-        use crate::renderer::Border;
-        use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
-        use crate::tree::Desc;
 
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let theme = cx.theme;
         let metrics = theme.control_metrics(self.size, self.density);
-        let visual = theme.dropdown_visual(if self.disabled {
+        let visual = theme.text_input_visual(if self.disabled {
             crate::interaction::WidgetVisualState::Disabled
         } else {
             crate::interaction::WidgetVisualState::Normal
         });
-
-        let selected_text = self
-            .options
-            .get(self.selected)
-            .map(|s| s.to_string())
-            .unwrap_or_default();
         let anatomy = Anatomy::new(id);
-
         let mut children = Vec::new();
+
         if let Some(label) = &self.label {
             children.push(Desc::Leaf {
                 id: Cow::Owned(anatomy.label()),
-                style: BoxStyle {
-                    width: Size::Auto,
-                    height: Size::Auto,
-                    ..BoxStyle::default()
-                },
+                style: BoxStyle::default(),
                 kind: LeafKind::Text {
                     content: label.to_string(),
                     style: TextStyle {
@@ -76,12 +68,19 @@ impl WidgetProps for DropdownProps {
                 },
             });
         }
+
+        let value = if self.value.is_empty() {
+            extension_hint(&self.extensions)
+        } else {
+            self.value.to_string()
+        };
+
         children.push(Desc::Container {
             id: Cow::Owned(anatomy.field()),
             style: BoxStyle {
                 direction: Direction::Row,
-                gap: metrics.gap,
                 align_items: Align::Center,
+                gap: metrics.gap,
                 height: Size::Fixed(metrics.height),
                 padding: Edges::symmetric(metrics.padding_y, metrics.padding_x),
                 gestures: vec![Gesture::Tap],
@@ -99,40 +98,31 @@ impl WidgetProps for DropdownProps {
             }),
             children: vec![
                 Desc::Leaf {
-                    id: Cow::Owned(anatomy.part("selected")),
+                    id: Cow::Owned(anatomy.part("value")),
                     style: BoxStyle {
-                        width: Size::Auto,
+                        width: Size::Fill,
                         height: Size::Auto,
+                        flex_shrink: 1.0,
                         ..BoxStyle::default()
                     },
                     kind: LeafKind::Text {
-                        content: selected_text,
+                        content: value,
                         style: TextStyle {
                             color: visual.text,
                             size: metrics.font_size,
                             ..theme.text_style_body_sm()
                         },
-                        layout: Default::default(),
+                        layout: TextLayout {
+                            overflow: TextOverflow::Ellipsis,
+                            ..Default::default()
+                        },
                     },
-                },
-                Desc::Container {
-                    id: Cow::Owned(anatomy.part("spacer")),
-                    style: BoxStyle {
-                        flex_grow: 1.0,
-                        ..BoxStyle::default()
-                    },
-                    decoration: None,
-                    children: vec![],
                 },
                 Desc::Leaf {
-                    id: Cow::Owned(anatomy.part("arrow")),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
+                    id: Cow::Owned(anatomy.part("button")),
+                    style: BoxStyle::default(),
                     kind: LeafKind::Text {
-                        content: "▾".to_string(),
+                        content: "...".to_string(),
                         style: TextStyle {
                             color: theme.colors.text_muted,
                             size: metrics.font_size,
@@ -157,56 +147,36 @@ impl WidgetProps for DropdownProps {
     }
 }
 
+fn extension_hint(extensions: &[Cow<'static, str>]) -> String {
+    if extensions.is_empty() {
+        "select file".to_string()
+    } else {
+        extensions
+            .iter()
+            .map(|extension| format!("*.{extension}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::dark_theme;
-    use crate::tree::layout::{Edges, Size};
-    use crate::tree::Desc;
+    use crate::theme::light_theme;
 
     #[test]
-    fn dropdown_field_uses_control_metrics() {
-        let theme = dark_theme();
-        let props = DropdownProps {
-            label: Some(Cow::Borrowed("Mode")),
-            options: vec![Cow::Borrowed("Normal")],
-            selected: 0,
-            disabled: false,
-            size: ControlSize::Small,
-            density: Density::Compact,
-        };
-
-        let build = props.build(
-            "dropdown",
-            &WidgetBuildCx {
-                theme: &theme,
-                force_rebuild: false,
-            },
-        );
-
-        match &build.children[1] {
-            Desc::Container { style, .. } => {
-                assert_eq!(style.height, Size::Fixed(24.0));
-                assert_eq!(style.padding, Edges::symmetric(4.0, 6.0));
-            }
-            _ => panic!("expected dropdown field container"),
-        }
-    }
-
-    #[test]
-    fn dropdown_can_hide_label() {
-        let theme = dark_theme();
-        let props = DropdownProps {
+    fn path_input_can_render_without_label() {
+        let theme = light_theme();
+        let props = PathInputProps {
             label: None,
-            options: vec![Cow::Borrowed("Normal")],
-            selected: 0,
+            value: Cow::Borrowed(""),
+            extensions: vec![Cow::Borrowed("png")],
             disabled: false,
             size: ControlSize::Small,
             density: Density::Compact,
         };
-
         let build = props.build(
-            "dropdown",
+            "path",
             &WidgetBuildCx {
                 theme: &theme,
                 force_rebuild: false,
@@ -214,6 +184,6 @@ mod tests {
         );
 
         assert_eq!(build.children.len(), 1);
-        assert_eq!(build.children[0].id(), "dropdown::field");
+        assert_eq!(build.children[0].id(), "path::field");
     }
 }

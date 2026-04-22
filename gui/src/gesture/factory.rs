@@ -263,9 +263,11 @@ mod tests {
         let desc = Desc::Widget {
             id: Cow::Borrowed("toggle_grid"),
             props: Box::new(ToggleProps {
-                label: Cow::Borrowed("Grid"),
+                label: Some(Cow::Borrowed("Grid")),
                 value: true,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         };
         let mut tree = Tree::new();
@@ -304,12 +306,14 @@ mod tests {
         let desc = Desc::Widget {
             id: Cow::Borrowed("slider_radius"),
             props: Box::new(SliderProps {
-                label: Cow::Borrowed("Radius"),
+                label: Some(Cow::Borrowed("Radius")),
                 min: 0.0,
                 max: 10.0,
                 step: 0.1,
                 value: 5.0,
                 disabled: false,
+                size: Default::default(),
+                density: Default::default(),
             }),
         };
         let mut tree = Tree::new();

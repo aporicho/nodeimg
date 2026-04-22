@@ -61,6 +61,31 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc, cx: WidgetBuildC
             }
             reconcile_children(tree, node_id, wb.children, cx);
         }
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => {
+            let mut wb = props.build(&id, &cx);
+            wb.children.extend(children);
+            let props_changed = tree
+                .get(node_id)
+                .map(|n| match &n.kind {
+                    NodeKind::Widget(old) => !old.props_eq(props.as_ref()),
+                    _ => true,
+                })
+                .unwrap_or(true)
+                || cx.force_rebuild;
+
+            if props_changed {
+                if let Some(node) = tree.get_mut(node_id) {
+                    node.style = wb.style;
+                    node.decoration = wb.decoration;
+                    node.kind = NodeKind::Widget(props);
+                }
+            }
+            reconcile_children(tree, node_id, wb.children, cx);
+        }
     }
 }
 
@@ -123,6 +148,21 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
                 wb.children,
             )
         }
+        Desc::WidgetContainer {
+            id,
+            props,
+            children,
+        } => {
+            let mut wb = props.build(&id, &cx);
+            wb.children.extend(children);
+            (
+                id,
+                wb.style,
+                wb.decoration,
+                NodeKind::Widget(props),
+                wb.children,
+            )
+        }
     };
 
     let id_string = id.as_ref().to_string();
@@ -157,4 +197,59 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
     }
 
     node_id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::Color;
+    use crate::theme::light_theme;
+    use crate::tree::layout::{BoxStyle, LeafKind, Size};
+    use crate::widget::atoms::dot::DotProps;
+    use crate::widget::props::widget_with_children;
+    use std::borrow::Cow;
+
+    #[test]
+    fn widget_container_reconciles_external_children() {
+        let theme = light_theme();
+        let mut tree = Tree::new();
+        let desc = widget_with_children(
+            "wrapper",
+            DotProps {
+                diameter: 10.0,
+                fill: Color::WHITE,
+                border: None,
+                hittable: false,
+                gestures: Vec::new(),
+            },
+            vec![Desc::Leaf {
+                id: Cow::Borrowed("wrapper::child"),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: "child".to_string(),
+                    style: theme.text_style_label_sm(),
+                    layout: Default::default(),
+                },
+            }],
+        );
+
+        reconcile(
+            &mut tree,
+            desc,
+            WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        let root = tree.root().expect("root");
+        let root = tree.get(root).expect("root node");
+        assert_eq!(root.children.len(), 1);
+        let child = tree.get(root.children[0]).expect("child node");
+        assert_eq!(child.id.as_ref(), "wrapper::child");
+    }
 }

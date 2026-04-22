@@ -8,7 +8,7 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NumberInputProps {
-    pub label: Cow<'static, str>,
+    pub label: Option<Cow<'static, str>>,
     pub value: f32,
     pub min: f32,
     pub max: f32,
@@ -54,6 +54,56 @@ impl WidgetProps for NumberInputProps {
         });
         let anatomy = Anatomy::new(id);
 
+        let mut children = Vec::new();
+        if let Some(label) = &self.label {
+            children.push(Desc::Leaf {
+                id: Cow::Owned(anatomy.label()),
+                style: BoxStyle::default(),
+                kind: LeafKind::Text {
+                    content: label.to_string(),
+                    style: TextStyle {
+                        color: theme.colors.text_muted,
+                        size: tokens.label_size,
+                        ..theme.text_style_label_sm()
+                    },
+                    layout: Default::default(),
+                },
+            });
+        }
+        children.push(Desc::Container {
+            id: Cow::Owned(anatomy.field()),
+            style: BoxStyle {
+                height: Size::Fixed(tokens.field_height),
+                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
+                direction: Direction::Row,
+                align_items: Align::Center,
+                hittable: Some(true),
+                ..BoxStyle::default()
+            },
+            decoration: Some(Decoration {
+                background: Some(visual.background),
+                border: Some(Border {
+                    width: tokens.border_width,
+                    color: visual.border.unwrap_or(theme.colors.border),
+                }),
+                radius: [tokens.radius; 4],
+                shadow: None,
+            }),
+            children: vec![Desc::Leaf {
+                id: Cow::Owned(anatomy.part("value")),
+                style: BoxStyle::default(),
+                kind: LeafKind::Text {
+                    content: format_number(self.value, self.precision),
+                    style: TextStyle {
+                        color: visual.text,
+                        size: tokens.value_size,
+                        ..theme.text_style_mono_md()
+                    },
+                    layout: Default::default(),
+                },
+            }],
+        });
+
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Column,
@@ -62,54 +112,7 @@ impl WidgetProps for NumberInputProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.label()),
-                    style: BoxStyle::default(),
-                    kind: LeafKind::Text {
-                        content: self.label.to_string(),
-                        style: TextStyle {
-                            color: theme.colors.text_muted,
-                            size: tokens.label_size,
-                            ..theme.text_style_label_sm()
-                        },
-                        layout: Default::default(),
-                    },
-                },
-                Desc::Container {
-                    id: Cow::Owned(anatomy.field()),
-                    style: BoxStyle {
-                        height: Size::Fixed(tokens.field_height),
-                        padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
-                        direction: Direction::Row,
-                        align_items: Align::Center,
-                        hittable: Some(true),
-                        ..BoxStyle::default()
-                    },
-                    decoration: Some(Decoration {
-                        background: Some(visual.background),
-                        border: Some(Border {
-                            width: tokens.border_width,
-                            color: visual.border.unwrap_or(theme.colors.border),
-                        }),
-                        radius: [tokens.radius; 4],
-                        shadow: None,
-                    }),
-                    children: vec![Desc::Leaf {
-                        id: Cow::Owned(anatomy.part("value")),
-                        style: BoxStyle::default(),
-                        kind: LeafKind::Text {
-                            content: format_number(self.value, self.precision),
-                            style: TextStyle {
-                                color: visual.text,
-                                size: tokens.value_size,
-                                ..theme.text_style_mono_md()
-                            },
-                            layout: Default::default(),
-                        },
-                    }],
-                },
-            ],
+            children,
         }
     }
 }
@@ -129,7 +132,7 @@ mod tests {
     fn number_input_formats_value_with_precision() {
         let theme = dark_theme();
         let props = NumberInputProps {
-            label: Cow::Borrowed("Radius"),
+            label: Some(Cow::Borrowed("Radius")),
             value: 1.25,
             min: 0.0,
             max: 10.0,
@@ -163,7 +166,7 @@ mod tests {
     fn number_input_field_uses_control_metrics() {
         let theme = dark_theme();
         let props = NumberInputProps {
-            label: Cow::Borrowed("Radius"),
+            label: Some(Cow::Borrowed("Radius")),
             value: 1.25,
             min: 0.0,
             max: 10.0,
@@ -188,5 +191,31 @@ mod tests {
             }
             _ => panic!("expected number field container"),
         }
+    }
+
+    #[test]
+    fn number_input_can_hide_label() {
+        let theme = dark_theme();
+        let props = NumberInputProps {
+            label: None,
+            value: 1.25,
+            min: 0.0,
+            max: 10.0,
+            step: 0.25,
+            precision: 2,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+        let build = props.build(
+            "number",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(build.children.len(), 1);
+        assert_eq!(build.children[0].id(), "number::field");
     }
 }

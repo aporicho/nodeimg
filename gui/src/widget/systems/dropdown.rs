@@ -216,7 +216,10 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
         content: crate::tree::Desc::Widget {
             id: Cow::Owned(format!("{}::popup_group", dropdown_id)),
             props: Box::new(GroupProps {
-                title: props.label.clone(),
+                title: props
+                    .label
+                    .clone()
+                    .unwrap_or_else(|| Cow::Borrowed("Options")),
                 content: vec![
                     crate::tree::Desc::Widget {
                         id: Cow::Owned(format!("{}::popup_hint", dropdown_id)),

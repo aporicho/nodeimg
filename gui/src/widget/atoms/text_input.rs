@@ -8,7 +8,7 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextInputProps {
-    pub label: Cow<'static, str>,
+    pub label: Option<Cow<'static, str>>,
     pub value: Cow<'static, str>,
     pub disabled: bool,
     pub size: ControlSize,
@@ -48,6 +48,64 @@ impl WidgetProps for TextInputProps {
         });
         let anatomy = Anatomy::new(id);
 
+        let mut children = Vec::new();
+        if let Some(label) = &self.label {
+            children.push(Desc::Leaf {
+                id: Cow::Owned(anatomy.label()),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: label.to_string(),
+                    style: TextStyle {
+                        color: theme.colors.text_muted,
+                        size: tokens.label_size,
+                        ..theme.text_style_label_sm()
+                    },
+                    layout: Default::default(),
+                },
+            });
+        }
+        children.push(Desc::Container {
+            id: Cow::Owned(anatomy.field()),
+            style: BoxStyle {
+                height: Size::Fixed(tokens.field_height),
+                padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
+                direction: Direction::Row,
+                align_items: Align::Center,
+                hittable: Some(true),
+                ..BoxStyle::default()
+            },
+            decoration: Some(Decoration {
+                background: Some(visual.background),
+                border: Some(Border {
+                    width: tokens.border_width,
+                    color: visual.border.unwrap_or(theme.colors.border),
+                }),
+                radius: [tokens.radius; 4],
+                shadow: None,
+            }),
+            children: vec![Desc::Leaf {
+                id: Cow::Owned(anatomy.part("value")),
+                style: BoxStyle {
+                    width: Size::Auto,
+                    height: Size::Auto,
+                    ..BoxStyle::default()
+                },
+                kind: LeafKind::Text {
+                    content: self.value.to_string(),
+                    style: TextStyle {
+                        color: visual.text,
+                        size: tokens.value_size,
+                        ..theme.text_style_body_sm()
+                    },
+                    layout: Default::default(),
+                },
+            }],
+        });
+
         WidgetBuild {
             style: BoxStyle {
                 direction: Direction::Column,
@@ -56,64 +114,7 @@ impl WidgetProps for TextInputProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![
-                // label
-                Desc::Leaf {
-                    id: Cow::Owned(anatomy.label()),
-                    style: BoxStyle {
-                        width: Size::Auto,
-                        height: Size::Auto,
-                        ..BoxStyle::default()
-                    },
-                    kind: LeafKind::Text {
-                        content: self.label.to_string(),
-                        style: TextStyle {
-                            color: theme.colors.text_muted,
-                            size: tokens.label_size,
-                            ..theme.text_style_label_sm()
-                        },
-                        layout: Default::default(),
-                    },
-                },
-                // field
-                Desc::Container {
-                    id: Cow::Owned(anatomy.field()),
-                    style: BoxStyle {
-                        height: Size::Fixed(tokens.field_height),
-                        padding: Edges::symmetric(tokens.padding_y, tokens.padding_x),
-                        direction: Direction::Row,
-                        align_items: Align::Center,
-                        hittable: Some(true),
-                        ..BoxStyle::default()
-                    },
-                    decoration: Some(Decoration {
-                        background: Some(visual.background),
-                        border: Some(Border {
-                            width: tokens.border_width,
-                            color: visual.border.unwrap_or(theme.colors.border),
-                        }),
-                        radius: [tokens.radius; 4],
-                        shadow: None,
-                    }),
-                    children: vec![Desc::Leaf {
-                        id: Cow::Owned(anatomy.part("value")),
-                        style: BoxStyle {
-                            width: Size::Auto,
-                            height: Size::Auto,
-                            ..BoxStyle::default()
-                        },
-                        kind: LeafKind::Text {
-                            content: self.value.to_string(),
-                            style: TextStyle {
-                                color: visual.text,
-                                size: tokens.value_size,
-                                ..theme.text_style_body_sm()
-                            },
-                            layout: Default::default(),
-                        },
-                    }],
-                },
-            ],
+            children,
         }
     }
 }
@@ -129,7 +130,7 @@ mod tests {
     fn text_input_field_uses_control_metrics() {
         let theme = dark_theme();
         let props = TextInputProps {
-            label: Cow::Borrowed("Prompt"),
+            label: Some(Cow::Borrowed("Prompt")),
             value: Cow::Borrowed("hello"),
             disabled: false,
             size: ControlSize::Small,
@@ -151,5 +152,28 @@ mod tests {
             }
             _ => panic!("expected field container"),
         }
+    }
+
+    #[test]
+    fn text_input_can_hide_label() {
+        let theme = dark_theme();
+        let props = TextInputProps {
+            label: None,
+            value: Cow::Borrowed("hello"),
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "input",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(build.children.len(), 1);
+        assert_eq!(build.children[0].id(), "input::field");
     }
 }
