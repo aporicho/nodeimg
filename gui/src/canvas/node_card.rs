@@ -1,13 +1,10 @@
-use super::{
-    CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView, CanvasPortSide,
-    CanvasPortView,
-};
+use super::{CanvasPortConnectionState, CanvasPortSide};
 use crate::canvas::node_spec::{
-    node_render_spec, node_render_spec_from_view, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec,
-    NodePortSpec, NodeRenderSpec,
+    node_render_spec, NodeBodyRowSpec, NodeCardMetrics, NodeHeaderSpec, NodePortSpec,
+    NodeRenderSpec,
 };
 use crate::canvas::node_template::CanvasNodeRenderView;
-use crate::canvas::param_control::{param_control, CanvasNodeParamControl};
+use crate::canvas::param_control::param_control;
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
@@ -15,34 +12,6 @@ use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOv
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use std::borrow::Cow;
-
-#[derive(Clone, Debug)]
-pub struct CanvasNodeView {
-    pub owner_id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub category: String,
-    pub params: Vec<CanvasNodeParamView>,
-    pub input_group: CanvasPortGroupView,
-    pub output_group: CanvasPortGroupView,
-    pub inputs: Vec<CanvasPortView>,
-    pub outputs: Vec<CanvasPortView>,
-    pub selected: bool,
-    pub layout: CanvasNodeLayout,
-}
-
-#[derive(Clone, Debug)]
-pub struct CanvasNodeParamView {
-    pub name: String,
-    pub kind: String,
-    pub value: String,
-    pub control: CanvasNodeParamControl,
-}
-
-pub fn node_card(view: &CanvasNodeView, theme: &Theme) -> Desc {
-    let spec = node_render_spec_from_view(view, theme);
-    node_card_from_spec(&spec, theme)
-}
 
 pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
     let spec = node_render_spec(&view.template, &view.state, theme);
@@ -383,69 +352,28 @@ fn port_color(side: CanvasPortSide, theme: &Theme) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::canvas::node_template::{
+        CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState,
+        CanvasNodePortTemplate, CanvasNodeTemplate,
+    };
+    use crate::canvas::param_control::CanvasNodeParamControl;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
     use crate::tree::layout::{Direction, Edges, Position, Size};
 
     #[test]
     fn node_card_uses_canvas_node_stable_id() {
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: Vec::new(),
-            input_group: CanvasPortGroupView::default(),
-            output_group: CanvasPortGroupView::default(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
-
         assert_eq!(
-            node_card(&view, &light_theme()).id(),
+            node_card_from_render_view(&node_render_view(false, false), &light_theme()).id(),
             "canvas_node::engine_node::7"
         );
     }
 
     #[test]
     fn node_card_declares_drag_gesture() {
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: Vec::new(),
-            input_group: CanvasPortGroupView::default(),
-            output_group: CanvasPortGroupView::default(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
-
-        let Desc::Container { style, .. } = node_card(&view, &light_theme()) else {
+        let Desc::Container { style, .. } =
+            node_card_from_render_view(&node_render_view(false, false), &light_theme())
+        else {
             panic!("node card should build a container");
         };
         assert!(style.gestures.contains(&Gesture::Drag));
@@ -453,31 +381,9 @@ mod tests {
 
     #[test]
     fn node_card_shell_uses_root_layout_origin() {
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: Vec::new(),
-            input_group: CanvasPortGroupView::default(),
-            output_group: CanvasPortGroupView::default(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
-
-        let Desc::Container { style, .. } = node_card(&view, &light_theme()) else {
+        let Desc::Container { style, .. } =
+            node_card_from_render_view(&node_render_view(false, false), &light_theme())
+        else {
             panic!("node card should build a container");
         };
 
@@ -493,50 +399,9 @@ mod tests {
 
     #[test]
     fn node_card_builds_port_leaves() {
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: vec![CanvasNodeParamView {
-                name: "prompt".to_string(),
-                kind: "string".to_string(),
-                value: "text".to_string(),
-                control: CanvasNodeParamControl::default(),
-            }],
-            input_group: CanvasPortGroupView { open: true },
-            output_group: CanvasPortGroupView::default(),
-            inputs: vec![CanvasPortView {
-                name: "prompt".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
-                side: CanvasPortSide::Input,
-                index: 0,
-                count: 1,
-                connection_state: CanvasPortConnectionState::Idle,
-            }],
-            outputs: vec![CanvasPortView {
-                name: "image".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::output::image".to_string(),
-                side: CanvasPortSide::Output,
-                index: 0,
-                count: 1,
-                connection_state: CanvasPortConnectionState::Idle,
-            }],
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
-
-        let Desc::Container { children, .. } = node_card(&view, &light_theme()) else {
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(true, true), &light_theme())
+        else {
             panic!("node card should build a container");
         };
 
@@ -557,57 +422,13 @@ mod tests {
     }
 
     #[test]
-    fn node_card_builds_function_label_and_params() {
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: vec![CanvasNodeParamView {
-                name: "prompt".to_string(),
-                kind: "string".to_string(),
-                value: "text".to_string(),
-                control: CanvasNodeParamControl::default(),
-            }],
-            input_group: CanvasPortGroupView::default(),
-            output_group: CanvasPortGroupView::default(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
-
-        let Desc::Container { children, .. } = node_card(&view, &light_theme()) else {
-            panic!("node card should build a container");
-        };
-
-        assert!(children
-            .iter()
-            .any(|child| contains_desc_id(child, "canvas_node::engine_node::7::label")));
-        assert!(children
-            .iter()
-            .any(|child| contains_desc_id(child, "canvas_node::engine_node::7::body")));
-    }
-
-    #[test]
     fn node_card_uses_figma_flow_structure() {
         let theme = light_theme();
         let metrics = NodeCardMetrics::from_theme(&theme);
-        let view = node_view_with_ports();
 
         let Desc::Container {
             style, children, ..
-        } = node_card(&view, &theme)
+        } = node_card_from_render_view(&node_render_view(true, true), &theme)
         else {
             panic!("node card should build a container");
         };
@@ -662,9 +483,10 @@ mod tests {
     fn node_card_title_is_absolute_card_child() {
         let theme = light_theme();
         let metrics = NodeCardMetrics::from_theme(&theme);
-        let view = node_view_with_ports();
 
-        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(true, true), &theme)
+        else {
             panic!("node card should build a container");
         };
         let Desc::Container {
@@ -714,9 +536,10 @@ mod tests {
     fn node_card_pin_rows_keep_side_order_and_metrics() {
         let theme = light_theme();
         let metrics = NodeCardMetrics::from_theme(&theme);
-        let view = node_view_with_ports();
 
-        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(true, true), &theme)
+        else {
             panic!("node card should build a container");
         };
         let input_row = first_pin_row(&children[0]);
@@ -766,36 +589,10 @@ mod tests {
     fn node_card_param_rows_use_fixed_control_height() {
         let theme = light_theme();
         let metrics = NodeCardMetrics::from_theme(&theme);
-        let view = CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: vec![CanvasNodeParamView {
-                name: "prompt".to_string(),
-                kind: "string".to_string(),
-                value: "text".to_string(),
-                control: CanvasNodeParamControl::default(),
-            }],
-            input_group: CanvasPortGroupView::default(),
-            output_group: CanvasPortGroupView::default(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            selected: false,
-            layout: CanvasNodeLayout {
-                owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
-                },
-                z_index: 0,
-                collapsed: false,
-            },
-        };
 
-        let Desc::Container { children, .. } = node_card(&view, &theme) else {
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(false, true), &theme)
+        else {
             panic!("node card should build a container");
         };
         let param = find_desc(&children[1], "canvas_node::engine_node::7::body::param::0")
@@ -812,12 +609,12 @@ mod tests {
     }
 
     #[test]
-    fn node_card_facade_matches_explicit_spec_builder() {
+    fn node_card_from_render_view_matches_explicit_spec_builder() {
         let theme = light_theme();
-        let view = node_view_with_ports();
-        let spec = node_render_spec_from_view(&view, &theme);
+        let view = node_render_view(true, true);
+        let spec = node_render_spec(&view.template, &view.state, &theme);
 
-        let facade = node_card(&view, &theme);
+        let facade = node_card_from_render_view(&view, &theme);
         let explicit = node_card_from_spec(&spec, &theme);
 
         assert_eq!(facade.id(), explicit.id());
@@ -846,47 +643,71 @@ mod tests {
         assert_eq!(facade_ids, explicit_ids);
     }
 
-    fn node_view_with_ports() -> CanvasNodeView {
-        CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
-            title: "Image".to_string(),
-            subtitle: "image_gen".to_string(),
-            category: "image/generation".to_string(),
-            params: vec![CanvasNodeParamView {
-                name: "prompt".to_string(),
-                kind: "string".to_string(),
-                value: "text".to_string(),
-                control: CanvasNodeParamControl::default(),
-            }],
-            input_group: CanvasPortGroupView { open: true },
-            output_group: CanvasPortGroupView::default(),
-            inputs: vec![CanvasPortView {
-                name: "prompt".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
-                side: CanvasPortSide::Input,
-                index: 0,
-                count: 1,
+    fn node_render_view(include_ports: bool, include_params: bool) -> CanvasNodeRenderView {
+        let inputs = include_ports
+            .then(|| {
+                vec![CanvasNodePortTemplate::new(
+                    "prompt",
+                    "prompt",
+                    CanvasPortSide::Input,
+                )]
+            })
+            .unwrap_or_default();
+        let outputs = include_ports
+            .then(|| {
+                vec![CanvasNodePortTemplate::new(
+                    "image",
+                    "image",
+                    CanvasPortSide::Output,
+                )]
+            })
+            .unwrap_or_default();
+        let params = include_params
+            .then(|| {
+                vec![CanvasNodeParamTemplate::new(
+                    "prompt",
+                    "prompt",
+                    "string",
+                    "text",
+                    CanvasNodeParamControl::default(),
+                )]
+            })
+            .unwrap_or_default();
+        let port_states = inputs
+            .iter()
+            .chain(outputs.iter())
+            .map(|port| CanvasNodePortState {
+                key: port.key.clone(),
+                side: port.side,
                 connection_state: CanvasPortConnectionState::Idle,
-            }],
-            outputs: vec![CanvasPortView {
-                name: "image".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::output::image".to_string(),
-                side: CanvasPortSide::Output,
-                index: 0,
-                count: 1,
-                connection_state: CanvasPortConnectionState::Idle,
-            }],
-            selected: false,
-            layout: CanvasNodeLayout {
+            })
+            .collect();
+
+        CanvasNodeRenderView {
+            template: CanvasNodeTemplate {
+                type_id: "image_gen".to_string(),
+                title: "Image".to_string(),
+                subtitle: "image_gen".to_string(),
+                category: "image/generation".to_string(),
+                inputs,
+                outputs,
+                params,
+            },
+            state: CanvasNodeInstanceState {
                 owner_id: "engine_node::7".to_string(),
-                rect: Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 220.0,
-                    h: 96.0,
+                layout: super::super::CanvasNodeLayout {
+                    owner_id: "engine_node::7".to_string(),
+                    rect: Rect {
+                        x: 10.0,
+                        y: 20.0,
+                        w: 220.0,
+                        h: 96.0,
+                    },
+                    z_index: 0,
+                    collapsed: false,
                 },
-                z_index: 0,
-                collapsed: false,
+                selected: false,
+                port_states,
             },
         }
     }

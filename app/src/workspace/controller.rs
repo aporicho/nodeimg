@@ -13,13 +13,11 @@ use engine::node_manager::ParamExpose;
 use engine::Engine;
 use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
-use gui::canvas::node_card::CanvasNodeView;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{
     canvas_node_owner_id, canvas_port_event_target_id, canvas_port_stable_id,
     parse_canvas_port_group_trigger_id, parse_canvas_port_id, CanvasConnectionView,
-    CanvasPendingConnectionView, CanvasPortConnectionState, CanvasPortRef, CanvasPortSide,
-    CanvasPortView,
+    CanvasPortConnectionState, CanvasPortRef, CanvasPortSide,
 };
 use gui::context::Context;
 
@@ -88,48 +86,6 @@ impl WorkspaceController {
 
     pub(crate) fn node_palette_state(&self) -> NodePaletteState {
         engine_adapter::node_palette_state(&self.engine)
-    }
-
-    pub(crate) fn canvas_node_views(&self, gui: &mut Context) -> Vec<CanvasNodeView> {
-        let mut identities = engine_adapter::canvas_node_identities(&self.engine);
-        identities.push(showcase_node::showcase_node_identity());
-        identities.push(showcase_node::solo_node_identity());
-        let layouts = gui.sync_canvas_node_layouts(&identities);
-        let showcase_layouts = layouts
-            .iter()
-            .filter(|layout| showcase_node::is_showcase_node(&layout.owner_id))
-            .cloned()
-            .collect::<Vec<_>>();
-        let engine_layouts = layouts
-            .into_iter()
-            .filter(|layout| !showcase_node::is_showcase_node(&layout.owner_id))
-            .collect::<Vec<_>>();
-        let mut views = engine_adapter::canvas_node_views(&self.engine, engine_layouts);
-        views.extend(
-            showcase_layouts
-                .into_iter()
-                .filter_map(showcase_node::showcase_view_for_layout),
-        );
-        let pending_connection = gui.pending_canvas_connection();
-        let hovered_port_id = gui.hovered_canvas_port_id();
-        for view in &mut views {
-            view.input_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Input);
-            view.output_group = gui.canvas_port_group_view(&view.owner_id, CanvasPortSide::Output);
-            view.selected = gui.is_canvas_node_selected(&view.owner_id);
-            if let Some(pending) = pending_connection.as_ref() {
-                self.apply_pending_connection_state(
-                    pending,
-                    hovered_port_id.as_deref(),
-                    &mut view.inputs,
-                );
-                self.apply_pending_connection_state(
-                    pending,
-                    hovered_port_id.as_deref(),
-                    &mut view.outputs,
-                );
-            }
-        }
-        views
     }
 
     pub(crate) fn canvas_node_render_views(&self, gui: &mut Context) -> Vec<CanvasNodeRenderView> {
@@ -350,24 +306,6 @@ impl WorkspaceController {
         })
     }
 
-    fn apply_pending_connection_state(
-        &self,
-        pending: &CanvasPendingConnectionView,
-        hovered_port_id: Option<&str>,
-        ports: &mut [CanvasPortView],
-    ) {
-        let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
-            return;
-        };
-        for port in ports {
-            let Some(target) = parse_canvas_port_id(&port.stable_id) else {
-                continue;
-            };
-            port.connection_state =
-                self.pending_connection_state(&from, hovered_port_id, &port.stable_id, &target);
-        }
-    }
-
     fn pending_connection_state(
         &self,
         from: &CanvasPortRef,
@@ -539,43 +477,38 @@ mod tests {
     }
 
     #[test]
-    fn canvas_node_views_include_gui_interaction_state() {
+    fn canvas_node_render_views_include_gui_interaction_state() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
 
         controller.add_node_from_library("image_gen");
-        let views = controller.canvas_node_views(&mut gui);
-        let owner_id = views[0].owner_id.clone();
-        assert!(!views[0].selected);
+        let views = controller.canvas_node_render_views(&mut gui);
+        let owner_id = views[0].state.owner_id.clone();
+        assert!(!views[0].state.selected);
 
         assert!(controller.select_canvas_node(&mut gui, &format!("canvas_node::{owner_id}")));
-        assert!(controller.toggle_canvas_port_group(
-            &mut gui,
-            &format!("canvas_node::{owner_id}::port_group::output::trigger"),
-        ));
 
-        let views = controller.canvas_node_views(&mut gui);
-        assert!(views[0].selected);
-        assert!(views[0].output_group.open);
+        let views = controller.canvas_node_render_views(&mut gui);
+        assert!(views[0].state.selected);
 
         controller.clear_canvas_selection(&mut gui);
-        let views = controller.canvas_node_views(&mut gui);
-        assert!(!views[0].selected);
+        let views = controller.canvas_node_render_views(&mut gui);
+        assert!(!views[0].state.selected);
     }
 
     #[test]
-    fn canvas_node_views_include_showcase_node() {
+    fn canvas_node_render_views_include_showcase_node() {
         let controller = WorkspaceController::new();
         let mut gui = Context::new();
 
-        let views = controller.canvas_node_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui);
 
         assert!(views
             .iter()
-            .any(|view| view.owner_id == showcase_node::SHOWCASE_OWNER_ID));
+            .any(|view| view.state.owner_id == showcase_node::SHOWCASE_OWNER_ID));
         assert!(views
             .iter()
-            .any(|view| view.owner_id == showcase_node::SOLO_OWNER_ID));
+            .any(|view| view.state.owner_id == showcase_node::SOLO_OWNER_ID));
     }
 
     #[test]
@@ -642,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn canvas_node_views_mark_pending_connection_targets() {
+    fn canvas_node_render_views_mark_pending_connection_targets() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
 
@@ -653,24 +586,22 @@ mod tests {
             [0.0, 0.0],
         ));
 
-        let views = controller.canvas_node_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui);
         let source = views
             .iter()
-            .find(|view| view.owner_id == "engine_node::0")
-            .and_then(|view| view.outputs.iter().find(|port| port.name == "image"))
-            .map(|port| port.connection_state);
+            .find(|view| view.state.owner_id == "engine_node::0")
+            .and_then(|view| port_state(view, CanvasPortSide::Output, "image"));
         let target = views
             .iter()
-            .find(|view| view.owner_id == "engine_node::1")
-            .and_then(|view| view.inputs.iter().find(|port| port.name == "image"))
-            .map(|port| port.connection_state);
+            .find(|view| view.state.owner_id == "engine_node::1")
+            .and_then(|view| port_state(view, CanvasPortSide::Input, "image"));
 
         assert_eq!(source, Some(CanvasPortConnectionState::Source));
         assert_eq!(target, Some(CanvasPortConnectionState::CompatibleTarget));
     }
 
     #[test]
-    fn canvas_node_views_mark_hovered_pending_connection_drop_target() {
+    fn canvas_node_render_views_mark_hovered_pending_connection_drop_target() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
 
@@ -684,12 +615,11 @@ mod tests {
             gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
         );
 
-        let views = controller.canvas_node_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui);
         let target = views
             .iter()
-            .find(|view| view.owner_id == "engine_node::1")
-            .and_then(|view| view.inputs.iter().find(|port| port.name == "image"))
-            .map(|port| port.connection_state);
+            .find(|view| view.state.owner_id == "engine_node::1")
+            .and_then(|view| port_state(view, CanvasPortSide::Input, "image"));
 
         assert_eq!(target, Some(CanvasPortConnectionState::DropTarget));
     }
@@ -715,5 +645,17 @@ mod tests {
             controller.engine_panel_state().last_action,
             "Connection cancelled"
         );
+    }
+
+    fn port_state(
+        view: &CanvasNodeRenderView,
+        side: CanvasPortSide,
+        key: &str,
+    ) -> Option<CanvasPortConnectionState> {
+        view.state
+            .port_states
+            .iter()
+            .find(|port| port.side == side && port.key == key)
+            .map(|port| port.connection_state)
     }
 }

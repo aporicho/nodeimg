@@ -1,5 +1,4 @@
 use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
-use crate::canvas::node_card::CanvasNodeView;
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
 use crate::canvas::param_control::{CanvasNodeParamControl, CanvasParamControlMetrics};
 use crate::renderer::Color;
@@ -106,12 +105,6 @@ impl NodeCardMetrics {
             control: CanvasParamControlMetrics::from_theme(theme),
         }
     }
-}
-
-pub(crate) fn node_render_spec_from_view(view: &CanvasNodeView, theme: &Theme) -> NodeRenderSpec {
-    let template = CanvasNodeTemplate::from_legacy_view(view);
-    let state = CanvasNodeInstanceState::from_legacy_view(view);
-    node_render_spec(&template, &state, theme)
 }
 
 pub(crate) fn node_render_spec(
@@ -253,9 +246,10 @@ fn category_color(category: &str) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
+    use crate::canvas::node_template::{
+        CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
+    };
     use crate::canvas::param_control::CanvasNodeParamControl;
-    use crate::canvas::{CanvasPortGroupView, CanvasPortView};
     use crate::renderer::Rect;
     use crate::theme::light_theme;
 
@@ -321,10 +315,8 @@ mod tests {
     }
 
     #[test]
-    fn legacy_facade_splits_template_and_instance_state() {
-        let view = node_view_with_ports();
-        let template = CanvasNodeTemplate::from_legacy_view(&view);
-        let state = CanvasNodeInstanceState::from_legacy_view(&view);
+    fn template_and_instance_state_are_separate_models() {
+        let (template, state) = template_and_state_with_ports();
 
         assert_eq!(template.title, "Image");
         assert_eq!(template.inputs[0].key, "prompt");
@@ -338,43 +330,31 @@ mod tests {
     }
 
     fn template_and_state_with_ports() -> (CanvasNodeTemplate, CanvasNodeInstanceState) {
-        let view = node_view_with_ports();
-        (
-            CanvasNodeTemplate::from_legacy_view(&view),
-            CanvasNodeInstanceState::from_legacy_view(&view),
-        )
-    }
-
-    fn node_view_with_ports() -> CanvasNodeView {
-        CanvasNodeView {
-            owner_id: "engine_node::7".to_string(),
+        let template = CanvasNodeTemplate {
+            type_id: "image_gen".to_string(),
             title: "Image".to_string(),
             subtitle: "image_gen".to_string(),
             category: "image/generation".to_string(),
-            params: vec![CanvasNodeParamView {
-                name: "prompt".to_string(),
-                kind: "string".to_string(),
-                value: "text".to_string(),
-                control: CanvasNodeParamControl::default(),
-            }],
-            input_group: CanvasPortGroupView { open: true },
-            output_group: CanvasPortGroupView::default(),
-            inputs: vec![CanvasPortView {
-                name: "prompt".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::input::prompt".to_string(),
-                side: CanvasPortSide::Input,
-                index: 0,
-                count: 1,
-                connection_state: CanvasPortConnectionState::Idle,
-            }],
-            outputs: vec![CanvasPortView {
-                name: "image".to_string(),
-                stable_id: "canvas_node::engine_node::7::port::output::image".to_string(),
-                side: CanvasPortSide::Output,
-                index: 0,
-                count: 1,
-                connection_state: CanvasPortConnectionState::Idle,
-            }],
+            inputs: vec![CanvasNodePortTemplate::new(
+                "prompt",
+                "prompt",
+                CanvasPortSide::Input,
+            )],
+            outputs: vec![CanvasNodePortTemplate::new(
+                "image",
+                "image",
+                CanvasPortSide::Output,
+            )],
+            params: vec![CanvasNodeParamTemplate::new(
+                "prompt",
+                "prompt",
+                "string",
+                "text",
+                CanvasNodeParamControl::default(),
+            )],
+        };
+        let state = CanvasNodeInstanceState {
+            owner_id: "engine_node::7".to_string(),
             selected: false,
             layout: CanvasNodeLayout {
                 owner_id: "engine_node::7".to_string(),
@@ -387,6 +367,19 @@ mod tests {
                 z_index: 0,
                 collapsed: false,
             },
-        }
+            port_states: vec![
+                CanvasNodePortState {
+                    key: "prompt".to_string(),
+                    side: CanvasPortSide::Input,
+                    connection_state: CanvasPortConnectionState::Idle,
+                },
+                CanvasNodePortState {
+                    key: "image".to_string(),
+                    side: CanvasPortSide::Output,
+                    connection_state: CanvasPortConnectionState::Idle,
+                },
+            ],
+        };
+        (template, state)
     }
 }

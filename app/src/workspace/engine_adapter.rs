@@ -3,7 +3,6 @@ use crate::workspace::node_palette::{NodePaletteItem, NodePaletteState};
 use engine::events::ExecutionStatus;
 use engine::facade::EngineFacade;
 use engine::Engine;
-use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
 use gui::canvas::node_template::{
     CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     CanvasNodeRenderView, CanvasNodeTemplate,
@@ -11,7 +10,7 @@ use gui::canvas::node_template::{
 use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
-    CanvasPortConnectionState, CanvasPortSide, CanvasPortView,
+    CanvasPortConnectionState, CanvasPortSide,
 };
 use gui::renderer::Rect;
 use std::collections::HashMap;
@@ -81,65 +80,6 @@ pub(crate) fn canvas_node_identities(engine: &Engine) -> Vec<CanvasNodeIdentity>
             default_rect: default_canvas_node_rect(index),
         })
         .collect()
-}
-
-pub(crate) fn canvas_node_views(
-    engine: &Engine,
-    layouts: Vec<CanvasNodeLayout>,
-) -> Vec<CanvasNodeView> {
-    let graph = engine.query_graph_snapshot();
-    let defs_by_type = engine
-        .list_node_defs()
-        .into_iter()
-        .map(|def| (def.type_id.as_str(), def))
-        .collect::<HashMap<_, _>>();
-
-    let mut views = layouts
-        .into_iter()
-        .filter_map(|layout| {
-            let node_id = parse_engine_node_owner_id(&layout.owner_id)?;
-            let node = graph.nodes.get(&node_id)?;
-            let node_def = defs_by_type.get(node.type_id.as_str()).copied();
-            let title = node_def
-                .map(|def| def.name.as_str())
-                .unwrap_or(node.type_id.as_str())
-                .to_string();
-            let inputs = node_def
-                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Input, def))
-                .unwrap_or_default();
-            let outputs = node_def
-                .map(|def| canvas_ports(&layout.owner_id, CanvasPortSide::Output, def))
-                .unwrap_or_default();
-            let category = node_def
-                .map(|def| def.category.clone())
-                .unwrap_or_else(|| "node".to_string());
-            let params = node_def.map(canvas_node_params).unwrap_or_default();
-            let layout =
-                layout_with_content_height(layout, params.len(), inputs.len(), outputs.len());
-
-            Some(CanvasNodeView {
-                owner_id: layout.owner_id.clone(),
-                title,
-                subtitle: node.type_id.clone(),
-                category,
-                params,
-                input_group: gui::canvas::CanvasPortGroupView::default(),
-                output_group: gui::canvas::CanvasPortGroupView::default(),
-                inputs,
-                outputs,
-                selected: false,
-                layout,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    views.sort_by(|a, b| {
-        a.layout
-            .z_index
-            .cmp(&b.layout.z_index)
-            .then_with(|| a.owner_id.cmp(&b.owner_id))
-    });
-    views
 }
 
 pub(crate) fn canvas_node_templates(engine: &Engine) -> HashMap<String, CanvasNodeTemplate> {
@@ -235,26 +175,6 @@ pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionVi
         .collect()
 }
 
-fn canvas_ports(
-    owner_id: &str,
-    side: CanvasPortSide,
-    node_def: &engine::node_manager::NodeDef,
-) -> Vec<CanvasPortView> {
-    let pins = exposed_ports(node_def, side);
-    let count = pins.len();
-    pins.into_iter()
-        .enumerate()
-        .map(|(index, pin)| CanvasPortView {
-            name: pin.name.clone(),
-            stable_id: canvas_port_stable_id(owner_id, side, &pin.name),
-            side,
-            index,
-            count,
-            connection_state: CanvasPortConnectionState::Idle,
-        })
-        .collect()
-}
-
 fn canvas_port_templates(
     side: CanvasPortSide,
     node_def: &engine::node_manager::NodeDef,
@@ -340,26 +260,6 @@ fn layout_with_content_height(
         .max(CANVAS_NODE_PADDING_Y + body_height)
         .max(port_height);
     layout
-}
-
-fn canvas_node_params(node_def: &engine::node_manager::NodeDef) -> Vec<CanvasNodeParamView> {
-    node_def
-        .params
-        .iter()
-        .filter(|param| {
-            param
-                .expose
-                .iter()
-                .any(|expose| matches!(expose, engine::node_manager::ParamExpose::Control))
-        })
-        .take(5)
-        .map(|param| CanvasNodeParamView {
-            name: param.name.clone(),
-            kind: param.data_type.to_string(),
-            value: compact_value(&param.default_value),
-            control: canvas_param_control(param),
-        })
-        .collect()
 }
 
 fn canvas_node_param_templates(
@@ -619,12 +519,12 @@ mod tests {
             execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
         };
 
-        let input_ports = canvas_ports("engine_node::1", CanvasPortSide::Input, &node_def);
+        let input_ports = canvas_port_templates(CanvasPortSide::Input, &node_def);
 
         assert_eq!(input_ports.len(), 2);
-        assert!(input_ports.iter().any(|port| {
-            port.stable_id == "canvas_node::engine_node::1::port::input::strength"
-        }));
+        assert!(input_ports.iter().any(|port| port.key == "strength"
+            && port.name == "strength"
+            && port.side == CanvasPortSide::Input));
     }
 
     #[test]

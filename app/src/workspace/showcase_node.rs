@@ -1,11 +1,10 @@
-use gui::canvas::node_card::{CanvasNodeParamView, CanvasNodeView};
 use gui::canvas::node_template::{
-    CanvasNodeInstanceState, CanvasNodeRenderView, CanvasNodeTemplate,
+    CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
+    CanvasNodeRenderView, CanvasNodeTemplate,
 };
 use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
-    canvas_port_stable_id, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState,
-    CanvasPortGroupView, CanvasPortSide, CanvasPortView,
+    CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide,
 };
 use gui::renderer::Rect;
 
@@ -40,80 +39,81 @@ pub(crate) fn is_showcase_node(owner_id: &str) -> bool {
     owner_id == SHOWCASE_OWNER_ID || owner_id == SOLO_OWNER_ID
 }
 
-pub(crate) fn showcase_view_for_layout(layout: CanvasNodeLayout) -> Option<CanvasNodeView> {
-    match layout.owner_id.as_str() {
-        SHOWCASE_OWNER_ID => Some(showcase_node_view(layout)),
-        SOLO_OWNER_ID => Some(solo_node_view(layout)),
-        _ => None,
-    }
-}
-
 pub(crate) fn showcase_render_view_for_layout(
     layout: CanvasNodeLayout,
 ) -> Option<CanvasNodeRenderView> {
-    showcase_view_for_layout(layout).map(|view| CanvasNodeRenderView {
-        template: CanvasNodeTemplate::from_legacy_view(&view),
-        state: CanvasNodeInstanceState::from_legacy_view(&view),
-    })
+    let template = match layout.owner_id.as_str() {
+        SHOWCASE_OWNER_ID => showcase_node_template(),
+        SOLO_OWNER_ID => solo_node_template(),
+        _ => return None,
+    };
+    let state = showcase_instance_state(&template, layout);
+    Some(CanvasNodeRenderView { template, state })
 }
 
-pub(crate) fn showcase_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
-    CanvasNodeView {
-        owner_id: SHOWCASE_OWNER_ID.to_string(),
+pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
+    CanvasNodeTemplate {
+        type_id: "showcase_node::all_controls".to_string(),
         title: "Node Control Showcase".to_string(),
         subtitle: "all canvas param controls".to_string(),
         category: "ui/showcase".to_string(),
         params: vec![
-            CanvasNodeParamView {
-                name: "Readonly".to_string(),
-                kind: "image".to_string(),
-                value: "image".to_string(),
-                control: CanvasNodeParamControl::ReadOnly {
+            CanvasNodeParamTemplate::new(
+                "Readonly",
+                "Readonly",
+                "image",
+                "image",
+                CanvasNodeParamControl::ReadOnly {
                     value: "image".to_string(),
                 },
-            },
-            CanvasNodeParamView {
-                name: "Prompt".to_string(),
-                kind: "string".to_string(),
-                value: "A long prompt value".to_string(),
-                control: CanvasNodeParamControl::Text {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Prompt",
+                "Prompt",
+                "string",
+                "A long prompt value",
+                CanvasNodeParamControl::Text {
                     value: "A long prompt value".to_string(),
                 },
-            },
-            CanvasNodeParamView {
-                name: "Seed".to_string(),
-                kind: "int".to_string(),
-                value: "42".to_string(),
-                control: CanvasNodeParamControl::Number {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Seed",
+                "Seed",
+                "int",
+                "42",
+                CanvasNodeParamControl::Number {
                     value: 42.0,
                     min: 0.0,
                     max: 9999.0,
                     step: 1.0,
                     precision: 0,
                 },
-            },
-            CanvasNodeParamView {
-                name: "Strength".to_string(),
-                kind: "float".to_string(),
-                value: "0.65".to_string(),
-                control: CanvasNodeParamControl::Slider {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Strength",
+                "Strength",
+                "float",
+                "0.65",
+                CanvasNodeParamControl::Slider {
                     value: 0.65,
                     min: 0.0,
                     max: 1.0,
                     step: 0.01,
                 },
-            },
-            CanvasNodeParamView {
-                name: "Enabled".to_string(),
-                kind: "bool".to_string(),
-                value: "true".to_string(),
-                control: CanvasNodeParamControl::Toggle { checked: true },
-            },
-            CanvasNodeParamView {
-                name: "Sampler".to_string(),
-                kind: "enum".to_string(),
-                value: "Euler".to_string(),
-                control: CanvasNodeParamControl::Select {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Enabled",
+                "Enabled",
+                "bool",
+                "true",
+                CanvasNodeParamControl::Toggle { checked: true },
+            ),
+            CanvasNodeParamTemplate::new(
+                "Sampler",
+                "Sampler",
+                "enum",
+                "Euler",
+                CanvasNodeParamControl::Select {
                     options: vec![
                         "Euler".to_string(),
                         "DPM++ 2M".to_string(),
@@ -121,82 +121,84 @@ pub(crate) fn showcase_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
                     ],
                     selected: 0,
                 },
-            },
-            CanvasNodeParamView {
-                name: "Tint".to_string(),
-                kind: "color".to_string(),
-                value: "#FF8040".to_string(),
-                control: CanvasNodeParamControl::Color {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Tint",
+                "Tint",
+                "color",
+                "#FF8040",
+                CanvasNodeParamControl::Color {
                     rgba: [1.0, 0.5, 0.25, 1.0],
                 },
-            },
-            CanvasNodeParamView {
-                name: "Output".to_string(),
-                kind: "file_path".to_string(),
-                value: "*.png".to_string(),
-                control: CanvasNodeParamControl::FilePath {
+            ),
+            CanvasNodeParamTemplate::new(
+                "Output",
+                "Output",
+                "file_path",
+                "*.png",
+                CanvasNodeParamControl::FilePath {
                     path: String::new(),
                     extensions: vec!["png".to_string(), "jpg".to_string()],
                 },
-            },
+            ),
         ],
-        input_group: CanvasPortGroupView { open: true },
-        output_group: CanvasPortGroupView { open: true },
         inputs: showcase_ports(
-            SHOWCASE_OWNER_ID,
             CanvasPortSide::Input,
             &["image", "mask", "prompt", "strength", "seed", "enabled"],
         ),
-        outputs: showcase_ports(
-            SHOWCASE_OWNER_ID,
-            CanvasPortSide::Output,
-            &["image", "preview", "metadata"],
-        ),
-        selected: false,
-        layout,
+        outputs: showcase_ports(CanvasPortSide::Output, &["image", "preview", "metadata"]),
     }
 }
 
-pub(crate) fn solo_node_view(layout: CanvasNodeLayout) -> CanvasNodeView {
-    CanvasNodeView {
-        owner_id: SOLO_OWNER_ID.to_string(),
+pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
+    CanvasNodeTemplate {
+        type_id: "showcase_node::solo_control".to_string(),
         title: "Solo Control".to_string(),
         subtitle: "single control tuning".to_string(),
         category: "ui/showcase".to_string(),
-        params: vec![CanvasNodeParamView {
-            name: "Strength".to_string(),
-            kind: "float".to_string(),
-            value: "0.65".to_string(),
-            control: CanvasNodeParamControl::Slider {
+        params: vec![CanvasNodeParamTemplate::new(
+            "Strength",
+            "Strength",
+            "float",
+            "0.65",
+            CanvasNodeParamControl::Slider {
                 value: 0.65,
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
             },
-        }],
-        input_group: CanvasPortGroupView { open: true },
-        output_group: CanvasPortGroupView { open: true },
-        inputs: showcase_ports(SOLO_OWNER_ID, CanvasPortSide::Input, &["in"]),
-        outputs: showcase_ports(SOLO_OWNER_ID, CanvasPortSide::Output, &["out"]),
-        selected: false,
-        layout,
+        )],
+        inputs: showcase_ports(CanvasPortSide::Input, &["in"]),
+        outputs: showcase_ports(CanvasPortSide::Output, &["out"]),
     }
 }
 
-fn showcase_ports(owner_id: &str, side: CanvasPortSide, names: &[&str]) -> Vec<CanvasPortView> {
-    let count = names.len();
+fn showcase_ports(side: CanvasPortSide, names: &[&str]) -> Vec<CanvasNodePortTemplate> {
     names
         .iter()
-        .enumerate()
-        .map(|(index, name)| CanvasPortView {
-            name: (*name).to_string(),
-            stable_id: canvas_port_stable_id(owner_id, side, name),
-            side,
-            index,
-            count,
-            connection_state: CanvasPortConnectionState::Idle,
-        })
+        .map(|name| CanvasNodePortTemplate::new(*name, *name, side))
         .collect()
+}
+
+fn showcase_instance_state(
+    template: &CanvasNodeTemplate,
+    layout: CanvasNodeLayout,
+) -> CanvasNodeInstanceState {
+    CanvasNodeInstanceState {
+        owner_id: layout.owner_id.clone(),
+        layout,
+        selected: false,
+        port_states: template
+            .inputs
+            .iter()
+            .chain(template.outputs.iter())
+            .map(|port| CanvasNodePortState {
+                key: port.key.clone(),
+                side: port.side,
+                connection_state: CanvasPortConnectionState::Idle,
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -205,43 +207,37 @@ mod tests {
 
     #[test]
     fn showcase_node_contains_all_current_param_control_shapes() {
-        let identity = showcase_node_identity();
-        let view = showcase_node_view(CanvasNodeLayout {
-            owner_id: identity.owner_id,
-            rect: identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-        });
+        let template = showcase_node_template();
 
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::ReadOnly { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Text { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Number { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Slider { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Toggle { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Select { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::Color { .. })));
-        assert!(view
+        assert!(template
             .params
             .iter()
             .any(|param| matches!(param.control, CanvasNodeParamControl::FilePath { .. })));
@@ -250,20 +246,21 @@ mod tests {
     #[test]
     fn solo_node_contains_one_tunable_control() {
         let identity = solo_node_identity();
-        let view = solo_node_view(CanvasNodeLayout {
+        let view = showcase_render_view_for_layout(CanvasNodeLayout {
             owner_id: identity.owner_id,
             rect: identity.default_rect,
             z_index: 0,
             collapsed: false,
-        });
+        })
+        .expect("solo render view");
 
-        assert_eq!(view.owner_id, SOLO_OWNER_ID);
-        assert_eq!(view.params.len(), 1);
+        assert_eq!(view.state.owner_id, SOLO_OWNER_ID);
+        assert_eq!(view.template.params.len(), 1);
         assert!(matches!(
-            view.params[0].control,
+            view.template.params[0].control,
             CanvasNodeParamControl::Slider { .. }
         ));
-        assert_eq!(view.inputs.len(), 1);
-        assert_eq!(view.outputs.len(), 1);
+        assert_eq!(view.template.inputs.len(), 1);
+        assert_eq!(view.template.outputs.len(), 1);
     }
 }
