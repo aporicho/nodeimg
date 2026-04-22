@@ -195,16 +195,16 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
             } else {
                 "  "
             };
-            crate::tree::Desc::Widget {
-                id: Cow::Owned(format!("__dropdown_option::{}::{}", dropdown_id, index)),
-                props: Box::new(ButtonProps {
+            crate::tree::Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Owned(format!("__dropdown_option::{}::{}", dropdown_id, index)),
+                ButtonProps {
                     label: Cow::Owned(format!("{prefix}{option}")),
                     icon: None,
                     disabled: false,
                     size: props.size,
                     density: props.density,
-                }),
-            }
+                },
+            ))
         })
         .collect();
 
@@ -213,32 +213,32 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
         anchor_id: format!("{}::field", dropdown_id),
         restore_focus_id: Some(dropdown_id.to_string()),
         placement: OverlayPlacement::BelowStart,
-        content: crate::tree::Desc::Widget {
-            id: Cow::Owned(format!("{}::popup_group", dropdown_id)),
-            props: Box::new(GroupProps {
+        content: crate::tree::Desc::Widget(crate::widget::WidgetDesc::new(
+            Cow::Owned(format!("{}::popup_group", dropdown_id)),
+            GroupProps {
                 title: props
                     .label
                     .clone()
                     .unwrap_or_else(|| Cow::Borrowed("Options")),
                 content: vec![
-                    crate::tree::Desc::Widget {
-                        id: Cow::Owned(format!("{}::popup_hint", dropdown_id)),
-                        props: Box::new(LabelProps {
+                    crate::tree::Desc::Widget(crate::widget::WidgetDesc::new(
+                        Cow::Owned(format!("{}::popup_hint", dropdown_id)),
+                        LabelProps {
                             text: Cow::Borrowed("Use mouse or Up/Down + Enter"),
                             variant: LabelVariant::Caption,
                             muted: true,
-                        }),
-                    },
-                    crate::tree::Desc::Widget {
-                        id: Cow::Owned(format!("{}::popup_list", dropdown_id)),
-                        props: Box::new(ListViewProps {
+                        },
+                    )),
+                    crate::tree::Desc::Widget(crate::widget::WidgetDesc::new(
+                        Cow::Owned(format!("{}::popup_list", dropdown_id)),
+                        ListViewProps {
                             height: 140.0,
                             items,
-                        }),
-                    },
+                        },
+                    )),
                 ],
-            }),
-        },
+            },
+        )),
         offset_x: 0.0,
         offset_y: 8.0,
         match_anchor_width: true,

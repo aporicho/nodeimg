@@ -63,35 +63,5 @@ fn overlay_desc(state: &OverlayState, viewport: crate::renderer::Rect) -> Desc {
 }
 
 fn clone_desc(desc: &Desc) -> Desc {
-    match desc {
-        Desc::Container {
-            id,
-            style,
-            decoration,
-            children,
-        } => Desc::Container {
-            id: id.clone(),
-            style: style.clone(),
-            decoration: decoration.clone(),
-            children: children.iter().map(clone_desc).collect(),
-        },
-        Desc::Leaf { id, style, kind } => Desc::Leaf {
-            id: id.clone(),
-            style: style.clone(),
-            kind: kind.clone(),
-        },
-        Desc::Widget { id, props } => Desc::Widget {
-            id: id.clone(),
-            props: props.clone_box(),
-        },
-        Desc::WidgetContainer {
-            id,
-            props,
-            children,
-        } => Desc::WidgetContainer {
-            id: id.clone(),
-            props: props.clone_box(),
-            children: children.iter().map(clone_desc).collect(),
-        },
-    }
+    desc.clone()
 }

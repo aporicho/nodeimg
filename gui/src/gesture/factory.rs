@@ -148,9 +148,9 @@ mod tests {
     }
 
     fn test_panel_desc() -> Desc {
-        Desc::Widget {
-            id: Cow::Borrowed("demo_panel"),
-            props: Box::new(PanelProps {
+        Desc::Widget(crate::widget::WidgetDesc::new(
+            Cow::Borrowed("demo_panel"),
+            PanelProps {
                 title: Cow::Borrowed("Demo"),
                 rect: Rect {
                     x: 10.0,
@@ -165,8 +165,8 @@ mod tests {
                 resizable: true,
                 closable: false,
                 content: vec![],
-            }),
-        }
+            },
+        ))
     }
 
     #[test]
@@ -260,16 +260,16 @@ mod tests {
     #[test]
     fn toggle_track_click_emits_click_signal() {
         let theme = dark_theme();
-        let desc = Desc::Widget {
-            id: Cow::Borrowed("toggle_grid"),
-            props: Box::new(ToggleProps {
+        let desc = Desc::Widget(crate::widget::WidgetDesc::new(
+            Cow::Borrowed("toggle_grid"),
+            ToggleProps {
                 label: Some(Cow::Borrowed("Grid")),
                 value: true,
                 disabled: false,
                 size: Default::default(),
                 density: Default::default(),
-            }),
-        };
+            },
+        ));
         let mut tree = Tree::new();
         reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();
@@ -303,9 +303,9 @@ mod tests {
     #[test]
     fn slider_track_drag_emits_slider_target_not_panel() {
         let theme = dark_theme();
-        let desc = Desc::Widget {
-            id: Cow::Borrowed("slider_radius"),
-            props: Box::new(SliderProps {
+        let desc = Desc::Widget(crate::widget::WidgetDesc::new(
+            Cow::Borrowed("slider_radius"),
+            SliderProps {
                 label: Some(Cow::Borrowed("Radius")),
                 min: 0.0,
                 max: 10.0,
@@ -314,8 +314,8 @@ mod tests {
                 disabled: false,
                 size: Default::default(),
                 density: Default::default(),
-            }),
-        };
+            },
+        ));
         let mut tree = Tree::new();
         reconcile(&mut tree, desc, build_cx(&theme));
         let root = tree.root().unwrap();

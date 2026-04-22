@@ -37,27 +37,27 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             closable: false,
             initially_visible: true,
         },
-        content: vec![Desc::Widget {
-            id: Cow::Borrowed("engine_status_group"),
-            props: Box::new(GroupProps {
+        content: vec![Desc::Widget(gui::widget::WidgetDesc::new(
+            Cow::Borrowed("engine_status_group"),
+            GroupProps {
                 title: Cow::Borrowed("Runtime"),
                 content: vec![
                     status_label("engine_status", status, false),
                     status_label("engine_catalog", catalog, true),
                     status_label("engine_last_action", last_action, true),
                 ],
-            }),
-        }],
+            },
+        ))],
     }
 }
 
 fn status_label(id: &'static str, text: String, muted: bool) -> Desc {
-    Desc::Widget {
-        id: Cow::Borrowed(id),
-        props: Box::new(LabelProps {
+    Desc::Widget(gui::widget::WidgetDesc::new(
+        Cow::Borrowed(id),
+        LabelProps {
             text: Cow::Owned(text),
             variant: LabelVariant::Caption,
             muted,
-        }),
-    }
+        },
+    ))
 }

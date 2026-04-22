@@ -41,31 +41,8 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc, cx: WidgetBuildC
                 }
             }
         }
-        Desc::Widget { id, props } => {
-            let wb = props.build(&id, &cx);
-            let props_changed = tree
-                .get(node_id)
-                .map(|n| match &n.kind {
-                    NodeKind::Widget(old) => !old.props_eq(props.as_ref()),
-                    _ => true,
-                })
-                .unwrap_or(true)
-                || cx.force_rebuild;
-
-            if props_changed {
-                if let Some(node) = tree.get_mut(node_id) {
-                    node.style = wb.style;
-                    node.decoration = wb.decoration;
-                    node.kind = NodeKind::Widget(props);
-                }
-            }
-            reconcile_children(tree, node_id, wb.children, cx);
-        }
-        Desc::WidgetContainer {
-            id,
-            props,
-            children,
-        } => {
+        Desc::Widget(widget) => {
+            let (id, props, children) = widget.into_parts();
             let mut wb = props.build(&id, &cx);
             wb.children.extend(children);
             let props_changed = tree
@@ -138,21 +115,8 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
         Desc::Leaf { id, style, kind } => {
             (id, style, None, NodeKind::Leaf(kind), Vec::<Desc>::new())
         }
-        Desc::Widget { id, props } => {
-            let wb = props.build(&id, &cx);
-            (
-                id,
-                wb.style,
-                wb.decoration,
-                NodeKind::Widget(props),
-                wb.children,
-            )
-        }
-        Desc::WidgetContainer {
-            id,
-            props,
-            children,
-        } => {
+        Desc::Widget(widget) => {
+            let (id, props, children) = widget.into_parts();
             let mut wb = props.build(&id, &cx);
             wb.children.extend(children);
             (
@@ -206,14 +170,14 @@ mod tests {
     use crate::theme::light_theme;
     use crate::tree::layout::{BoxStyle, LeafKind, Size};
     use crate::widget::atoms::dot::DotProps;
-    use crate::widget::props::widget_with_children;
+    use crate::widget::WidgetDesc;
     use std::borrow::Cow;
 
     #[test]
-    fn widget_container_reconciles_external_children() {
+    fn widget_desc_reconciles_external_children() {
         let theme = light_theme();
         let mut tree = Tree::new();
-        let desc = widget_with_children(
+        let desc = Desc::Widget(WidgetDesc::with_children(
             "wrapper",
             DotProps {
                 diameter: 10.0,
@@ -235,7 +199,7 @@ mod tests {
                     layout: Default::default(),
                 },
             }],
-        );
+        ));
 
         reconcile(
             &mut tree,

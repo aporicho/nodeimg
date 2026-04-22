@@ -143,37 +143,7 @@ impl WidgetProps for CollapsibleProps {
 }
 
 fn desc_clone(d: &Desc) -> Desc {
-    match d {
-        Desc::Container {
-            id,
-            style,
-            decoration,
-            children,
-        } => Desc::Container {
-            id: id.clone(),
-            style: style.clone(),
-            decoration: decoration.clone(),
-            children: children.iter().map(desc_clone).collect(),
-        },
-        Desc::Leaf { id, style, kind } => Desc::Leaf {
-            id: id.clone(),
-            style: style.clone(),
-            kind: kind.clone(),
-        },
-        Desc::Widget { id, props } => Desc::Widget {
-            id: id.clone(),
-            props: props.clone_box(),
-        },
-        Desc::WidgetContainer {
-            id,
-            props,
-            children,
-        } => Desc::WidgetContainer {
-            id: id.clone(),
-            props: props.clone_box(),
-            children: children.iter().map(desc_clone).collect(),
-        },
-    }
+    d.clone()
 }
 
 #[cfg(test)]

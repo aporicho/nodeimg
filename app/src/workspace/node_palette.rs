@@ -43,21 +43,21 @@ pub(crate) fn overlay_content(state: &NodePaletteState, theme: &Theme) -> Desc {
             shadow: None,
         }),
         children: vec![
-            Desc::Widget {
-                id: Cow::Borrowed("node_palette::title"),
-                props: Box::new(LabelProps {
+            Desc::Widget(gui::widget::WidgetDesc::new(
+                Cow::Borrowed("node_palette::title"),
+                LabelProps {
                     text: Cow::Borrowed("Node Library"),
                     variant: LabelVariant::Title,
                     muted: false,
-                }),
-            },
-            Desc::Widget {
-                id: Cow::Borrowed("node_palette::items"),
-                props: Box::new(ScrollAreaProps {
+                },
+            )),
+            Desc::Widget(gui::widget::WidgetDesc::new(
+                Cow::Borrowed("node_palette::items"),
+                ScrollAreaProps {
                     height: 300.0,
                     content: library_content(state),
-                }),
-            },
+                },
+            )),
         ],
     }
 }
@@ -78,16 +78,16 @@ fn library_content(state: &NodePaletteState) -> Vec<Desc> {
             current_category = Some(&item.category);
         }
 
-        category_items.push(Desc::Widget {
-            id: Cow::Owned(format!("{NODE_LIBRARY_ADD_PREFIX}{}", item.type_id)),
-            props: Box::new(ButtonProps {
+        category_items.push(Desc::Widget(gui::widget::WidgetDesc::new(
+            Cow::Owned(format!("{NODE_LIBRARY_ADD_PREFIX}{}", item.type_id)),
+            ButtonProps {
                 label: Cow::Owned(format!("{}  [{}]", item.name, item.source)),
                 icon: None,
                 disabled: false,
                 size: Default::default(),
                 density: Default::default(),
-            }),
-        });
+            },
+        )));
     }
 
     if let Some(category) = current_category {
@@ -95,25 +95,25 @@ fn library_content(state: &NodePaletteState) -> Vec<Desc> {
     }
 
     if content.is_empty() {
-        content.push(Desc::Widget {
-            id: Cow::Borrowed("node_palette_empty"),
-            props: Box::new(LabelProps {
+        content.push(Desc::Widget(gui::widget::WidgetDesc::new(
+            Cow::Borrowed("node_palette_empty"),
+            LabelProps {
                 text: Cow::Borrowed("No nodes available"),
                 variant: LabelVariant::Caption,
                 muted: true,
-            }),
-        });
+            },
+        )));
     }
 
     content
 }
 
 fn category_group(category: &str, items: Vec<Desc>) -> Desc {
-    Desc::Widget {
-        id: Cow::Owned(format!("node_palette::category::{category}")),
-        props: Box::new(GroupProps {
+    Desc::Widget(gui::widget::WidgetDesc::new(
+        Cow::Owned(format!("node_palette::category::{category}")),
+        GroupProps {
             title: Cow::Owned(category.to_string()),
             content: items,
-        }),
-    }
+        },
+    ))
 }

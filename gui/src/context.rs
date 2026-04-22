@@ -401,16 +401,16 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("input"),
-                props: Box::new(TextInputProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("input"),
+                TextInputProps {
                     label: Some(Cow::Borrowed("Prompt")),
                     value: Cow::Owned(value.to_string()),
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -423,16 +423,16 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("button"),
-                props: Box::new(ButtonProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("button"),
+                ButtonProps {
                     label: Cow::Borrowed("Run"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -445,16 +445,16 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("toggle"),
-                props: Box::new(ToggleProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("toggle"),
+                ToggleProps {
                     label: Some(Cow::Borrowed("Grid")),
                     value: true,
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -467,9 +467,9 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("slider"),
-                props: Box::new(SliderProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("slider"),
+                SliderProps {
                     label: Some(Cow::Borrowed("Radius")),
                     min: 0.0,
                     max: 10.0,
@@ -478,8 +478,8 @@ mod tests {
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -492,9 +492,9 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("panel"),
-                props: Box::new(PanelProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("panel"),
+                PanelProps {
                     title: Cow::Borrowed("Panel"),
                     rect: Rect {
                         x: 20.0,
@@ -509,8 +509,8 @@ mod tests {
                     resizable: true,
                     closable: false,
                     content: vec![],
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -523,9 +523,9 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("panel"),
-                props: Box::new(PanelProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("panel"),
+                PanelProps {
                     title: Cow::Borrowed("Panel"),
                     rect: Rect {
                         x: 20.0,
@@ -539,43 +539,45 @@ mod tests {
                     draggable: true,
                     resizable: true,
                     closable: false,
-                    content: vec![Desc::Widget {
-                        id: Cow::Borrowed("input"),
-                        props: Box::new(TextInputProps {
+                    content: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                        Cow::Borrowed("input"),
+                        TextInputProps {
                             label: Some(Cow::Borrowed("Prompt")),
                             value: Cow::Borrowed("hello"),
                             disabled: false,
                             size: Default::default(),
                             density: Default::default(),
-                        }),
-                    }],
-                }),
-            }],
+                        },
+                    ))],
+                },
+            ))],
         }
     }
 
     fn popup_content_desc() -> Desc {
-        Desc::Widget {
-            id: Cow::Borrowed("popup_button"),
-            props: Box::new(ButtonProps {
+        Desc::Widget(crate::widget::WidgetDesc::new(
+            Cow::Borrowed("popup_button"),
+            ButtonProps {
                 label: Cow::Borrowed("Overlay"),
                 icon: None,
                 disabled: false,
                 size: Default::default(),
                 density: Default::default(),
-            }),
-        }
+            },
+        ))
     }
 
     fn scroll_desc() -> Desc {
         let items = (0..20)
-            .map(|index| Desc::Widget {
-                id: Cow::Owned(format!("item_{index}")),
-                props: Box::new(LabelProps {
-                    text: Cow::Owned(format!("Item {index}")),
-                    variant: LabelVariant::Body,
-                    muted: false,
-                }),
+            .map(|index| {
+                Desc::Widget(crate::widget::WidgetDesc::new(
+                    Cow::Owned(format!("item_{index}")),
+                    LabelProps {
+                        text: Cow::Owned(format!("Item {index}")),
+                        variant: LabelVariant::Body,
+                        muted: false,
+                    },
+                ))
             })
             .collect();
 
@@ -587,13 +589,13 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("scroll"),
-                props: Box::new(ScrollAreaProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("scroll"),
+                ScrollAreaProps {
                     height: 80.0,
                     content: items,
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -606,9 +608,9 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("number"),
-                props: Box::new(NumberInputProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("number"),
+                NumberInputProps {
                     label: Some(Cow::Borrowed("Radius")),
                     value,
                     min: 0.0,
@@ -618,8 +620,8 @@ mod tests {
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 
@@ -632,9 +634,9 @@ mod tests {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Borrowed("dropdown"),
-                props: Box::new(DropdownProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Borrowed("dropdown"),
+                DropdownProps {
                     label: Some(Cow::Borrowed("Mode")),
                     options: vec![
                         Cow::Borrowed("Normal"),
@@ -645,8 +647,8 @@ mod tests {
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            }],
+                },
+            ))],
         }
     }
 

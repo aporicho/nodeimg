@@ -149,7 +149,7 @@ mod tests {
             Desc::Container { children, .. } => {
                 children.iter().any(|child| contains_desc_id(child, id))
             }
-            Desc::Widget { .. } | Desc::WidgetContainer { .. } | Desc::Leaf { .. } => false,
+            Desc::Widget(_) | Desc::Leaf { .. } => false,
         }
     }
 }

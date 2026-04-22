@@ -10,7 +10,7 @@ use crate::widget::atoms::slider::SliderProps;
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::atoms::truncated_text::TruncatedTextProps;
-use crate::widget::props::widget;
+use crate::widget::WidgetDesc;
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,7 +87,7 @@ pub fn param_control(
     let base = id.to_string();
     let child_id = format!("{base}::widget");
     let child = match control {
-        CanvasNodeParamControl::ReadOnly { value } => widget(
+        CanvasNodeParamControl::ReadOnly { value } => Desc::Widget(WidgetDesc::new(
             child_id,
             TruncatedTextProps {
                 text: Cow::Owned(value.clone()),
@@ -97,8 +97,8 @@ pub fn param_control(
                 align: TextAlign::Start,
                 width: Size::Fill,
             },
-        ),
-        CanvasNodeParamControl::Text { value } => widget(
+        )),
+        CanvasNodeParamControl::Text { value } => Desc::Widget(WidgetDesc::new(
             child_id,
             TextInputProps {
                 label: None,
@@ -107,14 +107,14 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
+        )),
         CanvasNodeParamControl::Number {
             value,
             min,
             max,
             step,
             precision,
-        } => widget(
+        } => Desc::Widget(WidgetDesc::new(
             child_id,
             NumberInputProps {
                 label: None,
@@ -127,13 +127,13 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
+        )),
         CanvasNodeParamControl::Slider {
             value,
             min,
             max,
             step,
-        } => widget(
+        } => Desc::Widget(WidgetDesc::new(
             child_id,
             SliderProps {
                 label: None,
@@ -145,8 +145,8 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
-        CanvasNodeParamControl::Toggle { checked } => widget(
+        )),
+        CanvasNodeParamControl::Toggle { checked } => Desc::Widget(WidgetDesc::new(
             child_id,
             ToggleProps {
                 label: None,
@@ -155,8 +155,8 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
-        CanvasNodeParamControl::Select { options, selected } => widget(
+        )),
+        CanvasNodeParamControl::Select { options, selected } => Desc::Widget(WidgetDesc::new(
             child_id,
             DropdownProps {
                 label: None,
@@ -166,8 +166,8 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
-        CanvasNodeParamControl::Color { rgba } => widget(
+        )),
+        CanvasNodeParamControl::Color { rgba } => Desc::Widget(WidgetDesc::new(
             child_id,
             ColorSwatchProps {
                 rgba: *rgba,
@@ -177,8 +177,8 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
-        CanvasNodeParamControl::FilePath { path, extensions } => widget(
+        )),
+        CanvasNodeParamControl::FilePath { path, extensions } => Desc::Widget(WidgetDesc::new(
             child_id,
             PathInputProps {
                 label: None,
@@ -188,7 +188,7 @@ pub fn param_control(
                 size: metrics.size,
                 density: metrics.density,
             },
-        ),
+        )),
     };
 
     Desc::Container {
@@ -232,7 +232,7 @@ mod tests {
 
         assert_eq!(children[0].id(), "control::widget");
         match &children[0] {
-            Desc::Widget { props, .. } => assert_eq!(props.widget_type(), "Slider"),
+            Desc::Widget(widget) => assert_eq!(widget.props().widget_type(), "Slider"),
             _ => panic!("expected slider widget"),
         }
     }
@@ -254,7 +254,7 @@ mod tests {
         };
 
         match &children[0] {
-            Desc::Widget { props, .. } => assert_eq!(props.widget_type(), "ColorSwatch"),
+            Desc::Widget(widget) => assert_eq!(widget.props().widget_type(), "ColorSwatch"),
             _ => panic!("expected color swatch widget"),
         }
     }

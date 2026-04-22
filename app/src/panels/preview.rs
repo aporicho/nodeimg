@@ -23,12 +23,12 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             closable: false,
             initially_visible: true,
         },
-        content: vec![Desc::Widget {
-            id: Cow::Borrowed("preview_image"),
-            props: Box::new(ImageViewerProps {
+        content: vec![Desc::Widget(gui::widget::WidgetDesc::new(
+            Cow::Borrowed("preview_image"),
+            ImageViewerProps {
                 texture: ctx.image,
                 height: 208.0,
-            }),
-        }],
+            },
+        ))],
     }
 }

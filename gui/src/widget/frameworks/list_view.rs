@@ -63,9 +63,9 @@ impl WidgetProps for ListViewProps {
                 ..BoxStyle::default()
             },
             decoration: None,
-            children: vec![Desc::Widget {
-                id: Cow::Owned(format!("{id}::scroll")),
-                props: Box::new(ScrollAreaProps {
+            children: vec![Desc::Widget(crate::widget::WidgetDesc::new(
+                Cow::Owned(format!("{id}::scroll")),
+                ScrollAreaProps {
                     height: self.height,
                     content: vec![Desc::Container {
                         id: Cow::Owned(format!("{id}::items")),
@@ -79,8 +79,8 @@ impl WidgetProps for ListViewProps {
                         decoration: None,
                         children: self.items.iter().map(desc_clone).collect(),
                     }],
-                }),
-            }],
+                },
+            ))],
         }
     }
 }
@@ -103,19 +103,11 @@ fn desc_clone(d: &Desc) -> Desc {
             style: style.clone(),
             kind: kind.clone(),
         },
-        Desc::Widget { id, props } => Desc::Widget {
-            id: id.clone(),
-            props: props.clone_box(),
-        },
-        Desc::WidgetContainer {
-            id,
-            props,
-            children,
-        } => Desc::WidgetContainer {
-            id: id.clone(),
-            props: props.clone_box(),
-            children: children.iter().map(desc_clone).collect(),
-        },
+        Desc::Widget(widget) => Desc::Widget(crate::widget::WidgetDesc::from_boxed(
+            widget.id().to_string(),
+            widget.props().clone_box(),
+            widget.children().iter().map(desc_clone).collect(),
+        )),
     }
 }
 
@@ -141,9 +133,7 @@ mod tests {
 
         assert_eq!(build.children.len(), 1);
         match &build.children[0] {
-            Desc::Widget { id, .. } | Desc::WidgetContainer { id, .. } => {
-                assert_eq!(id.as_ref(), "list::scroll")
-            }
+            Desc::Widget(widget) => assert_eq!(widget.id(), "list::scroll"),
             _ => panic!("expected scroll area child"),
         }
     }

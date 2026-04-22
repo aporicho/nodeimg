@@ -45,9 +45,9 @@ pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>
             .into_iter()
             .filter_map(|panel| {
                 let state = tree.panel_state(panel.config.id.as_str())?;
-                Some(Desc::Widget {
-                    id: panel.config.id.clone().into_cow(),
-                    props: Box::new(PanelProps {
+                Some(Desc::Widget(crate::widget::WidgetDesc::new(
+                    panel.config.id.clone().into_cow(),
+                    PanelProps {
                         title: panel.config.title,
                         rect: state.rect,
                         z_index: state.z_index,
@@ -57,8 +57,8 @@ pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>
                         resizable: panel.config.resizable,
                         closable: panel.config.closable,
                         content: panel.content,
-                    }),
-                })
+                    },
+                )))
             })
             .collect(),
     }

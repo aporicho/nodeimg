@@ -2,7 +2,6 @@ use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, Decoration};
 use crate::tree::Desc;
 use std::any::Any;
-use std::borrow::Cow;
 use std::fmt;
 
 /// build() 的返回值。提供 Widget 节点的根样式、装饰和展开后的子树。
@@ -43,24 +42,5 @@ impl PartialEq for Box<dyn WidgetProps> {
 impl fmt::Debug for Box<dyn WidgetProps> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.debug_fmt(f)
-    }
-}
-
-pub fn widget(id: impl Into<Cow<'static, str>>, props: impl WidgetProps) -> Desc {
-    Desc::Widget {
-        id: id.into(),
-        props: Box::new(props),
-    }
-}
-
-pub fn widget_with_children(
-    id: impl Into<Cow<'static, str>>,
-    props: impl WidgetProps,
-    children: Vec<Desc>,
-) -> Desc {
-    Desc::WidgetContainer {
-        id: id.into(),
-        props: Box::new(props),
-        children,
     }
 }

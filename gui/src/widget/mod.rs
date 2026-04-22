@@ -1,5 +1,6 @@
 pub mod anatomy;
 pub mod atoms;
+pub mod desc;
 pub mod frameworks;
 pub mod props;
 
@@ -10,4 +11,5 @@ pub mod state;
 pub(crate) mod systems;
 pub(crate) mod text_edit;
 
+pub use desc::WidgetDesc;
 pub(crate) use text_edit::TextEditState;

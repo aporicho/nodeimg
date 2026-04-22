@@ -25,26 +25,26 @@ pub(crate) fn panel(_ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             initially_visible: true,
         },
         content: vec![
-            Desc::Widget {
-                id: Cow::Borrowed(ADD_IMAGE_DEMO_GRAPH_ID),
-                props: Box::new(ButtonProps {
+            Desc::Widget(gui::widget::WidgetDesc::new(
+                Cow::Borrowed(ADD_IMAGE_DEMO_GRAPH_ID),
+                ButtonProps {
                     label: Cow::Borrowed("Add Image Demo"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            },
-            Desc::Widget {
-                id: Cow::Borrowed(RUN_IMAGE_DEMO_ID),
-                props: Box::new(ButtonProps {
+                },
+            )),
+            Desc::Widget(gui::widget::WidgetDesc::new(
+                Cow::Borrowed(RUN_IMAGE_DEMO_ID),
+                ButtonProps {
                     label: Cow::Borrowed("Run Image Demo"),
                     icon: None,
                     disabled: false,
                     size: Default::default(),
                     density: Default::default(),
-                }),
-            },
+                },
+            )),
         ],
     }
 }
