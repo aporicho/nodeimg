@@ -3,9 +3,10 @@ pub mod atoms;
 pub mod build;
 pub mod desc;
 pub mod frameworks;
+pub mod mapping;
+pub mod param_control;
 pub mod props;
 
-mod mapping;
 pub(crate) mod painters;
 pub mod resize_edge;
 pub mod state;

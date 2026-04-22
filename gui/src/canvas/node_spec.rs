@@ -1,8 +1,9 @@
 use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
-use crate::canvas::param_control::{CanvasNodeParamControl, CanvasParamControlMetrics};
 use crate::renderer::Color;
 use crate::theme::Theme;
+use crate::widget::mapping::ParamControlSpec;
+use crate::widget::param_control::ParamControlMetrics;
 
 #[derive(Debug, Clone)]
 pub(crate) struct NodeRenderSpec {
@@ -48,7 +49,7 @@ pub(crate) enum NodeBodyRowSpec {
         control_id: String,
         name: String,
         value: String,
-        control: CanvasNodeParamControl,
+        control: ParamControlSpec,
     },
 }
 
@@ -80,7 +81,7 @@ pub(crate) struct NodeCardMetrics {
     pub title_lift: f32,
     pub card_radius: f32,
     pub row_radius: f32,
-    pub control: CanvasParamControlMetrics,
+    pub control: ParamControlMetrics,
 }
 
 impl NodeCardMetrics {
@@ -102,7 +103,7 @@ impl NodeCardMetrics {
             title_lift: 20.0,
             card_radius: 8.0,
             row_radius: 0.0,
-            control: CanvasParamControlMetrics::from_theme(theme),
+            control: ParamControlMetrics::from_theme(theme),
         }
     }
 }
@@ -249,9 +250,9 @@ mod tests {
     use crate::canvas::node_template::{
         CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     };
-    use crate::canvas::param_control::CanvasNodeParamControl;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
+    use crate::widget::mapping::ParamControlSpec;
 
     #[test]
     fn spec_root_id_uses_canvas_node_stable_id() {
@@ -350,7 +351,7 @@ mod tests {
                 "prompt",
                 "string",
                 "text",
-                CanvasNodeParamControl::default(),
+                ParamControlSpec::default(),
             )],
         };
         let state = CanvasNodeInstanceState {

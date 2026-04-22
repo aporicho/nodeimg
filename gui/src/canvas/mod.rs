@@ -7,7 +7,6 @@ pub mod node_card;
 pub(crate) mod node_spec;
 pub mod node_template;
 pub mod pan;
-pub mod param_control;
 pub mod port;
 pub(crate) mod runtime;
 

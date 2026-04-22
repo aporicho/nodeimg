@@ -4,13 +4,13 @@ use crate::canvas::node_spec::{
     NodeRenderSpec,
 };
 use crate::canvas::node_template::CanvasNodeRenderView;
-use crate::canvas::param_control::param_control;
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOverflow};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
+use crate::widget::param_control::param_control;
 use std::borrow::Cow;
 
 pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
@@ -356,10 +356,10 @@ mod tests {
         CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState,
         CanvasNodePortTemplate, CanvasNodeTemplate,
     };
-    use crate::canvas::param_control::CanvasNodeParamControl;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
     use crate::tree::layout::{Direction, Edges, Position, Size};
+    use crate::widget::mapping::ParamControlSpec;
 
     #[test]
     fn node_card_uses_canvas_node_stable_id() {
@@ -669,7 +669,7 @@ mod tests {
                     "prompt",
                     "string",
                     "text",
-                    CanvasNodeParamControl::default(),
+                    ParamControlSpec::default(),
                 )]
             })
             .unwrap_or_default();

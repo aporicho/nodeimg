@@ -11,62 +11,18 @@ use crate::widget::atoms::slider::SliderProps;
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::atoms::truncated_text::TruncatedTextProps;
+use crate::widget::mapping::ParamControlSpec;
 use std::borrow::Cow;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum CanvasNodeParamControl {
-    ReadOnly {
-        value: String,
-    },
-    Text {
-        value: String,
-    },
-    Number {
-        value: f32,
-        min: f32,
-        max: f32,
-        step: f32,
-        precision: usize,
-    },
-    Slider {
-        value: f32,
-        min: f32,
-        max: f32,
-        step: f32,
-    },
-    Toggle {
-        checked: bool,
-    },
-    Select {
-        options: Vec<String>,
-        selected: usize,
-    },
-    Color {
-        rgba: [f32; 4],
-    },
-    FilePath {
-        path: String,
-        extensions: Vec<String>,
-    },
-}
-
-impl Default for CanvasNodeParamControl {
-    fn default() -> Self {
-        Self::ReadOnly {
-            value: String::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CanvasParamControlMetrics {
+pub struct ParamControlMetrics {
     pub control_height: f32,
     pub control_width: f32,
     pub size: ControlSize,
     pub density: Density,
 }
 
-impl CanvasParamControlMetrics {
+impl ParamControlMetrics {
     pub fn from_theme(_theme: &Theme) -> Self {
         Self {
             control_height: 24.0,
@@ -79,15 +35,15 @@ impl CanvasParamControlMetrics {
 
 pub fn param_control(
     id: impl Into<Cow<'static, str>>,
-    control: &CanvasNodeParamControl,
+    control: &ParamControlSpec,
     _theme: &Theme,
-    metrics: CanvasParamControlMetrics,
+    metrics: ParamControlMetrics,
 ) -> Desc {
     let id = id.into();
     let base = id.to_string();
     let child_id = format!("{base}::widget");
     let child = match control {
-        CanvasNodeParamControl::ReadOnly { value } => ui::widget(
+        ParamControlSpec::ReadOnly { value } => ui::widget(
             child_id,
             TruncatedTextProps {
                 text: Cow::Owned(value.clone()),
@@ -99,7 +55,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Text { value } => ui::widget(
+        ParamControlSpec::Text { value } => ui::widget(
             child_id,
             TextInputProps {
                 label: None,
@@ -110,7 +66,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Number {
+        ParamControlSpec::Number {
             value,
             min,
             max,
@@ -131,7 +87,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Slider {
+        ParamControlSpec::Slider {
             value,
             min,
             max,
@@ -150,7 +106,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Toggle { checked } => ui::widget(
+        ParamControlSpec::Toggle { checked } => ui::widget(
             child_id,
             ToggleProps {
                 label: None,
@@ -161,7 +117,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Select { options, selected } => ui::widget(
+        ParamControlSpec::Select { options, selected } => ui::widget(
             child_id,
             DropdownProps {
                 label: None,
@@ -173,7 +129,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::Color { rgba } => ui::widget(
+        ParamControlSpec::Color { rgba } => ui::widget(
             child_id,
             ColorSwatchProps {
                 rgba: *rgba,
@@ -185,7 +141,7 @@ pub fn param_control(
             },
         )
         .build(),
-        CanvasNodeParamControl::FilePath { path, extensions } => ui::widget(
+        ParamControlSpec::FilePath { path, extensions } => ui::widget(
             child_id,
             PathInputProps {
                 label: None,
@@ -216,11 +172,11 @@ mod tests {
     #[test]
     fn slider_param_control_adapts_to_widget() {
         let theme = light_theme();
-        let metrics = CanvasParamControlMetrics::from_theme(&theme);
+        let metrics = ParamControlMetrics::from_theme(&theme);
 
         let Desc::Container { children, .. } = param_control(
             "control",
-            &CanvasNodeParamControl::Slider {
+            &ParamControlSpec::Slider {
                 value: 0.5,
                 min: 0.0,
                 max: 1.0,
@@ -242,11 +198,11 @@ mod tests {
     #[test]
     fn color_param_control_adapts_to_widget() {
         let theme = light_theme();
-        let metrics = CanvasParamControlMetrics::from_theme(&theme);
+        let metrics = ParamControlMetrics::from_theme(&theme);
 
         let Desc::Container { children, .. } = param_control(
             "control",
-            &CanvasNodeParamControl::Color {
+            &ParamControlSpec::Color {
                 rgba: [1.0, 0.5, 0.0, 1.0],
             },
             &theme,

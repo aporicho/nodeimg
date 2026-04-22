@@ -7,12 +7,12 @@ use gui::canvas::node_template::{
     CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     CanvasNodeRenderView, CanvasNodeTemplate,
 };
-use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortConnectionState, CanvasPortSide,
 };
 use gui::renderer::Rect;
+use gui::widget::mapping::{ParamControlMap, ParamControlSpec};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -316,112 +316,116 @@ fn canvas_node_param_templates(
                 param.name.clone(),
                 param.data_type.to_string(),
                 value,
-                canvas_param_control(param),
+                EngineParamControlMap.control_for_param(param),
             )
         })
         .collect()
 }
 
-fn canvas_param_control(param: &engine::node_manager::ParamDef) -> CanvasNodeParamControl {
-    if let Some(constraint) = &param.constraint {
-        match constraint.type_id.as_str() {
-            "enum" => {
-                let options = constraint
-                    .params
-                    .get("options")
-                    .and_then(|value| value.as_array())
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(|value| value.as_str().map(str::to_string))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let selected_value = match &param.default_value {
-                    types::Value::String(value) => value.as_str(),
-                    _ => "",
-                };
-                let selected = options
-                    .iter()
-                    .position(|option| option == selected_value)
-                    .unwrap_or(0);
-                return CanvasNodeParamControl::Select { options, selected };
-            }
-            "range" => {
-                let min = constraint
-                    .params
-                    .get("min")
-                    .and_then(|value| value.as_f64())
-                    .unwrap_or(0.0) as f32;
-                let max = constraint
-                    .params
-                    .get("max")
-                    .and_then(|value| value.as_f64())
-                    .unwrap_or(1.0) as f32;
-                return match &param.default_value {
-                    types::Value::Float(value) => CanvasNodeParamControl::Slider {
-                        value: *value,
-                        min,
-                        max,
-                        step: 0.01,
-                    },
-                    types::Value::Int(value) => CanvasNodeParamControl::Number {
-                        value: *value as f32,
-                        min,
-                        max,
-                        step: 1.0,
-                        precision: 0,
-                    },
-                    _ => CanvasNodeParamControl::ReadOnly {
-                        value: compact_value(&param.default_value),
-                    },
-                };
-            }
-            "file_path" => {
-                let extensions = constraint
-                    .params
-                    .get("extensions")
-                    .and_then(|value| value.as_array())
-                    .map(|values| {
-                        values
-                            .iter()
-                            .filter_map(|value| value.as_str().map(str::to_string))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let path = match &param.default_value {
-                    types::Value::String(value) => value.clone(),
-                    _ => String::new(),
-                };
-                return CanvasNodeParamControl::FilePath { path, extensions };
-            }
-            _ => {}
-        }
-    }
+struct EngineParamControlMap;
 
-    match &param.default_value {
-        types::Value::Float(value) => CanvasNodeParamControl::Number {
-            value: *value,
-            min: f32::MIN,
-            max: f32::MAX,
-            step: 0.01,
-            precision: 2,
-        },
-        types::Value::Int(value) => CanvasNodeParamControl::Number {
-            value: *value as f32,
-            min: i32::MIN as f32,
-            max: i32::MAX as f32,
-            step: 1.0,
-            precision: 0,
-        },
-        types::Value::Bool(value) => CanvasNodeParamControl::Toggle { checked: *value },
-        types::Value::Color(rgba) => CanvasNodeParamControl::Color { rgba: *rgba },
-        types::Value::String(value) => CanvasNodeParamControl::Text {
-            value: value.clone(),
-        },
-        types::Value::Image(_) | types::Value::Handle(_) => CanvasNodeParamControl::ReadOnly {
-            value: compact_value(&param.default_value),
-        },
+impl ParamControlMap<engine::node_manager::ParamDef> for EngineParamControlMap {
+    fn control_for_param(&self, param: &engine::node_manager::ParamDef) -> ParamControlSpec {
+        if let Some(constraint) = &param.constraint {
+            match constraint.type_id.as_str() {
+                "enum" => {
+                    let options = constraint
+                        .params
+                        .get("options")
+                        .and_then(|value| value.as_array())
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(|value| value.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let selected_value = match &param.default_value {
+                        types::Value::String(value) => value.as_str(),
+                        _ => "",
+                    };
+                    let selected = options
+                        .iter()
+                        .position(|option| option == selected_value)
+                        .unwrap_or(0);
+                    return ParamControlSpec::Select { options, selected };
+                }
+                "range" => {
+                    let min = constraint
+                        .params
+                        .get("min")
+                        .and_then(|value| value.as_f64())
+                        .unwrap_or(0.0) as f32;
+                    let max = constraint
+                        .params
+                        .get("max")
+                        .and_then(|value| value.as_f64())
+                        .unwrap_or(1.0) as f32;
+                    return match &param.default_value {
+                        types::Value::Float(value) => ParamControlSpec::Slider {
+                            value: *value,
+                            min,
+                            max,
+                            step: 0.01,
+                        },
+                        types::Value::Int(value) => ParamControlSpec::Number {
+                            value: *value as f32,
+                            min,
+                            max,
+                            step: 1.0,
+                            precision: 0,
+                        },
+                        _ => ParamControlSpec::ReadOnly {
+                            value: compact_value(&param.default_value),
+                        },
+                    };
+                }
+                "file_path" => {
+                    let extensions = constraint
+                        .params
+                        .get("extensions")
+                        .and_then(|value| value.as_array())
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(|value| value.as_str().map(str::to_string))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    let path = match &param.default_value {
+                        types::Value::String(value) => value.clone(),
+                        _ => String::new(),
+                    };
+                    return ParamControlSpec::FilePath { path, extensions };
+                }
+                _ => {}
+            }
+        }
+
+        match &param.default_value {
+            types::Value::Float(value) => ParamControlSpec::Number {
+                value: *value,
+                min: f32::MIN,
+                max: f32::MAX,
+                step: 0.01,
+                precision: 2,
+            },
+            types::Value::Int(value) => ParamControlSpec::Number {
+                value: *value as f32,
+                min: i32::MIN as f32,
+                max: i32::MAX as f32,
+                step: 1.0,
+                precision: 0,
+            },
+            types::Value::Bool(value) => ParamControlSpec::Toggle { checked: *value },
+            types::Value::Color(rgba) => ParamControlSpec::Color { rgba: *rgba },
+            types::Value::String(value) => ParamControlSpec::Text {
+                value: value.clone(),
+            },
+            types::Value::Image(_) | types::Value::Handle(_) => ParamControlSpec::ReadOnly {
+                value: compact_value(&param.default_value),
+            },
+        }
     }
 }
 
@@ -575,6 +579,87 @@ mod tests {
     }
 
     #[test]
+    fn engine_param_control_map_uses_value_shape() {
+        let mapper = EngineParamControlMap;
+
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "enabled",
+                types::DataType::bool(),
+                types::Value::Bool(true),
+                None,
+            )),
+            ParamControlSpec::Toggle { checked: true }
+        ));
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "prompt",
+                types::DataType::string(),
+                types::Value::String("hello".to_string()),
+                None,
+            )),
+            ParamControlSpec::Text { value } if value == "hello"
+        ));
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "asset",
+                types::DataType::handle(),
+                types::Value::Handle(types::Handle::new(
+                    "handle-1",
+                    types::DataType::image(),
+                    "test",
+                    0,
+                )),
+                None,
+            )),
+            ParamControlSpec::ReadOnly { .. }
+        ));
+    }
+
+    #[test]
+    fn engine_param_control_map_uses_constraints() {
+        let mapper = EngineParamControlMap;
+
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "strength",
+                types::DataType::float(),
+                types::Value::Float(0.5),
+                Some(types::Constraint::range(0.0, 1.0)),
+            )),
+            ParamControlSpec::Slider {
+                value: 0.5,
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+            }
+        ));
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "mode",
+                types::DataType::string(),
+                types::Value::String("B".to_string()),
+                Some(types::Constraint::enum_options(vec![
+                    "A".to_string(),
+                    "B".to_string(),
+                ])),
+            )),
+            ParamControlSpec::Select { options, selected }
+                if options == vec!["A".to_string(), "B".to_string()] && selected == 1
+        ));
+        assert!(matches!(
+            mapper.control_for_param(&test_param(
+                "path",
+                types::DataType::string(),
+                types::Value::String("out.png".to_string()),
+                Some(types::Constraint::file_path(vec!["png".to_string()])),
+            )),
+            ParamControlSpec::FilePath { path, extensions }
+                if path == "out.png" && extensions == vec!["png".to_string()]
+        ));
+    }
+
+    #[test]
     fn canvas_node_render_views_keep_instance_state_outside_template() {
         let mut engine = Engine::new(None);
         let node_id = engine.add_node("image_gen").unwrap();
@@ -670,6 +755,21 @@ mod tests {
             outputs: Vec::new(),
             params: Vec::new(),
             execute: Box::new(|_ctx, inputs| Box::pin(async move { Ok(inputs) })),
+        }
+    }
+
+    fn test_param(
+        name: &str,
+        data_type: types::DataType,
+        default_value: types::Value,
+        constraint: Option<types::Constraint>,
+    ) -> ParamDef {
+        ParamDef {
+            name: name.to_string(),
+            data_type,
+            constraint,
+            default_value,
+            expose: vec![ParamExpose::Control],
         }
     }
 }

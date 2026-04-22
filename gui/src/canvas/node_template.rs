@@ -1,5 +1,5 @@
 use super::{canvas_port_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
-use crate::canvas::param_control::CanvasNodeParamControl;
+use crate::widget::mapping::ParamControlSpec;
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeRenderView {
@@ -31,7 +31,7 @@ pub struct CanvasNodeParamTemplate {
     pub name: String,
     pub kind: String,
     pub default_value: String,
-    pub control: CanvasNodeParamControl,
+    pub control: ParamControlSpec,
 }
 
 #[derive(Clone, Debug)]
@@ -74,7 +74,7 @@ impl CanvasNodeParamTemplate {
         name: impl Into<String>,
         kind: impl Into<String>,
         default_value: impl Into<String>,
-        control: CanvasNodeParamControl,
+        control: ParamControlSpec,
     ) -> Self {
         Self {
             key: key.into(),

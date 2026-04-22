@@ -2,11 +2,11 @@ use gui::canvas::node_template::{
     CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     CanvasNodeRenderView, CanvasNodeTemplate,
 };
-use gui::canvas::param_control::CanvasNodeParamControl;
 use gui::canvas::{
     CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide,
 };
 use gui::renderer::Rect;
+use gui::widget::mapping::ParamControlSpec;
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
 pub(crate) const SOLO_OWNER_ID: &str = "showcase_node::solo_control";
@@ -63,7 +63,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Readonly",
                 "image",
                 "image",
-                CanvasNodeParamControl::ReadOnly {
+                ParamControlSpec::ReadOnly {
                     value: "image".to_string(),
                 },
             ),
@@ -72,7 +72,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Prompt",
                 "string",
                 "A long prompt value",
-                CanvasNodeParamControl::Text {
+                ParamControlSpec::Text {
                     value: "A long prompt value".to_string(),
                 },
             ),
@@ -81,7 +81,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Seed",
                 "int",
                 "42",
-                CanvasNodeParamControl::Number {
+                ParamControlSpec::Number {
                     value: 42.0,
                     min: 0.0,
                     max: 9999.0,
@@ -94,7 +94,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Strength",
                 "float",
                 "0.65",
-                CanvasNodeParamControl::Slider {
+                ParamControlSpec::Slider {
                     value: 0.65,
                     min: 0.0,
                     max: 1.0,
@@ -106,14 +106,14 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Enabled",
                 "bool",
                 "true",
-                CanvasNodeParamControl::Toggle { checked: true },
+                ParamControlSpec::Toggle { checked: true },
             ),
             CanvasNodeParamTemplate::new(
                 "Sampler",
                 "Sampler",
                 "enum",
                 "Euler",
-                CanvasNodeParamControl::Select {
+                ParamControlSpec::Select {
                     options: vec![
                         "Euler".to_string(),
                         "DPM++ 2M".to_string(),
@@ -127,7 +127,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Tint",
                 "color",
                 "#FF8040",
-                CanvasNodeParamControl::Color {
+                ParamControlSpec::Color {
                     rgba: [1.0, 0.5, 0.25, 1.0],
                 },
             ),
@@ -136,7 +136,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Output",
                 "file_path",
                 "*.png",
-                CanvasNodeParamControl::FilePath {
+                ParamControlSpec::FilePath {
                     path: String::new(),
                     extensions: vec!["png".to_string(), "jpg".to_string()],
                 },
@@ -161,7 +161,7 @@ pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
             "Strength",
             "float",
             "0.65",
-            CanvasNodeParamControl::Slider {
+            ParamControlSpec::Slider {
                 value: 0.65,
                 min: 0.0,
                 max: 1.0,
@@ -212,35 +212,35 @@ mod tests {
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::ReadOnly { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::ReadOnly { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Text { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Text { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Number { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Number { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Slider { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Slider { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Toggle { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Toggle { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Select { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Select { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::Color { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::Color { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, CanvasNodeParamControl::FilePath { .. })));
+            .any(|param| matches!(param.control, ParamControlSpec::FilePath { .. })));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(view.template.params.len(), 1);
         assert!(matches!(
             view.template.params[0].control,
-            CanvasNodeParamControl::Slider { .. }
+            ParamControlSpec::Slider { .. }
         ));
         assert_eq!(view.template.inputs.len(), 1);
         assert_eq!(view.template.outputs.len(), 1);
