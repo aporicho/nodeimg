@@ -4,6 +4,7 @@ use winit::dpi::PhysicalSize;
 use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::dispatch;
+use super::path::{PathData, PathRequest, PathStyle};
 use super::pipeline::blit::{self, BlitPipeline};
 use super::pipeline::circle::{CirclePipeline, CircleRequest};
 use super::pipeline::curve::{CurvePipeline, CurveRequest};
@@ -12,6 +13,7 @@ use super::pipeline::quad::{QuadPipeline, QuadRequest};
 use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::{TextPipeline, TextRequest};
+use super::pipeline::vector::VectorPipeline;
 use super::style::{RectStyle, TextStyle};
 use super::text_measurer::TextMeasurer;
 use super::types::{Color, Point, Rect};
@@ -27,6 +29,7 @@ pub struct Renderer {
     image_pipeline: ImagePipeline,
     circle_pipeline: CirclePipeline,
     curve_pipeline: CurvePipeline,
+    vector_pipeline: VectorPipeline,
     shadow_pipeline: ShadowPipeline,
     stencil: StencilState,
     msaa_view: wgpu::TextureView,
@@ -108,6 +111,7 @@ impl Renderer {
             image_pipeline: ImagePipeline::new(device, format, ms),
             circle_pipeline: CirclePipeline::new(device, format, ms),
             curve_pipeline: CurvePipeline::new(device, format, ms),
+            vector_pipeline: VectorPipeline::new(device, format, ms),
             shadow_pipeline: ShadowPipeline::new(device, format, ms),
             stencil: StencilState::new(device, internal, format, ms),
             msaa_view: create_msaa_texture(device, format, internal),
@@ -205,6 +209,11 @@ impl Renderer {
         }));
     }
 
+    pub fn draw_path(&mut self, data: PathData, style: PathStyle) {
+        self.commands
+            .push(DrawCommand::Path(PathRequest { data, style }));
+    }
+
     pub fn push_clip(&mut self, rect: Rect, radius: f32) {
         self.commands.push(DrawCommand::PushClip { rect, radius });
     }
@@ -238,6 +247,7 @@ impl Renderer {
             &mut self.image_pipeline,
             &mut self.circle_pipeline,
             &mut self.curve_pipeline,
+            &mut self.vector_pipeline,
             &mut self.shadow_pipeline,
             &mut self.stencil,
             &mut self.text_measurer,

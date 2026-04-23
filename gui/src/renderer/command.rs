@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::path::PathRequest;
 use super::pipeline::circle::CircleRequest;
 use super::pipeline::curve::CurveRequest;
 use super::pipeline::quad::QuadRequest;
@@ -17,6 +18,7 @@ pub enum DrawCommand {
         view: Arc<wgpu::TextureView>,
     },
     Curve(CurveRequest),
+    Path(PathRequest),
     PushClip {
         rect: Rect,
         radius: f32,

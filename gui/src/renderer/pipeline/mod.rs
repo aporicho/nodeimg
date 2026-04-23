@@ -8,3 +8,4 @@ pub mod shadow;
 pub mod stencil;
 pub mod svg;
 pub mod text;
+pub mod vector;

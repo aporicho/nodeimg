@@ -11,6 +11,7 @@ use super::pipeline::quad::QuadPipeline;
 use super::pipeline::shadow::ShadowPipeline;
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::TextPipeline;
+use super::pipeline::vector::VectorPipeline;
 use super::prepare::{prepare_frame, DrawOp};
 use super::text_measurer::TextMeasurer;
 
@@ -32,6 +33,7 @@ pub fn dispatch(
     image_pipeline: &mut ImagePipeline,
     circle_pipeline: &mut CirclePipeline,
     curve_pipeline: &mut CurvePipeline,
+    vector_pipeline: &mut VectorPipeline,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
     text_measurer: &mut TextMeasurer,
@@ -73,6 +75,12 @@ pub fn dispatch(
         &prepared.curve_vertices,
         &prepared.curve_indices,
     );
+    vector_pipeline.upload(
+        device,
+        queue,
+        &prepared.vector_vertices,
+        &prepared.vector_indices,
+    );
     stencil.upload(
         device,
         queue,
@@ -83,6 +91,7 @@ pub fn dispatch(
     quad_pipeline.update_bind_group(device, viewport_buf);
     circle_pipeline.update_bind_group(device, viewport_buf);
     curve_pipeline.update_bind_group(device, viewport_buf);
+    vector_pipeline.update_bind_group(device, viewport_buf);
     stencil.update_bind_group(device, viewport_buf);
 
     let has_quads = !prepared.quad_vertices.is_empty();
@@ -164,6 +173,17 @@ pub fn dispatch(
                                 }
                                 pass.set_stencil_reference(clip_depth);
                                 CurvePipeline::draw_batch(&mut pass, *index_start, *index_count);
+                            }
+                            DrawOp::Vector {
+                                index_start,
+                                index_count,
+                            } => {
+                                if last_bound != PipelineKind::Vector {
+                                    vector_pipeline.bind(&mut pass);
+                                    last_bound = PipelineKind::Vector;
+                                }
+                                pass.set_stencil_reference(clip_depth);
+                                VectorPipeline::draw_batch(&mut pass, *index_start, *index_count);
                             }
                             DrawOp::Shadow(req) => {
                                 last_bound = PipelineKind::Other;
@@ -404,6 +424,7 @@ enum PipelineKind {
     Quad,
     Circle,
     Curve,
+    Vector,
     Stencil,
     Other,
 }
