@@ -122,6 +122,10 @@ impl WorkspaceController {
         let hovered_port_id = gui.hovered_canvas_port_id();
         for view in &mut views {
             view.state.selected = gui.is_canvas_node_selected(&view.state.owner_id);
+            view.state.input_group =
+                gui.canvas_port_group_view(&view.state.owner_id, CanvasPortSide::Input);
+            view.state.output_group =
+                gui.canvas_port_group_view(&view.state.owner_id, CanvasPortSide::Output);
             if let Some(pending) = pending_connection.as_ref() {
                 let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
                     continue;

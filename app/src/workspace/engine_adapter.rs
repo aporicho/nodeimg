@@ -160,6 +160,8 @@ pub(crate) fn canvas_node_render_views(
                 owner_id: layout.owner_id.clone(),
                 layout,
                 selected: false,
+                input_group: Default::default(),
+                output_group: Default::default(),
                 port_states: template
                     .inputs
                     .iter()

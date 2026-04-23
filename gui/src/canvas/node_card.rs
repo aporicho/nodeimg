@@ -1,6 +1,7 @@
 use super::{CanvasPortConnectionState, CanvasPortSide};
 use crate::canvas::node_spec::{
-    node_render_spec, NodeBodyRowSpec, NodeHeaderSpec, NodePortSpec, NodeRenderSpec,
+    node_render_spec, NodeBodyRowSpec, NodeHeaderSpec, NodePortGroupTriggerSpec, NodePortSpec,
+    NodeRenderSpec,
 };
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::CanvasNodeRenderView;
@@ -23,6 +24,7 @@ pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc 
     let children = vec![
         pin_column(
             &spec.input_column_id,
+            &spec.input_trigger,
             CanvasPortSide::Input,
             &spec.inputs,
             theme,
@@ -55,6 +57,7 @@ pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc 
             .build(),
         pin_column(
             &spec.output_column_id,
+            &spec.output_trigger,
             CanvasPortSide::Output,
             &spec.outputs,
             theme,
@@ -81,26 +84,85 @@ pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc 
 
 fn pin_column(
     id: &str,
+    trigger: &NodePortGroupTriggerSpec,
     side: CanvasPortSide,
     ports: &[NodePortSpec],
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Desc {
+    let mut children = ports
+        .iter()
+        .map(|port| pin_row(side, port, theme, metrics))
+        .collect::<Vec<_>>();
+    if !ports.is_empty() {
+        children.push(port_group_trigger(trigger, theme, metrics));
+    }
+
     ui::column(id.to_string())
+        .relative()
         .auto_width()
         .auto_height()
         .justify_content(Justify::Start)
         .align_items(Align::Start)
         .gap(metrics.pin_row_gap)
-        .overflow(Overflow::Hidden)
+        .overflow(Overflow::Visible)
         .hittable(false)
-        .children(
-            ports
-                .iter()
-                .map(|port| pin_row(side, port, theme, metrics))
-                .collect::<Vec<_>>(),
-        )
+        .children(children)
         .build()
+}
+
+fn port_group_trigger(
+    trigger: &NodePortGroupTriggerSpec,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+) -> Desc {
+    let diameter = metrics.port_group_trigger_diameter;
+    let (x, y) = port_group_trigger_offset(trigger.side, metrics);
+    let border_color = if trigger.open {
+        theme.colors.accent
+    } else {
+        theme.colors.border
+    };
+    let icon_color = if trigger.open {
+        theme.colors.accent
+    } else {
+        theme.colors.text_muted
+    };
+
+    ui::row(Cow::Owned(trigger.id.clone()))
+        .absolute_xy(x, y)
+        .fixed_width(diameter)
+        .fixed_height(diameter)
+        .justify_content(Justify::Center)
+        .align_items(Align::Center)
+        .hittable(true)
+        .gesture(Gesture::Tap)
+        .background(theme.colors.surface)
+        .border(Border {
+            width: if trigger.open { 2.0 } else { 1.5 },
+            color: border_color,
+        })
+        .radius_all(diameter * 0.5)
+        .child(ui::icon(
+            format!("{}::icon", trigger.id),
+            "plus",
+            metrics.port_group_trigger_icon_size,
+            icon_color,
+        ))
+        .build()
+}
+
+fn port_group_trigger_offset(side: CanvasPortSide, metrics: NodeCardMetrics) -> (f32, f32) {
+    let diameter = metrics.port_group_trigger_diameter;
+    let dot_center_offset = (metrics.pin_dot_diameter - diameter) * 0.5;
+    let x = match side {
+        CanvasPortSide::Input => dot_center_offset,
+        CanvasPortSide::Output => {
+            metrics.pin_label_width + metrics.pin_label_gap + dot_center_offset
+        }
+    };
+    let y = -diameter - metrics.pin_row_gap;
+    (x, y)
 }
 
 fn pin_row(
@@ -451,12 +513,12 @@ mod tests {
         else {
             panic!("input pin column should be a container");
         };
-        assert_eq!(input_style.position, Position::Flow);
+        assert_eq!(input_style.position, Position::relative());
         assert_eq!(input_style.width, Size::Auto);
         assert_eq!(input_style.height, Size::Auto);
         assert_eq!(input_style.direction, Direction::Column);
         assert_eq!(input_style.gap, metrics.pin_row_gap);
-        assert_eq!(input_style.overflow, Overflow::Hidden);
+        assert_eq!(input_style.overflow, Overflow::Visible);
 
         let Desc::Container {
             style: card_style,
@@ -586,6 +648,72 @@ mod tests {
     }
 
     #[test]
+    fn node_card_port_group_trigger_uses_plus_icon() {
+        let theme = light_theme();
+        let metrics = NodeCardMetrics::from_theme(&theme);
+
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(true, true), &theme)
+        else {
+            panic!("node card should build a container");
+        };
+        let trigger = find_desc(
+            &children[0],
+            "canvas_node::engine_node::7::port_group::input::trigger",
+        )
+        .expect("input pin column should contain a port group trigger");
+        let Desc::Container {
+            style,
+            decoration,
+            children: trigger_children,
+            ..
+        } = trigger
+        else {
+            panic!("port group trigger should be a container");
+        };
+        assert_eq!(
+            style.width,
+            Size::Fixed(metrics.port_group_trigger_diameter)
+        );
+        assert_eq!(
+            style.height,
+            Size::Fixed(metrics.port_group_trigger_diameter)
+        );
+        assert_eq!(
+            style.position,
+            Position::absolute_xy(
+                (metrics.pin_dot_diameter - metrics.port_group_trigger_diameter) * 0.5,
+                -metrics.port_group_trigger_diameter - metrics.pin_row_gap
+            )
+        );
+        assert_eq!(
+            decoration.as_ref().unwrap().radius,
+            [metrics.port_group_trigger_diameter * 0.5; 4]
+        );
+
+        let Desc::Leaf {
+            id,
+            style: icon_style,
+            kind,
+        } = &trigger_children[0]
+        else {
+            panic!("port group trigger visual should be an icon leaf");
+        };
+        assert_eq!(
+            id.as_ref(),
+            "canvas_node::engine_node::7::port_group::input::trigger::icon"
+        );
+        assert_eq!(
+            icon_style.width,
+            Size::Fixed(metrics.port_group_trigger_icon_size)
+        );
+        let LeafKind::Icon { spec } = kind else {
+            panic!("port group trigger should use LeafKind::Icon");
+        };
+        assert_eq!(spec.id, crate::icon::IconId::from("plus"));
+    }
+
+    #[test]
     fn node_card_param_rows_use_fixed_control_height() {
         let theme = light_theme();
         let metrics = NodeCardMetrics::from_theme(&theme);
@@ -707,6 +835,8 @@ mod tests {
                     collapsed: false,
                 },
                 selected: false,
+                input_group: Default::default(),
+                output_group: Default::default(),
                 port_states,
             },
         }

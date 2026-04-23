@@ -1,4 +1,7 @@
-use super::{canvas_port_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
+use super::{
+    canvas_port_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView,
+    CanvasPortSide,
+};
 use crate::widget::mapping::ParamControlSpec;
 
 #[derive(Clone, Debug)]
@@ -39,6 +42,8 @@ pub struct CanvasNodeInstanceState {
     pub owner_id: String,
     pub layout: CanvasNodeLayout,
     pub selected: bool,
+    pub input_group: CanvasPortGroupView,
+    pub output_group: CanvasPortGroupView,
     pub port_states: Vec<CanvasNodePortState>,
 }
 
@@ -93,6 +98,13 @@ impl CanvasNodeInstanceState {
             .find(|state| state.side == side && state.key == key)
             .map(|state| state.connection_state)
             .unwrap_or(CanvasPortConnectionState::Idle)
+    }
+
+    pub fn port_group(&self, side: CanvasPortSide) -> CanvasPortGroupView {
+        match side {
+            CanvasPortSide::Input => self.input_group,
+            CanvasPortSide::Output => self.output_group,
+        }
     }
 
     pub fn port_id(&self, side: CanvasPortSide, key: &str) -> String {

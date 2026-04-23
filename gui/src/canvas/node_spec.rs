@@ -1,4 +1,7 @@
-use super::{canvas_node_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide};
+use super::{
+    canvas_node_stable_id, canvas_port_group_trigger_id, CanvasNodeLayout,
+    CanvasPortConnectionState, CanvasPortSide,
+};
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
 use crate::renderer::Color;
@@ -13,11 +16,20 @@ pub(crate) struct NodeRenderSpec {
     pub metrics: NodeCardMetrics,
     pub input_column_id: String,
     pub output_column_id: String,
+    pub input_trigger: NodePortGroupTriggerSpec,
+    pub output_trigger: NodePortGroupTriggerSpec,
     pub card_id: String,
     pub header: NodeHeaderSpec,
     pub body: NodeBodySpec,
     pub inputs: Vec<NodePortSpec>,
     pub outputs: Vec<NodePortSpec>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct NodePortGroupTriggerSpec {
+    pub id: String,
+    pub side: CanvasPortSide,
+    pub open: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +91,8 @@ pub(crate) fn node_render_spec(
         metrics,
         input_column_id: pin_column_id(&state.owner_id, CanvasPortSide::Input),
         output_column_id: pin_column_id(&state.owner_id, CanvasPortSide::Output),
+        input_trigger: port_group_trigger_spec(state, CanvasPortSide::Input),
+        output_trigger: port_group_trigger_spec(state, CanvasPortSide::Output),
         card_id: format!("{id}::card"),
         header: NodeHeaderSpec {
             row_id: format!("{id}::label"),
@@ -115,6 +129,17 @@ pub(crate) fn node_render_spec(
                 )
             })
             .collect(),
+    }
+}
+
+fn port_group_trigger_spec(
+    state: &CanvasNodeInstanceState,
+    side: CanvasPortSide,
+) -> NodePortGroupTriggerSpec {
+    NodePortGroupTriggerSpec {
+        id: canvas_port_group_trigger_id(&state.owner_id, side),
+        side,
+        open: state.port_group(side).open,
     }
 }
 
@@ -323,6 +348,8 @@ mod tests {
                 z_index: 0,
                 collapsed: false,
             },
+            input_group: Default::default(),
+            output_group: Default::default(),
             port_states: vec![
                 CanvasNodePortState {
                     key: "prompt".to_string(),

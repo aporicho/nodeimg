@@ -6,6 +6,8 @@ pub(crate) struct NodeCardMetrics {
     pub card_width: f32,
     pub pin_dot_diameter: f32,
     pub title_dot_diameter: f32,
+    pub port_group_trigger_diameter: f32,
+    pub port_group_trigger_icon_size: f32,
     pub pin_label_width: f32,
     pub title_label_width: f32,
     pub param_row_height: f32,
@@ -28,6 +30,8 @@ impl NodeCardMetrics {
             card_width: 304.0,
             pin_dot_diameter: 10.0,
             title_dot_diameter: 6.0,
+            port_group_trigger_diameter: 20.0,
+            port_group_trigger_icon_size: 10.0,
             pin_label_width: 78.0,
             title_label_width: 180.0,
             param_row_height: 36.0,
@@ -61,6 +65,8 @@ mod tests {
         assert_eq!(metrics.row_gap, 12.0);
         assert_eq!(metrics.param_row_height, 36.0);
         assert_eq!(metrics.card_radius, 8.0);
+        assert_eq!(metrics.port_group_trigger_diameter, 20.0);
+        assert_eq!(metrics.port_group_trigger_icon_size, 10.0);
         assert_eq!(metrics.control.control_width, 128.0);
         assert_eq!(metrics.control.control_height, 24.0);
     }
