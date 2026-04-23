@@ -5,7 +5,6 @@ use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::pipeline::blit::BlitPipeline;
 use super::pipeline::circle::CirclePipeline;
-use super::pipeline::curve::CurvePipeline;
 use super::pipeline::image::ImagePipeline;
 use super::pipeline::quad::QuadPipeline;
 use super::pipeline::shadow::ShadowPipeline;
@@ -14,6 +13,7 @@ use super::pipeline::text::TextPipeline;
 use super::pipeline::vector::VectorPipeline;
 use super::prepare::{prepare_frame, DrawOp};
 use super::text_measurer::TextMeasurer;
+use super::vector_tessellator::VectorTessellator;
 
 pub fn dispatch(
     commands: &[DrawCommand],
@@ -32,8 +32,8 @@ pub fn dispatch(
     text_pipeline: &mut TextPipeline,
     image_pipeline: &mut ImagePipeline,
     circle_pipeline: &mut CirclePipeline,
-    curve_pipeline: &mut CurvePipeline,
     vector_pipeline: &mut VectorPipeline,
+    vector_tessellator: &mut VectorTessellator,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
     text_measurer: &mut TextMeasurer,
@@ -55,7 +55,7 @@ pub fn dispatch(
         }
     }
 
-    let prepared = prepare_frame(commands, curve_pipeline);
+    let prepared = prepare_frame(commands, vector_tessellator);
 
     quad_pipeline.upload(
         device,
@@ -68,12 +68,6 @@ pub fn dispatch(
         queue,
         &prepared.circle_vertices,
         &prepared.circle_indices,
-    );
-    curve_pipeline.upload(
-        device,
-        queue,
-        &prepared.curve_vertices,
-        &prepared.curve_indices,
     );
     vector_pipeline.upload(
         device,
@@ -90,7 +84,6 @@ pub fn dispatch(
 
     quad_pipeline.update_bind_group(device, viewport_buf);
     circle_pipeline.update_bind_group(device, viewport_buf);
-    curve_pipeline.update_bind_group(device, viewport_buf);
     vector_pipeline.update_bind_group(device, viewport_buf);
     stencil.update_bind_group(device, viewport_buf);
 
@@ -162,17 +155,6 @@ pub fn dispatch(
                                 }
                                 pass.set_stencil_reference(clip_depth);
                                 CirclePipeline::draw_batch(&mut pass, *index_start, *index_count);
-                            }
-                            DrawOp::Curve {
-                                index_start,
-                                index_count,
-                            } => {
-                                if last_bound != PipelineKind::Curve {
-                                    curve_pipeline.bind(&mut pass);
-                                    last_bound = PipelineKind::Curve;
-                                }
-                                pass.set_stencil_reference(clip_depth);
-                                CurvePipeline::draw_batch(&mut pass, *index_start, *index_count);
                             }
                             DrawOp::Vector {
                                 index_start,
@@ -423,7 +405,6 @@ enum PipelineKind {
     None,
     Quad,
     Circle,
-    Curve,
     Vector,
     Stencil,
     Other,

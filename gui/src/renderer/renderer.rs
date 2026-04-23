@@ -7,16 +7,16 @@ use super::dispatch;
 use super::path::{PathData, PathRequest, PathStyle};
 use super::pipeline::blit::{self, BlitPipeline};
 use super::pipeline::circle::{CirclePipeline, CircleRequest};
-use super::pipeline::curve::{CurvePipeline, CurveRequest};
 use super::pipeline::image::ImagePipeline;
 use super::pipeline::quad::{QuadPipeline, QuadRequest};
 use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::{TextPipeline, TextRequest};
 use super::pipeline::vector::VectorPipeline;
-use super::style::{RectStyle, TextStyle};
+use super::style::{RectStyle, Stroke, TextStyle};
 use super::text_measurer::TextMeasurer;
 use super::types::{Color, Point, Rect};
+use super::vector_tessellator::VectorTessellator;
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
 const DEFAULT_RENDER_SCALE: f32 = 2.0;
@@ -28,8 +28,8 @@ pub struct Renderer {
     text_pipeline: TextPipeline,
     image_pipeline: ImagePipeline,
     circle_pipeline: CirclePipeline,
-    curve_pipeline: CurvePipeline,
     vector_pipeline: VectorPipeline,
+    vector_tessellator: VectorTessellator,
     shadow_pipeline: ShadowPipeline,
     stencil: StencilState,
     msaa_view: wgpu::TextureView,
@@ -110,8 +110,8 @@ impl Renderer {
             text_measurer,
             image_pipeline: ImagePipeline::new(device, format, ms),
             circle_pipeline: CirclePipeline::new(device, format, ms),
-            curve_pipeline: CurvePipeline::new(device, format, ms),
             vector_pipeline: VectorPipeline::new(device, format, ms),
+            vector_tessellator: VectorTessellator::new(),
             shadow_pipeline: ShadowPipeline::new(device, format, ms),
             stencil: StencilState::new(device, internal, format, ms),
             msaa_view: create_msaa_texture(device, format, internal),
@@ -202,11 +202,10 @@ impl Renderer {
     }
 
     pub fn draw_curve(&mut self, points: [Point; 4], width: f32, color: Color) {
-        self.commands.push(DrawCommand::Curve(CurveRequest {
-            points,
-            width,
-            color,
-        }));
+        self.draw_path(
+            PathData::cubic(points),
+            PathStyle::stroke(Stroke::new(width, color)),
+        );
     }
 
     pub fn draw_path(&mut self, data: PathData, style: PathStyle) {
@@ -246,8 +245,8 @@ impl Renderer {
             &mut self.text_pipeline,
             &mut self.image_pipeline,
             &mut self.circle_pipeline,
-            &mut self.curve_pipeline,
             &mut self.vector_pipeline,
+            &mut self.vector_tessellator,
             &mut self.shadow_pipeline,
             &mut self.stencil,
             &mut self.text_measurer,

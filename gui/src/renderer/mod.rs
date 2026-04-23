@@ -6,6 +6,7 @@ mod pipeline;
 mod prepare;
 pub(crate) mod text_measurer;
 mod types;
+mod vector_tessellator;
 
 pub mod style;
 

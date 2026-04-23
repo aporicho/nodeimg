@@ -1,7 +1,6 @@
 pub mod blit;
 pub mod blur;
 pub mod circle;
-pub mod curve;
 pub mod image;
 pub mod quad;
 pub mod shadow;

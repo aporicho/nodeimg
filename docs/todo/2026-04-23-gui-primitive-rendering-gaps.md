@@ -6,12 +6,12 @@ Date: 2026-04-23
 
 | Status | Item | Goal | Notes |
 | --- | --- | --- | --- |
-| TODO | Connect `LeafKind::Line` | A declared line leaf must paint through the renderer | Can initially lower to curve/stroke tessellation if no dedicated line pipeline is added. |
-| TODO | Connect `LeafKind::Curve` | A declared curve leaf must paint through `Renderer::draw_curve` | Connection leaves already use curves through custom paint logic, but generic curve leaves are ignored. |
+| DONE | Connect `LeafKind::Line` | A declared line leaf must paint through the renderer | Implemented through `PathData::line` and the vector path pipeline. |
+| DONE | Connect `LeafKind::Curve` | A declared curve leaf must paint through the renderer | Implemented through `PathData::cubic`; connection leaves now use the same vector path route. |
 | TODO | Connect `LeafKind::CustomPaint` | The custom paint escape hatch must actually paint | Consider introducing a testable `PaintTarget` or `PaintCx` before exposing too much of `Renderer`. |
 | TODO | Decide image tint behavior | `LeafKind::Image.tint` must either work or be removed | Current paint path ignores `tint`. |
-| TODO | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | Needs width, color, cap, join, dash, and miter policy. |
-| TODO | Design `PathData` primitive | Support general vector paths | Needs move/line/quad/cubic/close, fill, stroke, fill rule. |
+| DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
+| DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
 | TODO | Connect icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `renderer::pipeline::svg::SvgCache` exists but is not connected to `LeafKind::Icon`. |
 | TODO | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Hit supports rotate; paint currently ignores rotate. |
 | TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
@@ -41,6 +41,7 @@ Relevant modules:
 - `gui/src/renderer/command.rs`: renderer command enum.
 - `gui/src/renderer/renderer.rs`: public draw methods used by paint.
 - `gui/src/renderer/prepare.rs`: batching, tessellation, and clip preparation.
+- `gui/src/renderer/vector_tessellator.rs`: CPU vector path tessellation and cache.
 - `gui/src/renderer/pipeline/*`: GPU pipelines.
 
 ## What Works Today
@@ -52,7 +53,7 @@ The implementation already supports enough primitives for the current UI and nod
 - Text supports family, size, weight, italic, line height, clipping, ellipsis, and horizontal alignment.
 - Images render through texture handles.
 - Circles render through the circle pipeline.
-- Cubic curves render through the curve pipeline when called directly by paint.
+- Lines, cubic curves, and general paths render through the shared vector path pipeline.
 - Shadows render for rect styles.
 - Rounded rectangular clips work through the stencil path.
 - Paint and hit order respect `z_index` and source order.
@@ -84,6 +85,9 @@ Text
 Grid
 Image
 Circle
+Line
+Curve
+Path
 Connection
 PendingConnection
 ```
@@ -92,9 +96,6 @@ Ignored or not connected today:
 
 ```text
 Icon
-Line
-Curve
-Path
 CustomPaint
 ```
 
@@ -104,37 +105,38 @@ This means the primitive interface is not fully trustworthy yet: some declared l
 
 ### Generic Lines And Curves
 
-`LeafKind::Line` and `LeafKind::Curve` should be painted by the generic paint path. Connection rendering should not be the only way to reach the curve renderer.
+`LeafKind::Line` and `LeafKind::Curve` are painted by the generic paint path. Connection rendering is no longer the only way to reach curve rendering.
 
-Minimum expectation:
+Current route:
 
 ```text
 LeafKind::Line -> Renderer command -> visible stroke
-LeafKind::Curve -> Renderer::draw_curve -> visible stroke
+LeafKind::Curve -> PathData::cubic -> Renderer::draw_path -> visible stroke
 ```
 
 ### Shared Stroke Model
 
 The renderer currently has `Border`, which is good for rectangular decoration but not enough for vector geometry.
 
-A common stroke model should cover:
+The common `Stroke` model now covers:
 
 ```text
 width
 color
 line cap
 line join
-dash pattern
 miter limit
 ```
+
+Dash pattern is still a future extension.
 
 This should be shared by line, curve, and future path primitives.
 
 ### General Path Primitive
 
-`LeafKind::Path` is currently an empty placeholder. It should become structured data rather than an opaque enum variant.
+`LeafKind::Path` is structured data rather than an opaque enum variant.
 
-Expected direction:
+Current shape:
 
 ```text
 PathData
@@ -251,29 +253,18 @@ LeafKind::CustomPaint invokes the custom painter
 ## Recommended Order
 
 1. Make declared primitives trustworthy:
-   - `Line`
-   - `Curve`
    - `CustomPaint`
    - image `tint` decision
 
-2. Introduce shared vector styling:
-   - `Stroke`
-   - cap/join/dash/miter
-
-3. Add general vector paths:
-   - `PathData`
-   - fill/stroke/fill rule
-
-4. Connect icon/SVG:
+2. Connect icon/SVG:
    - icon registry
    - `LeafKind::Icon`
    - `SvgCache`
 
-5. Unify transform and scale behavior:
+3. Unify transform and scale behavior:
    - rotate support in paint or remove rotate from hit until paint supports it
    - explicit world-vs-screen scale behavior
 
-6. Improve testability:
+4. Improve testability:
    - command recorder or `PaintTarget`
    - unit tests for every `LeafKind` branch
-
