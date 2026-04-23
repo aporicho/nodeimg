@@ -89,29 +89,19 @@ pub struct ThemeComponents {
     pub panel: PanelTheme,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ControlSize {
     Small,
+    #[default]
     Medium,
     Large,
 }
 
-impl Default for ControlSize {
-    fn default() -> Self {
-        Self::Medium
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Density {
     Compact,
+    #[default]
     Regular,
-}
-
-impl Default for Density {
-    fn default() -> Self {
-        Self::Regular
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

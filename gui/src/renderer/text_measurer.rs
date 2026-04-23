@@ -105,6 +105,12 @@ impl TextMeasurer {
     }
 }
 
+impl Default for TextMeasurer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub(crate) fn glyphon_metrics(style: &TextStyle) -> Metrics {
     Metrics::new(style.size, style.size * style.line_height)
 }

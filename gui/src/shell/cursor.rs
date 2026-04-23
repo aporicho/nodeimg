@@ -64,3 +64,9 @@ impl CursorState {
         }
     }
 }
+
+impl Default for CursorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

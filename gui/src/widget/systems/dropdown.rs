@@ -55,7 +55,11 @@ impl DropdownSystem {
         }
 
         match *event {
-            AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
+            AppEvent::MouseRelease {
+                x,
+                y,
+                button: MouseButton::Left,
+            } => {
                 if let Some((dropdown_id, index)) = overlay_option_hit(cx.tree(), x, y) {
                     cx.close_overlay();
                     cx.dropdown_runtime_mut().open = None;
@@ -211,10 +215,7 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
         content: ui::widget(
             format!("{}::popup_group", dropdown_id),
             GroupProps {
-                title: props
-                    .label
-                    .clone()
-                    .unwrap_or_else(|| Cow::Borrowed("Options")),
+                title: props.label.clone().unwrap_or(Cow::Borrowed("Options")),
                 content: vec![
                     ui::widget(
                         format!("{}::popup_hint", dropdown_id),

@@ -1,27 +1,23 @@
-use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 
-use crate::icon::IconStyle;
+use crate::paint::DisplayList;
 
 use super::buffer::SharedViewport;
-use super::command::DrawCommand;
+use super::command::BackendCommand;
 use super::dispatch;
-use super::image::{ImageStyle, TextureSize};
-use super::path::{PathData, PathRequest, PathStyle};
+use super::display_backend::{lower_display_list, DisplayRenderReport};
+use super::display_resources::DisplayResourceResolver;
 use super::pipeline::blit::{self, BlitPipeline};
-use super::pipeline::circle::{CirclePipeline, CircleRequest};
+use super::pipeline::circle::CirclePipeline;
 use super::pipeline::image::ImagePipeline;
-use super::pipeline::quad::{QuadPipeline, QuadRequest};
-use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
+use super::pipeline::quad::QuadPipeline;
+use super::pipeline::shadow::ShadowPipeline;
 use super::pipeline::stencil::StencilState;
-use super::pipeline::text::{TextPipeline, TextRequest};
+use super::pipeline::text::TextPipeline;
 use super::pipeline::vector::VectorPipeline;
-use super::style::{RectStyle, Stroke, TextStyle};
-use super::svg::{
-    resolve_svg_icon_paths, SvgRasterCache, SvgRasterDraw, SvgSource, SvgVectorCache,
-};
+use super::svg::{SvgRasterCache, SvgVectorCache};
 use super::text_measurer::TextMeasurer;
-use super::types::{Color, Point, Rect};
+use super::types::Color;
 use super::vector_tessellator::VectorTessellator;
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
@@ -46,7 +42,7 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     render_scale: f32,
     clear_color: Color,
-    commands: Vec<DrawCommand>,
+    backend_commands: Vec<BackendCommand>,
     frame: Option<FrameState>,
 }
 
@@ -130,7 +126,7 @@ impl Renderer {
             format,
             render_scale,
             clear_color: Color::BLACK,
-            commands: Vec::new(),
+            backend_commands: Vec::new(),
             frame: None,
         }
     }
@@ -152,7 +148,7 @@ impl Renderer {
         size: PhysicalSize<u32>,
         scale_factor: f64,
     ) {
-        self.commands.clear();
+        self.backend_commands.clear();
         self.stencil.reset();
         self.frame = Some(FrameState {
             view,
@@ -169,101 +165,14 @@ impl Renderer {
         &mut self.text_measurer
     }
 
-    pub fn draw_rect(&mut self, rect: Rect, style: &RectStyle) {
-        if let Some(ref shadow) = style.shadow {
-            self.commands.push(DrawCommand::Shadow(ShadowRequest {
-                rect,
-                radius: style.radius,
-                shadow: shadow.clone(),
-            }));
-        }
-        self.commands
-            .push(DrawCommand::Rect(QuadRequest::from_style(rect, style)));
-    }
-
-    pub fn draw_text(&mut self, pos: Point, text: &str, style: &TextStyle) {
-        self.commands.push(DrawCommand::Text(TextRequest {
-            pos,
-            text: text.to_string(),
-            style: *style,
-            bounds: None,
-        }));
-    }
-
-    pub fn draw_text_clipped(&mut self, pos: Point, text: &str, style: &TextStyle, bounds: Rect) {
-        self.commands.push(DrawCommand::Text(TextRequest {
-            pos,
-            text: text.to_string(),
-            style: *style,
-            bounds: Some(bounds),
-        }));
-    }
-
-    pub fn draw_image(
+    pub(crate) fn draw_display_list<R: DisplayResourceResolver>(
         &mut self,
-        rect: Rect,
-        view: Arc<wgpu::TextureView>,
-        size: TextureSize,
-        style: ImageStyle,
-    ) {
-        self.commands.push(DrawCommand::Image {
-            rect,
-            view,
-            size,
-            style,
-        });
-    }
-
-    pub fn draw_circle(&mut self, center: Point, radius: f32, color: Color) {
-        self.commands.push(DrawCommand::Circle(CircleRequest {
-            center,
-            radius,
-            color,
-        }));
-    }
-
-    pub fn draw_curve(&mut self, points: [Point; 4], width: f32, color: Color) {
-        self.draw_path(
-            PathData::cubic(points),
-            PathStyle::stroke(Stroke::new(width, color)),
-        );
-    }
-
-    pub fn draw_path(&mut self, data: PathData, style: PathStyle) {
-        self.commands
-            .push(DrawCommand::Path(PathRequest { data, style }));
-    }
-
-    pub(crate) fn draw_svg_icon(&mut self, rect: Rect, source: SvgSource, style: IconStyle) {
-        match self.svg_vector_cache.get_or_parse(&source) {
-            Ok(document) => {
-                for request in resolve_svg_icon_paths(&document, rect, style) {
-                    self.commands.push(DrawCommand::Path(request));
-                }
-            }
-            Err(err) => {
-                if !err.is_unsupported() {
-                    tracing::warn!(
-                        "SVG icon '{}' could not be parsed as vector: {:?}",
-                        source.key().id(),
-                        err
-                    );
-                }
-                self.commands.push(DrawCommand::SvgRaster(SvgRasterDraw {
-                    rect,
-                    source,
-                    style,
-                }));
-            }
-        }
-    }
-
-    pub fn push_clip(&mut self, rect: Rect, radius: f32) {
-        self.commands.push(DrawCommand::PushClip { rect, radius });
-    }
-
-    pub fn pop_clip(&mut self) {
-        self.commands.push(DrawCommand::PopClip);
+        list: &DisplayList,
+        resources: &R,
+    ) -> DisplayRenderReport {
+        let output = lower_display_list(list, resources, &mut self.svg_vector_cache);
+        self.backend_commands.extend(output.commands);
+        output.report
     }
 
     pub fn end_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -274,28 +183,32 @@ impl Renderer {
         let internal = scale_size(frame.size, self.render_scale);
 
         dispatch::dispatch(
-            &self.commands,
-            &frame.view,
-            &self.msaa_view,
-            &self.resolve_view,
-            internal,
-            frame.scale_factor,
-            self.render_scale,
-            self.clear_color,
-            device,
-            queue,
-            &self.blit,
-            &mut self.shared_viewport,
-            &mut self.quad_pipeline,
-            &mut self.text_pipeline,
-            &mut self.image_pipeline,
-            &mut self.circle_pipeline,
-            &mut self.vector_pipeline,
-            &mut self.vector_tessellator,
-            &mut self.svg_raster_cache,
-            &mut self.shadow_pipeline,
-            &mut self.stencil,
-            &mut self.text_measurer,
+            &self.backend_commands,
+            dispatch::DispatchFrame {
+                frame_view: &frame.view,
+                msaa_view: &self.msaa_view,
+                resolve_view: &self.resolve_view,
+                internal_size: internal,
+                scale_factor: frame.scale_factor,
+                render_scale: self.render_scale,
+                clear_color: self.clear_color,
+                device,
+                queue,
+            },
+            dispatch::DispatchPipelines {
+                blit: &self.blit,
+                shared_viewport: &mut self.shared_viewport,
+                quad_pipeline: &mut self.quad_pipeline,
+                text_pipeline: &mut self.text_pipeline,
+                image_pipeline: &mut self.image_pipeline,
+                circle_pipeline: &mut self.circle_pipeline,
+                vector_pipeline: &mut self.vector_pipeline,
+                vector_tessellator: &mut self.vector_tessellator,
+                svg_raster_cache: &mut self.svg_raster_cache,
+                shadow_pipeline: &mut self.shadow_pipeline,
+                stencil: &mut self.stencil,
+                text_measurer: &mut self.text_measurer,
+            },
         );
         self.shadow_pipeline.evict_cache();
     }

@@ -63,7 +63,11 @@ impl GestureSession {
                     .map(|signal| self.record_signal(signal))
                     .unwrap_or_else(GestureSessionUpdate::consumed)
             }
-            AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
+            AppEvent::MouseRelease {
+                x,
+                y,
+                button: MouseButton::Left,
+            } => {
                 let Some(mut arena) = self.arena.take() else {
                     return GestureSessionUpdate::default();
                 };

@@ -2,7 +2,7 @@ use std::ops::Range;
 use winit::dpi::PhysicalSize;
 
 use super::buffer::SharedViewport;
-use super::command::DrawCommand;
+use super::command::BackendCommand;
 use super::pipeline::blit::BlitPipeline;
 use super::pipeline::circle::CirclePipeline;
 use super::pipeline::image::ImagePipeline;
@@ -17,33 +17,69 @@ use super::text_measurer::TextMeasurer;
 use super::vector_tessellator::VectorTessellator;
 use super::{resolve_image_draw, ImageStyle, TextureSize};
 
-pub fn dispatch(
-    commands: &[DrawCommand],
-    frame_view: &wgpu::TextureView,
-    msaa_view: &wgpu::TextureView,
-    resolve_view: &wgpu::TextureView,
-    internal_size: PhysicalSize<u32>,
-    scale_factor: f64,
-    render_scale: f32,
-    clear_color: super::types::Color,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    blit: &BlitPipeline,
-    shared_viewport: &mut SharedViewport,
-    quad_pipeline: &mut QuadPipeline,
-    text_pipeline: &mut TextPipeline,
-    image_pipeline: &mut ImagePipeline,
-    circle_pipeline: &mut CirclePipeline,
-    vector_pipeline: &mut VectorPipeline,
-    vector_tessellator: &mut VectorTessellator,
-    svg_raster_cache: &mut SvgRasterCache,
-    shadow_pipeline: &mut ShadowPipeline,
-    stencil: &mut StencilState,
-    text_measurer: &mut TextMeasurer,
+pub(super) struct DispatchFrame<'a> {
+    pub(super) frame_view: &'a wgpu::TextureView,
+    pub(super) msaa_view: &'a wgpu::TextureView,
+    pub(super) resolve_view: &'a wgpu::TextureView,
+    pub(super) internal_size: PhysicalSize<u32>,
+    pub(super) scale_factor: f64,
+    pub(super) render_scale: f32,
+    pub(super) clear_color: super::types::Color,
+    pub(super) device: &'a wgpu::Device,
+    pub(super) queue: &'a wgpu::Queue,
+}
+
+pub(super) struct DispatchPipelines<'a> {
+    pub(super) blit: &'a BlitPipeline,
+    pub(super) shared_viewport: &'a mut SharedViewport,
+    pub(super) quad_pipeline: &'a mut QuadPipeline,
+    pub(super) text_pipeline: &'a mut TextPipeline,
+    pub(super) image_pipeline: &'a mut ImagePipeline,
+    pub(super) circle_pipeline: &'a mut CirclePipeline,
+    pub(super) vector_pipeline: &'a mut VectorPipeline,
+    pub(super) vector_tessellator: &'a mut VectorTessellator,
+    pub(super) svg_raster_cache: &'a mut SvgRasterCache,
+    pub(super) shadow_pipeline: &'a mut ShadowPipeline,
+    pub(super) stencil: &'a mut StencilState,
+    pub(super) text_measurer: &'a mut TextMeasurer,
+}
+
+pub(super) fn dispatch(
+    commands: &[BackendCommand],
+    frame: DispatchFrame<'_>,
+    pipelines: DispatchPipelines<'_>,
 ) {
-    let logical_w = internal_size.width as f64 / scale_factor / render_scale as f64;
-    let logical_h = internal_size.height as f64 / scale_factor / render_scale as f64;
+    let logical_w =
+        frame.internal_size.width as f64 / frame.scale_factor / frame.render_scale as f64;
+    let logical_h =
+        frame.internal_size.height as f64 / frame.scale_factor / frame.render_scale as f64;
     let viewport_size = [logical_w as f32, logical_h as f32];
+
+    let DispatchFrame {
+        frame_view,
+        msaa_view,
+        resolve_view,
+        internal_size,
+        scale_factor,
+        render_scale,
+        clear_color,
+        device,
+        queue,
+    } = frame;
+    let DispatchPipelines {
+        blit,
+        shared_viewport,
+        quad_pipeline,
+        text_pipeline,
+        image_pipeline,
+        circle_pipeline,
+        vector_pipeline,
+        vector_tessellator,
+        svg_raster_cache,
+        shadow_pipeline,
+        stencil,
+        text_measurer,
+    } = pipelines;
 
     shared_viewport.upload(device, queue, viewport_size);
     let viewport_buf = shared_viewport.buffer();
@@ -53,7 +89,7 @@ pub fn dispatch(
     });
 
     for cmd in commands {
-        if let DrawCommand::Shadow(req) = cmd {
+        if let BackendCommand::Shadow(req) = cmd {
             shadow_pipeline.prepare(&mut encoder, device, req);
         }
     }

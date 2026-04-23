@@ -651,7 +651,7 @@ mod tests {
             },
         };
 
-        let layouts = tree.sync_canvas_node_layouts(&[first.clone()]);
+        let layouts = tree.sync_canvas_node_layouts(std::slice::from_ref(&first));
         assert_eq!(layouts.len(), 1);
         assert_eq!(layouts[0].owner_id, "engine_node::1");
         assert_eq!(layouts[0].rect.x, 10.0);

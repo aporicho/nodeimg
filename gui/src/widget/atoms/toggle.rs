@@ -28,10 +28,7 @@ impl WidgetProps for ToggleProps {
         Box::new(self.clone())
     }
     fn props_eq(&self, other: &dyn WidgetProps) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |o| self == o)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(self, f)

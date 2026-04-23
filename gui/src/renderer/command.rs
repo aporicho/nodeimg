@@ -9,7 +9,7 @@ use super::pipeline::text::TextRequest;
 use super::svg::SvgRasterDraw;
 use super::types::Rect;
 
-pub enum DrawCommand {
+pub(super) enum BackendCommand {
     Shadow(ShadowRequest),
     Rect(QuadRequest),
     Circle(CircleRequest),

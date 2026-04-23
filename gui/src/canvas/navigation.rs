@@ -17,7 +17,11 @@ impl CanvasNavigationController {
     /// 处理画布导航输入。返回值表示事件是否被导航层消费。
     pub fn handle_event(&mut self, event: &AppEvent, camera: &mut Camera) -> bool {
         match *event {
-            AppEvent::MousePress { x, y, button } if button == MouseButton::Middle => {
+            AppEvent::MousePress {
+                x,
+                y,
+                button: MouseButton::Middle,
+            } => {
                 self.pan.start(x, y);
                 true
             }
@@ -25,7 +29,10 @@ impl CanvasNavigationController {
                 self.pan.update(x, y, camera);
                 true
             }
-            AppEvent::MouseRelease { button, .. } if button == MouseButton::Middle => {
+            AppEvent::MouseRelease {
+                button: MouseButton::Middle,
+                ..
+            } => {
                 self.pan.end();
                 true
             }

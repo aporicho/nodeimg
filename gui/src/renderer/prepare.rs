@@ -5,7 +5,7 @@ use lyon::tessellation::{
     StrokeVertex, VertexBuffers,
 };
 
-use super::command::DrawCommand;
+use super::command::BackendCommand;
 use super::image::{resolve_image_draw, ResolvedImageDraw};
 use super::path::PathRequest;
 use super::pipeline::circle::{CircleRequest, CircleVertex};
@@ -76,7 +76,7 @@ pub struct PreparedFrame {
 // ── 预处理 ──
 
 pub fn prepare_frame(
-    commands: &[DrawCommand],
+    commands: &[BackendCommand],
     vector_tessellator: &mut VectorTessellator,
 ) -> PreparedFrame {
     let mut frame = PreparedFrame {
@@ -99,23 +99,23 @@ pub fn prepare_frame(
 
     for cmd in commands {
         match cmd {
-            DrawCommand::Shadow(req) => {
+            BackendCommand::Shadow(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 frame.ops.push(DrawOp::Shadow(req.clone()));
             }
-            DrawCommand::Rect(req) => {
+            BackendCommand::Rect(req) => {
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 quad_batch.push(req);
             }
-            DrawCommand::Circle(req) => {
+            BackendCommand::Circle(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 circle_batch.push(req);
             }
-            DrawCommand::Text(req) => {
+            BackendCommand::Text(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
@@ -128,7 +128,7 @@ pub fn prepare_frame(
                 });
                 frame.ops.push(DrawOp::Text { index });
             }
-            DrawCommand::Image {
+            BackendCommand::Image {
                 rect,
                 view,
                 size,
@@ -142,25 +142,25 @@ pub fn prepare_frame(
                     draw: resolve_image_draw(*rect, *size, *style),
                 });
             }
-            DrawCommand::SvgRaster(draw) => {
+            BackendCommand::SvgRaster(draw) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 frame.ops.push(DrawOp::SvgRaster(draw.clone()));
             }
-            DrawCommand::Path(req) => {
+            BackendCommand::Path(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 vector_batch.push(req);
             }
-            DrawCommand::PushClip { rect, radius } => {
+            BackendCommand::PushClip { rect, radius } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 clip_stack.push((*rect, *radius));
                 tessellate_stencil(&mut frame, *rect, *radius, true);
             }
-            DrawCommand::PopClip => {
+            BackendCommand::PopClip => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
@@ -386,8 +386,8 @@ mod tests {
         Color, Fill, PathData, PathRequest, PathStyle, Point, Rect, RectStyle, Stroke, TextStyle,
     };
 
-    fn rect_command(x: f32) -> DrawCommand {
-        DrawCommand::Rect(QuadRequest::from_style(
+    fn rect_command(x: f32) -> BackendCommand {
+        BackendCommand::Rect(QuadRequest::from_style(
             Rect {
                 x,
                 y: 0.0,
@@ -403,8 +403,8 @@ mod tests {
         ))
     }
 
-    fn text_command(text: &str) -> DrawCommand {
-        DrawCommand::Text(TextRequest {
+    fn text_command(text: &str) -> BackendCommand {
+        BackendCommand::Text(TextRequest {
             pos: Point { x: 0.0, y: 0.0 },
             text: text.to_string(),
             style: TextStyle::new(Color::WHITE, 12.0),
@@ -412,8 +412,8 @@ mod tests {
         })
     }
 
-    fn path_command(style: PathStyle) -> DrawCommand {
-        DrawCommand::Path(PathRequest {
+    fn path_command(style: PathStyle) -> BackendCommand {
+        BackendCommand::Path(PathRequest {
             data: PathData::new()
                 .move_to(Point { x: 0.0, y: 0.0 })
                 .line_to(Point { x: 10.0, y: 0.0 })
@@ -462,7 +462,7 @@ mod tests {
     fn prepare_frame_tessellates_path_stroke_to_vector_op() {
         let mut vector_tessellator = VectorTessellator::new();
         let frame = prepare_frame(
-            &[DrawCommand::Path(PathRequest {
+            &[BackendCommand::Path(PathRequest {
                 data: PathData::line(Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }),
                 style: PathStyle::stroke(Stroke::new(2.0, Color::WHITE)),
             })],

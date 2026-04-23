@@ -99,7 +99,6 @@ impl WidgetProps for PathInputProps {
                         TextLayout {
                             overflow: TextOverflow::Ellipsis,
                             align: TextAlign::Start,
-                            ..Default::default()
                         },
                     )
                     .fill_width()

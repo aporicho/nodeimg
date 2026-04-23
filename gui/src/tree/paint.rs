@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
-use super::layout::{LeafKind, Overflow, TextureHandle};
-use super::legacy_paint_replay::LegacyDisplayListRenderer;
+use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{connection_path, grid_cells, rect_center};
 use super::paint_space::{NodePaintSpace, PaintSpace};
@@ -11,14 +8,13 @@ use super::text_layout::resolve_text_paint;
 use super::transform::legacy_transform_affine;
 use super::tree::Tree;
 use crate::geometry::{Affine2D, Point, Rect};
-use crate::icon::{IconFit, IconPaintOverride, IconRegistry, IconStrokeWidth, IconStyle};
+use crate::icon::{IconFit, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::interaction::InteractionState;
 use crate::paint::{
     CirclePaint, ClipShape, Color, DisplayList, PaintBuildError, PathData, PathStyle,
     RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride, SvgSourceKey,
     SvgStrokeWidth, SvgStyle, TextStyle,
 };
-use crate::renderer::{Renderer, TextureResource};
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
@@ -31,15 +27,16 @@ const CONNECTION_WIDTH: f32 = 2.0;
 pub(crate) struct PaintCx<'a> {
     pub(crate) interaction: Option<&'a InteractionState>,
     pub(crate) text_inputs: Option<&'a TextInputStore>,
-    pub(crate) textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
-    pub(crate) icons: Option<&'a IconRegistry>,
     pub(crate) theme: &'a Theme,
 }
 
-pub(crate) fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer, cx: PaintCx<'_>) {
-    let mut target = RecordingPaintTarget::with_measure(|text, style| {
-        renderer.text_measurer().measure_with_style(text, style)
-    });
+pub(crate) fn build_display_list(
+    tree: &Tree,
+    root: NodeId,
+    cx: PaintCx<'_>,
+    measure_text: impl FnMut(&str, &TextStyle) -> (f32, f32),
+) -> Result<DisplayList, PaintBuildError> {
+    let mut target = RecordingPaintTarget::with_measure(measure_text);
     paint_to_target(
         tree,
         root,
@@ -48,21 +45,7 @@ pub(crate) fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer, cx: Pain
         cx.text_inputs,
         cx.theme,
     );
-    let list = match target.display_list() {
-        Ok(list) => list,
-        Err(err) => {
-            tracing::warn!("failed to build display list for tree paint: {:?}", err);
-            return;
-        }
-    };
-
-    let report = LegacyDisplayListRenderer::new(renderer, cx.textures, cx.icons).render(&list);
-    if !report.unsupported.is_empty() {
-        tracing::debug!(
-            unsupported = report.unsupported.len(),
-            "temporary legacy replay skipped unsupported display list commands"
-        );
-    }
+    target.display_list()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -436,7 +419,7 @@ mod tests {
     };
     use crate::tree::layout::{
         BoxStyle, CustomPaintFn, CustomPainter, LeafKind, Overflow, TextLayout, TextOverflow,
-        Transform,
+        TextureHandle, Transform,
     };
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};

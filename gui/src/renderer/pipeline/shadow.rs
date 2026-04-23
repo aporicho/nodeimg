@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 use super::super::buffer::ViewportUniform;
 use super::super::style::Shadow;
 use super::super::types::Rect;
-use super::blur::BlurPipeline;
+use super::blur::{BlurPipeline, BlurRun};
 use super::quad::{build_rounded_rect_path, QuadVertex, DEFAULT_CORNER_SMOOTHING};
 
 // ── 请求 ──
@@ -81,6 +81,17 @@ pub struct ShadowPipeline {
     shape_bind_group_layout: wgpu::BindGroupLayout,
     cache: HashMap<CacheKey, CachedShadow>,
     downsample_factor: u32,
+}
+
+struct ShapePass<'a> {
+    encoder: &'a mut wgpu::CommandEncoder,
+    device: &'a wgpu::Device,
+    target: &'a wgpu::TextureView,
+    rect: Rect,
+    radius: [f32; 4],
+    shadow: &'a Shadow,
+    tex_w: u32,
+    tex_h: u32,
 }
 
 impl ShadowPipeline {
@@ -233,57 +244,57 @@ impl ShadowPipeline {
             w: request.rect.w + shadow.spread * 2.0,
             h: request.rect.h + shadow.spread * 2.0,
         };
-        self.render_shape(
+        self.render_shape(ShapePass {
             encoder,
             device,
-            &shape_view,
-            spread_rect,
-            request.radius,
+            target: &shape_view,
+            rect: spread_rect,
+            radius: request.radius,
             shadow,
             tex_w,
             tex_h,
-        );
+        });
 
         let sigma = shadow.blur / 2.0;
 
         // 2. 水平模糊：shape_tex → blur_b
-        self.blur.run(
+        self.blur.run(BlurRun {
             encoder,
             device,
-            &shape_view,
-            &blur_b_view,
+            input: &shape_view,
+            output: &blur_b_view,
             tex_w,
             tex_h,
-            [1.0, 0.0],
+            direction: [1.0, 0.0],
             sigma,
-        );
+        });
 
         // 3. 垂直模糊：blur_b → blur_a
-        self.blur.run(
+        self.blur.run(BlurRun {
             encoder,
             device,
-            &blur_b_view,
-            &blur_a_view,
+            input: &blur_b_view,
+            output: &blur_a_view,
             tex_w,
             tex_h,
-            [0.0, 1.0],
+            direction: [0.0, 1.0],
             sigma,
-        );
+        });
 
         blur_a_view
     }
 
-    fn render_shape(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        device: &wgpu::Device,
-        target: &wgpu::TextureView,
-        rect: Rect,
-        radius: [f32; 4],
-        shadow: &Shadow,
-        tex_w: u32,
-        tex_h: u32,
-    ) {
+    fn render_shape(&self, pass: ShapePass<'_>) {
+        let ShapePass {
+            encoder,
+            device,
+            target,
+            rect,
+            radius,
+            shadow,
+            tex_w,
+            tex_h,
+        } = pass;
         let path = build_rounded_rect_path(rect, radius, DEFAULT_CORNER_SMOOTHING);
         let color = shadow.color.to_array();
 

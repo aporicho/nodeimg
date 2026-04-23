@@ -16,6 +16,17 @@ pub struct BlurPipeline {
     bind_group_layout: wgpu::BindGroupLayout,
 }
 
+pub struct BlurRun<'a> {
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub device: &'a wgpu::Device,
+    pub input: &'a wgpu::TextureView,
+    pub output: &'a wgpu::TextureView,
+    pub tex_w: u32,
+    pub tex_h: u32,
+    pub direction: [f32; 2],
+    pub sigma: f32,
+}
+
 impl BlurPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         let bind_group_layout = Self::create_bind_group_layout(device);
@@ -26,17 +37,17 @@ impl BlurPipeline {
         }
     }
 
-    pub fn run(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        device: &wgpu::Device,
-        input: &wgpu::TextureView,
-        output: &wgpu::TextureView,
-        tex_w: u32,
-        tex_h: u32,
-        direction: [f32; 2],
-        sigma: f32,
-    ) {
+    pub fn run(&self, run: BlurRun<'_>) {
+        let BlurRun {
+            encoder,
+            device,
+            input,
+            output,
+            tex_w,
+            tex_h,
+            direction,
+            sigma,
+        } = run;
         let params = BlurParams {
             direction,
             sigma,
@@ -69,8 +80,8 @@ impl BlurPipeline {
             ],
         });
 
-        let workgroups_x = (tex_w + 15) / 16;
-        let workgroups_y = (tex_h + 15) / 16;
+        let workgroups_x = tex_w.div_ceil(16);
+        let workgroups_y = tex_h.div_ceil(16);
 
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("blur_pass"),

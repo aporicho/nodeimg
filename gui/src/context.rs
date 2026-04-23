@@ -6,14 +6,16 @@ use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::icon::{IconId, IconRegistry};
 use crate::interaction::InteractionState;
 use crate::panel::PanelDeclaration;
-use crate::renderer::{Rect, Renderer, TextMeasurer, TextureSize};
+use crate::renderer::{Rect, RegistryDisplayResources, Renderer, TextMeasurer, TextureSize};
 use crate::runtime::{
     ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSyncCx, RuntimeSystems,
 };
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
-use crate::tree::{hit_test, layout, paint, reconcile, Desc, HitChain, NodeId, NodeKind, Tree};
+use crate::tree::{
+    build_display_list, hit_test, layout, reconcile, Desc, HitChain, NodeId, NodeKind, Tree,
+};
 use crate::widget::props::WidgetBuildCx;
 
 pub use crate::output::{
@@ -90,18 +92,30 @@ impl Context {
         theme: &Theme,
     ) {
         if let Some(root) = self.tree.root() {
-            paint(
+            let list = match build_display_list(
                 &self.tree,
                 root,
-                renderer,
                 crate::tree::PaintCx {
                     interaction: Some(&self.interaction),
                     text_inputs: Some(self.systems.text_input_store()),
-                    textures: Some(self.resources.textures()),
-                    icons: Some(&self.icons),
                     theme,
                 },
-            );
+                |text, style| renderer.text_measurer().measure_with_style(text, style),
+            ) {
+                Ok(list) => list,
+                Err(err) => {
+                    tracing::warn!("failed to build display list for tree paint: {:?}", err);
+                    return;
+                }
+            };
+            let resources = RegistryDisplayResources::new(self.resources.textures(), &self.icons);
+            let report = renderer.draw_display_list(&list, &resources);
+            if !report.unsupported.is_empty() {
+                tracing::debug!(
+                    unsupported = report.unsupported.len(),
+                    "display list renderer skipped unsupported commands"
+                );
+            }
         }
     }
 

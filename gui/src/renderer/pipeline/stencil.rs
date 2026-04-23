@@ -94,26 +94,26 @@ impl StencilState {
             }],
         };
 
-        let increment_pipeline = create_stencil_pipeline(
+        let increment_pipeline = create_stencil_pipeline(StencilPipelineSpec {
             device,
-            &shader,
-            &pipeline_layout,
-            &vertex_layout,
+            shader: &shader,
+            layout: &pipeline_layout,
+            vertex_layout: &vertex_layout,
             surface_format,
-            wgpu::StencilOperation::IncrementClamp,
-            "stencil_increment",
+            pass_op: wgpu::StencilOperation::IncrementClamp,
+            label: "stencil_increment",
             multisample,
-        );
-        let decrement_pipeline = create_stencil_pipeline(
+        });
+        let decrement_pipeline = create_stencil_pipeline(StencilPipelineSpec {
             device,
-            &shader,
-            &pipeline_layout,
-            &vertex_layout,
+            shader: &shader,
+            layout: &pipeline_layout,
+            vertex_layout: &vertex_layout,
             surface_format,
-            wgpu::StencilOperation::DecrementClamp,
-            "stencil_decrement",
+            pass_op: wgpu::StencilOperation::DecrementClamp,
+            label: "stencil_decrement",
             multisample,
-        );
+        });
 
         Self {
             depth_stencil_view,
@@ -137,7 +137,7 @@ impl StencilState {
         if size.width > 0 && size.height > 0 {
             self.size = size;
             self.depth_stencil_view =
-                create_depth_stencil_view(device, size, super::super::renderer::MSAA_SAMPLE_COUNT);
+                create_depth_stencil_view(device, size, super::super::core::MSAA_SAMPLE_COUNT);
         }
     }
 
@@ -240,23 +240,24 @@ fn create_depth_stencil_view(
     texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-fn create_stencil_pipeline(
-    device: &wgpu::Device,
-    shader: &wgpu::ShaderModule,
-    layout: &wgpu::PipelineLayout,
-    vertex_layout: &wgpu::VertexBufferLayout<'_>,
-    surface_format: wgpu::TextureFormat,
-    pass_op: wgpu::StencilOperation,
-    label: &str,
-    multisample: wgpu::MultisampleState,
-) -> wgpu::RenderPipeline {
+fn create_stencil_pipeline(spec: StencilPipelineSpec<'_>) -> wgpu::RenderPipeline {
+    let StencilPipelineSpec {
+        device,
+        shader,
+        layout,
+        vertex_layout,
+        surface_format,
+        pass_op,
+        label,
+        multisample,
+    } = spec;
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: Some("vs_main"),
-            buffers: &[vertex_layout.clone()],
+            buffers: std::slice::from_ref(vertex_layout),
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -299,4 +300,15 @@ fn create_stencil_pipeline(
         cache: None,
         multiview_mask: None,
     })
+}
+
+struct StencilPipelineSpec<'a> {
+    device: &'a wgpu::Device,
+    shader: &'a wgpu::ShaderModule,
+    layout: &'a wgpu::PipelineLayout,
+    vertex_layout: &'a wgpu::VertexBufferLayout<'a>,
+    surface_format: wgpu::TextureFormat,
+    pass_op: wgpu::StencilOperation,
+    label: &'a str,
+    multisample: wgpu::MultisampleState,
 }

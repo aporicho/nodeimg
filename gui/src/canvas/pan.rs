@@ -40,3 +40,9 @@ impl PanState {
         self.active
     }
 }
+
+impl Default for PanState {
+    fn default() -> Self {
+        Self::new()
+    }
+}

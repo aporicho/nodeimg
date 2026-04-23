@@ -106,7 +106,6 @@ fn text_leaf(id: String, content: &str, color: Color, mut style: TextStyle, widt
         TextLayout {
             overflow: TextOverflow::Ellipsis,
             align: TextAlign::Start,
-            ..Default::default()
         },
     )
     .width(width)

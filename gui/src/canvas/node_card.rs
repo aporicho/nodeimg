@@ -773,35 +773,35 @@ mod tests {
     }
 
     fn node_render_view(include_ports: bool, include_params: bool) -> CanvasNodeRenderView {
-        let inputs = include_ports
-            .then(|| {
-                vec![CanvasNodePortTemplate::new(
-                    "prompt",
-                    "prompt",
-                    CanvasPortSide::Input,
-                )]
-            })
-            .unwrap_or_default();
-        let outputs = include_ports
-            .then(|| {
-                vec![CanvasNodePortTemplate::new(
-                    "image",
-                    "image",
-                    CanvasPortSide::Output,
-                )]
-            })
-            .unwrap_or_default();
-        let params = include_params
-            .then(|| {
-                vec![CanvasNodeParamTemplate::new(
-                    "prompt",
-                    "prompt",
-                    "string",
-                    "text",
-                    ParamControlSpec::default(),
-                )]
-            })
-            .unwrap_or_default();
+        let inputs = if include_ports {
+            vec![CanvasNodePortTemplate::new(
+                "prompt",
+                "prompt",
+                CanvasPortSide::Input,
+            )]
+        } else {
+            Vec::new()
+        };
+        let outputs = if include_ports {
+            vec![CanvasNodePortTemplate::new(
+                "image",
+                "image",
+                CanvasPortSide::Output,
+            )]
+        } else {
+            Vec::new()
+        };
+        let params = if include_params {
+            vec![CanvasNodeParamTemplate::new(
+                "prompt",
+                "prompt",
+                "string",
+                "text",
+                ParamControlSpec::default(),
+            )]
+        } else {
+            Vec::new()
+        };
         let port_states = inputs
             .iter()
             .chain(outputs.iter())

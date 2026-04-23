@@ -12,7 +12,11 @@ pub(crate) fn apply_event(store: &mut InteractionState, tree: &Tree, event: &App
                 store.set_hovered(target::input_target(tree, &chain));
             }
         }
-        AppEvent::MousePress { x, y, button } if button == MouseButton::Left => {
+        AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        } => {
             let chain = hit_chain(tree, x, y);
             let input_target = target::input_target(tree, &chain);
             let focus_target = target::interactive_target(tree, &chain);
@@ -25,7 +29,10 @@ pub(crate) fn apply_event(store: &mut InteractionState, tree: &Tree, event: &App
                 store.blur();
             }
         }
-        AppEvent::MouseRelease { button, .. } if button == MouseButton::Left => {
+        AppEvent::MouseRelease {
+            button: MouseButton::Left,
+            ..
+        } => {
             store.set_pressed(None);
             store.set_captured(None);
         }
