@@ -8,6 +8,8 @@ mod layout_adapter;
 mod node;
 mod paint;
 pub(crate) mod paint_helpers;
+pub mod paint_ops;
+pub mod paint_target;
 mod props;
 mod runtime_policy;
 mod runtime_slots;

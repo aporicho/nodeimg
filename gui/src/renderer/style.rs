@@ -84,6 +84,7 @@ pub enum FillRule {
     EvenOdd,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct RectStyle {
     pub color: Color,
     pub border: Option<Border>,

@@ -8,7 +8,7 @@ Date: 2026-04-23
 | --- | --- | --- | --- |
 | DONE | Connect `LeafKind::Line` | A declared line leaf must paint through the renderer | Implemented through `PathData::line` and the vector path pipeline. |
 | DONE | Connect `LeafKind::Curve` | A declared curve leaf must paint through the renderer | Implemented through `PathData::cubic`; connection leaves now use the same vector path route. |
-| TODO | Connect `LeafKind::CustomPaint` | The custom paint escape hatch must actually paint | Consider introducing a testable `PaintTarget` or `PaintCx` before exposing too much of `Renderer`. |
+| DONE | Connect `LeafKind::CustomPaint` | The custom paint escape hatch must actually paint | Implemented through `PaintTarget` and `CustomPaintCx`; it no longer depends on the concrete GPU `Renderer`. |
 | TODO | Decide image tint behavior | `LeafKind::Image.tint` must either work or be removed | Current paint path ignores `tint`. |
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
@@ -16,7 +16,7 @@ Date: 2026-04-23
 | TODO | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Hit supports rotate; paint currently ignores rotate. |
 | TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
 | TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
-| TODO | Add paint-op recording tests | Leaf declarations should be testable without a real GPU renderer | A command recording layer would make `LeafKind -> paint op` coverage explicit. |
+| DONE | Add paint-op recording tests | Leaf declarations should be testable without a real GPU renderer | `RecordingPaintTarget` records `PaintOp` values for leaf paint assertions. |
 
 ## Current Bottom-Up Rendering Path
 
@@ -27,6 +27,7 @@ widget / canvas / app
   -> tree::Desc
   -> tree layout
   -> tree::paint
+  -> tree::PaintTarget
   -> renderer::DrawCommand
   -> renderer::prepare
   -> renderer::dispatch
@@ -38,6 +39,8 @@ Relevant modules:
 - `gui/src/tree/desc.rs`: lightweight view description tree.
 - `gui/src/tree/layout/types.rs`: layout style and `LeafKind` primitive declarations.
 - `gui/src/tree/paint.rs`: converts the laid out tree into renderer commands.
+- `gui/src/tree/paint_target.rs`: paint target interface, renderer adapter, and custom paint context.
+- `gui/src/tree/paint_ops.rs`: recording paint target and testable paint operations.
 - `gui/src/renderer/command.rs`: renderer command enum.
 - `gui/src/renderer/renderer.rs`: public draw methods used by paint.
 - `gui/src/renderer/prepare.rs`: batching, tessellation, and clip preparation.
@@ -54,13 +57,15 @@ The implementation already supports enough primitives for the current UI and nod
 - Images render through texture handles.
 - Circles render through the circle pipeline.
 - Lines, cubic curves, and general paths render through the shared vector path pipeline.
+- Custom paint leaves can render through the `PaintTarget` escape hatch.
+- Paint output can be recorded without a GPU through `RecordingPaintTarget`.
 - Shadows render for rect styles.
 - Rounded rectangular clips work through the stencil path.
 - Paint and hit order respect `z_index` and source order.
 
 ## Main Architectural Gap
 
-`LeafKind` currently declares more primitives than `tree::paint` actually renders.
+Most declared `LeafKind` primitives now render through `tree::paint`.
 
 Declared in `LeafKind`:
 
@@ -90,16 +95,16 @@ Curve
 Path
 Connection
 PendingConnection
+CustomPaint
 ```
 
 Ignored or not connected today:
 
 ```text
 Icon
-CustomPaint
 ```
 
-This means the primitive interface is not fully trustworthy yet: some declared leaves can be constructed but will silently produce no pixels.
+The remaining unconnected primitive declaration is `Icon`. `Image` renders, but its `tint` field is still ignored.
 
 ## Missing Common Primitive Capabilities
 
@@ -181,16 +186,15 @@ filter: nearest / linear
 
 ### Custom Paint Escape Hatch
 
-`CustomPainter` and `LeafKind::CustomPaint` exist, but paint does not invoke them yet. This escape hatch should either be connected or removed until it is ready.
+`CustomPainter` and `LeafKind::CustomPaint` are connected through the generic paint target interface.
 
-Before exposing it widely, consider adding a testable abstraction:
+Current shape:
 
 ```text
-PaintTarget
-PaintCx
+CustomPainter::paint(&mut dyn PaintTarget, CustomPaintCx)
 ```
 
-That avoids forcing custom painters to depend directly on the full GPU renderer.
+That avoids forcing custom painters to depend directly on the full GPU renderer, and lets tests record custom paint output through `RecordingPaintTarget`.
 
 ### Transform Consistency
 
@@ -234,12 +238,14 @@ path hit test by fill/stroke
 
 ### Paint Command Recording
 
-`tree::paint` currently calls `Renderer` directly. That works at runtime, but makes primitive coverage harder to test without GPU involvement.
+`tree::paint` now targets `PaintTarget`. The runtime path uses `RendererPaintTarget`; tests can use `RecordingPaintTarget`.
 
-A future recording layer would help:
+Current route:
 
 ```text
-tree::paint -> PaintOp recorder -> renderer
+tree::paint -> PaintTarget
+  -> RendererPaintTarget -> Renderer
+  -> RecordingPaintTarget -> PaintOp
 ```
 
 Then tests can assert:
@@ -253,7 +259,6 @@ LeafKind::CustomPaint invokes the custom painter
 ## Recommended Order
 
 1. Make declared primitives trustworthy:
-   - `CustomPaint`
    - image `tint` decision
 
 2. Connect icon/SVG:

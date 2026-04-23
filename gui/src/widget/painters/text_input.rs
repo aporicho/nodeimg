@@ -1,7 +1,8 @@
 use crate::interaction::{InteractionState, WidgetVisualState};
-use crate::renderer::{Color, Point, RectStyle, Renderer, TextStyle};
+use crate::renderer::{Color, Point, RectStyle, TextStyle};
 use crate::theme::{TextInputTheme, Theme};
 use crate::tree::paint_helpers::PaintTransform;
+use crate::tree::paint_target::PaintTarget;
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::NumberInputProps;
 use crate::widget::atoms::text_input::TextInputProps;
@@ -62,7 +63,7 @@ pub(super) fn visual_override(
 pub(super) fn paint_text_leaf(
     tree: &Tree,
     node_id: NodeId,
-    renderer: &mut Renderer,
+    target: &mut dyn PaintTarget,
     tf: PaintTransform,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
@@ -78,16 +79,16 @@ pub(super) fn paint_text_leaf(
     };
     let clip_rect = tf.apply_rect(runtime.clip_rect());
 
-    renderer.push_clip(clip_rect, 0.0);
+    target.push_clip(clip_rect, 0.0);
 
     if let Some(selection_rect) = focused
         .then(|| runtime.selection_rect())
         .flatten()
         .map(|rect| tf.apply_rect(rect))
     {
-        renderer.draw_rect(
+        target.draw_rect(
             selection_rect,
-            &RectStyle {
+            RectStyle {
                 color: theme.selection_color(),
                 border: None,
                 radius: [theme.components.text_input.selection_radius; 4],
@@ -98,10 +99,11 @@ pub(super) fn paint_text_leaf(
 
     if runtime.has_preedit() {
         let Some((start, end)) = runtime.preedit_range() else {
+            target.pop_clip();
             return false;
         };
         let Some(preedit_text) = runtime.preedit_text() else {
-            renderer.pop_clip();
+            target.pop_clip();
             return false;
         };
         let prefix = &content[..start];
@@ -117,34 +119,34 @@ pub(super) fn paint_text_leaf(
         let suffix_x = preedit_x + runtime.preedit_width().unwrap_or(0.0) * tf.scale;
 
         if !prefix.is_empty() {
-            renderer.draw_text_clipped(
+            target.draw_text_clipped(
                 screen_text_origin,
                 prefix,
-                &scaled_text_style(*text_style, tf.scale),
+                scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
 
         if !preedit_text.is_empty() {
-            renderer.draw_text_clipped(
+            target.draw_text_clipped(
                 Point {
                     x: preedit_x,
                     y: screen_text_origin.y,
                 },
                 preedit_text,
-                &scaled_text_style(*text_style, tf.scale),
+                scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
 
         if !suffix.is_empty() {
-            renderer.draw_text_clipped(
+            target.draw_text_clipped(
                 Point {
                     x: suffix_x,
                     y: screen_text_origin.y,
                 },
                 suffix,
-                &scaled_text_style(*text_style, tf.scale),
+                scaled_text_style(*text_style, tf.scale),
                 clip_rect,
             );
         }
@@ -153,9 +155,9 @@ pub(super) fn paint_text_leaf(
             .preedit_underline_rect()
             .map(|rect| tf.apply_rect(rect))
         {
-            renderer.draw_rect(
+            target.draw_rect(
                 underline_rect,
-                &RectStyle {
+                RectStyle {
                     color: theme.preedit_underline_color(),
                     border: None,
                     radius: [0.0; 4],
@@ -166,10 +168,10 @@ pub(super) fn paint_text_leaf(
     } else {
         let text_origin = runtime.text_draw_origin();
         let screen_text_origin = tf.apply_point(text_origin);
-        renderer.draw_text_clipped(
+        target.draw_text_clipped(
             screen_text_origin,
             content,
-            &scaled_text_style(*text_style, tf.scale),
+            scaled_text_style(*text_style, tf.scale),
             clip_rect,
         );
     }
@@ -178,9 +180,9 @@ pub(super) fn paint_text_leaf(
         .then(|| runtime.caret_rect())
         .map(|rect| tf.apply_rect(rect))
     {
-        renderer.draw_rect(
+        target.draw_rect(
             caret_rect,
-            &RectStyle {
+            RectStyle {
                 color: theme.caret_color(),
                 border: None,
                 radius: [0.0; 4],
@@ -189,7 +191,7 @@ pub(super) fn paint_text_leaf(
         );
     }
 
-    renderer.pop_clip();
+    target.pop_clip();
 
     true
 }

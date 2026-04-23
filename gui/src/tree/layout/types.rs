@@ -1,6 +1,5 @@
-use crate::renderer::{
-    Border, Color, PathData, PathStyle, Point, Rect, Renderer, Stroke, TextStyle,
-};
+use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
+use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
 use std::sync::Arc;
 
 /// 纹理句柄：不透明封装。widget 层无需依赖 wgpu。
@@ -10,7 +9,7 @@ pub struct TextureHandle(pub u64);
 
 /// 自定义绘制回调。与 Flutter CustomPainter 对齐。
 pub trait CustomPainter: std::fmt::Debug + Send + Sync {
-    fn paint(&self, renderer: &mut Renderer, rect: Rect);
+    fn paint(&self, target: &mut dyn PaintTarget, cx: CustomPaintCx);
 }
 
 /// 包装 Arc<dyn CustomPainter>，让 LeafKind 能派生 Debug/Clone/PartialEq。
