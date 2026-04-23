@@ -6,6 +6,84 @@ pub struct Border {
     pub color: Color,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stroke {
+    pub width: f32,
+    pub color: Color,
+    pub cap: LineCap,
+    pub join: LineJoin,
+    pub miter_limit: f32,
+}
+
+impl Stroke {
+    pub fn new(width: f32, color: Color) -> Self {
+        Self {
+            width,
+            color,
+            cap: LineCap::Butt,
+            join: LineJoin::Miter,
+            miter_limit: 4.0,
+        }
+    }
+
+    pub fn with_cap(mut self, cap: LineCap) -> Self {
+        self.cap = cap;
+        self
+    }
+
+    pub fn with_join(mut self, join: LineJoin) -> Self {
+        self.join = join;
+        self
+    }
+
+    pub fn with_miter_limit(mut self, miter_limit: f32) -> Self {
+        self.miter_limit = miter_limit;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineCap {
+    Butt,
+    Round,
+    Square,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineJoin {
+    Miter,
+    Round,
+    Bevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Fill {
+    pub color: Color,
+    pub rule: FillRule,
+}
+
+impl Fill {
+    pub fn non_zero(color: Color) -> Self {
+        Self {
+            color,
+            rule: FillRule::NonZero,
+        }
+    }
+
+    pub fn even_odd(color: Color) -> Self {
+        Self {
+            color,
+            rule: FillRule::EvenOdd,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillRule {
+    NonZero,
+    EvenOdd,
+}
+
 pub struct RectStyle {
     pub color: Color,
     pub border: Option<Border>,
