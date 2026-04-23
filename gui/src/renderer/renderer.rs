@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
 
+use crate::icon::IconStyle;
+
 use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::dispatch;
@@ -15,6 +17,9 @@ use super::pipeline::stencil::StencilState;
 use super::pipeline::text::{TextPipeline, TextRequest};
 use super::pipeline::vector::VectorPipeline;
 use super::style::{RectStyle, Stroke, TextStyle};
+use super::svg::{
+    resolve_svg_icon_paths, SvgRasterCache, SvgRasterDraw, SvgSource, SvgVectorCache,
+};
 use super::text_measurer::TextMeasurer;
 use super::types::{Color, Point, Rect};
 use super::vector_tessellator::VectorTessellator;
@@ -31,6 +36,8 @@ pub struct Renderer {
     circle_pipeline: CirclePipeline,
     vector_pipeline: VectorPipeline,
     vector_tessellator: VectorTessellator,
+    svg_vector_cache: SvgVectorCache,
+    svg_raster_cache: SvgRasterCache,
     shadow_pipeline: ShadowPipeline,
     stencil: StencilState,
     msaa_view: wgpu::TextureView,
@@ -113,6 +120,8 @@ impl Renderer {
             circle_pipeline: CirclePipeline::new(device, format, ms),
             vector_pipeline: VectorPipeline::new(device, format, ms),
             vector_tessellator: VectorTessellator::new(),
+            svg_vector_cache: SvgVectorCache::new(),
+            svg_raster_cache: SvgRasterCache::new(),
             shadow_pipeline: ShadowPipeline::new(device, format, ms),
             stencil: StencilState::new(device, internal, format, ms),
             msaa_view: create_msaa_texture(device, format, internal),
@@ -225,6 +234,30 @@ impl Renderer {
             .push(DrawCommand::Path(PathRequest { data, style }));
     }
 
+    pub(crate) fn draw_svg_icon(&mut self, rect: Rect, source: SvgSource, style: IconStyle) {
+        match self.svg_vector_cache.get_or_parse(&source) {
+            Ok(document) => {
+                for request in resolve_svg_icon_paths(&document, rect, style) {
+                    self.commands.push(DrawCommand::Path(request));
+                }
+            }
+            Err(err) => {
+                if !err.is_unsupported() {
+                    tracing::warn!(
+                        "SVG icon '{}' could not be parsed as vector: {:?}",
+                        source.key().id(),
+                        err
+                    );
+                }
+                self.commands.push(DrawCommand::SvgRaster(SvgRasterDraw {
+                    rect,
+                    source,
+                    style,
+                }));
+            }
+        }
+    }
+
     pub fn push_clip(&mut self, rect: Rect, radius: f32) {
         self.commands.push(DrawCommand::PushClip { rect, radius });
     }
@@ -259,6 +292,7 @@ impl Renderer {
             &mut self.circle_pipeline,
             &mut self.vector_pipeline,
             &mut self.vector_tessellator,
+            &mut self.svg_raster_cache,
             &mut self.shadow_pipeline,
             &mut self.stencil,
             &mut self.text_measurer,

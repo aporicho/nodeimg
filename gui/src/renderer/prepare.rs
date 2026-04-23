@@ -16,6 +16,7 @@ use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
 use super::pipeline::text::TextRequest;
 use super::pipeline::vector::VectorVertex;
+use super::svg::SvgRasterDraw;
 use super::types::Rect;
 use super::vector_tessellator::VectorTessellator;
 
@@ -39,6 +40,7 @@ pub enum DrawOp {
         view: Arc<wgpu::TextureView>,
         draw: ResolvedImageDraw,
     },
+    SvgRaster(SvgRasterDraw),
     Text {
         index: usize,
     },
@@ -139,6 +141,12 @@ pub fn prepare_frame(
                     view: view.clone(),
                     draw: resolve_image_draw(*rect, *size, *style),
                 });
+            }
+            DrawCommand::SvgRaster(draw) => {
+                flush_quad_batch(&mut quad_batch, &mut frame);
+                flush_circle_batch(&mut circle_batch, &mut frame);
+                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+                frame.ops.push(DrawOp::SvgRaster(draw.clone()));
             }
             DrawCommand::Path(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);

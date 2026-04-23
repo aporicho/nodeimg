@@ -5,7 +5,9 @@ mod image;
 mod path;
 mod pipeline;
 mod prepare;
+pub(crate) mod svg;
 pub(crate) mod text_measurer;
+mod texture;
 mod types;
 mod vector_tessellator;
 
@@ -16,13 +18,13 @@ pub use image::{
     ResolvedImageDraw, TextureSize,
 };
 pub use path::{PathCommand, PathData, PathRequest, PathStyle};
-pub use pipeline::svg;
 pub use renderer::Renderer;
 pub use style::{
     Border, Fill, FillRule, LineCap, LineJoin, RectStyle, Shadow, Stroke, TextFamily, TextStyle,
     TextWeight,
 };
 pub use text_measurer::TextMeasurer;
+pub(crate) use texture::TextureResource;
 pub use types::{Color, Point, Rect};
 
 mod renderer;

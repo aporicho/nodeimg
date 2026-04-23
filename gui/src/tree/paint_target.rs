@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 
 use super::layout::TextureHandle;
+use crate::icon::{IconRegistry, IconSpec};
 use crate::renderer::{
     Color, ImageStyle, PathData, PathStyle, Point, Rect, RectStyle, Renderer, TextStyle,
+    TextureResource,
 };
-use crate::runtime::TextureResource;
 
 pub trait PaintTarget {
     fn draw_rect(&mut self, rect: Rect, style: RectStyle);
     fn draw_text(&mut self, pos: Point, text: &str, style: TextStyle);
     fn draw_text_clipped(&mut self, pos: Point, text: &str, style: TextStyle, bounds: Rect);
     fn draw_image(&mut self, rect: Rect, texture: TextureHandle, style: ImageStyle);
+    fn draw_icon(&mut self, rect: Rect, spec: IconSpec);
     fn draw_circle(&mut self, center: Point, radius: f32, color: Color);
     fn draw_path(&mut self, data: PathData, style: PathStyle);
     fn push_clip(&mut self, rect: Rect, radius: f32);
@@ -21,14 +23,20 @@ pub trait PaintTarget {
 pub(crate) struct RendererPaintTarget<'a> {
     renderer: &'a mut Renderer,
     textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
+    icons: Option<&'a IconRegistry>,
 }
 
 impl<'a> RendererPaintTarget<'a> {
     pub(crate) fn new(
         renderer: &'a mut Renderer,
         textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
+        icons: Option<&'a IconRegistry>,
     ) -> Self {
-        Self { renderer, textures }
+        Self {
+            renderer,
+            textures,
+            icons,
+        }
     }
 }
 
@@ -53,6 +61,13 @@ impl PaintTarget for RendererPaintTarget<'_> {
         {
             self.renderer
                 .draw_image(rect, resource.view, resource.size, style);
+        }
+    }
+
+    fn draw_icon(&mut self, rect: Rect, spec: IconSpec) {
+        if let Some(asset) = self.icons.and_then(|registry| registry.resolve(&spec.id)) {
+            self.renderer
+                .draw_svg_icon(rect, asset.source.clone(), spec.style);
         }
     }
 

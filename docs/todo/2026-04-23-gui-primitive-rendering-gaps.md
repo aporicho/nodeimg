@@ -12,7 +12,7 @@ Date: 2026-04-23
 | DONE | Complete image primitive styling | Image leaves need trustworthy texture styling semantics | `LeafKind::Image` now carries `ImageStyle`; tint, opacity, source rect, fit, filter, and texture size metadata flow through paint and renderer. |
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
-| TODO | Connect icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `renderer::pipeline::svg::SvgCache` exists but is not connected to `LeafKind::Icon`. |
+| DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
 | TODO | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Hit supports rotate; paint currently ignores rotate. |
 | TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
 | TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
@@ -55,6 +55,7 @@ The implementation already supports enough primitives for the current UI and nod
 - Rounded rectangles use the quad pipeline and Figma-style corner smoothing.
 - Text supports family, size, weight, italic, line height, clipping, ellipsis, and horizontal alignment.
 - Images render through texture handles with `ImageStyle`.
+- SVG icons render through `LeafKind::Icon`, `IconRegistry`, and vector-first SVG resolution.
 - Circles render through the circle pipeline.
 - Lines, cubic curves, and general paths render through the shared vector path pipeline.
 - Custom paint leaves can render through the `PaintTarget` escape hatch.
@@ -89,6 +90,7 @@ Actually handled by `tree::paint` today:
 Text
 Grid
 Image
+Icon
 Circle
 Line
 Curve
@@ -101,10 +103,10 @@ CustomPaint
 Ignored or not connected today:
 
 ```text
-Icon
+None
 ```
 
-The remaining unconnected primitive declaration is `Icon`. `Image` now renders through a structured style model instead of the removed ad hoc `tint` field.
+All declared primitive leaves now enter `tree::paint`. `Icon` resolves through SVG icon resources; `Image` renders through a structured style model instead of the removed ad hoc `tint` field.
 
 ## Missing Common Primitive Capabilities
 
@@ -159,15 +161,55 @@ PathStyle
 
 ### Icon / SVG Rendering
 
-`LeafKind::Icon` exists but is not painted. `renderer::pipeline::svg::SvgCache` exists, but there is no complete path from icon id to texture to `draw_image`.
+`LeafKind::Icon` is now connected through a vector-first SVG icon path.
 
-Needed pieces:
+Current route:
 
 ```text
-IconRegistry
-Icon resource lookup
-LeafKind::Icon paint branch
-SVG cache integration
+LeafKind::Icon
+  -> PaintTarget::draw_icon(rect, spec)
+  -> IconRegistry resolves icon_id to SVG source
+  -> Renderer::draw_svg_icon(...)
+  -> SvgVectorCache parses supported SVG path data
+  -> PathData + PathStyle
+  -> VectorPipeline
+```
+
+Supported UI icon SVG subset:
+
+```text
+svg width/height/viewBox
+path d
+fill color
+stroke color
+stroke-width
+stroke-linecap
+stroke-linejoin
+fill-rule
+transform
+```
+
+Complex SVG features intentionally use raster fallback instead of silently dropping semantics:
+
+```text
+gradient
+pattern
+mask
+filter
+clipPath
+image
+text
+dasharray
+complex group opacity/blend/isolation
+```
+
+The fallback route is:
+
+```text
+SvgRasterCache
+  -> resvg/tiny-skia rasterization
+  -> TextureResource
+  -> ImagePipeline
 ```
 
 ### Image Tint And Fit
@@ -264,7 +306,7 @@ Then tests can assert:
 
 ```text
 LeafKind::Line produces a line/curve paint op
-LeafKind::Icon resolves to an image paint op
+LeafKind::Icon produces an icon paint op
 LeafKind::CustomPaint invokes the custom painter
 ```
 
@@ -274,9 +316,7 @@ LeafKind::CustomPaint invokes the custom painter
    - image primitive style
 
 2. Connect icon/SVG:
-   - icon registry
-   - `LeafKind::Icon`
-   - `SvgCache`
+   - vector-first SVG icon rendering
 
 3. Unify transform and scale behavior:
    - rotate support in paint or remove rotate from hit until paint supports it

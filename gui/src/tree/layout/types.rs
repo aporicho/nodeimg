@@ -1,3 +1,4 @@
+use crate::icon::IconSpec;
 use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
 use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
 use std::sync::Arc;
@@ -356,11 +357,7 @@ pub enum LeafKind {
         style: crate::renderer::ImageStyle,
     },
     /// 图标（图标字体或 SVG 资源）。
-    Icon {
-        icon_id: String,
-        size: f32,
-        color: Color,
-    },
+    Icon { spec: IconSpec },
 
     // ── 几何图形 ──
     /// 圆形（端口圆点、单选按钮、状态点等）。

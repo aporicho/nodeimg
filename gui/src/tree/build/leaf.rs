@@ -1,5 +1,6 @@
-use crate::renderer::{PathData, PathStyle, Point, Stroke, TextStyle};
-use crate::tree::layout::{BoxStyle, LeafKind, TextLayout};
+use crate::icon::IconSpec;
+use crate::renderer::{Color, PathData, PathStyle, Point, Stroke, TextStyle};
+use crate::tree::layout::{BoxStyle, LeafKind, Size, TextLayout};
 use crate::tree::Desc;
 use std::borrow::Cow;
 
@@ -59,6 +60,22 @@ pub fn path(id: impl Into<Cow<'static, str>>, data: PathData, style: PathStyle) 
     leaf(id, LeafKind::Path { data, style })
 }
 
+pub fn icon(
+    id: impl Into<Cow<'static, str>>,
+    icon_id: impl Into<crate::icon::IconId>,
+    size: f32,
+    color: Color,
+) -> LeafBuilder {
+    icon_with_spec(id, IconSpec::new(icon_id, color), size)
+}
+
+pub fn icon_with_spec(id: impl Into<Cow<'static, str>>, spec: IconSpec, size: f32) -> LeafBuilder {
+    let mut builder = leaf(id, LeafKind::Icon { spec });
+    builder.style.width = Size::Fixed(size);
+    builder.style.height = Size::Fixed(size);
+    builder
+}
+
 impl LeafBuilder {
     pub fn build(self) -> Desc {
         self.into()
@@ -112,5 +129,20 @@ mod tests {
             panic!("path builder should create a leaf");
         };
         assert_eq!(kind, LeafKind::Path { data, style });
+    }
+
+    #[test]
+    fn icon_builder_sets_fixed_size_and_icon_spec() {
+        let desc = icon("plus_icon", "plus", 16.0, Color::WHITE).build();
+
+        let Desc::Leaf { kind, style, .. } = desc else {
+            panic!("icon builder should create a leaf");
+        };
+        assert_eq!(style.width, Size::Fixed(16.0));
+        assert_eq!(style.height, Size::Fixed(16.0));
+        let LeafKind::Icon { spec } = kind else {
+            panic!("expected icon kind");
+        };
+        assert_eq!(spec.id, crate::icon::IconId::from("plus"));
     }
 }

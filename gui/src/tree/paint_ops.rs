@@ -1,3 +1,4 @@
+use crate::icon::IconSpec;
 use crate::renderer::{Color, ImageStyle, PathData, PathStyle, Point, Rect, RectStyle, TextStyle};
 
 use super::layout::TextureHandle;
@@ -19,6 +20,10 @@ pub enum PaintOp {
         rect: Rect,
         texture: TextureHandle,
         style: ImageStyle,
+    },
+    Icon {
+        rect: Rect,
+        spec: IconSpec,
     },
     Circle {
         center: Point,
@@ -100,6 +105,10 @@ impl PaintTarget for RecordingPaintTarget {
             texture,
             style,
         });
+    }
+
+    fn draw_icon(&mut self, rect: Rect, spec: IconSpec) {
+        self.ops.push(PaintOp::Icon { rect, spec });
     }
 
     fn draw_circle(&mut self, center: Point, radius: f32, color: Color) {

@@ -6,7 +6,9 @@ mod widget;
 
 pub use container::{column, container, row, ContainerBuilder};
 pub use decoration::DecorationBuilder;
-pub use leaf::{curve, leaf, line, path, text, text_with_layout, LeafBuilder};
+pub use leaf::{
+    curve, icon, icon_with_spec, leaf, line, path, text, text_with_layout, LeafBuilder,
+};
 pub use style::StyleBuilder;
 pub use widget::{widget, WidgetBuilder};
 

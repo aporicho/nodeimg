@@ -8,11 +8,12 @@ use super::paint_target::{CustomPaintCx, PaintTarget, RendererPaintTarget};
 use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
+use crate::icon::IconRegistry;
 use crate::interaction::InteractionState;
 use crate::renderer::{
-    Border, Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, Shadow, Stroke, TextStyle,
+    Border, Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, Shadow, Stroke,
+    TextStyle, TextureResource,
 };
-use crate::runtime::TextureResource;
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
@@ -30,9 +31,10 @@ pub(crate) fn paint(
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     textures: Option<&HashMap<crate::tree::layout::TextureHandle, TextureResource>>,
+    icons: Option<&IconRegistry>,
     theme: &Theme,
 ) {
-    let mut target = RendererPaintTarget::new(renderer, textures);
+    let mut target = RendererPaintTarget::new(renderer, textures, icons);
     paint_to_target(tree, root, &mut target, interaction, text_inputs, theme);
 }
 
@@ -155,6 +157,9 @@ fn paint_node(
             LeafKind::Image { texture, style } => {
                 target.draw_image(screen_rect, *texture, *style);
             }
+            LeafKind::Icon { spec } => {
+                target.draw_icon(screen_rect, spec.clone());
+            }
             LeafKind::Circle {
                 radius,
                 fill,
@@ -230,7 +235,6 @@ fn paint_node(
             LeafKind::CustomPaint(custom) => {
                 custom.0.paint(target, CustomPaintCx { rect: screen_rect });
             }
-            _ => {}
         }
     }
 
@@ -309,6 +313,7 @@ fn scaled_shadow(shadow: Shadow, scale: f32) -> Shadow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::icon::IconSpec;
     use crate::renderer::{Border, Color, ImageFit, ImageOpacity, ImageStyle, PathCommand, Shadow};
     use crate::tree::layout::{
         BoxStyle, CustomPaintFn, CustomPainter, LeafKind, Overflow, TextLayout, TextOverflow,
@@ -481,6 +486,23 @@ mod tests {
                 rect: rect(10.0, 20.0, 30.0, 40.0),
                 texture,
                 style,
+            }]
+        );
+    }
+
+    #[test]
+    fn icon_leaf_records_icon_spec_without_resolving_svg() {
+        let spec = IconSpec::new("plus", Color::WHITE);
+        let ops = paint_single_leaf(
+            LeafKind::Icon { spec: spec.clone() },
+            rect(10.0, 20.0, 16.0, 16.0),
+        );
+
+        assert_eq!(
+            ops,
+            vec![PaintOp::Icon {
+                rect: rect(10.0, 20.0, 16.0, 16.0),
+                spec,
             }]
         );
     }

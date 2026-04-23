@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
+use crate::icon::{IconId, IconRegistry};
 use crate::interaction::InteractionState;
 use crate::panel::PanelDeclaration;
 use crate::renderer::{Rect, Renderer, TextMeasurer, TextureSize};
@@ -28,6 +29,7 @@ pub struct Context {
     pub(crate) systems: RuntimeSystems,
     pub(crate) last_theme_revision: Option<u64>,
     pub(crate) resources: ResourceRegistry,
+    icons: IconRegistry,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -45,6 +47,7 @@ impl Context {
             systems: RuntimeSystems::new(),
             last_theme_revision: None,
             resources: ResourceRegistry::new(),
+            icons: IconRegistry::with_builtin_icons(),
         }
     }
 
@@ -94,6 +97,7 @@ impl Context {
                 Some(&self.interaction),
                 Some(self.systems.text_input_store()),
                 Some(self.resources.textures()),
+                Some(&self.icons),
                 theme,
             );
         }
@@ -106,6 +110,10 @@ impl Context {
         size: TextureSize,
     ) {
         self.resources.register_texture(handle, view, size);
+    }
+
+    pub fn register_svg_icon(&mut self, id: impl Into<IconId>, svg: impl AsRef<[u8]>) {
+        self.icons.register_svg(id, svg);
     }
 
     pub fn open_overlay(&mut self, request: OverlayRequest) {

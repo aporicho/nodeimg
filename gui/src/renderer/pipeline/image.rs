@@ -148,7 +148,7 @@ impl ImagePipeline {
         &'a self,
         pass: &mut wgpu::RenderPass<'a>,
         device: &wgpu::Device,
-        texture_view: &'a wgpu::TextureView,
+        texture_view: &wgpu::TextureView,
         draw: ResolvedImageDraw,
         viewport_buf: &'a wgpu::Buffer,
     ) {

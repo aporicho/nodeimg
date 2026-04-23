@@ -12,8 +12,10 @@ use super::pipeline::stencil::StencilState;
 use super::pipeline::text::TextPipeline;
 use super::pipeline::vector::VectorPipeline;
 use super::prepare::{prepare_frame, DrawOp};
+use super::svg::{SvgRasterCache, SvgRasterRequest};
 use super::text_measurer::TextMeasurer;
 use super::vector_tessellator::VectorTessellator;
+use super::{resolve_image_draw, ImageStyle, TextureSize};
 
 pub fn dispatch(
     commands: &[DrawCommand],
@@ -34,6 +36,7 @@ pub fn dispatch(
     circle_pipeline: &mut CirclePipeline,
     vector_pipeline: &mut VectorPipeline,
     vector_tessellator: &mut VectorTessellator,
+    svg_raster_cache: &mut SvgRasterCache,
     shadow_pipeline: &mut ShadowPipeline,
     stencil: &mut StencilState,
     text_measurer: &mut TextMeasurer,
@@ -182,6 +185,40 @@ pub fn dispatch(
                                 pass.set_stencil_reference(clip_depth);
                                 image_pipeline.draw(&mut pass, device, view, *draw, viewport_buf);
                             }
+                            DrawOp::SvgRaster(draw) => {
+                                last_bound = PipelineKind::Other;
+                                pass.set_stencil_reference(clip_depth);
+                                let pixel_size =
+                                    svg_raster_pixel_size(draw.rect, scale_factor, render_scale);
+                                let request = SvgRasterRequest::new(
+                                    draw.source.clone(),
+                                    pixel_size,
+                                    draw.style.raster_color(),
+                                );
+                                match svg_raster_cache.get_or_rasterize(device, queue, request) {
+                                    Ok(resource) => {
+                                        let image_draw = resolve_image_draw(
+                                            draw.rect,
+                                            resource.size,
+                                            ImageStyle::default(),
+                                        );
+                                        image_pipeline.draw(
+                                            &mut pass,
+                                            device,
+                                            &resource.view,
+                                            image_draw,
+                                            viewport_buf,
+                                        );
+                                    }
+                                    Err(err) => {
+                                        tracing::warn!(
+                                            "SVG icon '{}' could not be rasterized: {:?}",
+                                            draw.source.key().id(),
+                                            err
+                                        );
+                                    }
+                                }
+                            }
                             DrawOp::Text { .. } => {
                                 unreachable!("text ops are split into dedicated render steps")
                             }
@@ -297,6 +334,18 @@ pub fn dispatch(
     }
 
     queue.submit(std::iter::once(encoder.finish()));
+}
+
+fn svg_raster_pixel_size(
+    rect: super::types::Rect,
+    scale_factor: f64,
+    render_scale: f32,
+) -> TextureSize {
+    let scale = scale_factor as f32 * render_scale;
+    TextureSize::new(
+        (rect.w.abs() * scale).ceil().max(1.0) as u32,
+        (rect.h.abs() * scale).ceil().max(1.0) as u32,
+    )
 }
 
 #[derive(Debug, PartialEq)]

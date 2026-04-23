@@ -3,6 +3,7 @@ pub mod canvas;
 pub mod context;
 pub(crate) mod event;
 pub mod gesture;
+pub mod icon;
 pub mod interaction;
 pub mod output;
 pub mod overlay;

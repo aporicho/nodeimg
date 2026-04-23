@@ -5,6 +5,5 @@ pub mod image;
 pub mod quad;
 pub mod shadow;
 pub mod stencil;
-pub mod svg;
 pub mod text;
 pub mod vector;
