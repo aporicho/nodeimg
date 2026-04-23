@@ -1,7 +1,7 @@
 use crate::interaction::{InteractionState, WidgetVisualState};
-use crate::renderer::{Color, Point, RectStyle, TextStyle};
+use crate::paint::ClipShape;
+use crate::renderer::{Color, Point, Rect, RectStyle, TextStyle};
 use crate::theme::{TextInputTheme, Theme};
-use crate::tree::paint_helpers::PaintTransform;
 use crate::tree::paint_target::PaintTarget;
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::NumberInputProps;
@@ -64,7 +64,7 @@ pub(super) fn paint_text_leaf(
     tree: &Tree,
     node_id: NodeId,
     target: &mut dyn PaintTarget,
-    tf: PaintTransform,
+    node_rect: Rect,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
@@ -77,14 +77,14 @@ pub(super) fn paint_text_leaf(
     let Some(runtime) = text_inputs.and_then(|store| store.runtime(widget_id.as_ref())) else {
         return false;
     };
-    let clip_rect = tf.apply_rect(runtime.clip_rect());
+    let clip_rect = rect_to_node_local(runtime.clip_rect(), node_rect);
 
-    target.push_clip(clip_rect, 0.0);
+    target.push_clip(ClipShape::Rect(clip_rect));
 
     if let Some(selection_rect) = focused
         .then(|| runtime.selection_rect())
         .flatten()
-        .map(|rect| tf.apply_rect(rect))
+        .map(|rect| rect_to_node_local(rect, node_rect))
     {
         target.draw_rect(
             selection_rect,
@@ -109,32 +109,22 @@ pub(super) fn paint_text_leaf(
         let prefix = &content[..start];
         let suffix = &content[end..];
         let text_origin = runtime.text_draw_origin();
-        let screen_text_origin = tf.apply_point(text_origin);
-        let preedit_x = tf
-            .apply_point(Point {
-                x: runtime.preedit_start_x().unwrap_or(text_origin.x),
-                y: text_origin.y,
-            })
-            .x;
-        let suffix_x = preedit_x + runtime.preedit_width().unwrap_or(0.0) * tf.scale;
+        let local_text_origin = point_to_node_local(text_origin, node_rect);
+        let preedit_x = runtime.preedit_start_x().unwrap_or(text_origin.x) - node_rect.x;
+        let suffix_x = preedit_x + runtime.preedit_width().unwrap_or(0.0);
 
         if !prefix.is_empty() {
-            target.draw_text_clipped(
-                screen_text_origin,
-                prefix,
-                scaled_text_style(*text_style, tf.scale),
-                clip_rect,
-            );
+            target.draw_text_clipped(local_text_origin, prefix, *text_style, clip_rect);
         }
 
         if !preedit_text.is_empty() {
             target.draw_text_clipped(
                 Point {
                     x: preedit_x,
-                    y: screen_text_origin.y,
+                    y: local_text_origin.y,
                 },
                 preedit_text,
-                scaled_text_style(*text_style, tf.scale),
+                *text_style,
                 clip_rect,
             );
         }
@@ -143,17 +133,17 @@ pub(super) fn paint_text_leaf(
             target.draw_text_clipped(
                 Point {
                     x: suffix_x,
-                    y: screen_text_origin.y,
+                    y: local_text_origin.y,
                 },
                 suffix,
-                scaled_text_style(*text_style, tf.scale),
+                *text_style,
                 clip_rect,
             );
         }
 
         if let Some(underline_rect) = runtime
             .preedit_underline_rect()
-            .map(|rect| tf.apply_rect(rect))
+            .map(|rect| rect_to_node_local(rect, node_rect))
         {
             target.draw_rect(
                 underline_rect,
@@ -167,18 +157,13 @@ pub(super) fn paint_text_leaf(
         }
     } else {
         let text_origin = runtime.text_draw_origin();
-        let screen_text_origin = tf.apply_point(text_origin);
-        target.draw_text_clipped(
-            screen_text_origin,
-            content,
-            scaled_text_style(*text_style, tf.scale),
-            clip_rect,
-        );
+        let local_text_origin = point_to_node_local(text_origin, node_rect);
+        target.draw_text_clipped(local_text_origin, content, *text_style, clip_rect);
     }
 
     if let Some(caret_rect) = focused
         .then(|| runtime.caret_rect())
-        .map(|rect| tf.apply_rect(rect))
+        .map(|rect| rect_to_node_local(rect, node_rect))
     {
         target.draw_rect(
             caret_rect,
@@ -194,6 +179,22 @@ pub(super) fn paint_text_leaf(
     target.pop_clip();
 
     true
+}
+
+fn point_to_node_local(point: Point, node_rect: Rect) -> Point {
+    Point {
+        x: point.x - node_rect.x,
+        y: point.y - node_rect.y,
+    }
+}
+
+fn rect_to_node_local(rect: Rect, node_rect: Rect) -> Rect {
+    Rect {
+        x: rect.x - node_rect.x,
+        y: rect.y - node_rect.y,
+        w: rect.w,
+        h: rect.h,
+    }
 }
 
 fn text_input_widget_id(
@@ -223,11 +224,6 @@ fn is_text_field_props(props: &dyn crate::widget::props::WidgetProps) -> Option<
     (props.as_any().downcast_ref::<TextInputProps>().is_some()
         || props.as_any().downcast_ref::<NumberInputProps>().is_some())
     .then_some(())
-}
-
-fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
-    style.size *= scale;
-    style
 }
 
 fn text_field_visual_spec(

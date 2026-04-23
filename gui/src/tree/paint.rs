@@ -1,41 +1,68 @@
-use super::layout::{LeafKind, Overflow};
+use std::collections::HashMap;
+
+use super::layout::{LeafKind, Overflow, TextureHandle};
+use super::legacy_paint_replay::LegacyDisplayListRenderer;
 use super::node::{NodeId, NodeKind};
-use super::paint_helpers::{
-    connection_path, find_node_by_str_id, grid_cells, leaf_path_to_screen, rect_center,
-    scaled_path_style, PaintTransform,
-};
-use super::paint_target::{CustomPaintCx, PaintTarget, RendererPaintTarget};
+use super::paint_helpers::{connection_path, grid_cells, rect_center};
+use super::paint_space::{NodePaintSpace, PaintSpace};
+use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
+use super::transform::legacy_transform_affine;
 use super::tree::Tree;
-use crate::icon::IconRegistry;
+use crate::geometry::{Affine2D, Point, Rect};
+use crate::icon::{IconFit, IconPaintOverride, IconRegistry, IconStrokeWidth, IconStyle};
 use crate::interaction::InteractionState;
-use crate::renderer::{
-    Border, Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, Shadow, Stroke,
-    TextStyle, TextureResource,
+use crate::paint::{
+    CirclePaint, ClipShape, Color, DisplayList, PaintBuildError, PathData, PathStyle,
+    RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride, SvgSourceKey,
+    SvgStrokeWidth, SvgStyle, TextStyle,
 };
+use crate::renderer::{Renderer, TextureResource};
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
     widget_visual_override as paint_widget_visual_override,
 };
 use crate::widget::state::TextInputStore;
-use std::collections::HashMap;
 
-/// 连线宽度（local 空间像素，paint 时按 scale 缩放）
 const CONNECTION_WIDTH: f32 = 2.0;
-pub(crate) fn paint(
-    tree: &Tree,
-    root: NodeId,
-    renderer: &mut Renderer,
-    interaction: Option<&InteractionState>,
-    text_inputs: Option<&TextInputStore>,
-    textures: Option<&HashMap<crate::tree::layout::TextureHandle, TextureResource>>,
-    icons: Option<&IconRegistry>,
-    theme: &Theme,
-) {
-    let mut target = RendererPaintTarget::new(renderer, textures, icons);
-    paint_to_target(tree, root, &mut target, interaction, text_inputs, theme);
+
+pub(crate) struct PaintCx<'a> {
+    pub(crate) interaction: Option<&'a InteractionState>,
+    pub(crate) text_inputs: Option<&'a TextInputStore>,
+    pub(crate) textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
+    pub(crate) icons: Option<&'a IconRegistry>,
+    pub(crate) theme: &'a Theme,
+}
+
+pub(crate) fn paint(tree: &Tree, root: NodeId, renderer: &mut Renderer, cx: PaintCx<'_>) {
+    let mut target = RecordingPaintTarget::with_measure(|text, style| {
+        renderer.text_measurer().measure_with_style(text, style)
+    });
+    paint_to_target(
+        tree,
+        root,
+        &mut target,
+        cx.interaction,
+        cx.text_inputs,
+        cx.theme,
+    );
+    let list = match target.display_list() {
+        Ok(list) => list,
+        Err(err) => {
+            tracing::warn!("failed to build display list for tree paint: {:?}", err);
+            return;
+        }
+    };
+
+    let report = LegacyDisplayListRenderer::new(renderer, cx.textures, cx.icons).render(&list);
+    if !report.unsupported.is_empty() {
+        tracing::debug!(
+            unsupported = report.unsupported.len(),
+            "temporary legacy replay skipped unsupported display list commands"
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -51,7 +78,7 @@ pub(crate) fn paint_to_target(
         tree,
         root,
         target,
-        PaintTransform::identity(),
+        PaintSpace::root(),
         interaction,
         text_inputs,
         theme,
@@ -64,7 +91,7 @@ fn paint_node(
     tree: &Tree,
     node_id: NodeId,
     target: &mut dyn PaintTarget,
-    tf: PaintTransform,
+    current_space: PaintSpace,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
@@ -74,184 +101,54 @@ fn paint_node(
         return;
     };
 
-    let screen_rect = tf.apply_rect(node.rect);
-    let mut child_text_color = inherited_text_color;
+    let node_space = current_space.node_space(node.rect, node.style.transform);
+    let local_rect = node_space.local_rect;
+    let local_to_screen = node_space.local_to_screen;
+    let transform = node.style.transform;
+    let should_clip_children = matches!(node.style.overflow, Overflow::Hidden | Overflow::Scroll);
     let clip_radius = node
         .decoration
         .as_ref()
-        .map(|dec| dec.radius[0] * tf.scale)
-        .unwrap_or(0.0);
-    let should_clip_children = matches!(node.style.overflow, Overflow::Hidden | Overflow::Scroll);
+        .map(|decoration| decoration.radius)
+        .unwrap_or([0.0; 4]);
+    let children = children_in_paint_order(tree, &node.children);
+    let mut child_text_color = inherited_text_color;
+
+    target.push_transform(Affine2D::translation(node.rect.x, node.rect.y));
 
     if let Some((style, text_color)) =
         paint_widget_visual_override(tree, node_id, interaction, theme)
     {
-        target.draw_rect(screen_rect, scaled_rect_style(&style, tf.scale));
+        target.draw_rect(local_rect, style);
         child_text_color = Some(text_color);
-    } else if let Some(dec) = &node.decoration {
-        let style = RectStyle {
-            color: dec.background.unwrap_or(Color::TRANSPARENT),
-            border: dec.border,
-            radius: dec.radius,
-            shadow: dec.shadow,
-        };
-        target.draw_rect(screen_rect, scaled_rect_style(&style, tf.scale));
+    } else if let Some(decoration) = &node.decoration {
+        target.draw_rect(
+            local_rect,
+            RectStyle {
+                color: decoration.background.unwrap_or(Color::TRANSPARENT),
+                border: decoration.border,
+                radius: decoration.radius,
+                shadow: decoration.shadow,
+            },
+        );
     }
 
     if should_clip_children {
-        target.push_clip(screen_rect, clip_radius);
+        target.push_clip(ClipShape::RoundedRect {
+            rect: local_rect,
+            radius: clip_radius,
+        });
     }
 
-    // 2. Leaf 分发
     if let NodeKind::Leaf(leaf) = &node.kind {
-        match leaf {
-            LeafKind::Text {
-                content,
-                style,
-                layout,
-            } => {
-                if !paint_widget_text_leaf_override(
-                    tree,
-                    node_id,
-                    target,
-                    tf,
-                    interaction,
-                    text_inputs,
-                    theme,
-                    content,
-                    &with_inherited_text_color(*style, child_text_color),
-                ) {
-                    let text_style = scaled_text_style(
-                        with_inherited_text_color(*style, child_text_color),
-                        tf.scale,
-                    );
-                    let resolved = resolve_text_paint(
-                        content,
-                        &text_style,
-                        *layout,
-                        screen_rect,
-                        |text, style| target.measure_text(text, style),
-                    );
-                    if let Some(bounds) = resolved.bounds {
-                        target.draw_text_clipped(
-                            resolved.pos,
-                            &resolved.content,
-                            text_style,
-                            bounds,
-                        );
-                    } else {
-                        target.draw_text(resolved.pos, &resolved.content, text_style);
-                    }
-                }
-            }
-            LeafKind::Grid {
-                spacing,
-                dot_color,
-                dot_size,
-            } => {
-                for p in grid_cells(node.rect, *spacing) {
-                    let sp = tf.apply_point(p);
-                    target.draw_circle(sp, *dot_size * tf.scale, *dot_color);
-                }
-            }
-            LeafKind::Image { texture, style } => {
-                target.draw_image(screen_rect, *texture, *style);
-            }
-            LeafKind::Icon { spec } => {
-                target.draw_icon(screen_rect, spec.clone());
-            }
-            LeafKind::Circle {
-                radius,
-                fill,
-                stroke,
-            } => {
-                let center = Point {
-                    x: screen_rect.x + screen_rect.w * 0.5,
-                    y: screen_rect.y + screen_rect.h * 0.5,
-                };
-                let scaled_radius = *radius * tf.scale;
-                if let Some(stroke) = stroke {
-                    target.draw_circle(center, scaled_radius, stroke.color);
-                }
-                if let Some(fill) = fill {
-                    let fill_radius = stroke
-                        .map(|stroke| scaled_radius - stroke.width * tf.scale)
-                        .unwrap_or(scaled_radius)
-                        .max(0.0);
-                    target.draw_circle(center, fill_radius, *fill);
-                }
-            }
-            LeafKind::Connection { from_port, to_port } => {
-                let Some(from_rect) = find_node_by_str_id(tree, from_port.as_ref()) else {
-                    return;
-                };
-                let Some(to_rect) = find_node_by_str_id(tree, to_port.as_ref()) else {
-                    return;
-                };
-                let from_p = tf.apply_point(rect_center(from_rect));
-                let to_p = tf.apply_point(rect_center(to_rect));
-                target.draw_path(
-                    connection_path(from_p, to_p),
-                    PathStyle::stroke(Stroke::new(
-                        CONNECTION_WIDTH * tf.scale,
-                        theme.colors.connection,
-                    )),
-                );
-            }
-            LeafKind::PendingConnection {
-                from_port,
-                cursor_canvas,
-            } => {
-                let Some(from_rect) = find_node_by_str_id(tree, from_port.as_ref()) else {
-                    return;
-                };
-                let from_p = tf.apply_point(rect_center(from_rect));
-                let to_p = tf.apply_point(*cursor_canvas);
-                target.draw_path(
-                    connection_path(from_p, to_p),
-                    PathStyle::stroke(Stroke::new(
-                        CONNECTION_WIDTH * tf.scale,
-                        theme.colors.accent,
-                    )),
-                );
-            }
-            LeafKind::Line { start, end, stroke } => draw_local_path(
-                target,
-                &PathData::line(*start, *end),
-                PathStyle::stroke(*stroke),
-                node.rect,
-                tf,
-            ),
-            LeafKind::Curve { points, stroke } => draw_local_path(
-                target,
-                &PathData::cubic(*points),
-                PathStyle::stroke(*stroke),
-                node.rect,
-                tf,
-            ),
-            LeafKind::Path { data, style } => {
-                draw_local_path(target, data, *style, node.rect, tf);
-            }
-            LeafKind::CustomPaint(custom) => {
-                custom.0.paint(target, CustomPaintCx { rect: screen_rect });
-            }
-        }
-    }
-
-    // 3. 复合 Transform 并递归子节点
-    let transform_opt = node.style.transform;
-    let children = children_in_paint_order(tree, &node.children);
-    // node 借用在此处结束（NLL），后面可以重新借 tree
-    let child_tf = match transform_opt {
-        Some(ref tf_decl) => tf.compose(tf_decl),
-        None => tf,
-    };
-    for child_id in children {
-        paint_node(
+        paint_leaf(
             tree,
-            child_id,
+            node_id,
+            leaf,
             target,
-            child_tf,
+            node.rect,
+            node_space,
+            current_space,
             interaction,
             text_inputs,
             theme,
@@ -259,8 +156,184 @@ fn paint_node(
         );
     }
 
-    if should_clip_children {
-        target.pop_clip();
+    if let Some(transform) = transform {
+        target.push_transform(legacy_transform_affine(transform, local_rect));
+        let child_space = node_space.child_space();
+        for child_id in children {
+            paint_node(
+                tree,
+                child_id,
+                target,
+                child_space,
+                interaction,
+                text_inputs,
+                theme,
+                child_text_color,
+            );
+        }
+        target.pop_transform();
+        if should_clip_children {
+            target.pop_clip();
+        }
+        target.pop_transform();
+    } else {
+        target.pop_transform();
+        for child_id in children {
+            paint_node(
+                tree,
+                child_id,
+                target,
+                current_space,
+                interaction,
+                text_inputs,
+                theme,
+                child_text_color,
+            );
+        }
+        if should_clip_children {
+            target.pop_clip();
+        }
+    }
+
+    let _ = local_to_screen;
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_leaf(
+    tree: &Tree,
+    node_id: NodeId,
+    leaf: &LeafKind,
+    target: &mut dyn PaintTarget,
+    node_rect: Rect,
+    node_space: NodePaintSpace,
+    current_space: PaintSpace,
+    interaction: Option<&InteractionState>,
+    text_inputs: Option<&TextInputStore>,
+    theme: &Theme,
+    inherited_text_color: Option<Color>,
+) {
+    let local_rect = node_space.local_rect;
+
+    match leaf {
+        LeafKind::Text {
+            content,
+            style,
+            layout,
+        } => {
+            let text_style = with_inherited_text_color(*style, inherited_text_color);
+            if !paint_widget_text_leaf_override(
+                tree,
+                node_id,
+                target,
+                node_rect,
+                interaction,
+                text_inputs,
+                theme,
+                content,
+                &text_style,
+            ) {
+                let resolved =
+                    resolve_text_paint(content, &text_style, *layout, local_rect, |text, style| {
+                        target.measure_text(text, style)
+                    });
+                if let Some(bounds) = resolved.bounds {
+                    target.draw_text_clipped(resolved.pos, &resolved.content, text_style, bounds);
+                } else {
+                    target.draw_text(resolved.pos, &resolved.content, text_style);
+                }
+            }
+        }
+        LeafKind::Grid {
+            spacing,
+            dot_color,
+            dot_size,
+        } => {
+            for point in grid_cells(local_rect, *spacing) {
+                target.draw_circle(point, *dot_size, *dot_color);
+            }
+        }
+        LeafKind::Image { texture, style } => {
+            target.draw_image(local_rect, *texture, *style);
+        }
+        LeafKind::Icon { spec } => {
+            target.draw_svg(
+                local_rect,
+                SvgSourceKey::new(spec.id.as_str()),
+                svg_style_from_icon(spec.style),
+            );
+        }
+        LeafKind::Circle {
+            radius,
+            fill,
+            stroke,
+        } => {
+            target.draw_circle_paint(CirclePaint {
+                center: Point {
+                    x: local_rect.w * 0.5,
+                    y: local_rect.h * 0.5,
+                },
+                radius: *radius,
+                fill: *fill,
+                stroke: stroke.map(|border| Stroke::new(border.width, border.color)),
+            });
+        }
+        LeafKind::Connection { from_port, to_port } => {
+            let Some(from_screen) = find_node_screen_center_by_str_id(tree, from_port.as_ref())
+            else {
+                return;
+            };
+            let Some(to_screen) = find_node_screen_center_by_str_id(tree, to_port.as_ref()) else {
+                return;
+            };
+            let Some(inverse) = node_space.local_to_screen.inverse() else {
+                return;
+            };
+            let from_local = inverse.transform_point(from_screen);
+            let to_local = inverse.transform_point(to_screen);
+            target.draw_path(
+                connection_path(from_local, to_local),
+                PathStyle::stroke(Stroke::new(CONNECTION_WIDTH, theme.colors.connection)),
+            );
+        }
+        LeafKind::PendingConnection {
+            from_port,
+            cursor_canvas,
+        } => {
+            let Some(from_screen) = find_node_screen_center_by_str_id(tree, from_port.as_ref())
+            else {
+                return;
+            };
+            let Some(inverse) = node_space.local_to_screen.inverse() else {
+                return;
+            };
+            let to_screen = current_space.to_screen.transform_point(*cursor_canvas);
+            target.draw_path(
+                connection_path(
+                    inverse.transform_point(from_screen),
+                    inverse.transform_point(to_screen),
+                ),
+                PathStyle::stroke(Stroke::new(CONNECTION_WIDTH, theme.colors.accent)),
+            );
+        }
+        LeafKind::Line { start, end, stroke } => {
+            target.draw_path(PathData::line(*start, *end), PathStyle::stroke(*stroke));
+        }
+        LeafKind::Curve { points, stroke } => {
+            target.draw_path(PathData::cubic(*points), PathStyle::stroke(*stroke));
+        }
+        LeafKind::Path { data, style } => {
+            target.draw_path(data.clone(), *style);
+        }
+        LeafKind::CustomPaint(custom) => {
+            custom.0.paint(
+                target,
+                CustomPaintCx {
+                    local_rect,
+                    transform: node_space.local_to_screen,
+                    screen_bounds: node_space.screen_bounds(),
+                },
+            );
+        }
     }
 }
 
@@ -271,57 +344,101 @@ fn with_inherited_text_color(mut style: TextStyle, inherited: Option<Color>) -> 
     style
 }
 
-fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
-    style.size *= scale;
-    style
-}
-
-fn draw_local_path(
-    target: &mut dyn PaintTarget,
-    data: &PathData,
-    style: PathStyle,
-    rect: Rect,
-    tf: PaintTransform,
-) {
-    target.draw_path(
-        leaf_path_to_screen(data, rect, tf),
-        scaled_path_style(style, tf.scale),
-    );
-}
-
-fn scaled_rect_style(style: &RectStyle, scale: f32) -> RectStyle {
-    RectStyle {
+fn svg_style_from_icon(style: IconStyle) -> SvgStyle {
+    SvgStyle {
         color: style.color,
-        border: style.border.map(|border| Border {
-            width: border.width * scale,
-            color: border.color,
-        }),
-        radius: style.radius.map(|radius| radius * scale),
-        shadow: style.shadow.map(|shadow| scaled_shadow(shadow, scale)),
+        fill: svg_paint_override_from_icon(style.fill),
+        stroke: svg_paint_override_from_icon(style.stroke),
+        stroke_width: svg_stroke_width_from_icon(style.stroke_width),
+        opacity: style.opacity.get(),
+        fit: svg_fit_from_icon(style.fit),
     }
 }
 
-fn scaled_shadow(shadow: Shadow, scale: f32) -> Shadow {
-    Shadow {
-        color: shadow.color,
-        offset: [shadow.offset[0] * scale, shadow.offset[1] * scale],
-        blur: shadow.blur * scale,
-        spread: shadow.spread * scale,
+fn svg_paint_override_from_icon(override_paint: IconPaintOverride) -> SvgPaintOverride {
+    match override_paint {
+        IconPaintOverride::Preserve => SvgPaintOverride::Preserve,
+        IconPaintOverride::ReplaceCurrent(color) => SvgPaintOverride::ReplaceCurrent(color),
+        IconPaintOverride::Force(color) => SvgPaintOverride::Force(color),
+        IconPaintOverride::None => SvgPaintOverride::None,
     }
+}
+
+fn svg_stroke_width_from_icon(stroke_width: IconStrokeWidth) -> SvgStrokeWidth {
+    match stroke_width {
+        IconStrokeWidth::Preserve => SvgStrokeWidth::Preserve,
+        IconStrokeWidth::SvgUnits(width) => SvgStrokeWidth::SvgUnits(width),
+        IconStrokeWidth::ScreenPx(width) => SvgStrokeWidth::ScreenPx(width),
+    }
+}
+
+fn svg_fit_from_icon(fit: IconFit) -> SvgFit {
+    match fit {
+        IconFit::Stretch => SvgFit::Stretch,
+        IconFit::Contain => SvgFit::Contain,
+    }
+}
+
+fn find_node_screen_center_by_str_id(tree: &Tree, id: &str) -> Option<Point> {
+    find_node_screen_center_recursive(tree, tree.root()?, id, PaintSpace::root())
+}
+
+fn find_node_screen_center_recursive(
+    tree: &Tree,
+    node_id: NodeId,
+    target_id: &str,
+    current_space: PaintSpace,
+) -> Option<Point> {
+    let node = tree.get(node_id)?;
+    let node_space = current_space.node_space(node.rect, node.style.transform);
+
+    if node.id.as_ref() == target_id {
+        return Some(
+            node_space
+                .local_to_screen
+                .transform_point(rect_center(node_space.local_rect)),
+        );
+    }
+
+    let child_space = if node_space.children_are_local {
+        node_space.child_space()
+    } else {
+        current_space
+    };
+    for child_id in children_in_paint_order(tree, &node.children) {
+        if let Some(point) =
+            find_node_screen_center_recursive(tree, child_id, target_id, child_space)
+        {
+            return Some(point);
+        }
+    }
+    None
+}
+
+#[allow(dead_code)]
+fn build_display_list_for_test(
+    tree: &Tree,
+    root: NodeId,
+    theme: &Theme,
+) -> Result<DisplayList, PaintBuildError> {
+    let mut target = RecordingPaintTarget::new();
+    paint_to_target(tree, root, &mut target, None, None, theme);
+    target.display_list()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::icon::IconSpec;
-    use crate::renderer::{Border, Color, ImageFit, ImageOpacity, ImageStyle, PathCommand, Shadow};
+    use crate::paint::{
+        Border, ImageFit, ImageOpacity, ImageStyle, PaintCommand, PathCommand, RectPaint,
+        ResolvedClip, ResolvedPaintCommand, TextWeight,
+    };
     use crate::tree::layout::{
         BoxStyle, CustomPaintFn, CustomPainter, LeafKind, Overflow, TextLayout, TextOverflow,
-        TextureHandle,
+        Transform,
     };
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
-    use crate::tree::paint_ops::{PaintOp, RecordingPaintTarget};
-    use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
     use std::sync::Arc;
@@ -362,48 +479,31 @@ mod tests {
         }
     }
 
-    fn paint_single_leaf(kind: LeafKind, rect: Rect) -> Vec<PaintOp> {
+    fn paint_tree(tree: &Tree, root: NodeId) -> DisplayList {
+        build_display_list_for_test(tree, root, &Theme::default()).unwrap()
+    }
+
+    fn paint_single_leaf(kind: LeafKind, rect: Rect) -> DisplayList {
         let mut tree = Tree::new();
         let root = tree.insert(leaf_node("leaf", kind, rect));
         tree.set_root(root);
-        let mut target = RecordingPaintTarget::new();
+        paint_tree(&tree, root)
+    }
 
-        paint_to_target(&tree, root, &mut target, None, None, &Theme::default());
+    fn only_command(list: &DisplayList) -> &ResolvedPaintCommand {
+        assert_eq!(list.commands.len(), 1);
+        &list.commands[0]
+    }
 
-        target.into_ops()
+    fn only_clip(list: &DisplayList) -> &ResolvedClip {
+        assert_eq!(list.clips.len(), 1);
+        &list.clips[0]
     }
 
     #[test]
-    fn scaled_rect_style_scales_radius_border_and_shadow_metrics() {
-        let style = RectStyle {
-            color: Color::WHITE,
-            border: Some(Border {
-                width: 1.5,
-                color: Color::BLACK,
-            }),
-            radius: [2.0, 4.0, 6.0, 8.0],
-            shadow: Some(Shadow {
-                color: Color::BLACK,
-                offset: [1.0, 2.0],
-                blur: 3.0,
-                spread: 4.0,
-            }),
-        };
-
-        let scaled = scaled_rect_style(&style, 2.0);
-
-        assert_eq!(scaled.radius, [4.0, 8.0, 12.0, 16.0]);
-        assert_eq!(scaled.border.unwrap().width, 3.0);
-        let shadow = scaled.shadow.unwrap();
-        assert_eq!(shadow.offset, [2.0, 4.0]);
-        assert_eq!(shadow.blur, 6.0);
-        assert_eq!(shadow.spread, 8.0);
-    }
-
-    #[test]
-    fn line_leaf_records_path_op() {
+    fn line_leaf_records_local_path_and_node_transform() {
         let stroke = Stroke::new(2.0, Color::WHITE);
-        let ops = paint_single_leaf(
+        let list = paint_single_leaf(
             LeafKind::Line {
                 start: point(1.0, 2.0),
                 end: point(3.0, 4.0),
@@ -412,103 +512,96 @@ mod tests {
             rect(10.0, 20.0, 100.0, 50.0),
         );
 
+        let command = only_command(&list);
         assert_eq!(
-            ops,
-            vec![PaintOp::Path {
-                data: PathData::line(point(11.0, 22.0), point(13.0, 24.0)),
+            command.command,
+            PaintCommand::Path(crate::paint::PathPaint {
+                data: PathData::line(point(1.0, 2.0), point(3.0, 4.0)),
                 style: PathStyle::stroke(stroke),
-            }]
+            })
         );
-    }
-
-    #[test]
-    fn curve_leaf_records_path_op() {
-        let stroke = Stroke::new(2.0, Color::WHITE);
-        let points = [
-            point(0.0, 0.0),
-            point(10.0, 0.0),
-            point(20.0, 10.0),
-            point(30.0, 10.0),
-        ];
-        let ops = paint_single_leaf(
-            LeafKind::Curve { points, stroke },
-            rect(5.0, 7.0, 100.0, 50.0),
-        );
-
         assert_eq!(
-            ops,
-            vec![PaintOp::Path {
-                data: PathData::cubic([
-                    point(5.0, 7.0),
-                    point(15.0, 7.0),
-                    point(25.0, 17.0),
-                    point(35.0, 17.0),
-                ]),
-                style: PathStyle::stroke(stroke),
-            }]
+            command.transform.transform_point(point(0.0, 0.0)),
+            point(10.0, 20.0)
         );
     }
 
     #[test]
-    fn explicit_path_leaf_records_path_op() {
-        let style = PathStyle::stroke(Stroke::new(1.0, Color::WHITE));
-        let ops = paint_single_leaf(
-            LeafKind::Path {
-                data: PathData::line(point(0.0, 0.0), point(5.0, 0.0)),
-                style,
-            },
-            rect(2.0, 3.0, 100.0, 50.0),
-        );
-
-        assert_eq!(
-            ops,
-            vec![PaintOp::Path {
-                data: PathData::line(point(2.0, 3.0), point(7.0, 3.0)),
-                style,
-            }]
-        );
-    }
-
-    #[test]
-    fn image_leaf_records_style_without_gpu_texture() {
-        let texture = TextureHandle(42);
-        let style = ImageStyle::default()
-            .with_fit(ImageFit::Contain)
-            .with_opacity(ImageOpacity::new(0.5));
-        let ops = paint_single_leaf(
-            LeafKind::Image { texture, style },
-            rect(10.0, 20.0, 30.0, 40.0),
-        );
-
-        assert_eq!(
-            ops,
-            vec![PaintOp::Image {
-                rect: rect(10.0, 20.0, 30.0, 40.0),
-                texture,
-                style,
-            }]
-        );
-    }
-
-    #[test]
-    fn icon_leaf_records_icon_spec_without_resolving_svg() {
+    fn icon_leaf_records_renderer_free_svg_command() {
         let spec = IconSpec::new("plus", Color::WHITE);
-        let ops = paint_single_leaf(
+        let list = paint_single_leaf(
             LeafKind::Icon { spec: spec.clone() },
             rect(10.0, 20.0, 16.0, 16.0),
         );
 
-        assert_eq!(
-            ops,
-            vec![PaintOp::Icon {
-                rect: rect(10.0, 20.0, 16.0, 16.0),
-                spec,
-            }]
-        );
+        let command = only_command(&list);
+        assert!(matches!(
+            &command.command,
+            PaintCommand::Svg(svg)
+                if svg.rect == rect(0.0, 0.0, 16.0, 16.0)
+                    && svg.source.id == "plus"
+                    && svg.style == svg_style_from_icon(spec.style)
+        ));
     }
 
     #[test]
-    fn connection_leaf_records_path_from_port_centers() {
+    fn image_leaf_records_local_rect_and_style() {
+        let texture = TextureHandle(42);
+        let style = ImageStyle::default()
+            .with_fit(ImageFit::Contain)
+            .with_opacity(ImageOpacity::new(0.5));
+        let list = paint_single_leaf(
+            LeafKind::Image { texture, style },
+            rect(10.0, 20.0, 30.0, 40.0),
+        );
+
+        let command = only_command(&list);
+        assert!(matches!(
+            command.command,
+            PaintCommand::Image(image)
+                if image.rect == rect(0.0, 0.0, 30.0, 40.0)
+                    && image.texture == texture
+                    && image.style == style
+        ));
+    }
+
+    #[test]
+    fn text_leaf_records_visible_and_clipped_local_text_commands() {
+        let visible = paint_single_leaf(
+            LeafKind::Text {
+                content: "hello".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0).with_weight(TextWeight::Medium),
+                layout: TextLayout::default(),
+            },
+            rect(10.0, 20.0, 100.0, 20.0),
+        );
+        assert!(matches!(
+            only_command(&visible).command,
+            PaintCommand::Text(crate::paint::TextPaint { bounds: None, .. })
+        ));
+
+        let clipped = paint_single_leaf(
+            LeafKind::Text {
+                content: "hello".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0),
+                layout: TextLayout {
+                    overflow: TextOverflow::Clip,
+                    ..TextLayout::default()
+                },
+            },
+            rect(10.0, 20.0, 100.0, 20.0),
+        );
+        assert!(matches!(
+            only_command(&clipped).command,
+            PaintCommand::Text(crate::paint::TextPaint {
+                bounds: Some(bounds),
+                ..
+            }) if bounds == rect(0.0, 0.0, 100.0, 20.0)
+        ));
+    }
+
+    #[test]
+    fn connection_leaf_records_path_from_port_centers_in_connection_local_space() {
         let mut tree = Tree::new();
         let from = tree.insert(leaf_node(
             "from_port",
@@ -542,30 +635,29 @@ mod tests {
             vec![from, to, connection],
         ));
         tree.set_root(root);
-        let mut target = RecordingPaintTarget::new();
 
-        paint_to_target(&tree, root, &mut target, None, None, &Theme::default());
-
-        let path_op = target
-            .ops()
+        let list = paint_tree(&tree, root);
+        let path = list
+            .commands
             .iter()
-            .find_map(|op| match op {
-                PaintOp::Path { data, style } => Some((data, style)),
+            .find_map(|command| match &command.command {
+                PaintCommand::Path(path) => Some(path),
                 _ => None,
             })
-            .expect("connection should record a path op");
+            .expect("connection should record a path command");
+
         assert_eq!(
-            path_op.0.commands,
+            path.data.commands,
             vec![
                 PathCommand::MoveTo(point(14.0, 24.0)),
                 PathCommand::CubicTo(point(34.0, 24.0), point(34.0, 44.0), point(54.0, 44.0)),
             ]
         );
-        assert_eq!(path_op.1.stroke.unwrap().width, CONNECTION_WIDTH);
+        assert_eq!(path.style.stroke.unwrap().width, CONNECTION_WIDTH);
     }
 
     #[test]
-    fn overflow_hidden_records_clip_around_children() {
+    fn overflow_hidden_records_local_clip_around_children() {
         let mut tree = Tree::new();
         let child = tree.insert(leaf_node(
             "child",
@@ -580,54 +672,57 @@ mod tests {
         root_node.style.overflow = Overflow::Hidden;
         let root = tree.insert(root_node);
         tree.set_root(root);
-        let mut target = RecordingPaintTarget::new();
 
-        paint_to_target(&tree, root, &mut target, None, None, &Theme::default());
+        let list = paint_tree(&tree, root);
+        let clip = only_clip(&list);
 
         assert!(matches!(
-            target.ops().first(),
-            Some(PaintOp::PushClip {
+            clip.shape,
+            ClipShape::RoundedRect {
                 rect: clip_rect,
-                radius: 0.0
-            }) if *clip_rect == rect(1.0, 2.0, 30.0, 40.0)
+                radius: [0.0, 0.0, 0.0, 0.0],
+            } if clip_rect == rect(0.0, 0.0, 30.0, 40.0)
         ));
-        assert!(matches!(target.ops().get(1), Some(PaintOp::Path { .. })));
-        assert!(matches!(target.ops().last(), Some(PaintOp::PopClip)));
+        assert_eq!(
+            clip.transform.transform_point(point(0.0, 0.0)),
+            point(1.0, 2.0)
+        );
+        assert_eq!(list.commands[0].clips, vec![clip.id]);
     }
 
     #[test]
-    fn text_leaf_records_visible_and_clipped_text_ops() {
-        let visible = paint_single_leaf(
-            LeafKind::Text {
-                content: "hello".to_string(),
-                style: TextStyle::new(Color::WHITE, 12.0),
-                layout: TextLayout::default(),
+    fn transform_rotate_records_affine_without_screen_space_points() {
+        let mut tree = Tree::new();
+        let child = tree.insert(leaf_node(
+            "child",
+            LeafKind::Line {
+                start: point(0.0, 0.0),
+                end: point(10.0, 0.0),
+                stroke: Stroke::new(1.0, Color::WHITE),
             },
-            rect(10.0, 20.0, 100.0, 20.0),
-        );
-        assert!(matches!(
-            visible.as_slice(),
-            [PaintOp::Text { bounds: None, .. }]
+            rect(10.0, 10.0, 10.0, 10.0),
         ));
+        let mut root_node = container_node("root", rect(0.0, 0.0, 100.0, 100.0), vec![child]);
+        root_node.style.transform = Some(Transform {
+            translate: [0.0, 0.0],
+            scale: 1.0,
+            rotate: std::f32::consts::FRAC_PI_2,
+        });
+        let root = tree.insert(root_node);
+        tree.set_root(root);
 
-        let clipped = paint_single_leaf(
-            LeafKind::Text {
-                content: "hello".to_string(),
-                style: TextStyle::new(Color::WHITE, 12.0),
-                layout: TextLayout {
-                    overflow: TextOverflow::Clip,
-                    ..TextLayout::default()
-                },
-            },
-            rect(10.0, 20.0, 100.0, 20.0),
-        );
+        let list = paint_tree(&tree, root);
+        let command = only_command(&list);
+
         assert!(matches!(
-            clipped.as_slice(),
-            [PaintOp::Text {
-                bounds: Some(bounds),
-                ..
-            }] if *bounds == rect(10.0, 20.0, 100.0, 20.0)
+            &command.command,
+            PaintCommand::Path(path)
+                if path.data == PathData::line(point(0.0, 0.0), point(10.0, 0.0))
         ));
+        assert_eq!(
+            command.transform.transform_point(point(0.0, 0.0)),
+            point(-10.0, 10.0)
+        );
     }
 
     #[derive(Debug)]
@@ -635,10 +730,11 @@ mod tests {
 
     impl CustomPainter for TestCustomPainter {
         fn paint(&self, target: &mut dyn PaintTarget, cx: CustomPaintCx) {
+            assert_eq!(cx.local_rect, rect(0.0, 0.0, 8.0, 10.0));
             target.draw_circle(
                 Point {
-                    x: cx.rect.x + cx.rect.w * 0.5,
-                    y: cx.rect.y + cx.rect.h * 0.5,
+                    x: cx.local_rect.w * 0.5,
+                    y: cx.local_rect.h * 0.5,
                 },
                 3.0,
                 Color::WHITE,
@@ -647,19 +743,76 @@ mod tests {
     }
 
     #[test]
-    fn custom_paint_leaf_invokes_painter_with_screen_rect() {
-        let ops = paint_single_leaf(
+    fn custom_paint_leaf_invokes_painter_with_local_rect() {
+        let list = paint_single_leaf(
             LeafKind::CustomPaint(CustomPaintFn(Arc::new(TestCustomPainter))),
             rect(10.0, 20.0, 8.0, 10.0),
         );
 
+        let command = only_command(&list);
         assert_eq!(
-            ops,
-            vec![PaintOp::Circle {
-                center: point(14.0, 25.0),
+            command.command,
+            PaintCommand::Circle(CirclePaint {
+                center: point(4.0, 5.0),
                 radius: 3.0,
+                fill: Some(Color::WHITE),
+                stroke: None,
+            })
+        );
+        assert_eq!(
+            command.transform.transform_point(point(0.0, 0.0)),
+            point(10.0, 20.0)
+        );
+    }
+
+    #[test]
+    fn svg_style_from_icon_preserves_icon_style_fields() {
+        let style = IconStyle::monochrome(Color::WHITE)
+            .with_fill(IconPaintOverride::Preserve)
+            .with_stroke(IconPaintOverride::None)
+            .with_stroke_width(IconStrokeWidth::ScreenPx(2.0))
+            .with_fit(IconFit::Stretch);
+
+        let svg = svg_style_from_icon(style);
+
+        assert_eq!(svg.fill, SvgPaintOverride::Preserve);
+        assert_eq!(svg.stroke, SvgPaintOverride::None);
+        assert_eq!(svg.stroke_width, SvgStrokeWidth::ScreenPx(2.0));
+        assert_eq!(svg.fit, SvgFit::Stretch);
+    }
+
+    #[test]
+    fn decoration_records_local_rect_command() {
+        let mut tree = Tree::new();
+        let mut root_node = container_node("root", rect(10.0, 20.0, 30.0, 40.0), Vec::new());
+        root_node.decoration = Some(super::super::layout::Decoration {
+            background: Some(Color::BLACK),
+            border: Some(Border {
+                width: 2.0,
                 color: Color::WHITE,
-            }]
+            }),
+            radius: [3.0; 4],
+            shadow: None,
+        });
+        let root = tree.insert(root_node);
+        tree.set_root(root);
+
+        let list = paint_tree(&tree, root);
+
+        assert_eq!(
+            only_command(&list).command,
+            PaintCommand::Rect(RectPaint {
+                rect: rect(0.0, 0.0, 30.0, 40.0),
+                style: RectStyle {
+                    color: Color::BLACK,
+                    border: Some(Border {
+                        width: 2.0,
+                        color: Color::WHITE,
+                    }),
+                    radius: [3.0; 4],
+                    shadow: None,
+                },
+            })
         );
     }
 }

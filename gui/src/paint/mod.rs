@@ -8,12 +8,13 @@ mod recording;
 mod resource;
 mod state;
 pub mod style;
+mod svg;
 mod target;
 
 pub use clip::{ClipId, ClipShape, ResolvedClip};
 pub use command::{
     CirclePaint, ImagePaint, PaintCommand, PathPaint, RectPaint, ShadowPaint, SvgRasterPaint,
-    SvgSourceKey, TextPaint,
+    TextPaint,
 };
 pub use display_list::{DisplayList, DisplayListBuilder, PaintBuildError, ResolvedPaintCommand};
 pub use image::{
@@ -28,4 +29,5 @@ pub use style::{
     Border, Color, Fill, FillRule, LineCap, LineJoin, RectStyle, Shadow, Stroke, TextFamily,
     TextStyle, TextWeight,
 };
+pub use svg::{SvgFit, SvgPaint, SvgPaintOverride, SvgSourceKey, SvgStrokeWidth, SvgStyle};
 pub use target::PaintTarget;

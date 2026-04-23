@@ -1,8 +1,9 @@
-use super::layout::box_model::rect_contains;
-use super::layout::{BoxStyle, Decoration, Overflow, Transform};
+use super::layout::{BoxStyle, Decoration, Overflow};
 use super::node::NodeId;
+use super::paint_space::PaintSpace;
 use super::stacking::children_in_hit_order;
 use super::tree::Tree;
+use crate::geometry::Point;
 
 /// 从命中的叶子到根的节点链。
 /// 链上 [0] 是最深的命中节点（叶子），[len-1] 是 root。
@@ -48,44 +49,47 @@ impl HitChain {
 /// 如果没命中返回 empty HitChain。
 pub fn hit_test(tree: &Tree, root: NodeId, x: f32, y: f32) -> HitChain {
     let mut nodes = Vec::new();
-    hit_recursive(tree, root, x, y, &mut nodes);
+    hit_recursive(tree, root, Point { x, y }, PaintSpace::root(), &mut nodes);
     HitChain::new(nodes)
 }
 
-fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<NodeId>) -> bool {
+fn hit_recursive(
+    tree: &Tree,
+    node_id: NodeId,
+    screen: Point,
+    current_space: PaintSpace,
+    chain: &mut Vec<NodeId>,
+) -> bool {
     let Some(node) = tree.get(node_id) else {
         return false;
     };
 
-    // 提前克隆所需数据，避免借用冲突（递归时需要重借 tree）
-    let r = node.rect;
-    let transform = node.style.transform;
-    let children = children_in_hit_order(tree, &node.children);
-    let style = node.style.clone();
-    let decoration = node.decoration.clone();
+    let node_space = current_space.node_space(node.rect, node.style.transform);
+    let Some(local_point) = current_space.point_to_local(node.rect, screen) else {
+        return false;
+    };
 
-    // 1. 自身 bounds 检查（在当前坐标空间）。Overflow::Visible 允许
-    // children 在 parent bounds 外继续参与命中；Hidden/Scroll 会裁剪。
-    let inside_bounds = rect_contains(r, x, y);
-    if !inside_bounds && style.overflow != Overflow::Visible {
+    let inside_bounds = node_space.contains_local_bounds(local_point);
+    if !inside_bounds && node.style.overflow != Overflow::Visible {
         return false;
     }
 
-    // 2. Transform 节点：按当前支持的 transform policy 把点映射到子节点 local 空间。
-    let (cx, cy) = match transform {
-        Some(ref tf) => inverse_supported_transform(tf, x - r.x, y - r.y),
-        None => (x, y),
+    let children = children_in_hit_order(tree, &node.children);
+    let style = node.style.clone();
+    let decoration = node.decoration.clone();
+    let child_space = if node_space.children_are_local {
+        node_space.child_space()
+    } else {
+        current_space
     };
 
-    // 3. 按 stacking order 命中：视觉上方的子节点先命中。
     for child_id in children {
-        if hit_recursive(tree, child_id, cx, cy, chain) {
+        if hit_recursive(tree, child_id, screen, child_space, chain) {
             chain.push(node_id);
             return true;
         }
     }
 
-    // 4. 没有子命中，检查自身是否可命中
     if inside_bounds && is_hittable(&style, &decoration) {
         chain.push(node_id);
         return true;
@@ -100,20 +104,6 @@ fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
         Some(h) => h,
         None => !style.gestures.is_empty() || decoration.is_some(),
     }
-}
-
-/// 当前支持的 transform 逆变换：把相对 Transform 节点 origin 的点映射到子节点 local 空间。
-///
-/// v1 transform policy 只支持 translate + uniform scale。`rotate` 是保留字段，
-/// 在 paint 和 hit 中都不生效，避免命中语义超过可见渲染能力。
-fn inverse_supported_transform(tf: &Transform, abs_x: f32, abs_y: f32) -> (f32, f32) {
-    if tf.scale == 0.0 {
-        // 零缩放：变换空间已退化，点击无法映射到 local 空间
-        return (f32::NAN, f32::NAN);
-    }
-    let tx = abs_x - tf.translate[0];
-    let ty = abs_y - tf.translate[1];
-    (tx / tf.scale, ty / tf.scale)
 }
 
 #[cfg(test)]
@@ -698,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn hit_transform_policy_ignores_rotate_until_paint_supports_it() {
+    fn hit_transform_rotate_uses_affine_inverse() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
             BoxStyle::default(),
@@ -734,9 +724,52 @@ mod tests {
         let root_id = tree.insert(root);
         tree.set_root(root_id);
 
-        // Paint currently ignores rotate, so hit must also use the unrotated geometry.
-        let chain = hit_test(&tree, root_id, 15.0, 15.0);
-        assert_eq!(chain.leaf(), Some(child_id));
+        let rotated_hit = hit_test(&tree, root_id, -15.0, 15.0);
+        assert_eq!(rotated_hit.leaf(), Some(child_id));
+
+        let unrotated_point = hit_test(&tree, root_id, 15.0, 15.0);
+        assert!(unrotated_point.is_empty());
+    }
+
+    #[test]
+    fn hit_transform_zero_scale_is_not_hittable() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 10.0,
+                h: 10.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle {
+                    transform: Some(Transform {
+                        translate: [0.0, 0.0],
+                        scale: 0.0,
+                        rotate: 0.0,
+                    }),
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![child_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let chain = hit_test(&tree, root_id, 10.0, 10.0);
+        assert!(chain.is_empty());
     }
 
     fn hit_overflow_child_outside_parent_bounds(overflow: Overflow) -> HitChain {

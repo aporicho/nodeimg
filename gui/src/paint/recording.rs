@@ -5,22 +5,24 @@ use super::{
     ResolvedClip, ResolvedPaintCommand, TextStyle,
 };
 
-type TextMeasureFn = dyn FnMut(&str, &TextStyle) -> (f32, f32);
+type TextMeasureFn<'a> = dyn FnMut(&str, &TextStyle) -> (f32, f32) + 'a;
 
-pub struct RecordingPaintTarget {
+pub struct RecordingPaintTarget<'a> {
     builder: DisplayListBuilder,
-    measure: Box<TextMeasureFn>,
+    measure: Box<TextMeasureFn<'a>>,
 }
 
-impl RecordingPaintTarget {
+impl RecordingPaintTarget<'static> {
     pub fn new() -> Self {
         Self::with_measure(|text, style| {
             let width = text.chars().count() as f32 * style.size * 0.5;
             (width, style.size * style.line_height)
         })
     }
+}
 
-    pub fn with_measure(measure: impl FnMut(&str, &TextStyle) -> (f32, f32) + 'static) -> Self {
+impl<'a> RecordingPaintTarget<'a> {
+    pub fn with_measure(measure: impl FnMut(&str, &TextStyle) -> (f32, f32) + 'a) -> Self {
         Self {
             builder: DisplayListBuilder::new(),
             measure: Box::new(measure),
@@ -40,13 +42,13 @@ impl RecordingPaintTarget {
     }
 }
 
-impl Default for RecordingPaintTarget {
+impl Default for RecordingPaintTarget<'static> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl PaintTarget for RecordingPaintTarget {
+impl PaintTarget for RecordingPaintTarget<'_> {
     fn push_transform(&mut self, transform: Affine2D) {
         self.builder.push_transform(transform);
     }

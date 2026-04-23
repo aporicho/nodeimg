@@ -2,7 +2,8 @@ use crate::geometry::{Point, Rect};
 
 use super::style::{Color, RectStyle};
 use super::{
-    ImageStyle, LayerPaint, PathData, PathStyle, Shadow, Stroke, TextStyle, TextureHandle,
+    ImageStyle, LayerPaint, PathData, PathStyle, Shadow, Stroke, SvgPaint, SvgSourceKey, TextStyle,
+    TextureHandle,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13,6 +14,7 @@ pub enum PaintCommand {
     Image(ImagePaint),
     Text(TextPaint),
     Shadow(ShadowPaint),
+    Svg(SvgPaint),
     SvgRaster(SvgRasterPaint),
     Layer(LayerPaint),
 }
@@ -59,17 +61,6 @@ pub struct ShadowPaint {
     pub shadow: Shadow,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SvgSourceKey {
-    pub id: String,
-}
-
-impl SvgSourceKey {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into() }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SvgRasterPaint {
     pub rect: Rect,
@@ -80,11 +71,6 @@ pub struct SvgRasterPaint {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn svg_source_key_preserves_id() {
-        assert_eq!(SvgSourceKey::new("plus").id, "plus");
-    }
 
     #[test]
     fn paint_command_wraps_rect() {

@@ -94,11 +94,13 @@ impl Context {
                 &self.tree,
                 root,
                 renderer,
-                Some(&self.interaction),
-                Some(self.systems.text_input_store()),
-                Some(self.resources.textures()),
-                Some(&self.icons),
-                theme,
+                crate::tree::PaintCx {
+                    interaction: Some(&self.interaction),
+                    text_inputs: Some(self.systems.text_input_store()),
+                    textures: Some(self.resources.textures()),
+                    icons: Some(&self.icons),
+                    theme,
+                },
             );
         }
     }

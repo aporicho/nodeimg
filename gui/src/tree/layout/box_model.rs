@@ -103,10 +103,6 @@ pub(crate) fn relative_offset_rect(rect: Rect, inset: Inset) -> Rect {
     }
 }
 
-pub(crate) fn rect_contains(rect: Rect, x: f32, y: f32) -> bool {
-    x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
-}
-
 fn absolute_axis_size(
     containing_size: f32,
     start: Option<f32>,
@@ -245,16 +241,6 @@ mod tests {
         assert_rect(boxes.margin_box, rect(0.0, 0.0, 100.0, 100.0));
         assert_rect(boxes.border_box, rect(10.0, 12.0, 80.0, 70.0));
         assert_rect(boxes.content_box, rect(15.0, 17.0, 70.0, 60.0));
-    }
-
-    #[test]
-    fn rect_contains_includes_edges() {
-        let r = rect(10.0, 20.0, 30.0, 40.0);
-
-        assert!(rect_contains(r, 10.0, 20.0));
-        assert!(rect_contains(r, 40.0, 60.0));
-        assert!(!rect_contains(r, 9.9, 20.0));
-        assert!(!rect_contains(r, 40.1, 60.0));
     }
 
     #[test]

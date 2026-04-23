@@ -2,8 +2,8 @@ use crate::geometry::{Affine2D, Point, Rect};
 
 use super::{
     CirclePaint, ClipShape, Color, ImagePaint, ImageStyle, PaintCommand, PathData, PathPaint,
-    PathStyle, RectPaint, RectStyle, Shadow, ShadowPaint, Stroke, SvgRasterPaint, SvgSourceKey,
-    TextPaint, TextStyle, TextureHandle,
+    PathStyle, RectPaint, RectStyle, Shadow, ShadowPaint, Stroke, SvgPaint, SvgRasterPaint,
+    SvgSourceKey, SvgStyle, TextPaint, TextStyle, TextureHandle,
 };
 
 pub trait PaintTarget {
@@ -86,6 +86,14 @@ pub trait PaintTarget {
             rect,
             source,
             color,
+        }));
+    }
+
+    fn draw_svg(&mut self, rect: Rect, source: SvgSourceKey, style: SvgStyle) {
+        self.draw(PaintCommand::Svg(SvgPaint {
+            rect,
+            source,
+            style,
         }));
     }
 }

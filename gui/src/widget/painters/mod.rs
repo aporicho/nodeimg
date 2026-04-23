@@ -8,7 +8,7 @@ mod text_input;
 mod toggle;
 
 use crate::interaction::InteractionState;
-use crate::renderer::{Color, RectStyle, TextStyle};
+use crate::renderer::{Color, Rect, RectStyle, TextStyle};
 use crate::theme::Theme;
 use crate::tree::paint_target::PaintTarget;
 use crate::tree::{NodeId, Tree};
@@ -36,7 +36,7 @@ pub(crate) fn paint_text_leaf_override(
     tree: &Tree,
     node_id: NodeId,
     target: &mut dyn PaintTarget,
-    tf: crate::tree::paint_helpers::PaintTransform,
+    node_rect: Rect,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
     theme: &Theme,
@@ -47,7 +47,7 @@ pub(crate) fn paint_text_leaf_override(
         tree,
         node_id,
         target,
-        tf,
+        node_rect,
         interaction,
         text_inputs,
         theme,
