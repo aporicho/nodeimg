@@ -1,12 +1,8 @@
 use crate::icon::IconSpec;
+pub use crate::paint::TextureHandle;
 use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
 use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
 use std::sync::Arc;
-
-/// 纹理句柄：不透明封装。widget 层无需依赖 wgpu。
-/// Renderer 负责按 handle 查找真实的 wgpu::TextureView。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TextureHandle(pub u64);
 
 /// 自定义绘制回调。与 Flutter CustomPainter 对齐。
 pub trait CustomPainter: std::fmt::Debug + Send + Sync {
