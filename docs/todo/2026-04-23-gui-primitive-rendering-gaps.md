@@ -13,7 +13,7 @@ Date: 2026-04-23
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
 | DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets from the generated `assets/icons` registry; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
-| TODO | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Hit supports rotate; paint currently ignores rotate. |
+| DONE | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Current v1 policy applies translate + uniform scale in both paint and hit; rotate is reserved and inert until renderer-level rotate support exists. |
 | TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
 | TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
 | DONE | Add paint-op recording tests | Leaf declarations should be testable without a real GPU renderer | `RecordingPaintTarget` records `PaintOp` values for leaf paint assertions. |
@@ -267,16 +267,22 @@ That avoids forcing custom painters to depend directly on the full GPU renderer,
 
 ### Transform Consistency
 
-Hit testing applies rotate in its inverse transform logic. Paint only composes translate and scale and explicitly ignores rotate.
-
-This can create mismatches:
+Paint and hit now share the same v1 transform policy:
 
 ```text
-hit sees rotated geometry
-paint shows unrotated geometry
+translate -> active
+uniform scale -> active
+rotate -> reserved / inert
 ```
 
-Paint and hit must share the same transform semantics.
+`Transform::rotate` remains on the type for future affine rendering work, but it
+does not affect paint or hit testing today. This avoids the previous mismatch
+where hit testing interpreted rotated geometry while paint displayed unrotated
+geometry.
+
+Full rotate support should be designed separately at the renderer level because
+it affects rects, text, images, rounded clips, shadows, vector paths, and SVG
+raster fallback.
 
 ### Scale Behavior
 
@@ -334,7 +340,7 @@ LeafKind::CustomPaint invokes the custom painter
    - vector-first SVG icon rendering
 
 3. Unify transform and scale behavior:
-   - rotate support in paint or remove rotate from hit until paint supports it
+   - rotate is removed from hit semantics until paint supports it
    - explicit world-vs-screen scale behavior
 
 4. Improve testability:

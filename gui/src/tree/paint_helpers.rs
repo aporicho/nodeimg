@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_ignores_rotate() {
+    fn paint_transform_policy_ignores_rotate_until_renderer_supports_it() {
         let id = PaintTransform::identity();
         let child = Transform {
             translate: [10.0, 20.0],

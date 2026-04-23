@@ -71,9 +71,9 @@ fn hit_recursive(tree: &Tree, node_id: NodeId, x: f32, y: f32, chain: &mut Vec<N
         return false;
     }
 
-    // 2. Transform 节点：把当前点逆变换到子节点的 local 空间
+    // 2. Transform 节点：按当前支持的 transform policy 把点映射到子节点 local 空间。
     let (cx, cy) = match transform {
-        Some(ref tf) => inverse_transform(tf, x - r.x, y - r.y),
+        Some(ref tf) => inverse_supported_transform(tf, x - r.x, y - r.y),
         None => (x, y),
     };
 
@@ -102,21 +102,18 @@ fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
     }
 }
 
-/// 仿射逆变换：把 (abs_x, abs_y)（相对 Transform 节点 origin）映射到子节点 local 空间
-fn inverse_transform(tf: &Transform, abs_x: f32, abs_y: f32) -> (f32, f32) {
-    // 正向：local → abs = (local.rotate(θ) * s) + translate
-    // 逆向：abs → local = ((abs - translate) / s).rotate(-θ)
+/// 当前支持的 transform 逆变换：把相对 Transform 节点 origin 的点映射到子节点 local 空间。
+///
+/// v1 transform policy 只支持 translate + uniform scale。`rotate` 是保留字段，
+/// 在 paint 和 hit 中都不生效，避免命中语义超过可见渲染能力。
+fn inverse_supported_transform(tf: &Transform, abs_x: f32, abs_y: f32) -> (f32, f32) {
     if tf.scale == 0.0 {
         // 零缩放：变换空间已退化，点击无法映射到 local 空间
         return (f32::NAN, f32::NAN);
     }
     let tx = abs_x - tf.translate[0];
     let ty = abs_y - tf.translate[1];
-    let sx = tx / tf.scale;
-    let sy = ty / tf.scale;
-    let cos_r = (-tf.rotate).cos();
-    let sin_r = (-tf.rotate).sin();
-    (sx * cos_r - sy * sin_r, sx * sin_r + sy * cos_r)
+    (tx / tf.scale, ty / tf.scale)
 }
 
 #[cfg(test)]
@@ -697,6 +694,48 @@ mod tests {
 
         // 屏幕 (30, 30) → 逆变换 (30/2, 30/2) = (15, 15) → 命中 child local (10,10,10,10)
         let chain = hit_test(&tree, root_id, 30.0, 30.0);
+        assert_eq!(chain.leaf(), Some(child_id));
+    }
+
+    #[test]
+    fn hit_transform_policy_ignores_rotate_until_paint_supports_it() {
+        let mut tree = Tree::new();
+        let child_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 10.0,
+                h: 10.0,
+            },
+        ));
+        let root = {
+            let mut n = container_with_rect(
+                BoxStyle {
+                    transform: Some(Transform {
+                        translate: [0.0, 0.0],
+                        scale: 1.0,
+                        rotate: std::f32::consts::FRAC_PI_2,
+                    }),
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 100.0,
+                },
+            );
+            n.children = vec![child_id];
+            n
+        };
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        // Paint currently ignores rotate, so hit must also use the unrotated geometry.
+        let chain = hit_test(&tree, root_id, 15.0, 15.0);
         assert_eq!(chain.leaf(), Some(child_id));
     }
 

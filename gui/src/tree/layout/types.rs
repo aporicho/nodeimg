@@ -209,12 +209,15 @@ impl Inset {
     }
 }
 
-/// 仿射变换。阶段 A 仅定义类型，paint/hit 不实际应用。
+/// 节点 transform 声明。
+///
+/// 当前运行时 policy 只在 paint/hit 中应用 `translate` 和 uniform `scale`。
+/// `rotate` 是保留字段，等待 renderer 具备完整旋转绘制能力后再启用。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
     pub translate: [f32; 2],
     pub scale: f32,
-    pub rotate: f32, // 弧度
+    pub rotate: f32,
 }
 
 impl Default for Transform {
