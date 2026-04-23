@@ -18,6 +18,18 @@ const CHEVRON_DOWN: &str = r#"
 </svg>
 "#;
 
+const CHEVRON_RIGHT: &str = r#"
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"#;
+
+const PLAY: &str = r#"
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M8 5L19 12L8 19V5Z" fill="currentColor"/>
+</svg>
+"#;
+
 const SEARCH: &str = r#"
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M11 19C15.4183 19 19 15.4183 19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -36,6 +48,8 @@ pub(crate) fn register_builtin_icons(registry: &mut IconRegistry) {
     registry.register_svg("plus", PLUS.as_bytes());
     registry.register_svg("close", CLOSE.as_bytes());
     registry.register_svg("chevron_down", CHEVRON_DOWN.as_bytes());
+    registry.register_svg("chevron_right", CHEVRON_RIGHT.as_bytes());
+    registry.register_svg("play", PLAY.as_bytes());
     registry.register_svg("search", SEARCH.as_bytes());
     registry.register_svg("settings", SETTINGS.as_bytes());
 }

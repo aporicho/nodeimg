@@ -62,7 +62,11 @@ impl WidgetProps for CollapsibleProps {
 
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let tokens = cx.theme.components.collapsible;
-        let chevron = if self.expanded { "▾" } else { "▸" };
+        let chevron = if self.expanded {
+            "chevron_down"
+        } else {
+            "chevron_right"
+        };
 
         let mut children = vec![ui::row(format!("{id}::header"))
             .align_items(crate::tree::layout::Align::Center)
@@ -72,17 +76,11 @@ impl WidgetProps for CollapsibleProps {
             .background(tokens.header_background)
             .radius([tokens.radius, tokens.radius, 0.0, 0.0])
             .children(vec![
-                ui::leaf(
+                ui::icon(
                     format!("{id}::chevron"),
-                    crate::tree::layout::LeafKind::Text {
-                        content: chevron.to_string(),
-                        style: TextStyle {
-                            color: tokens.title_text,
-                            size: tokens.title_font_size,
-                            ..cx.theme.text_style_label_sm()
-                        },
-                        layout: Default::default(),
-                    },
+                    chevron,
+                    tokens.title_font_size,
+                    tokens.title_text,
                 )
                 .build(),
                 ui::leaf(
@@ -131,6 +129,7 @@ fn desc_clone(d: &Desc) -> Desc {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
+    use crate::tree::layout::LeafKind;
 
     #[test]
     fn collapsible_hides_content_when_collapsed() {
@@ -151,5 +150,52 @@ mod tests {
         );
 
         assert_eq!(build.children.len(), 1);
+    }
+
+    #[test]
+    fn collapsible_uses_chevron_icons_for_state() {
+        let theme = dark_theme();
+        let collapsed = CollapsibleProps {
+            title: Cow::Borrowed("Advanced"),
+            expanded: false,
+            disabled: false,
+            content: vec![],
+        }
+        .build(
+            "advanced",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+        let expanded = CollapsibleProps {
+            title: Cow::Borrowed("Advanced"),
+            expanded: true,
+            disabled: false,
+            content: vec![],
+        }
+        .build(
+            "advanced",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(header_icon_id(&collapsed), "chevron_right");
+        assert_eq!(header_icon_id(&expanded), "chevron_down");
+    }
+
+    fn header_icon_id(build: &WidgetBuild) -> String {
+        let Desc::Container { children, .. } = &build.children[0] else {
+            panic!("collapsible header should be a container");
+        };
+        let Desc::Leaf { kind, .. } = &children[0] else {
+            panic!("collapsible chevron should be an icon leaf");
+        };
+        let LeafKind::Icon { spec } = kind else {
+            panic!("collapsible chevron should use LeafKind::Icon");
+        };
+        spec.id.as_str().to_string()
     }
 }

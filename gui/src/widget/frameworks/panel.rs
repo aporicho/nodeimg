@@ -1,9 +1,10 @@
 use crate::gesture::Gesture;
 use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
-use crate::tree::layout::{LeafKind, Overflow, Size};
+use crate::tree::layout::{Align, LeafKind, Overflow, Size};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::anatomy::Anatomy;
+use crate::widget::atoms::button::ButtonProps;
 use crate::widget::build;
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
@@ -100,23 +101,35 @@ impl WidgetProps for PanelProps {
 
         // 标题栏
         let titlebar = self.titlebar_visible.then(|| {
+            let mut titlebar_children = vec![ui::leaf(
+                anatomy.title(),
+                LeafKind::Text {
+                    content: self.title.to_string(),
+                    style: TextStyle {
+                        color: visual.title_text,
+                        size: tokens.title_font_size,
+                        ..theme.text_style_title_sm()
+                    },
+                    layout: Default::default(),
+                },
+            )
+            .fill_width()
+            .flex_shrink(1.0)
+            .build()];
+            if self.closable {
+                titlebar_children.push(
+                    ui::widget(anatomy.part("close"), ButtonProps::icon_only("close")).build(),
+                );
+            }
+
             let mut titlebar = ui::row(anatomy.titlebar())
+                .align_items(Align::Center)
+                .gap(tokens.title_padding_x * 0.5)
                 .fixed_height(tokens.title_bar_height)
                 .padding_symmetric(tokens.title_padding_y, tokens.title_padding_x)
                 .background(visual.titlebar_background)
                 .radius([tokens.radius, tokens.radius, 0.0, 0.0])
-                .child(ui::leaf(
-                    anatomy.title(),
-                    LeafKind::Text {
-                        content: self.title.to_string(),
-                        style: TextStyle {
-                            color: visual.title_text,
-                            size: tokens.title_font_size,
-                            ..theme.text_style_title_sm()
-                        },
-                        layout: Default::default(),
-                    },
-                ));
+                .children(titlebar_children);
             if self.draggable {
                 titlebar = titlebar.gesture(Gesture::Drag);
             }
@@ -177,7 +190,7 @@ mod tests {
     use crate::renderer::{Color, Rect, TextStyle};
     use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{LeafKind, Position, Size};
-    use crate::tree::{hit_test, layout, reconcile, NodeId, Tree};
+    use crate::tree::{hit_test, layout, reconcile, NodeId, NodeKind, Tree};
     use crate::widget::props::WidgetBuildCx;
 
     fn build_cx<'a>(theme: &'a Theme) -> WidgetBuildCx<'a> {
@@ -359,6 +372,42 @@ mod tests {
                 desc_variant_name(other)
             ),
         }
+    }
+
+    #[test]
+    fn closable_panel_titlebar_contains_close_button_widget() {
+        let theme = dark_theme();
+        let mut props = sample_props();
+        props.closable = true;
+        let build = props.build("test", &build_cx(&theme));
+        let titlebar_children = match &build.children[0] {
+            Desc::Container { children, .. } => children,
+            other => panic!(
+                "first child should be Container, got {}",
+                desc_variant_name(other)
+            ),
+        };
+
+        assert_eq!(titlebar_children.len(), 2);
+        assert_eq!(titlebar_children[0].id(), "test::title");
+        assert_eq!(titlebar_children[1].id(), "test::close");
+        assert!(matches!(titlebar_children[1], Desc::Widget(_)));
+    }
+
+    #[test]
+    fn closable_panel_titlebar_close_button_uses_close_icon() {
+        let mut props = sample_props();
+        props.closable = true;
+        let (tree, _) = build_tree_for_hit(props);
+
+        let close_icon = tree
+            .iter()
+            .find_map(|(_, node)| (node.id.as_ref() == "test_panel::close::icon").then_some(node))
+            .expect("closable panel should build a close icon leaf");
+        let NodeKind::Leaf(LeafKind::Icon { spec }) = &close_icon.kind else {
+            panic!("close button visual should use LeafKind::Icon");
+        };
+        assert_eq!(spec.id, crate::icon::IconId::from("close"));
     }
 
     #[test]

@@ -51,6 +51,8 @@ mod tests {
         assert!(registry.resolve(&IconId::from("plus")).is_some());
         assert!(registry.resolve(&IconId::from("close")).is_some());
         assert!(registry.resolve(&IconId::from("chevron_down")).is_some());
+        assert!(registry.resolve(&IconId::from("chevron_right")).is_some());
+        assert!(registry.resolve(&IconId::from("play")).is_some());
         assert!(registry.resolve(&IconId::from("search")).is_some());
         assert!(registry.resolve(&IconId::from("settings")).is_some());
     }

@@ -102,17 +102,12 @@ impl WidgetProps for DropdownProps {
                     .auto_height()
                     .build(),
                     ui::container(anatomy.part("spacer")).flex_grow(1.0).build(),
-                    ui::text(
+                    ui::icon(
                         anatomy.part("arrow"),
-                        "▾",
-                        TextStyle {
-                            color: theme.colors.text_muted,
-                            size: metrics.font_size,
-                            ..theme.text_style_body_sm()
-                        },
+                        "chevron_down",
+                        metrics.icon_size,
+                        theme.colors.text_muted,
                     )
-                    .auto_width()
-                    .auto_height()
                     .build(),
                 ])
                 .build(),
@@ -130,7 +125,7 @@ impl WidgetProps for DropdownProps {
 mod tests {
     use super::*;
     use crate::theme::dark_theme;
-    use crate::tree::layout::{Edges, Size};
+    use crate::tree::layout::{Edges, LeafKind, Size};
     use crate::tree::Desc;
 
     #[test]
@@ -184,5 +179,40 @@ mod tests {
 
         assert_eq!(build.children.len(), 1);
         assert_eq!(build.children[0].id(), "dropdown::field");
+    }
+
+    #[test]
+    fn dropdown_field_uses_chevron_icon() {
+        let theme = dark_theme();
+        let props = DropdownProps {
+            label: None,
+            options: vec![Cow::Borrowed("Normal")],
+            selected: 0,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "dropdown",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        let Desc::Container { children, .. } = &build.children[0] else {
+            panic!("dropdown field should be a container");
+        };
+        let Desc::Leaf { id, style, kind } = &children[2] else {
+            panic!("dropdown arrow should be an icon leaf");
+        };
+        assert_eq!(id.as_ref(), "dropdown::arrow");
+        assert_eq!(style.width, Size::Fixed(12.0));
+        assert_eq!(style.height, Size::Fixed(12.0));
+        let LeafKind::Icon { spec } = kind else {
+            panic!("dropdown arrow should use LeafKind::Icon");
+        };
+        assert_eq!(spec.id, crate::icon::IconId::from("chevron_down"));
     }
 }
