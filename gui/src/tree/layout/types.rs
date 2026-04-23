@@ -1,4 +1,6 @@
-use crate::renderer::{Border, Color, Point, Rect, Renderer, TextStyle};
+use crate::renderer::{
+    Border, Color, PathData, PathStyle, Point, Rect, Renderer, Stroke, TextStyle,
+};
 use std::sync::Arc;
 
 /// 纹理句柄：不透明封装。widget 层无需依赖 wgpu。
@@ -372,17 +374,12 @@ pub enum LeafKind {
     Line {
         start: Point,
         end: Point,
-        width: f32,
-        color: Color,
+        stroke: Stroke,
     },
     /// 贝塞尔曲线（三次，由 4 个控制点定义）。
-    Curve {
-        points: [Point; 4],
-        width: f32,
-        color: Color,
-    },
-    /// 自定义路径。阶段 A 留空占位，阶段 C 实现画布时填充。
-    Path,
+    Curve { points: [Point; 4], stroke: Stroke },
+    /// 自定义路径。
+    Path { data: PathData, style: PathStyle },
 
     // ── 应用特化 ──
     /// 画布背景点阵。

@@ -1,13 +1,16 @@
 use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
 use super::paint_helpers::{
-    bezier_control_points, find_node_by_str_id, grid_cells, rect_center, PaintTransform,
+    connection_path, find_node_by_str_id, grid_cells, leaf_path_to_screen, rect_center,
+    scaled_path_style, PaintTransform,
 };
 use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
 use crate::interaction::InteractionState;
-use crate::renderer::{Border, Color, Point, RectStyle, Renderer, Shadow, TextStyle};
+use crate::renderer::{
+    Border, Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, Shadow, Stroke, TextStyle,
+};
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
@@ -172,8 +175,13 @@ fn paint_node(
                 };
                 let from_p = tf.apply_point(rect_center(from_rect));
                 let to_p = tf.apply_point(rect_center(to_rect));
-                let ctrl = bezier_control_points(from_p, to_p);
-                renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.connection);
+                renderer.draw_path(
+                    connection_path(from_p, to_p),
+                    PathStyle::stroke(Stroke::new(
+                        CONNECTION_WIDTH * tf.scale,
+                        theme.colors.connection,
+                    )),
+                );
             }
             LeafKind::PendingConnection {
                 from_port,
@@ -184,8 +192,30 @@ fn paint_node(
                 };
                 let from_p = tf.apply_point(rect_center(from_rect));
                 let to_p = tf.apply_point(*cursor_canvas);
-                let ctrl = bezier_control_points(from_p, to_p);
-                renderer.draw_curve(ctrl, CONNECTION_WIDTH * tf.scale, theme.colors.accent);
+                renderer.draw_path(
+                    connection_path(from_p, to_p),
+                    PathStyle::stroke(Stroke::new(
+                        CONNECTION_WIDTH * tf.scale,
+                        theme.colors.accent,
+                    )),
+                );
+            }
+            LeafKind::Line { start, end, stroke } => draw_local_path(
+                renderer,
+                &PathData::line(*start, *end),
+                PathStyle::stroke(*stroke),
+                node.rect,
+                tf,
+            ),
+            LeafKind::Curve { points, stroke } => draw_local_path(
+                renderer,
+                &PathData::cubic(*points),
+                PathStyle::stroke(*stroke),
+                node.rect,
+                tf,
+            ),
+            LeafKind::Path { data, style } => {
+                draw_local_path(renderer, data, *style, node.rect, tf);
             }
             _ => {}
         }
@@ -228,6 +258,19 @@ fn with_inherited_text_color(mut style: TextStyle, inherited: Option<Color>) -> 
 fn scaled_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
     style.size *= scale;
     style
+}
+
+fn draw_local_path(
+    renderer: &mut Renderer,
+    data: &PathData,
+    style: PathStyle,
+    rect: Rect,
+    tf: PaintTransform,
+) {
+    renderer.draw_path(
+        leaf_path_to_screen(data, rect, tf),
+        scaled_path_style(style, tf.scale),
+    );
 }
 
 fn scaled_rect_style(style: &RectStyle, scale: f32) -> RectStyle {

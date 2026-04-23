@@ -1,6 +1,6 @@
 //! Paint 子系统的纯函数辅助 + PaintTransform 类型。
 
-use crate::renderer::{Point, Rect};
+use crate::renderer::{PathData, PathStyle, Point, Rect, Stroke};
 use crate::tree::layout::Transform;
 use crate::tree::node::NodeId;
 use crate::tree::tree::Tree;
@@ -49,6 +49,30 @@ impl PaintTransform {
             h: self.scale * r.h,
         }
     }
+}
+
+/// leaf local path → screen path。PathData 的点先落到 leaf border-box，再套 paint transform。
+pub fn leaf_path_to_screen(data: &PathData, leaf_rect: Rect, tf: PaintTransform) -> PathData {
+    data.map_points(|point| {
+        tf.apply_point(Point {
+            x: leaf_rect.x + point.x,
+            y: leaf_rect.y + point.y,
+        })
+    })
+}
+
+pub fn scaled_stroke(mut stroke: Stroke, scale: f32) -> Stroke {
+    stroke.width *= scale;
+    stroke
+}
+
+pub fn scaled_path_style(mut style: PathStyle, scale: f32) -> PathStyle {
+    style.stroke = style.stroke.map(|stroke| scaled_stroke(stroke, scale));
+    style
+}
+
+pub fn connection_path(from: Point, to: Point) -> PathData {
+    PathData::cubic(bezier_control_points(from, to))
 }
 
 /// 遍历 rect 内 spacing 为间距的格点。spacing <= 0 时返回空 Vec。
@@ -120,6 +144,7 @@ pub fn rect_center(r: Rect) -> Point {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::{Color, LineCap, PathCommand, PathStyle, Stroke};
     use crate::tree::layout::{BoxStyle, Transform};
     use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::tree::Tree;
@@ -202,6 +227,44 @@ mod tests {
         assert_eq!(result.y, 28.0);
         assert_eq!(result.w, 10.0, "w = 2*5 = 10");
         assert_eq!(result.h, 12.0, "h = 2*6 = 12");
+    }
+
+    #[test]
+    fn leaf_path_to_screen_offsets_by_leaf_rect_before_transform() {
+        let data = PathData::line(Point { x: 1.0, y: 2.0 }, Point { x: 3.0, y: 4.0 });
+        let leaf_rect = Rect {
+            x: 10.0,
+            y: 20.0,
+            w: 100.0,
+            h: 50.0,
+        };
+        let tf = PaintTransform {
+            tx: 5.0,
+            ty: 7.0,
+            scale: 2.0,
+        };
+
+        let screen = leaf_path_to_screen(&data, leaf_rect, tf);
+
+        assert_eq!(
+            screen.commands,
+            vec![
+                PathCommand::MoveTo(Point { x: 27.0, y: 51.0 }),
+                PathCommand::LineTo(Point { x: 31.0, y: 55.0 }),
+            ]
+        );
+    }
+
+    #[test]
+    fn scaled_path_style_scales_stroke_width_only() {
+        let style = PathStyle::stroke(Stroke::new(2.0, Color::WHITE).with_cap(LineCap::Round));
+
+        let scaled = scaled_path_style(style, 3.0);
+
+        let stroke = scaled.stroke.unwrap();
+        assert_eq!(stroke.width, 6.0);
+        assert_eq!(stroke.cap, LineCap::Round);
+        assert_eq!(stroke.miter_limit, 4.0);
     }
 
     #[test]
