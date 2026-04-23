@@ -1,4 +1,4 @@
-use crate::renderer::{Color, PathData, PathStyle, Point, Rect, RectStyle, TextStyle};
+use crate::renderer::{Color, ImageStyle, PathData, PathStyle, Point, Rect, RectStyle, TextStyle};
 
 use super::layout::TextureHandle;
 use super::paint_target::PaintTarget;
@@ -18,6 +18,7 @@ pub enum PaintOp {
     Image {
         rect: Rect,
         texture: TextureHandle,
+        style: ImageStyle,
     },
     Circle {
         center: Point,
@@ -93,8 +94,12 @@ impl PaintTarget for RecordingPaintTarget {
         });
     }
 
-    fn draw_image(&mut self, rect: Rect, texture: TextureHandle) {
-        self.ops.push(PaintOp::Image { rect, texture });
+    fn draw_image(&mut self, rect: Rect, texture: TextureHandle, style: ImageStyle) {
+        self.ops.push(PaintOp::Image {
+            rect,
+            texture,
+            style,
+        });
     }
 
     fn draw_circle(&mut self, center: Point, radius: f32, color: Color) {

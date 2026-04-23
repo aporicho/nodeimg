@@ -1,14 +1,16 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use super::layout::TextureHandle;
-use crate::renderer::{Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, TextStyle};
+use crate::renderer::{
+    Color, ImageStyle, PathData, PathStyle, Point, Rect, RectStyle, Renderer, TextStyle,
+};
+use crate::runtime::TextureResource;
 
 pub trait PaintTarget {
     fn draw_rect(&mut self, rect: Rect, style: RectStyle);
     fn draw_text(&mut self, pos: Point, text: &str, style: TextStyle);
     fn draw_text_clipped(&mut self, pos: Point, text: &str, style: TextStyle, bounds: Rect);
-    fn draw_image(&mut self, rect: Rect, texture: TextureHandle);
+    fn draw_image(&mut self, rect: Rect, texture: TextureHandle, style: ImageStyle);
     fn draw_circle(&mut self, center: Point, radius: f32, color: Color);
     fn draw_path(&mut self, data: PathData, style: PathStyle);
     fn push_clip(&mut self, rect: Rect, radius: f32);
@@ -16,15 +18,15 @@ pub trait PaintTarget {
     fn measure_text(&mut self, text: &str, style: &TextStyle) -> (f32, f32);
 }
 
-pub struct RendererPaintTarget<'a> {
+pub(crate) struct RendererPaintTarget<'a> {
     renderer: &'a mut Renderer,
-    textures: Option<&'a HashMap<TextureHandle, Arc<wgpu::TextureView>>>,
+    textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
 }
 
 impl<'a> RendererPaintTarget<'a> {
-    pub fn new(
+    pub(crate) fn new(
         renderer: &'a mut Renderer,
-        textures: Option<&'a HashMap<TextureHandle, Arc<wgpu::TextureView>>>,
+        textures: Option<&'a HashMap<TextureHandle, TextureResource>>,
     ) -> Self {
         Self { renderer, textures }
     }
@@ -43,13 +45,14 @@ impl PaintTarget for RendererPaintTarget<'_> {
         self.renderer.draw_text_clipped(pos, text, &style, bounds);
     }
 
-    fn draw_image(&mut self, rect: Rect, texture: TextureHandle) {
-        if let Some(view) = self
+    fn draw_image(&mut self, rect: Rect, texture: TextureHandle, style: ImageStyle) {
+        if let Some(resource) = self
             .textures
             .and_then(|registry| registry.get(&texture))
             .cloned()
         {
-            self.renderer.draw_image(rect, view);
+            self.renderer
+                .draw_image(rect, resource.view, resource.size, style);
         }
     }
 

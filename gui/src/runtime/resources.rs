@@ -1,9 +1,22 @@
 use std::{collections::HashMap, sync::Arc};
 
+use crate::renderer::TextureSize;
 use crate::tree::layout::TextureHandle;
 
 pub(crate) struct ResourceRegistry {
-    textures: HashMap<TextureHandle, Arc<wgpu::TextureView>>,
+    textures: HashMap<TextureHandle, TextureResource>,
+}
+
+#[derive(Clone)]
+pub(crate) struct TextureResource {
+    pub(crate) view: Arc<wgpu::TextureView>,
+    pub(crate) size: TextureSize,
+}
+
+impl TextureResource {
+    pub(crate) fn new(view: Arc<wgpu::TextureView>, size: TextureSize) -> Self {
+        Self { view, size }
+    }
 }
 
 impl ResourceRegistry {
@@ -13,11 +26,17 @@ impl ResourceRegistry {
         }
     }
 
-    pub(crate) fn register_texture(&mut self, handle: TextureHandle, view: Arc<wgpu::TextureView>) {
-        self.textures.insert(handle, view);
+    pub(crate) fn register_texture(
+        &mut self,
+        handle: TextureHandle,
+        view: Arc<wgpu::TextureView>,
+        size: TextureSize,
+    ) {
+        self.textures
+            .insert(handle, TextureResource::new(view, size));
     }
 
-    pub(crate) fn textures(&self) -> &HashMap<TextureHandle, Arc<wgpu::TextureView>> {
+    pub(crate) fn textures(&self) -> &HashMap<TextureHandle, TextureResource> {
         &self.textures
     }
 }

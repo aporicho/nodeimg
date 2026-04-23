@@ -353,7 +353,7 @@ pub enum LeafKind {
     /// 位图图像。
     Image {
         texture: TextureHandle,
-        tint: Option<Color>,
+        style: crate::renderer::ImageStyle,
     },
     /// 图标（图标字体或 SVG 资源）。
     Icon {

@@ -9,7 +9,7 @@ Date: 2026-04-23
 | DONE | Connect `LeafKind::Line` | A declared line leaf must paint through the renderer | Implemented through `PathData::line` and the vector path pipeline. |
 | DONE | Connect `LeafKind::Curve` | A declared curve leaf must paint through the renderer | Implemented through `PathData::cubic`; connection leaves now use the same vector path route. |
 | DONE | Connect `LeafKind::CustomPaint` | The custom paint escape hatch must actually paint | Implemented through `PaintTarget` and `CustomPaintCx`; it no longer depends on the concrete GPU `Renderer`. |
-| TODO | Decide image tint behavior | `LeafKind::Image.tint` must either work or be removed | Current paint path ignores `tint`. |
+| DONE | Complete image primitive styling | Image leaves need trustworthy texture styling semantics | `LeafKind::Image` now carries `ImageStyle`; tint, opacity, source rect, fit, filter, and texture size metadata flow through paint and renderer. |
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
 | TODO | Connect icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `renderer::pipeline::svg::SvgCache` exists but is not connected to `LeafKind::Icon`. |
@@ -54,7 +54,7 @@ The implementation already supports enough primitives for the current UI and nod
 - Container decoration renders rectangular and rounded-rect backgrounds.
 - Rounded rectangles use the quad pipeline and Figma-style corner smoothing.
 - Text supports family, size, weight, italic, line height, clipping, ellipsis, and horizontal alignment.
-- Images render through texture handles.
+- Images render through texture handles with `ImageStyle`.
 - Circles render through the circle pipeline.
 - Lines, cubic curves, and general paths render through the shared vector path pipeline.
 - Custom paint leaves can render through the `PaintTarget` escape hatch.
@@ -104,7 +104,7 @@ Ignored or not connected today:
 Icon
 ```
 
-The remaining unconnected primitive declaration is `Icon`. `Image` renders, but its `tint` field is still ignored.
+The remaining unconnected primitive declaration is `Icon`. `Image` now renders through a structured style model instead of the removed ad hoc `tint` field.
 
 ## Missing Common Primitive Capabilities
 
@@ -172,16 +172,28 @@ SVG cache integration
 
 ### Image Tint And Fit
 
-`LeafKind::Image` has `tint: Option<Color>`, but paint currently ignores it.
-
-Future image basics should include:
+`LeafKind::Image` now has a complete primitive style:
 
 ```text
-tint
-opacity
-fit: contain / cover / stretch
-source rect / crop
-filter: nearest / linear
+ImageStyle
+  source: ImageSourceRect
+  fit: Stretch / Contain / Cover
+  filter: Linear / Nearest
+  tint: Option<Color>
+  opacity: ImageOpacity
+```
+
+Texture registration now includes `TextureSize`, so `Contain` and `Cover` can be resolved from actual image aspect ratio instead of guessing.
+
+Current route:
+
+```text
+LeafKind::Image
+  -> PaintTarget::draw_image(rect, texture, style)
+  -> TextureResource { view, size }
+  -> Renderer::draw_image(rect, view, size, style)
+  -> resolve_image_draw(...)
+  -> ImagePipeline
 ```
 
 ### Custom Paint Escape Hatch
@@ -259,7 +271,7 @@ LeafKind::CustomPaint invokes the custom painter
 ## Recommended Order
 
 1. Make declared primitives trustworthy:
-   - image `tint` decision
+   - image primitive style
 
 2. Connect icon/SVG:
    - icon registry

@@ -1,6 +1,6 @@
 use super::PanelBuildContext;
 use gui::panel::{PanelConfig, PanelDeclaration, PanelId};
-use gui::renderer::Rect;
+use gui::renderer::{ImageStyle, Rect};
 use gui::ui;
 use gui::widget::atoms::image_viewer::ImageViewerProps;
 use std::borrow::Cow;
@@ -28,6 +28,7 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
             ImageViewerProps {
                 texture: ctx.image,
                 height: 208.0,
+                style: ImageStyle::default(),
             },
         )
         .build()],

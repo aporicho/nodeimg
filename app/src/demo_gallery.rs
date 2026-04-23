@@ -1,4 +1,4 @@
-use gui::renderer::{TextStyle, TextWeight};
+use gui::renderer::{ImageStyle, TextStyle, TextWeight};
 use gui::theme::Theme;
 use gui::tree::layout::TextureHandle;
 use gui::tree::Desc;
@@ -543,6 +543,7 @@ fn media_section(state: &GalleryState, image: TextureHandle) -> GallerySection {
                 ImageViewerProps {
                     texture: image,
                     height: 96.0,
+                    style: ImageStyle::default(),
                 },
             )),
             Desc::from(ui::widget(

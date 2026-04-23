@@ -3,23 +3,21 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use super::super::types::Rect;
+use super::super::image::{ImageFilter, ResolvedImageDraw};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct ImageInstance {
     rect: [f32; 4],
-}
-
-pub struct ImageRequest<'a> {
-    pub rect: Rect,
-    pub view: &'a wgpu::TextureView,
+    uv_rect: [f32; 4],
+    modulate: [f32; 4],
 }
 
 pub struct ImagePipeline {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
+    linear_sampler: wgpu::Sampler,
+    nearest_sampler: wgpu::Sampler,
 }
 
 impl ImagePipeline {
@@ -33,10 +31,16 @@ impl ImagePipeline {
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/image.wgsl").into()),
         });
 
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("image_sampler"),
+        let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image_linear_sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let nearest_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image_nearest_sampler"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
 
@@ -84,11 +88,23 @@ impl ImagePipeline {
         let instance_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ImageInstance>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x4,
-                offset: 0,
-                shader_location: 0,
-            }],
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 16,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 32,
+                    shader_location: 2,
+                },
+            ],
         };
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -123,7 +139,8 @@ impl ImagePipeline {
         Self {
             pipeline,
             bind_group_layout,
-            sampler,
+            linear_sampler,
+            nearest_sampler,
         }
     }
 
@@ -132,9 +149,13 @@ impl ImagePipeline {
         pass: &mut wgpu::RenderPass<'a>,
         device: &wgpu::Device,
         texture_view: &'a wgpu::TextureView,
-        rect: Rect,
+        draw: ResolvedImageDraw,
         viewport_buf: &'a wgpu::Buffer,
     ) {
+        let sampler = match draw.filter {
+            ImageFilter::Linear => &self.linear_sampler,
+            ImageFilter::Nearest => &self.nearest_sampler,
+        };
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image_bind_group"),
             layout: &self.bind_group_layout,
@@ -149,13 +170,20 @@ impl ImagePipeline {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(sampler),
                 },
             ],
         });
 
         let instance = ImageInstance {
-            rect: [rect.x, rect.y, rect.w, rect.h],
+            rect: [draw.rect.x, draw.rect.y, draw.rect.w, draw.rect.h],
+            uv_rect: [
+                draw.uv_rect.x,
+                draw.uv_rect.y,
+                draw.uv_rect.w,
+                draw.uv_rect.h,
+            ],
+            modulate: draw.modulate,
         };
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("image_instance_buffer"),

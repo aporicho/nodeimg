@@ -25,7 +25,7 @@ pub use hit::{hit_test, HitChain};
 pub use id::{NodeId, StableId, TreeNodeId};
 pub use layout::layout;
 pub use node::{AnimationRuntime, LayoutRuntime, NodeKind, NodeLocalRuntime, TreeNode};
-pub use paint::paint;
+pub(crate) use paint::paint;
 pub use props::NodeProps;
 pub use runtime_policy::{PersistenceClass, RuntimeRetention, RuntimeSlotPolicy, UndoClass};
 pub use runtime_slots::{RuntimeSlot, RuntimeSlots};

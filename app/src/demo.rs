@@ -12,7 +12,7 @@ use gui::context::{
     WidgetEvent,
 };
 use gui::gesture::Gesture;
-use gui::renderer::{Rect, Renderer};
+use gui::renderer::{Rect, Renderer, TextureSize};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
 use gui::theme::{light_theme, Theme};
 use gui::tree::layout::TextureHandle;
@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 
 const GALLERY_SCALE: f32 = 1.2;
 const DEMO_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
+const DEMO_IMAGE_SIZE: TextureSize = TextureSize::new(96, 96);
 const CANVAS_DOUBLE_CLICK_TIMEOUT: Duration = Duration::from_millis(300);
 const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 
@@ -56,6 +57,7 @@ impl App for DemoApp {
         gui.register_texture(
             DEMO_IMAGE_HANDLE,
             create_demo_texture(&ctx.device, &ctx.queue),
+            DEMO_IMAGE_SIZE,
         );
 
         Self {
@@ -149,11 +151,12 @@ fn create_demo_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> std::sync::Arc<wgpu::TextureView> {
-    const SIZE: u32 = 96;
-    let mut data = vec![0u8; (SIZE * SIZE * 4) as usize];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let idx = ((y * SIZE + x) * 4) as usize;
+    const WIDTH: u32 = DEMO_IMAGE_SIZE.width;
+    const HEIGHT: u32 = DEMO_IMAGE_SIZE.height;
+    let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let idx = ((y * WIDTH + x) * 4) as usize;
             let checker = ((x / 12) + (y / 12)) % 2 == 0;
             let (r, g, b) = if checker {
                 (59u8, 130u8, 246u8)
@@ -170,8 +173,8 @@ fn create_demo_texture(
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("demo_image_texture"),
         size: wgpu::Extent3d {
-            width: SIZE,
-            height: SIZE,
+            width: WIDTH,
+            height: HEIGHT,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -192,12 +195,12 @@ fn create_demo_texture(
         &data,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(4 * SIZE),
-            rows_per_image: Some(SIZE),
+            bytes_per_row: Some(4 * WIDTH),
+            rows_per_image: Some(HEIGHT),
         },
         wgpu::Extent3d {
-            width: SIZE,
-            height: SIZE,
+            width: WIDTH,
+            height: HEIGHT,
             depth_or_array_layers: 1,
         },
     );

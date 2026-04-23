@@ -4,6 +4,7 @@ use winit::dpi::PhysicalSize;
 use super::buffer::SharedViewport;
 use super::command::DrawCommand;
 use super::dispatch;
+use super::image::{ImageStyle, TextureSize};
 use super::path::{PathData, PathRequest, PathStyle};
 use super::pipeline::blit::{self, BlitPipeline};
 use super::pipeline::circle::{CirclePipeline, CircleRequest};
@@ -189,8 +190,19 @@ impl Renderer {
         }));
     }
 
-    pub fn draw_image(&mut self, rect: Rect, view: Arc<wgpu::TextureView>) {
-        self.commands.push(DrawCommand::Image { rect, view });
+    pub fn draw_image(
+        &mut self,
+        rect: Rect,
+        view: Arc<wgpu::TextureView>,
+        size: TextureSize,
+        style: ImageStyle,
+    ) {
+        self.commands.push(DrawCommand::Image {
+            rect,
+            view,
+            size,
+            style,
+        });
     }
 
     pub fn draw_circle(&mut self, center: Point, radius: f32, color: Color) {

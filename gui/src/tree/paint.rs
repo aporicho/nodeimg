@@ -12,6 +12,7 @@ use crate::interaction::InteractionState;
 use crate::renderer::{
     Border, Color, PathData, PathStyle, Point, Rect, RectStyle, Renderer, Shadow, Stroke, TextStyle,
 };
+use crate::runtime::TextureResource;
 use crate::theme::Theme;
 use crate::widget::painters::{
     paint_text_leaf_override as paint_widget_text_leaf_override,
@@ -19,17 +20,16 @@ use crate::widget::painters::{
 };
 use crate::widget::state::TextInputStore;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// 连线宽度（local 空间像素，paint 时按 scale 缩放）
 const CONNECTION_WIDTH: f32 = 2.0;
-pub fn paint(
+pub(crate) fn paint(
     tree: &Tree,
     root: NodeId,
     renderer: &mut Renderer,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
-    textures: Option<&HashMap<crate::tree::layout::TextureHandle, Arc<wgpu::TextureView>>>,
+    textures: Option<&HashMap<crate::tree::layout::TextureHandle, TextureResource>>,
     theme: &Theme,
 ) {
     let mut target = RendererPaintTarget::new(renderer, textures);
@@ -152,8 +152,8 @@ fn paint_node(
                     target.draw_circle(sp, *dot_size * tf.scale, *dot_color);
                 }
             }
-            LeafKind::Image { texture, .. } => {
-                target.draw_image(screen_rect, *texture);
+            LeafKind::Image { texture, style } => {
+                target.draw_image(screen_rect, *texture, *style);
             }
             LeafKind::Circle {
                 radius,
@@ -309,7 +309,7 @@ fn scaled_shadow(shadow: Shadow, scale: f32) -> Shadow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{Border, Color, PathCommand, Shadow};
+    use crate::renderer::{Border, Color, ImageFit, ImageOpacity, ImageStyle, PathCommand, Shadow};
     use crate::tree::layout::{
         BoxStyle, CustomPaintFn, CustomPainter, LeafKind, Overflow, TextLayout, TextOverflow,
         TextureHandle,
@@ -465,13 +465,13 @@ mod tests {
     }
 
     #[test]
-    fn image_leaf_records_texture_handle_without_gpu_texture() {
+    fn image_leaf_records_style_without_gpu_texture() {
         let texture = TextureHandle(42);
+        let style = ImageStyle::default()
+            .with_fit(ImageFit::Contain)
+            .with_opacity(ImageOpacity::new(0.5));
         let ops = paint_single_leaf(
-            LeafKind::Image {
-                texture,
-                tint: None,
-            },
+            LeafKind::Image { texture, style },
             rect(10.0, 20.0, 30.0, 40.0),
         );
 
@@ -480,6 +480,7 @@ mod tests {
             vec![PaintOp::Image {
                 rect: rect(10.0, 20.0, 30.0, 40.0),
                 texture,
+                style,
             }]
         );
     }

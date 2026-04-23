@@ -5,7 +5,7 @@ use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::interaction::InteractionState;
 use crate::panel::PanelDeclaration;
-use crate::renderer::{Rect, Renderer, TextMeasurer};
+use crate::renderer::{Rect, Renderer, TextMeasurer, TextureSize};
 use crate::runtime::{
     ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSyncCx, RuntimeSystems,
 };
@@ -99,8 +99,13 @@ impl Context {
         }
     }
 
-    pub fn register_texture(&mut self, handle: TextureHandle, view: Arc<wgpu::TextureView>) {
-        self.resources.register_texture(handle, view);
+    pub fn register_texture(
+        &mut self,
+        handle: TextureHandle,
+        view: Arc<wgpu::TextureView>,
+        size: TextureSize,
+    ) {
+        self.resources.register_texture(handle, view, size);
     }
 
     pub fn open_overlay(&mut self, request: OverlayRequest) {

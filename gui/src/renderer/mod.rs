@@ -1,6 +1,7 @@
 mod buffer;
 mod command;
 mod dispatch;
+mod image;
 mod path;
 mod pipeline;
 mod prepare;
@@ -10,6 +11,10 @@ mod vector_tessellator;
 
 pub mod style;
 
+pub use image::{
+    resolve_image_draw, ImageFilter, ImageFit, ImageOpacity, ImageSourceRect, ImageStyle,
+    ResolvedImageDraw, TextureSize,
+};
 pub use path::{PathCommand, PathData, PathRequest, PathStyle};
 pub use pipeline::svg;
 pub use renderer::Renderer;

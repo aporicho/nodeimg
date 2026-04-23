@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::image::{ImageStyle, TextureSize};
 use super::path::PathRequest;
 use super::pipeline::circle::CircleRequest;
 use super::pipeline::quad::QuadRequest;
@@ -15,6 +16,8 @@ pub enum DrawCommand {
     Image {
         rect: Rect,
         view: Arc<wgpu::TextureView>,
+        size: TextureSize,
+        style: ImageStyle,
     },
     Path(PathRequest),
     PushClip {

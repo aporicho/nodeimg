@@ -6,6 +6,7 @@ use lyon::tessellation::{
 };
 
 use super::command::DrawCommand;
+use super::image::{resolve_image_draw, ResolvedImageDraw};
 use super::path::PathRequest;
 use super::pipeline::circle::{CircleRequest, CircleVertex};
 use super::pipeline::quad::{
@@ -35,8 +36,8 @@ pub enum DrawOp {
     },
     Shadow(ShadowRequest),
     Image {
-        rect: Rect,
         view: Arc<wgpu::TextureView>,
+        draw: ResolvedImageDraw,
     },
     Text {
         index: usize,
@@ -125,13 +126,18 @@ pub fn prepare_frame(
                 });
                 frame.ops.push(DrawOp::Text { index });
             }
-            DrawCommand::Image { rect, view } => {
+            DrawCommand::Image {
+                rect,
+                view,
+                size,
+                style,
+            } => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
                 frame.ops.push(DrawOp::Image {
-                    rect: *rect,
                     view: view.clone(),
+                    draw: resolve_image_draw(*rect, *size, *style),
                 });
             }
             DrawCommand::Path(req) => {

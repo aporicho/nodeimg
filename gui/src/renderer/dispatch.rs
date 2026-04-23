@@ -177,10 +177,10 @@ pub fn dispatch(
                                     clip_depth,
                                 );
                             }
-                            DrawOp::Image { rect, view } => {
+                            DrawOp::Image { view, draw } => {
                                 last_bound = PipelineKind::Other;
                                 pass.set_stencil_reference(clip_depth);
-                                image_pipeline.draw(&mut pass, device, view, *rect, viewport_buf);
+                                image_pipeline.draw(&mut pass, device, view, *draw, viewport_buf);
                             }
                             DrawOp::Text { .. } => {
                                 unreachable!("text ops are split into dedicated render steps")

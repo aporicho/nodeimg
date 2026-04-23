@@ -1,3 +1,4 @@
+use crate::renderer::ImageStyle;
 use crate::tree::layout::{LeafKind, TextureHandle};
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
 use crate::widget::build;
@@ -9,6 +10,7 @@ use std::fmt;
 pub struct ImageViewerProps {
     pub texture: TextureHandle,
     pub height: f32,
+    pub style: ImageStyle,
 }
 
 impl WidgetProps for ImageViewerProps {
@@ -49,7 +51,7 @@ impl WidgetProps for ImageViewerProps {
                     format!("{id}::image"),
                     LeafKind::Image {
                         texture: self.texture,
-                        tint: None,
+                        style: self.style,
                     },
                 )
                 .fill_width()
@@ -62,6 +64,7 @@ impl WidgetProps for ImageViewerProps {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::ImageFilter;
     use crate::theme::dark_theme;
     use crate::tree::layout::LeafKind;
     use crate::tree::Desc;
@@ -72,6 +75,7 @@ mod tests {
         let props = ImageViewerProps {
             texture: TextureHandle(7),
             height: 120.0,
+            style: ImageStyle::default().with_filter(ImageFilter::Nearest),
         };
 
         let build = props.build(
@@ -84,9 +88,15 @@ mod tests {
 
         match &build.children[0] {
             Desc::Leaf {
-                kind: LeafKind::Image { texture, .. },
+                kind: LeafKind::Image { texture, style },
                 ..
-            } => assert_eq!(*texture, TextureHandle(7)),
+            } => {
+                assert_eq!(*texture, TextureHandle(7));
+                assert_eq!(
+                    *style,
+                    ImageStyle::default().with_filter(ImageFilter::Nearest)
+                );
+            }
             _ => panic!("expected image leaf"),
         }
     }

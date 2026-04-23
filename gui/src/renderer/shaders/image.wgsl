@@ -9,10 +9,13 @@ struct Viewport {
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) modulate: vec4<f32>,
 }
 
 struct ImageInstance {
     @location(0) rect: vec4<f32>,  // x, y, w, h
+    @location(1) uv_rect: vec4<f32>,  // x, y, w, h in normalized texture space
+    @location(2) modulate: vec4<f32>,
 }
 
 const QUAD_UVS = array<vec2<f32>, 6>(
@@ -29,10 +32,11 @@ fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
     instance: ImageInstance,
 ) -> VertexOutput {
-    let uv = QUAD_UVS[vertex_index];
+    let quad_uv = QUAD_UVS[vertex_index];
+    let uv = instance.uv_rect.xy + quad_uv * instance.uv_rect.zw;
 
-    let px = instance.rect.x + uv.x * instance.rect.z;
-    let py = instance.rect.y + uv.y * instance.rect.w;
+    let px = instance.rect.x + quad_uv.x * instance.rect.z;
+    let py = instance.rect.y + quad_uv.y * instance.rect.w;
 
     let ndc_x = (px / viewport.size.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (py / viewport.size.y) * 2.0;
@@ -40,10 +44,11 @@ fn vs_main(
     var out: VertexOutput;
     out.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = uv;
+    out.modulate = instance.modulate;
     return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(tex, tex_sampler, in.uv);
+    return textureSample(tex, tex_sampler, in.uv) * in.modulate;
 }
