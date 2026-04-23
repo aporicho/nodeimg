@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use super::IconName;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IconId(String);
 
@@ -28,5 +30,17 @@ impl From<String> for IconId {
 impl From<Cow<'static, str>> for IconId {
     fn from(value: Cow<'static, str>) -> Self {
         Self::new(value.into_owned())
+    }
+}
+
+impl From<IconName> for IconId {
+    fn from(value: IconName) -> Self {
+        Self::new(value.as_str())
+    }
+}
+
+impl std::borrow::Borrow<str> for IconId {
+    fn borrow(&self) -> &str {
+        self.as_str()
     }
 }

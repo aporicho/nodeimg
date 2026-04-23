@@ -1,3 +1,4 @@
+use crate::icon::names;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
@@ -16,6 +17,118 @@ pub struct DropdownProps {
     pub disabled: bool,
     pub size: ControlSize,
     pub density: Density,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DropdownOptionProps {
+    pub label: Cow<'static, str>,
+    pub selected: bool,
+    pub highlighted: bool,
+    pub disabled: bool,
+    pub size: ControlSize,
+    pub density: Density,
+}
+
+impl DropdownOptionProps {
+    pub(crate) fn marker_icon(&self) -> Option<crate::icon::IconName> {
+        if self.selected {
+            Some(names::CHECK)
+        } else if self.highlighted {
+            Some(names::NAV_ARROW_RIGHT)
+        } else {
+            None
+        }
+    }
+}
+
+impl WidgetProps for DropdownOptionProps {
+    fn widget_type(&self) -> &'static str {
+        "DropdownOption"
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn WidgetProps> {
+        Box::new(self.clone())
+    }
+    fn props_eq(&self, other: &dyn WidgetProps) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |o| self == o)
+    }
+    fn debug_fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+    fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
+        use crate::gesture::Gesture;
+        use crate::interaction::WidgetVisualState;
+        use crate::renderer::Border;
+        use crate::tree::layout::{Align, Justify};
+
+        let theme = cx.theme;
+        let metrics = theme.control_metrics(self.size, self.density);
+        let visual_state = if self.disabled {
+            WidgetVisualState::Disabled
+        } else if self.highlighted {
+            WidgetVisualState::Focused
+        } else {
+            WidgetVisualState::Normal
+        };
+        let visual = theme.button_visual(visual_state);
+        let marker_color = if self.disabled {
+            theme.colors.text_disabled
+        } else if self.selected {
+            theme.colors.accent
+        } else {
+            theme.colors.text_muted
+        };
+        let anatomy = Anatomy::new(id);
+
+        let mut marker_slot = ui::row(anatomy.part("marker"))
+            .fixed_width(metrics.icon_size)
+            .fixed_height(metrics.icon_size)
+            .align_items(Align::Center)
+            .justify_content(Justify::Center);
+        if let Some(icon) = self.marker_icon() {
+            marker_slot = marker_slot.child(ui::icon(
+                anatomy.part("marker_icon"),
+                icon,
+                metrics.icon_size,
+                marker_color,
+            ));
+        }
+
+        build::row()
+            .align_items(Align::Center)
+            .gap(metrics.gap)
+            .fixed_height(metrics.height)
+            .padding_symmetric(metrics.padding_y, metrics.padding_x)
+            .gesture(Gesture::Tap)
+            .hittable(true)
+            .background(visual.background)
+            .border(Border {
+                width: metrics.border_width,
+                color: visual.border.unwrap_or(theme.colors.border),
+            })
+            .radius_all(metrics.radius)
+            .children(vec![
+                marker_slot.build(),
+                ui::text(
+                    anatomy.label(),
+                    self.label.to_string(),
+                    TextStyle {
+                        color: visual.text,
+                        size: metrics.font_size,
+                        ..theme.text_style_body_sm()
+                    },
+                )
+                .auto_width()
+                .auto_height()
+                .build(),
+            ])
+            .build()
+    }
 }
 
 impl WidgetProps for DropdownProps {
@@ -104,7 +217,7 @@ impl WidgetProps for DropdownProps {
                     ui::container(anatomy.part("spacer")).flex_grow(1.0).build(),
                     ui::icon(
                         anatomy.part("arrow"),
-                        "chevron_down",
+                        names::NAV_ARROW_DOWN,
                         metrics.icon_size,
                         theme.colors.text_muted,
                     )
@@ -213,6 +326,49 @@ mod tests {
         let LeafKind::Icon { spec } = kind else {
             panic!("dropdown arrow should use LeafKind::Icon");
         };
-        assert_eq!(spec.id, crate::icon::IconId::from("chevron_down"));
+        assert_eq!(spec.id, crate::icon::IconId::from(names::NAV_ARROW_DOWN));
+    }
+
+    #[test]
+    fn dropdown_option_uses_icon_marker_without_label_prefix() {
+        let theme = dark_theme();
+        let props = DropdownOptionProps {
+            label: Cow::Borrowed("Normal"),
+            selected: true,
+            highlighted: true,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let build = props.build(
+            "option",
+            &WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(build.children.len(), 2);
+        let Desc::Container { children, .. } = &build.children[0] else {
+            panic!("option marker slot should be a container");
+        };
+        let Desc::Leaf { kind, .. } = &children[0] else {
+            panic!("selected option should render marker icon leaf");
+        };
+        let LeafKind::Icon { spec } = kind else {
+            panic!("selected option marker should use LeafKind::Icon");
+        };
+        assert_eq!(spec.id, crate::icon::IconId::from(names::CHECK));
+
+        let Desc::Leaf { kind, .. } = &build.children[1] else {
+            panic!("option label should be a text leaf");
+        };
+        let LeafKind::Text { content, .. } = kind else {
+            panic!("option label should use text");
+        };
+        assert_eq!(content, "Normal");
+        assert!(!content.starts_with('✓'));
+        assert!(!content.starts_with('›'));
     }
 }

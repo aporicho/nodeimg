@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::icon::IconId;
 use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
@@ -12,7 +13,7 @@ use std::fmt;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ButtonProps {
     pub label: Cow<'static, str>,
-    pub icon: Option<Cow<'static, str>>,
+    pub icon: Option<IconId>,
     pub disabled: bool,
     pub size: ControlSize,
     pub density: Density,
@@ -29,7 +30,7 @@ impl ButtonProps {
         }
     }
 
-    pub fn icon_only(icon: impl Into<Cow<'static, str>>) -> Self {
+    pub fn icon_only(icon: impl Into<IconId>) -> Self {
         Self {
             label: Cow::Borrowed(""),
             icon: Some(icon.into()),
@@ -39,7 +40,7 @@ impl ButtonProps {
         }
     }
 
-    pub fn with_icon(mut self, icon: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_icon(mut self, icon: impl Into<IconId>) -> Self {
         self.icon = Some(icon.into());
         self
     }
@@ -192,7 +193,7 @@ mod tests {
     #[test]
     fn button_builds_leading_icon_leaf() {
         let theme = dark_theme();
-        let props = ButtonProps::new("Add").with_icon("plus");
+        let props = ButtonProps::new("Add").with_icon(crate::icon::names::PLUS);
 
         let build = props.build(
             "button",
@@ -212,13 +213,13 @@ mod tests {
         let crate::tree::layout::LeafKind::Icon { spec } = kind else {
             panic!("button icon should use LeafKind::Icon");
         };
-        assert_eq!(spec.id, crate::icon::IconId::from("plus"));
+        assert_eq!(spec.id, crate::icon::IconId::from(crate::icon::names::PLUS));
     }
 
     #[test]
     fn icon_only_button_omits_empty_label_leaf() {
         let theme = dark_theme();
-        let props = ButtonProps::icon_only("close");
+        let props = ButtonProps::icon_only(crate::icon::names::XMARK);
 
         let build = props.build(
             "button",

@@ -6,6 +6,7 @@ use crate::canvas::node_spec::{
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::gesture::Gesture;
+use crate::icon::names;
 use crate::renderer::{Border, Color};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOverflow};
@@ -145,7 +146,7 @@ fn port_group_trigger(
         .radius_all(diameter * 0.5)
         .child(ui::icon(
             format!("{}::icon", trigger.id),
-            "plus",
+            names::PLUS,
             metrics.port_group_trigger_icon_size,
             icon_color,
         ))
@@ -710,7 +711,7 @@ mod tests {
         let LeafKind::Icon { spec } = kind else {
             panic!("port group trigger should use LeafKind::Icon");
         };
-        assert_eq!(spec.id, crate::icon::IconId::from("plus"));
+        assert_eq!(spec.id, crate::icon::IconId::from(names::PLUS));
     }
 
     #[test]

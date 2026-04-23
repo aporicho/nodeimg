@@ -12,7 +12,7 @@ Date: 2026-04-23
 | DONE | Complete image primitive styling | Image leaves need trustworthy texture styling semantics | `LeafKind::Image` now carries `ImageStyle`; tint, opacity, source rect, fit, filter, and texture size metadata flow through paint and renderer. |
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
-| DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
+| DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets from the generated `assets/icons` registry; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
 | TODO | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Hit supports rotate; paint currently ignores rotate. |
 | TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
 | TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
@@ -161,19 +161,34 @@ PathStyle
 
 ### Icon / SVG Rendering
 
-`LeafKind::Icon` is now connected through a vector-first SVG icon path.
+`LeafKind::Icon` is now connected through a vector-first SVG icon path. Built-in
+icons are generated from the workspace `assets/icons/*.svg` directory at compile
+time; `gui/src/icon/builtin.rs` no longer contains hand-written SVG strings.
+`IconName` constants provide typed access to generated asset ids, while `IconId`
+remains available for dynamic/custom icon registration.
 
 Current route:
 
 ```text
 LeafKind::Icon
   -> PaintTarget::draw_icon(rect, spec)
-  -> IconRegistry resolves icon_id to SVG source
+  -> IconRegistry resolves icon_id to generated asset or registered custom SVG
   -> Renderer::draw_svg_icon(...)
   -> SvgVectorCache parses supported SVG path data
   -> PathData + PathStyle
   -> VectorPipeline
 ```
+
+Compatibility aliases are centralized in `gui/src/icon/aliases.rs`:
+
+```text
+close -> xmark
+chevron_down -> nav-arrow-down
+chevron_right -> nav-arrow-right
+```
+
+New UI code should use generated canonical names such as `names::XMARK`,
+`names::NAV_ARROW_DOWN`, `names::NAV_ARROW_RIGHT`, and `names::CHECK`.
 
 Supported UI icon SVG subset:
 

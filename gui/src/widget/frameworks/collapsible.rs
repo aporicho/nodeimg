@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::icon::names;
 use crate::renderer::TextStyle;
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
@@ -63,9 +64,9 @@ impl WidgetProps for CollapsibleProps {
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
         let tokens = cx.theme.components.collapsible;
         let chevron = if self.expanded {
-            "chevron_down"
+            names::NAV_ARROW_DOWN
         } else {
-            "chevron_right"
+            names::NAV_ARROW_RIGHT
         };
 
         let mut children = vec![ui::row(format!("{id}::header"))
@@ -182,8 +183,8 @@ mod tests {
             },
         );
 
-        assert_eq!(header_icon_id(&collapsed), "chevron_right");
-        assert_eq!(header_icon_id(&expanded), "chevron_down");
+        assert_eq!(header_icon_id(&collapsed), names::NAV_ARROW_RIGHT.as_str());
+        assert_eq!(header_icon_id(&expanded), names::NAV_ARROW_DOWN.as_str());
     }
 
     fn header_icon_id(build: &WidgetBuild) -> String {

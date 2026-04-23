@@ -1,4 +1,5 @@
 use crate::gesture::Gesture;
+use crate::icon::names;
 use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
 use crate::tree::layout::{Align, LeafKind, Overflow, Size};
 use crate::tree::Desc;
@@ -118,7 +119,7 @@ impl WidgetProps for PanelProps {
             .build()];
             if self.closable {
                 titlebar_children.push(
-                    ui::widget(anatomy.part("close"), ButtonProps::icon_only("close")).build(),
+                    ui::widget(anatomy.part("close"), ButtonProps::icon_only(names::XMARK)).build(),
                 );
             }
 
@@ -407,7 +408,7 @@ mod tests {
         let NodeKind::Leaf(LeafKind::Icon { spec }) = &close_icon.kind else {
             panic!("close button visual should use LeafKind::Icon");
         };
-        assert_eq!(spec.id, crate::icon::IconId::from("close"));
+        assert_eq!(spec.id, crate::icon::IconId::from(names::XMARK));
     }
 
     #[test]

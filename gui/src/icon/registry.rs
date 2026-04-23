@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::renderer::svg::SvgSource;
 
-use super::{builtin, IconAsset, IconId};
+use super::{aliases, builtin, IconAsset, IconId};
 
 #[derive(Debug, Clone)]
 pub(crate) struct IconRegistry {
@@ -19,7 +19,9 @@ impl IconRegistry {
 
     pub(crate) fn with_builtin_icons() -> Self {
         let mut registry = Self::new();
-        builtin::register_builtin_icons(&mut registry);
+        for asset in builtin::assets() {
+            registry.register_static_svg(asset.id, asset.svg);
+        }
         registry
     }
 
@@ -29,8 +31,20 @@ impl IconRegistry {
         self.icons.insert(id, IconAsset::svg(source));
     }
 
+    pub(crate) fn register_static_svg(&mut self, id: &'static str, svg: &'static [u8]) {
+        let source = SvgSource::new(id, Arc::<[u8]>::from(svg));
+        self.icons.insert(IconId::from(id), IconAsset::svg(source));
+    }
+
     pub(crate) fn resolve(&self, id: &IconId) -> Option<&IconAsset> {
-        self.icons.get(id)
+        self.icons.get(id).or_else(|| {
+            aliases::canonical_id(id.as_str()).and_then(|canonical| self.icons.get(canonical))
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.icons.len()
     }
 }
 
@@ -48,13 +62,57 @@ mod tests {
     fn builtin_icons_are_registered() {
         let registry = IconRegistry::with_builtin_icons();
 
+        assert_eq!(registry.len(), builtin::assets().len());
+        assert!(registry.len() > 1_000);
         assert!(registry.resolve(&IconId::from("plus")).is_some());
-        assert!(registry.resolve(&IconId::from("close")).is_some());
-        assert!(registry.resolve(&IconId::from("chevron_down")).is_some());
-        assert!(registry.resolve(&IconId::from("chevron_right")).is_some());
+        assert!(registry.resolve(&IconId::from("xmark")).is_some());
+        assert!(registry.resolve(&IconId::from("nav-arrow-down")).is_some());
+        assert!(registry.resolve(&IconId::from("nav-arrow-right")).is_some());
         assert!(registry.resolve(&IconId::from("play")).is_some());
         assert!(registry.resolve(&IconId::from("search")).is_some());
         assert!(registry.resolve(&IconId::from("settings")).is_some());
+        assert!(registry.resolve(&IconId::from("check")).is_some());
+    }
+
+    #[test]
+    fn legacy_icon_aliases_resolve_to_canonical_assets() {
+        let registry = IconRegistry::with_builtin_icons();
+
+        assert_eq!(
+            registry
+                .resolve(&IconId::from("close"))
+                .expect("close alias")
+                .source
+                .key()
+                .id(),
+            "xmark"
+        );
+        assert_eq!(
+            registry
+                .resolve(&IconId::from("chevron_down"))
+                .expect("chevron_down alias")
+                .source
+                .key()
+                .id(),
+            "nav-arrow-down"
+        );
+        assert_eq!(
+            registry
+                .resolve(&IconId::from("chevron_right"))
+                .expect("chevron_right alias")
+                .source
+                .key()
+                .id(),
+            "nav-arrow-right"
+        );
+    }
+
+    #[test]
+    fn generated_icon_names_match_asset_ids() {
+        assert_eq!(builtin::names::PLUS.as_str(), "plus");
+        assert_eq!(builtin::names::XMARK.as_str(), "xmark");
+        assert_eq!(builtin::names::NAV_ARROW_DOWN.as_str(), "nav-arrow-down");
+        assert_eq!(builtin::names::CHECK.as_str(), "check");
     }
 
     #[test]

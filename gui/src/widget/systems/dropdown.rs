@@ -3,8 +3,7 @@ use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{hit_test, NodeId, NodeKind, Tree};
 use crate::ui;
-use crate::widget::atoms::button::ButtonProps;
-use crate::widget::atoms::dropdown::DropdownProps;
+use crate::widget::atoms::dropdown::{DropdownOptionProps, DropdownProps};
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
 use crate::widget::frameworks::group::GroupProps;
 use crate::widget::frameworks::list_view::ListViewProps;
@@ -189,18 +188,12 @@ fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -
         .iter()
         .enumerate()
         .map(|(index, option)| {
-            let prefix = if index == props.selected {
-                "✓ "
-            } else if index == highlighted {
-                "› "
-            } else {
-                "  "
-            };
             ui::widget(
                 format!("__dropdown_option::{}::{}", dropdown_id, index),
-                ButtonProps {
-                    label: Cow::Owned(format!("{prefix}{option}")),
-                    icon: None,
+                DropdownOptionProps {
+                    label: option.clone(),
+                    selected: index == props.selected,
+                    highlighted: index == highlighted,
                     disabled: false,
                     size: props.size,
                     density: props.density,
@@ -295,4 +288,83 @@ fn focused_dropdown_id(tree: &Tree, focused: Option<NodeId>) -> Option<String> {
         .as_any()
         .downcast_ref::<DropdownProps>()
         .map(|_| node.id.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::icon::{names, IconId};
+    use crate::theme::{ControlSize, Density};
+    use crate::tree::Desc;
+    use crate::widget::frameworks::group::GroupProps;
+    use crate::widget::frameworks::list_view::ListViewProps;
+
+    #[test]
+    fn dropdown_popup_options_use_icon_markers_not_text_prefixes() {
+        let props = DropdownProps {
+            label: Some(Cow::Borrowed("Mode")),
+            options: vec![Cow::Borrowed("Normal"), Cow::Borrowed("Multiply")],
+            selected: 0,
+            disabled: false,
+            size: ControlSize::Small,
+            density: Density::Compact,
+        };
+
+        let request = build_request("blend", 1, &props);
+        let options = popup_option_props(&request.content);
+
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].label, "Normal");
+        assert!(options[0].selected);
+        assert!(!options[0].highlighted);
+        assert_eq!(
+            options[0].marker_icon().map(IconId::from),
+            Some(IconId::from(names::CHECK))
+        );
+
+        assert_eq!(options[1].label, "Multiply");
+        assert!(!options[1].selected);
+        assert!(options[1].highlighted);
+        assert_eq!(
+            options[1].marker_icon().map(IconId::from),
+            Some(IconId::from(names::NAV_ARROW_RIGHT))
+        );
+
+        for option in options {
+            assert!(!option.label.starts_with('✓'));
+            assert!(!option.label.starts_with('›'));
+        }
+    }
+
+    fn popup_option_props(content: &Desc) -> Vec<&DropdownOptionProps> {
+        let Desc::Widget(group_widget) = content else {
+            panic!("dropdown popup content should be a group widget");
+        };
+        let group = group_widget
+            .props()
+            .as_any()
+            .downcast_ref::<GroupProps>()
+            .expect("popup content should carry GroupProps");
+        let Desc::Widget(list_widget) = &group.content[1] else {
+            panic!("popup second child should be a list widget");
+        };
+        let list = list_widget
+            .props()
+            .as_any()
+            .downcast_ref::<ListViewProps>()
+            .expect("popup list should carry ListViewProps");
+        list.items
+            .iter()
+            .map(|item| {
+                let Desc::Widget(option_widget) = item else {
+                    panic!("list item should be a dropdown option widget");
+                };
+                option_widget
+                    .props()
+                    .as_any()
+                    .downcast_ref::<DropdownOptionProps>()
+                    .expect("list item should carry DropdownOptionProps")
+            })
+            .collect()
+    }
 }

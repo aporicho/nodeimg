@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn icon_builder_sets_fixed_size_and_icon_spec() {
-        let desc = icon("plus_icon", "plus", 16.0, Color::WHITE).build();
+        let desc = icon("plus_icon", crate::icon::names::PLUS, 16.0, Color::WHITE).build();
 
         let Desc::Leaf { kind, style, .. } = desc else {
             panic!("icon builder should create a leaf");
@@ -143,6 +143,6 @@ mod tests {
         let LeafKind::Icon { spec } = kind else {
             panic!("expected icon kind");
         };
-        assert_eq!(spec.id, crate::icon::IconId::from("plus"));
+        assert_eq!(spec.id, crate::icon::IconId::from(crate::icon::names::PLUS));
     }
 }
