@@ -58,6 +58,14 @@ pub(crate) fn toggle_app_mode(current: AppMode, developer_mode_enabled: bool) ->
     }
 }
 
+pub(crate) fn initial_app_mode(developer_mode_enabled: bool) -> AppMode {
+    if developer_mode_enabled {
+        AppMode::Developer
+    } else {
+        AppMode::User
+    }
+}
+
 pub struct AppShell {
     gui: Context,
     mode: AppMode,
@@ -82,7 +90,7 @@ impl App for AppShell {
 
         Self {
             gui,
-            mode: AppMode::User,
+            mode: initial_app_mode(DEVELOPER_MODE_ENABLED),
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             visual_audit: VisualAuditState::default(),
@@ -754,8 +762,14 @@ fn cursor_for_resize_edge(edge: ResizeEdge) -> CursorStyle {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_developer_mode_shortcut, toggle_app_mode, AppMode};
+    use super::{initial_app_mode, is_developer_mode_shortcut, toggle_app_mode, AppMode};
     use gui::shell::{AppEvent, Key, Modifiers};
+
+    #[test]
+    fn initial_app_mode_respects_developer_mode_gate() {
+        assert_eq!(initial_app_mode(true), AppMode::Developer);
+        assert_eq!(initial_app_mode(false), AppMode::User);
+    }
 
     #[test]
     fn app_mode_toggle_respects_developer_mode_gate() {
