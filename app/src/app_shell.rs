@@ -1,6 +1,3 @@
-use crate::developer_mode::{
-    build_developer_page, DeveloperModeBuildContext, DeveloperModeController,
-};
 use crate::user_mode::{build_user_page, UserModeBuildContext};
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
 use crate::workspace::node_palette;
@@ -29,10 +26,6 @@ const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 #[derive(Debug)]
 enum AppMessage {
     WidgetClicked(String),
-    WidgetDoubleClicked(String),
-    TextChanged { id: String, value: String },
-    NumberChanged { id: String, value: f32 },
-    SelectionChanged { id: String, selected: usize },
     WidgetDragStart { id: String, x: f32, y: f32 },
     WidgetDragMove { id: String, x: f32, y: f32 },
     WidgetDragEnd { id: String, x: f32, y: f32 },
@@ -68,9 +61,7 @@ pub struct AppShell {
     gui: Context,
     mode: AppMode,
     camera: Camera,
-    developer_camera: Camera,
     navigation: CanvasNavigationController,
-    developer: DeveloperModeController,
     workspace: WorkspaceController,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
@@ -94,9 +85,7 @@ impl App for AppShell {
             gui,
             mode,
             camera: Camera::new(),
-            developer_camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
-            developer: DeveloperModeController::new(),
             workspace: WorkspaceController::new(),
             last_canvas_click: None,
             mouse_x: 0.0,
@@ -119,16 +108,8 @@ impl App for AppShell {
         let consumed = output.consumed;
         self.handle_framework_output(output, ctx);
 
-        let navigation_consumed = if consumed {
-            false
-        } else {
-            match self.mode {
-                AppMode::User => self.navigation.handle_event(&event, &mut self.camera),
-                AppMode::Developer => self
-                    .navigation
-                    .handle_event(&event, &mut self.developer_camera),
-            }
-        };
+        let navigation_consumed =
+            !consumed && self.navigation.handle_event(&event, &mut self.camera);
         if navigation_consumed {
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
@@ -136,24 +117,12 @@ impl App for AppShell {
             return;
         }
 
-        match self.mode {
-            AppMode::User => self.handle_user_event(event, consumed, ctx),
-            AppMode::Developer => self.handle_developer_event(event, ctx),
-        }
+        self.handle_user_event(event, consumed, ctx);
     }
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
-        let desc = match self.mode {
-            AppMode::User => self.build_user_desc(viewport),
-            AppMode::Developer => build_developer_page(DeveloperModeBuildContext {
-                viewport,
-                camera: &self.developer_camera,
-                theme: &self.theme,
-                state: self.developer.state(),
-                image: SAMPLE_IMAGE_HANDLE,
-            }),
-        };
+        let desc = self.build_user_desc(viewport);
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
@@ -289,12 +258,6 @@ impl AppShell {
         }
     }
 
-    fn handle_developer_event(&self, event: AppEvent, ctx: &mut AppContext) {
-        if let AppEvent::MouseMove { x, y } = event {
-            self.update_hover_cursor(x, y, ctx);
-        }
-    }
-
     fn update_mouse_position_from_event(&mut self, event: &AppEvent) {
         match *event {
             AppEvent::MouseMove { x, y }
@@ -351,10 +314,7 @@ impl AppShell {
 
     fn handle_gui_action(&mut self, action: GuiAction) -> WorkspaceActionResult {
         tracing::info!("GuiAction: {:?}", action);
-        match self.mode {
-            AppMode::User => self.workspace.handle_gui_action(action),
-            AppMode::Developer => WorkspaceActionResult::default(),
-        }
+        self.workspace.handle_gui_action(action)
     }
 
     fn is_duplicate_action_event(&self, event: &GuiEvent, handled_node_adds: &[String]) -> bool {
@@ -385,24 +345,19 @@ impl AppShell {
     fn map_widget_event(&self, event: WidgetEvent) -> Option<AppMessage> {
         Some(match event {
             WidgetEvent::Click { id } => AppMessage::WidgetClicked(id),
-            WidgetEvent::DoubleClick { id } => AppMessage::WidgetDoubleClicked(id),
-            WidgetEvent::TextChanged { id, value } => AppMessage::TextChanged { id, value },
-            WidgetEvent::NumberChanged { id, value } => AppMessage::NumberChanged { id, value },
-            WidgetEvent::SelectionChanged { id, selected } => {
-                AppMessage::SelectionChanged { id, selected }
-            }
             WidgetEvent::DragStart { id, x, y } => AppMessage::WidgetDragStart { id, x, y },
             WidgetEvent::DragMove { id, x, y } => AppMessage::WidgetDragMove { id, x, y },
             WidgetEvent::DragEnd { id, x, y } => AppMessage::WidgetDragEnd { id, x, y },
             WidgetEvent::LongPress { id } => AppMessage::LongPress(id),
+            WidgetEvent::DoubleClick { .. }
+            | WidgetEvent::TextChanged { .. }
+            | WidgetEvent::NumberChanged { .. }
+            | WidgetEvent::SelectionChanged { .. } => return None,
         })
     }
 
     fn handle_message(&mut self, message: AppMessage) {
-        match self.mode {
-            AppMode::User => self.handle_user_message(message),
-            AppMode::Developer => self.handle_developer_message(message),
-        }
+        self.handle_user_message(message);
     }
 
     fn handle_user_message(&mut self, message: AppMessage) {
@@ -462,50 +417,6 @@ impl AppShell {
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
             }
-            AppMessage::WidgetDoubleClicked(_)
-            | AppMessage::TextChanged { .. }
-            | AppMessage::NumberChanged { .. }
-            | AppMessage::SelectionChanged { .. } => {}
-        }
-    }
-
-    fn handle_developer_message(&mut self, message: AppMessage) {
-        match message {
-            AppMessage::WidgetClicked(id) => {
-                self.developer.handle_click(
-                    &id,
-                    self.mouse_x,
-                    &self.developer_camera,
-                    &mut self.gui,
-                );
-            }
-            AppMessage::WidgetDoubleClicked(id) => {
-                self.developer.handle_double_click(&id);
-            }
-            AppMessage::TextChanged { id, value } => {
-                self.developer.handle_text_change(&id, value);
-            }
-            AppMessage::NumberChanged { id, value } => {
-                self.developer.handle_number_change(&id, value);
-            }
-            AppMessage::SelectionChanged { id, selected } => {
-                self.developer.handle_selection_change(&id, selected);
-            }
-            AppMessage::WidgetDragStart { id, x, y } => {
-                self.developer
-                    .handle_drag_start(&id, x, y, &self.developer_camera, &self.gui);
-            }
-            AppMessage::WidgetDragMove { id, x, y } => {
-                self.developer
-                    .handle_drag_move(&id, x, y, &self.developer_camera, &self.gui);
-            }
-            AppMessage::WidgetDragEnd { id, x, y } => {
-                self.developer
-                    .handle_drag_end(&id, x, y, &self.developer_camera);
-            }
-            AppMessage::LongPress(id) => {
-                tracing::info!("LongPress: {}", id);
-            }
         }
     }
 
@@ -534,30 +445,6 @@ impl AppShell {
                     ctx.cursor.set(cursor_for_resize_edge(edge));
                     return;
                 }
-            }
-
-            if self.mode == AppMode::Developer
-                && self.developer.is_playground_resize_target(id)
-                && self.gui.node_has_gesture(node_id, Gesture::Drag)
-            {
-                ctx.cursor.set(CursorStyle::ResizeSE);
-                return;
-            }
-
-            if self.mode == AppMode::Developer
-                && self.developer.is_playground_drag_target(id)
-                && self.gui.node_has_gesture(node_id, Gesture::Drag)
-            {
-                ctx.cursor.set(CursorStyle::Move);
-                return;
-            }
-
-            if self.mode == AppMode::Developer
-                && self.developer.is_control_drag_target(id)
-                && self.gui.node_has_gesture(node_id, Gesture::Drag)
-            {
-                ctx.cursor.set(CursorStyle::Pointer);
-                return;
             }
 
             if self.gui.node_is_text_input_field(node_id) {
