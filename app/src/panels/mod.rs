@@ -1,12 +1,10 @@
-use crate::demo_gallery::GalleryState;
 use gui::theme::Theme;
 use gui::tree::layout::TextureHandle;
 
 #[allow(dead_code)]
 pub(crate) struct PanelBuildContext<'a> {
     pub(crate) theme: &'a Theme,
-    pub(crate) gallery: &'a GalleryState,
-    pub(crate) image: TextureHandle,
+    pub(crate) preview_image: TextureHandle,
     pub(crate) engine: &'a EnginePanelState,
 }
 
@@ -26,17 +24,14 @@ include!(concat!(env!("OUT_DIR"), "/panels_generated.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::demo_gallery::GalleryState;
     use gui::theme::light_theme;
 
     #[test]
     fn generated_panels_include_initial_workspace_panels() {
         let theme = light_theme();
-        let gallery = GalleryState::default();
         let panels = collect_panels(&PanelBuildContext {
             theme: &theme,
-            gallery: &gallery,
-            image: TextureHandle(1),
+            preview_image: TextureHandle(1),
             engine: &EnginePanelState {
                 node_count: 0,
                 connection_count: 0,
@@ -55,6 +50,6 @@ mod tests {
         assert!(ids.contains(&"preview"));
         assert!(ids.contains(&"toolbar"));
         assert!(ids.contains(&"engine"));
-        assert!(ids.contains(&"gallery"));
+        assert!(!ids.contains(&"gallery"));
     }
 }

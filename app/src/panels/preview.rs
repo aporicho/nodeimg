@@ -26,7 +26,7 @@ pub(crate) fn panel(ctx: &PanelBuildContext<'_>) -> PanelDeclaration {
         content: vec![ui::widget(
             Cow::Borrowed("preview_image"),
             ImageViewerProps {
-                texture: ctx.image,
+                texture: ctx.preview_image,
                 height: 208.0,
                 style: ImageStyle::default(),
             },

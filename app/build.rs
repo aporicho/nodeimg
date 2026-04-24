@@ -42,12 +42,12 @@ fn main() {
     generated.push_str(
         "\npub(crate) fn collect_panels(ctx: &PanelBuildContext<'_>) -> Vec<PanelDeclaration> {\n",
     );
-    generated.push_str("    let mut panels = Vec::new();\n");
+    generated.push_str("    vec![\n");
     for path in &panel_files {
         let module = path.file_stem().and_then(|stem| stem.to_str()).unwrap();
-        generated.push_str(&format!("    panels.push({module}::panel(ctx));\n"));
+        generated.push_str(&format!("        {module}::panel(ctx),\n"));
     }
-    generated.push_str("    panels\n");
+    generated.push_str("    ]\n");
     generated.push_str("}\n");
 
     fs::write(generated_path, generated).expect("write panels_generated.rs");

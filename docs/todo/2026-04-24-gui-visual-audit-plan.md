@@ -65,7 +65,7 @@ the lowest responsible layer.
 
 ## Execution Order
 
-1. Build or extend a deterministic visual gallery scene for each layer.
+1. Build or extend a deterministic visual audit developer page for each layer.
 2. Audit primitive graphics first, because all higher layers depend on them.
 3. Audit basic widgets with all meaningful states.
 4. Audit framework widgets and panels.
@@ -78,7 +78,7 @@ the lowest responsible layer.
 
 Prefer extending existing fixtures before adding new systems:
 
-- `app/src/demo_gallery.rs` for primitive and widget visual scenes.
+- `app/src/visual_audit/` for primitive and widget visual scenes.
 - `app/src/workspace/showcase_node.rs` for node-card param/control coverage.
 - `app/src/workspace/view.rs` for full workspace composition checks.
 - `gui/src/tree/paint` recording tests for low-level primitive assertions.
@@ -86,11 +86,11 @@ Prefer extending existing fixtures before adding new systems:
 
 ## Progress Log
 
-- 2026-04-24: Added a `Visual Audit` panel backed by `app/src/demo_gallery.rs`.
-  The first deterministic primitive fixture covers rect/radius/shadow, text
-  clip/ellipsis/alignment, image fit/tint/source rect, SVG icon, circle, line,
-  curve, path, grid, connection, and transform samples. Manual visual review is
-  still required before marking the primitive rows DONE.
+- 2026-04-24: Added a `Visual Audit` developer page backed by
+  `app/src/visual_audit/`. The first deterministic primitive fixture covers
+  rect/radius/shadow, text clip/ellipsis/alignment, image fit/tint/source rect,
+  SVG icon, circle, line, curve, path, grid, connection, and transform samples.
+  Manual visual review is still required before marking the primitive rows DONE.
 
 ## Acceptance
 

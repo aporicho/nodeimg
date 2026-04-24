@@ -1,9 +1,11 @@
-use crate::demo_gallery::{
-    build_demo_popup, GalleryState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
+use crate::developer_mode::{build_developer_page, DeveloperModeBuildContext};
+use crate::user_mode::{build_user_page, UserModeBuildContext};
+use crate::visual_audit::{
+    build_visual_audit_popup, VisualAuditState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
+    TOGGLE_GRID_ID,
 };
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
 use crate::workspace::node_palette;
-use crate::workspace::view::build_workspace_tree;
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
@@ -19,14 +21,15 @@ use gui::tree::layout::TextureHandle;
 use gui::widget::resize_edge::ResizeEdge;
 use std::time::{Duration, Instant};
 
-const GALLERY_SCALE: f32 = 1.2;
-const DEMO_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
-const DEMO_IMAGE_SIZE: TextureSize = TextureSize::new(96, 96);
+const APP_THEME_SCALE: f32 = 1.2;
+const SAMPLE_IMAGE_HANDLE: TextureHandle = TextureHandle(1);
+const SAMPLE_IMAGE_SIZE: TextureSize = TextureSize::new(96, 96);
+const DEVELOPER_MODE_ENABLED: bool = cfg!(debug_assertions);
 const CANVAS_DOUBLE_CLICK_TIMEOUT: Duration = Duration::from_millis(300);
 const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 
 #[derive(Debug)]
-enum DemoMessage {
+enum AppMessage {
     WidgetClicked(String),
     WidgetDoubleClicked(String),
     TextChanged { id: String, value: String },
@@ -38,12 +41,29 @@ enum DemoMessage {
     LongPress(String),
 }
 
-pub struct DemoApp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AppMode {
+    User,
+    Developer,
+}
+
+pub(crate) fn toggle_app_mode(current: AppMode, developer_mode_enabled: bool) -> AppMode {
+    if !developer_mode_enabled {
+        return AppMode::User;
+    }
+
+    match current {
+        AppMode::User => AppMode::Developer,
+        AppMode::Developer => AppMode::User,
+    }
+}
+
+pub struct AppShell {
     gui: Context,
+    mode: AppMode,
     camera: Camera,
     navigation: CanvasNavigationController,
-    active_button: Option<String>,
-    gallery: GalleryState,
+    visual_audit: VisualAuditState,
     workspace: WorkspaceController,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
@@ -51,26 +71,26 @@ pub struct DemoApp {
     theme: Theme,
 }
 
-impl App for DemoApp {
+impl App for AppShell {
     fn init(ctx: &mut AppContext) -> Self {
         let mut gui = Context::new();
         gui.register_texture(
-            DEMO_IMAGE_HANDLE,
-            create_demo_texture(&ctx.device, &ctx.queue),
-            DEMO_IMAGE_SIZE,
+            SAMPLE_IMAGE_HANDLE,
+            create_sample_texture(&ctx.device, &ctx.queue),
+            SAMPLE_IMAGE_SIZE,
         );
 
         Self {
             gui,
+            mode: AppMode::User,
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
-            active_button: None,
-            gallery: GalleryState::default(),
+            visual_audit: VisualAuditState::default(),
             workspace: WorkspaceController::new(),
             last_canvas_click: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
-            theme: light_theme().scaled(GALLERY_SCALE),
+            theme: light_theme().scaled(APP_THEME_SCALE),
         }
     }
 
@@ -80,60 +100,41 @@ impl App for DemoApp {
         }
 
         self.update_mouse_position_from_event(&event);
+        if self.handle_global_shortcut(&event) {
+            return;
+        }
 
         let output = self.gui.handle_event(&event);
         let consumed = output.consumed;
         self.handle_framework_output(output, ctx);
 
-        if !consumed && self.navigation.handle_event(&event, &mut self.camera) {
+        if self.mode == AppMode::User
+            && !consumed
+            && self.navigation.handle_event(&event, &mut self.camera)
+        {
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
             }
             return;
         }
 
-        match event {
-            AppEvent::KeyPress {
-                key: Key::Escape, ..
-            } if !consumed => {
-                if self.workspace.cancel_canvas_port_connection(&mut self.gui) {
-                    return;
-                }
-            }
-            AppEvent::MouseMove { x, y } => {
-                self.workspace.update_canvas_hover(&mut self.gui, x, y);
-                self.update_hover_cursor(x, y, ctx);
-            }
-            AppEvent::MouseRelease { x, y, button } if button == MouseButton::Left => {
-                if !consumed {
-                    self.handle_canvas_release(x, y);
-                }
-            }
-            _ => {}
+        match self.mode {
+            AppMode::User => self.handle_user_event(event, consumed, ctx),
+            AppMode::Developer => self.handle_developer_event(event, ctx),
         }
     }
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         let viewport = viewport_rect(ctx);
-        let panels = crate::panels::collect_panels(&crate::panels::PanelBuildContext {
-            theme: &self.theme,
-            gallery: &self.gallery,
-            image: DEMO_IMAGE_HANDLE,
-            engine: &self.workspace.engine_panel_state(),
-        });
-        let panel_root = self.gui.panel_root(viewport, panels);
-        let canvas_nodes = self.workspace.canvas_node_render_views(&mut self.gui);
-        let canvas_connections = self.workspace.canvas_connection_views();
-        let pending_connection = self.gui.pending_canvas_connection();
-        let desc = build_workspace_tree(
-            viewport,
-            &self.camera,
-            &self.theme,
-            &canvas_nodes,
-            &canvas_connections,
-            pending_connection.as_ref(),
-            panel_root,
-        );
+        let desc = match self.mode {
+            AppMode::User => self.build_user_desc(viewport),
+            AppMode::Developer => build_developer_page(DeveloperModeBuildContext {
+                viewport,
+                theme: &self.theme,
+                visual_audit: &self.visual_audit,
+                image: SAMPLE_IMAGE_HANDLE,
+            }),
+        };
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
@@ -147,12 +148,12 @@ impl App for DemoApp {
     }
 }
 
-fn create_demo_texture(
+fn create_sample_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> std::sync::Arc<wgpu::TextureView> {
-    const WIDTH: u32 = DEMO_IMAGE_SIZE.width;
-    const HEIGHT: u32 = DEMO_IMAGE_SIZE.height;
+    const WIDTH: u32 = SAMPLE_IMAGE_SIZE.width;
+    const HEIGHT: u32 = SAMPLE_IMAGE_SIZE.height;
     let mut data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
@@ -171,7 +172,7 @@ fn create_demo_texture(
     }
 
     let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("demo_image_texture"),
+        label: Some("sample_image_texture"),
         size: wgpu::Extent3d {
             width: WIDTH,
             height: HEIGHT,
@@ -208,7 +209,72 @@ fn create_demo_texture(
     std::sync::Arc::new(texture.create_view(&wgpu::TextureViewDescriptor::default()))
 }
 
-impl DemoApp {
+impl AppShell {
+    fn handle_global_shortcut(&mut self, event: &AppEvent) -> bool {
+        if !DEVELOPER_MODE_ENABLED || !is_developer_mode_shortcut(event) {
+            return false;
+        }
+
+        let next_mode = toggle_app_mode(self.mode, DEVELOPER_MODE_ENABLED);
+        if next_mode != self.mode {
+            self.mode = next_mode;
+            self.gui.close_overlay();
+        }
+        true
+    }
+
+    fn build_user_desc(&mut self, viewport: Rect) -> gui::tree::Desc {
+        let panels = crate::panels::collect_panels(&crate::panels::PanelBuildContext {
+            theme: &self.theme,
+            preview_image: SAMPLE_IMAGE_HANDLE,
+            engine: &self.workspace.engine_panel_state(),
+        });
+        let panel_root = self.gui.panel_root(viewport, panels);
+        let canvas_nodes = self.workspace.canvas_node_render_views(&mut self.gui);
+        let canvas_connections = self.workspace.canvas_connection_views();
+        let pending_connection = self.gui.pending_canvas_connection();
+
+        build_user_page(UserModeBuildContext {
+            viewport,
+            camera: &self.camera,
+            theme: &self.theme,
+            canvas_nodes: &canvas_nodes,
+            canvas_connections: &canvas_connections,
+            pending_connection: pending_connection.as_ref(),
+            panel_root,
+        })
+    }
+
+    fn handle_user_event(&mut self, event: AppEvent, consumed: bool, ctx: &mut AppContext) {
+        match event {
+            AppEvent::KeyPress {
+                key: Key::Escape, ..
+            } if !consumed => {
+                let _ = self.workspace.cancel_canvas_port_connection(&mut self.gui);
+            }
+            AppEvent::MouseMove { x, y } => {
+                self.workspace.update_canvas_hover(&mut self.gui, x, y);
+                self.update_hover_cursor(x, y, ctx);
+            }
+            AppEvent::MouseRelease {
+                x,
+                y,
+                button: MouseButton::Left,
+            } => {
+                if !consumed {
+                    self.handle_canvas_release(x, y);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_developer_event(&self, event: AppEvent, ctx: &mut AppContext) {
+        if let AppEvent::MouseMove { x, y } = event {
+            self.update_hover_cursor(x, y, ctx);
+        }
+    }
+
     fn update_mouse_position_from_event(&mut self, event: &AppEvent) {
         match *event {
             AppEvent::MouseMove { x, y }
@@ -265,7 +331,10 @@ impl DemoApp {
 
     fn handle_gui_action(&mut self, action: GuiAction) -> WorkspaceActionResult {
         tracing::info!("GuiAction: {:?}", action);
-        self.workspace.handle_gui_action(action)
+        match self.mode {
+            AppMode::User => self.workspace.handle_gui_action(action),
+            AppMode::Developer => WorkspaceActionResult::default(),
+        }
     }
 
     fn is_duplicate_action_event(&self, event: &GuiEvent, handled_node_adds: &[String]) -> bool {
@@ -285,7 +354,7 @@ impl DemoApp {
         }
     }
 
-    fn map_gui_event(&self, event: GuiEvent) -> Option<DemoMessage> {
+    fn map_gui_event(&self, event: GuiEvent) -> Option<AppMessage> {
         match event {
             GuiEvent::Widget(event) => self.map_widget_event(event),
             GuiEvent::Panel(_) => None,
@@ -293,52 +362,107 @@ impl DemoApp {
         }
     }
 
-    fn map_widget_event(&self, event: WidgetEvent) -> Option<DemoMessage> {
+    fn map_widget_event(&self, event: WidgetEvent) -> Option<AppMessage> {
         Some(match event {
-            WidgetEvent::Click { id } => DemoMessage::WidgetClicked(id),
-            WidgetEvent::DoubleClick { id } => DemoMessage::WidgetDoubleClicked(id),
-            WidgetEvent::TextChanged { id, value } => DemoMessage::TextChanged { id, value },
-            WidgetEvent::NumberChanged { id, value } => DemoMessage::NumberChanged { id, value },
+            WidgetEvent::Click { id } => AppMessage::WidgetClicked(id),
+            WidgetEvent::DoubleClick { id } => AppMessage::WidgetDoubleClicked(id),
+            WidgetEvent::TextChanged { id, value } => AppMessage::TextChanged { id, value },
+            WidgetEvent::NumberChanged { id, value } => AppMessage::NumberChanged { id, value },
             WidgetEvent::SelectionChanged { id, selected } => {
-                DemoMessage::SelectionChanged { id, selected }
+                AppMessage::SelectionChanged { id, selected }
             }
-            WidgetEvent::DragStart { id, x, y } => DemoMessage::WidgetDragStart { id, x, y },
-            WidgetEvent::DragMove { id, x, y } => DemoMessage::WidgetDragMove { id, x, y },
-            WidgetEvent::DragEnd { id, x, y } => DemoMessage::WidgetDragEnd { id, x, y },
-            WidgetEvent::LongPress { id } => DemoMessage::LongPress(id),
+            WidgetEvent::DragStart { id, x, y } => AppMessage::WidgetDragStart { id, x, y },
+            WidgetEvent::DragMove { id, x, y } => AppMessage::WidgetDragMove { id, x, y },
+            WidgetEvent::DragEnd { id, x, y } => AppMessage::WidgetDragEnd { id, x, y },
+            WidgetEvent::LongPress { id } => AppMessage::LongPress(id),
         })
     }
 
-    fn handle_message(&mut self, message: DemoMessage) {
+    fn handle_message(&mut self, message: AppMessage) {
+        match self.mode {
+            AppMode::User => self.handle_user_message(message),
+            AppMode::Developer => self.handle_developer_message(message),
+        }
+    }
+
+    fn handle_user_message(&mut self, message: AppMessage) {
         match message {
-            DemoMessage::WidgetClicked(id) => {
+            AppMessage::WidgetClicked(id) => {
                 if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
                     return;
                 }
                 if self.workspace.select_canvas_node(&mut self.gui, &id) {
-                    self.active_button = Some(id);
                     return;
                 }
-                let _ = self.gallery.apply_click(&id);
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);
                     if result.close_overlay {
                         self.gui.close_overlay();
                     }
-                    self.active_button = Some(id);
                     return;
                 }
                 let _ = self.workspace.handle_image_demo_button(&id);
+            }
+            AppMessage::WidgetDragStart { id, x, y } => {
+                if self.workspace.begin_canvas_port_connection(
+                    &mut self.gui,
+                    &self.camera,
+                    &id,
+                    x,
+                    y,
+                ) {
+                    return;
+                }
+                let _ =
+                    self.workspace
+                        .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+            }
+            AppMessage::WidgetDragMove { id, x, y } => {
+                if self
+                    .workspace
+                    .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
+                {
+                    return;
+                }
+                let _ = self
+                    .workspace
+                    .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y);
+            }
+            AppMessage::WidgetDragEnd { id, x, y } => {
+                if self
+                    .workspace
+                    .end_canvas_port_connection(&mut self.gui, x, y)
+                {
+                    return;
+                }
+                let _ = self
+                    .workspace
+                    .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+            }
+            AppMessage::LongPress(id) => {
+                tracing::info!("LongPress: {}", id);
+            }
+            AppMessage::WidgetDoubleClicked(_)
+            | AppMessage::TextChanged { .. }
+            | AppMessage::NumberChanged { .. }
+            | AppMessage::SelectionChanged { .. } => {}
+        }
+    }
+
+    fn handle_developer_message(&mut self, message: AppMessage) {
+        match message {
+            AppMessage::WidgetClicked(id) => {
+                let _ = self.visual_audit.apply_click(&id);
                 if id == POPUP_TRIGGER_ID {
                     if self.gui.overlay_open() {
                         self.gui.close_overlay();
                     } else {
                         self.gui.open_overlay(OverlayRequest {
-                            id: "demo_popup".to_string(),
+                            id: "visual_audit_popup".to_string(),
                             anchor_id: POPUP_TRIGGER_ID.to_string(),
                             restore_focus_id: Some(POPUP_TRIGGER_ID.to_string()),
                             placement: OverlayPlacement::BelowStart,
-                            content: build_demo_popup(),
+                            content: build_visual_audit_popup(),
                             offset_x: 0.0,
                             offset_y: 8.0,
                             match_anchor_width: false,
@@ -353,76 +477,50 @@ impl DemoApp {
                 }
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(self.mouse_x);
-                    tracing::info!("slider_value(click) -> {}", self.gallery.slider_value);
+                    tracing::info!(
+                        "visual_audit.slider_value(click) -> {}",
+                        self.visual_audit.slider_value
+                    );
                 }
-                self.active_button = Some(id);
             }
-            DemoMessage::WidgetDoubleClicked(id) => {
+            AppMessage::WidgetDoubleClicked(id) => {
                 if id == SLIDER_RADIUS_ID {
-                    self.gallery.slider_value = 5.0;
+                    self.visual_audit.slider_value = 5.0;
                 }
             }
-            DemoMessage::TextChanged { id, value } => {
-                let _ = self.gallery.apply_text_change(&id, value);
+            AppMessage::TextChanged { id, value } => {
+                let _ = self.visual_audit.apply_text_change(&id, value);
             }
-            DemoMessage::NumberChanged { id, value } => {
-                let _ = self.gallery.apply_number_change(&id, value);
+            AppMessage::NumberChanged { id, value } => {
+                let _ = self.visual_audit.apply_number_change(&id, value);
             }
-            DemoMessage::SelectionChanged { id, selected } => {
-                let _ = self.gallery.apply_select_change(&id, selected);
+            AppMessage::SelectionChanged { id, selected } => {
+                let _ = self.visual_audit.apply_select_change(&id, selected);
             }
-            DemoMessage::WidgetDragStart { id, x, y } => {
-                if self.workspace.begin_canvas_port_connection(
-                    &mut self.gui,
-                    &self.camera,
-                    &id,
-                    x,
-                    y,
-                ) {
-                    return;
-                }
-                if self
-                    .workspace
-                    .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y)
-                {
-                    return;
-                }
+            AppMessage::WidgetDragStart { id, x, y } => {
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
-                    tracing::info!("slider_value(drag_start) -> {}", self.gallery.slider_value);
+                    tracing::info!(
+                        "visual_audit.slider_value(drag_start) -> {}",
+                        self.visual_audit.slider_value
+                    );
                 }
                 let _ = y;
             }
-            DemoMessage::WidgetDragMove { id, x, y } => {
-                if self
-                    .workspace
-                    .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
-                {
-                    return;
-                }
-                if self
-                    .workspace
-                    .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y)
-                {
-                    return;
-                }
+            AppMessage::WidgetDragMove { id, x, y } => {
                 if is_slider_target(&id) {
                     self.update_slider_from_pointer(x);
-                    tracing::info!("slider_value(drag) -> {}", self.gallery.slider_value);
+                    tracing::info!(
+                        "visual_audit.slider_value(drag) -> {}",
+                        self.visual_audit.slider_value
+                    );
                 }
+                let _ = y;
             }
-            DemoMessage::WidgetDragEnd { id, x, y } => {
-                if self
-                    .workspace
-                    .end_canvas_port_connection(&mut self.gui, x, y)
-                {
-                    return;
-                }
-                let _ = self
-                    .workspace
-                    .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+            AppMessage::WidgetDragEnd { id, x, y } => {
+                let _ = (id, x, y);
             }
-            DemoMessage::LongPress(id) => {
+            AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
             }
         }
@@ -499,7 +597,7 @@ impl DemoApp {
             .node_rect(&format!("{SLIDER_RADIUS_ID}::track"))
             .and_then(|track_rect| slider_value_from_x(track_rect, x, 0.0, 10.0, 0.1))
         {
-            self.gallery.slider_value = value;
+            self.visual_audit.slider_value = value;
         }
     }
 
@@ -576,7 +674,7 @@ fn distance_sq(a: [f32; 2], b: [f32; 2]) -> f32 {
 }
 
 fn is_toggle_target(id: &str) -> bool {
-    id == "toggle_grid" || id.starts_with("toggle_grid::")
+    id == TOGGLE_GRID_ID || id.starts_with(&format!("{TOGGLE_GRID_ID}::"))
 }
 
 fn is_slider_target(id: &str) -> bool {
@@ -593,6 +691,18 @@ fn slider_value_from_x(track_rect: Rect, x: f32, min: f32, max: f32, step: f32) 
         raw
     };
     Some(stepped.clamp(min, max))
+}
+
+fn is_developer_mode_shortcut(event: &AppEvent) -> bool {
+    match event {
+        AppEvent::KeyPress { key, modifiers } => {
+            *key == Key::Char('D')
+                && modifiers.shift
+                && (modifiers.ctrl || modifiers.meta)
+                && !modifiers.alt
+        }
+        _ => false,
+    }
 }
 
 fn viewport_rect(ctx: &AppContext) -> Rect {
@@ -634,5 +744,39 @@ fn cursor_for_resize_edge(edge: ResizeEdge) -> CursorStyle {
         ResizeEdge::TopRight => CursorStyle::ResizeNE,
         ResizeEdge::BottomLeft => CursorStyle::ResizeSW,
         ResizeEdge::BottomRight => CursorStyle::ResizeSE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_developer_mode_shortcut, toggle_app_mode, AppMode};
+    use gui::shell::{AppEvent, Key, Modifiers};
+
+    #[test]
+    fn app_mode_toggle_respects_developer_mode_gate() {
+        assert_eq!(toggle_app_mode(AppMode::User, true), AppMode::Developer);
+        assert_eq!(toggle_app_mode(AppMode::Developer, true), AppMode::User);
+        assert_eq!(toggle_app_mode(AppMode::User, false), AppMode::User);
+        assert_eq!(toggle_app_mode(AppMode::Developer, false), AppMode::User);
+    }
+
+    #[test]
+    fn developer_mode_shortcut_is_ctrl_shift_d() {
+        assert!(is_developer_mode_shortcut(&AppEvent::KeyPress {
+            key: Key::Char('D'),
+            modifiers: Modifiers {
+                ctrl: true,
+                shift: true,
+                ..Modifiers::default()
+            },
+        }));
+
+        assert!(!is_developer_mode_shortcut(&AppEvent::KeyPress {
+            key: Key::Char('D'),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        }));
     }
 }

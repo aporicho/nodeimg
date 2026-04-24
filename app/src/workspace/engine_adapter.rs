@@ -111,6 +111,7 @@ pub(crate) fn canvas_node_identities(engine: &Engine) -> Vec<CanvasNodeIdentity>
         .collect()
 }
 
+#[cfg(test)]
 pub(crate) fn canvas_node_templates(engine: &Engine) -> HashMap<String, CanvasNodeTemplate> {
     engine
         .list_node_defs()
@@ -192,10 +193,10 @@ pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionVi
     graph
         .connections
         .iter()
-        .filter_map(|connection| {
+        .map(|connection| {
             let from_owner_id = engine_node_owner_id(connection.from.node);
             let to_owner_id = engine_node_owner_id(connection.to.node);
-            Some(CanvasConnectionView {
+            CanvasConnectionView {
                 from_port_id: canvas_port_stable_id(
                     &from_owner_id,
                     CanvasPortSide::Output,
@@ -206,7 +207,7 @@ pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionVi
                     CanvasPortSide::Input,
                     &connection.to.interface,
                 ),
-            })
+            }
         })
         .collect()
 }

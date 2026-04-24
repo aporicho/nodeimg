@@ -1,9 +1,11 @@
-mod demo;
-mod demo_gallery;
+mod app_shell;
+mod developer_mode;
 mod image_demo;
 mod panels;
+mod user_mode;
+mod visual_audit;
 mod workspace;
 
 fn main() {
-    gui::shell::run::<demo::DemoApp>();
+    gui::shell::run::<app_shell::AppShell>();
 }

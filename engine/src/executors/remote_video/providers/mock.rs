@@ -148,8 +148,9 @@ fn generate_frame(
     for (x, y, pixel) in rgba.enumerate_pixels_mut() {
         let nx = x as f32 / width.max(1) as f32;
         let ny = y as f32 / height.max(1) as f32;
-        let wave = ((nx * 6.2831 + phase * 6.2831).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
-        let swirl = ((ny * 6.2831 - phase * 4.0).cos() * 0.5 + 0.5).clamp(0.0, 1.0);
+        let wave = ((nx * std::f32::consts::TAU + phase * std::f32::consts::TAU).sin() * 0.5 + 0.5)
+            .clamp(0.0, 1.0);
+        let swirl = ((ny * std::f32::consts::TAU - phase * 4.0).cos() * 0.5 + 0.5).clamp(0.0, 1.0);
 
         let r = ((wave * 0.7 + seed_r * 0.3) * 255.0).round() as u8;
         let g = ((swirl * 0.7 + seed_g * 0.3) * 255.0).round() as u8;
