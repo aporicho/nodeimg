@@ -1,4 +1,5 @@
 pub mod build;
+mod connection_endpoint;
 mod desc;
 mod diff;
 mod hit;

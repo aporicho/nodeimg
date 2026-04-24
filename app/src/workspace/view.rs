@@ -86,6 +86,7 @@ mod tests {
     use gui::canvas::CanvasPendingConnectionView;
     use gui::renderer::Rect;
     use gui::theme::light_theme;
+    use gui::tree::layout::Transform;
     use gui::tree::Desc;
     use gui::ui::{self, StyleBuilder};
 
@@ -121,6 +122,50 @@ mod tests {
         );
 
         assert!(contains_desc_id(&desc, "canvas_connection::pending"));
+    }
+
+    #[test]
+    fn workspace_canvas_root_transform_matches_camera() {
+        let theme = light_theme();
+        let mut camera = Camera::new();
+        camera.x = 120.0;
+        camera.y = -40.0;
+        camera.zoom = 1.75;
+
+        let desc = build_workspace_tree(
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 800.0,
+                h: 600.0,
+            },
+            &camera,
+            &theme,
+            &[],
+            &[],
+            None,
+            ui::container("panel_root")
+                .fixed_width(0.0)
+                .fixed_height(0.0)
+                .build(),
+        );
+
+        let Desc::Container { children, .. } = desc else {
+            panic!("workspace root should be a container");
+        };
+        let Desc::Container { id, style, .. } = &children[0] else {
+            panic!("canvas root should be a container");
+        };
+
+        assert_eq!(id.as_ref(), "canvas_root");
+        assert_eq!(
+            style.transform,
+            Some(Transform {
+                translate: [120.0, -40.0],
+                scale: 1.75,
+                rotate: 0.0,
+            })
+        );
     }
 
     fn contains_desc_id(desc: &Desc, id: &str) -> bool {

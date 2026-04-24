@@ -1,6 +1,7 @@
+use super::connection_endpoint::node_screen_center;
 use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
-use super::paint_helpers::{connection_path, grid_cells, rect_center};
+use super::paint_helpers::{connection_path, grid_cells};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::stacking::children_in_paint_order;
@@ -261,11 +262,10 @@ fn paint_leaf(
             });
         }
         LeafKind::Connection { from_port, to_port } => {
-            let Some(from_screen) = find_node_screen_center_by_str_id(tree, from_port.as_ref())
-            else {
+            let Some(from_screen) = node_screen_center(tree, from_port.as_ref()) else {
                 return;
             };
-            let Some(to_screen) = find_node_screen_center_by_str_id(tree, to_port.as_ref()) else {
+            let Some(to_screen) = node_screen_center(tree, to_port.as_ref()) else {
                 return;
             };
             let Some(inverse) = node_space.local_to_screen.inverse() else {
@@ -282,8 +282,7 @@ fn paint_leaf(
             from_port,
             cursor_canvas,
         } => {
-            let Some(from_screen) = find_node_screen_center_by_str_id(tree, from_port.as_ref())
-            else {
+            let Some(from_screen) = node_screen_center(tree, from_port.as_ref()) else {
                 return;
             };
             let Some(inverse) = node_space.local_to_screen.inverse() else {
@@ -362,42 +361,6 @@ fn svg_fit_from_icon(fit: IconFit) -> SvgFit {
     }
 }
 
-fn find_node_screen_center_by_str_id(tree: &Tree, id: &str) -> Option<Point> {
-    find_node_screen_center_recursive(tree, tree.root()?, id, PaintSpace::root())
-}
-
-fn find_node_screen_center_recursive(
-    tree: &Tree,
-    node_id: NodeId,
-    target_id: &str,
-    current_space: PaintSpace,
-) -> Option<Point> {
-    let node = tree.get(node_id)?;
-    let node_space = current_space.node_space(node.rect, node.style.transform);
-
-    if node.id.as_ref() == target_id {
-        return Some(
-            node_space
-                .local_to_screen
-                .transform_point(rect_center(node_space.local_rect)),
-        );
-    }
-
-    let child_space = if node_space.children_are_local {
-        node_space.child_space()
-    } else {
-        current_space
-    };
-    for child_id in children_in_paint_order(tree, &node.children) {
-        if let Some(point) =
-            find_node_screen_center_recursive(tree, child_id, target_id, child_space)
-        {
-            return Some(point);
-        }
-    }
-    None
-}
-
 #[allow(dead_code)]
 fn build_display_list_for_test(
     tree: &Tree,
@@ -424,7 +387,9 @@ mod tests {
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    const EPS: f32 = 1e-5;
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
         Rect { x, y, w, h }
@@ -432,6 +397,23 @@ mod tests {
 
     fn point(x: f32, y: f32) -> Point {
         Point { x, y }
+    }
+
+    fn assert_point_near(actual: Point, expected: Point) {
+        assert!(
+            (actual.x - expected.x).abs() < EPS && (actual.y - expected.y).abs() < EPS,
+            "actual={actual:?}, expected={expected:?}"
+        );
+    }
+
+    fn assert_rect_near(actual: Rect, expected: Rect) {
+        assert!(
+            (actual.x - expected.x).abs() < EPS
+                && (actual.y - expected.y).abs() < EPS
+                && (actual.w - expected.w).abs() < EPS
+                && (actual.h - expected.h).abs() < EPS,
+            "actual={actual:?}, expected={expected:?}"
+        );
     }
 
     fn leaf_node(id: &'static str, kind: LeafKind, rect: Rect) -> TreeNode {
@@ -481,6 +463,16 @@ mod tests {
     fn only_clip(list: &DisplayList) -> &ResolvedClip {
         assert_eq!(list.clips.len(), 1);
         &list.clips[0]
+    }
+
+    fn first_path(list: &DisplayList) -> &crate::paint::PathPaint {
+        list.commands
+            .iter()
+            .find_map(|command| match &command.command {
+                PaintCommand::Path(path) => Some(path),
+                _ => None,
+            })
+            .expect("expected path command")
     }
 
     #[test]
@@ -640,6 +632,111 @@ mod tests {
     }
 
     #[test]
+    fn connection_leaf_resolves_port_centers_under_affine_transform() {
+        let mut tree = Tree::new();
+        let from = tree.insert(leaf_node(
+            "from_port",
+            LeafKind::Circle {
+                radius: 2.0,
+                fill: Some(Color::WHITE),
+                stroke: None,
+            },
+            rect(10.0, 0.0, 4.0, 4.0),
+        ));
+        let mut port_group = container_node("port_group", rect(20.0, 30.0, 40.0, 40.0), vec![from]);
+        port_group.style.transform = Some(Transform {
+            translate: [0.0, 0.0],
+            scale: 2.0,
+            rotate: std::f32::consts::FRAC_PI_2,
+        });
+        let port_group = tree.insert(port_group);
+        let to = tree.insert(leaf_node(
+            "to_port",
+            LeafKind::Circle {
+                radius: 2.0,
+                fill: Some(Color::WHITE),
+                stroke: None,
+            },
+            rect(120.0, 140.0, 4.0, 4.0),
+        ));
+        let connection = tree.insert(leaf_node(
+            "connection",
+            LeafKind::Connection {
+                from_port: Cow::Borrowed("from_port"),
+                to_port: Cow::Borrowed("to_port"),
+            },
+            rect(10.0, 20.0, 0.0, 0.0),
+        ));
+        let root = tree.insert(container_node(
+            "root",
+            rect(0.0, 0.0, 200.0, 200.0),
+            vec![port_group, to, connection],
+        ));
+        tree.set_root(root);
+
+        let list = paint_tree(&tree, root);
+        let path = first_path(&list);
+
+        assert_eq!(
+            path.data.commands,
+            vec![
+                PathCommand::MoveTo(point(6.0, 34.0)),
+                PathCommand::CubicTo(point(59.0, 34.0), point(59.0, 122.0), point(112.0, 122.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn pending_connection_resolves_cursor_canvas_under_affine_space() {
+        let mut tree = Tree::new();
+        let from = tree.insert(leaf_node(
+            "from_port",
+            LeafKind::Circle {
+                radius: 2.0,
+                fill: Some(Color::WHITE),
+                stroke: None,
+            },
+            rect(10.0, 20.0, 4.0, 4.0),
+        ));
+        let pending = tree.insert(leaf_node(
+            "pending",
+            LeafKind::PendingConnection {
+                from_port: Cow::Borrowed("from_port"),
+                cursor_canvas: point(50.0, 70.0),
+            },
+            rect(0.0, 0.0, 0.0, 0.0),
+        ));
+        let mut canvas_root = container_node(
+            "canvas_root",
+            rect(0.0, 0.0, 200.0, 200.0),
+            vec![from, pending],
+        );
+        canvas_root.style.transform = Some(Transform {
+            translate: [100.0, 50.0],
+            scale: 2.0,
+            rotate: 0.0,
+        });
+        let canvas_root = tree.insert(canvas_root);
+        let root = tree.insert(container_node(
+            "root",
+            rect(0.0, 0.0, 200.0, 200.0),
+            vec![canvas_root],
+        ));
+        tree.set_root(root);
+
+        let list = paint_tree(&tree, root);
+        let path = first_path(&list);
+
+        assert_eq!(
+            path.data.commands,
+            vec![
+                PathCommand::MoveTo(point(12.0, 22.0)),
+                PathCommand::CubicTo(point(31.0, 22.0), point(31.0, 70.0), point(50.0, 70.0)),
+            ]
+        );
+    }
+
+    #[test]
     fn overflow_hidden_records_local_clip_around_children() {
         let mut tree = Tree::new();
         let child = tree.insert(leaf_node(
@@ -746,6 +843,76 @@ mod tests {
             command.transform.transform_point(point(0.0, 0.0)),
             point(10.0, 20.0)
         );
+    }
+
+    #[derive(Debug)]
+    struct CapturingCustomPainter {
+        captured: Arc<Mutex<Option<CustomPaintCx>>>,
+    }
+
+    impl CustomPainter for CapturingCustomPainter {
+        fn paint(&self, target: &mut dyn PaintTarget, cx: CustomPaintCx) {
+            *self.captured.lock().expect("capture lock") = Some(cx);
+            target.draw_circle(
+                Point {
+                    x: cx.local_rect.w * 0.5,
+                    y: cx.local_rect.h * 0.5,
+                },
+                3.0,
+                Color::WHITE,
+            );
+        }
+    }
+
+    #[test]
+    fn custom_paint_cx_reports_affine_transform_and_screen_bounds() {
+        let captured = Arc::new(Mutex::new(None));
+        let mut tree = Tree::new();
+        let custom = tree.insert(leaf_node(
+            "custom",
+            LeafKind::CustomPaint(CustomPaintFn(Arc::new(CapturingCustomPainter {
+                captured: captured.clone(),
+            }))),
+            rect(3.0, 4.0, 8.0, 10.0),
+        ));
+        let parent_transform = Transform {
+            translate: [5.0, 7.0],
+            scale: 2.0,
+            rotate: std::f32::consts::FRAC_PI_2,
+        };
+        let mut parent = container_node("parent", rect(20.0, 30.0, 40.0, 40.0), vec![custom]);
+        parent.style.transform = Some(parent_transform);
+        let parent = tree.insert(parent);
+        let root = tree.insert(container_node(
+            "root",
+            rect(0.0, 0.0, 100.0, 100.0),
+            vec![parent],
+        ));
+        tree.set_root(root);
+
+        let list = paint_tree(&tree, root);
+        let cx = captured
+            .lock()
+            .expect("capture lock")
+            .expect("custom paint context");
+        let expected_parent = Affine2D::compose(
+            Affine2D::translation(20.0, 30.0),
+            legacy_transform_affine(parent_transform, rect(0.0, 0.0, 40.0, 40.0)),
+        );
+        let expected_transform =
+            Affine2D::compose(expected_parent, Affine2D::translation(3.0, 4.0));
+        let expected_bounds = expected_transform.transformed_bounds(rect(0.0, 0.0, 8.0, 10.0));
+
+        assert_eq!(cx.local_rect, rect(0.0, 0.0, 8.0, 10.0));
+        assert_point_near(
+            cx.transform.transform_point(point(4.0, 5.0)),
+            expected_transform.transform_point(point(4.0, 5.0)),
+        );
+        assert_rect_near(cx.screen_bounds, expected_bounds);
+        assert!(matches!(
+            only_command(&list).command,
+            PaintCommand::Circle(CirclePaint { .. })
+        ));
     }
 
     #[test]
