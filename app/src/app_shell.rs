@@ -88,9 +88,12 @@ impl App for AppShell {
             SAMPLE_IMAGE_SIZE,
         );
 
+        let mode = initial_app_mode(DEVELOPER_MODE_ENABLED);
+        tracing::info!("initial app mode: {:?}", mode);
+
         Self {
             gui,
-            mode: initial_app_mode(DEVELOPER_MODE_ENABLED),
+            mode,
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             visual_audit: VisualAuditState::default(),

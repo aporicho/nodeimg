@@ -28,6 +28,15 @@ echo "[windows_run] profile=$PROFILE writing logs to $LOG_FILE"
 
 # 将 WSL 路径转换为 Windows 路径
 WIN_PATH="$(wslpath -w "$PROJECT_DIR")"
+WIN_TARGET_PATTERN="${WIN_PATH}\\target\\*"
+PWSH="/mnt/c/Users/pyura/scoop/shims/pwsh.exe"
+
+cleanup_workspace_nodeimg() {
+  "$PWSH" -Command "Get-Process nodeimg -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '$WIN_TARGET_PATTERN' } | Stop-Process -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
+}
+
+trap cleanup_workspace_nodeimg EXIT INT TERM
+cleanup_workspace_nodeimg
 
 # 可执行入口位于 app 包的 nodeimg bin
-/mnt/c/Users/pyura/scoop/shims/pwsh.exe -Command "Set-Location '$WIN_PATH'; \$env:RUST_LOG='gui=debug,app=debug,info'; cargo run -p app --bin nodeimg $CARGO_PROFILE_ARG -- $*" 2>&1 | tee "$LOG_FILE"
+"$PWSH" -Command "Set-Location '$WIN_PATH'; \$env:RUST_LOG='gui=debug,app=debug,info'; \$env:CARGO_INCREMENTAL='0'; cargo run -p app --bin nodeimg $CARGO_PROFILE_ARG -- $*" 2>&1 | tee "$LOG_FILE"
