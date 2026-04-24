@@ -53,9 +53,8 @@ impl GestureArena {
         }
 
         let mut accepted_idx = None;
-        let mut i = self.members.len();
-        while i > 0 {
-            i -= 1;
+        let mut i = 0;
+        while i < self.members.len() {
             let disp = self.members[i].on_pointer_move(x, y);
             match disp {
                 GestureDisposition::Rejected => {
@@ -66,7 +65,9 @@ impl GestureArena {
                     accepted_idx = Some(i);
                     break;
                 }
-                GestureDisposition::Pending => {}
+                GestureDisposition::Pending => {
+                    i += 1;
+                }
             }
         }
 
@@ -92,9 +93,8 @@ impl GestureArena {
         }
 
         let mut accepted_idx = None;
-        let mut i = self.members.len();
-        while i > 0 {
-            i -= 1;
+        let mut i = 0;
+        while i < self.members.len() {
             let disp = self.members[i].on_pointer_up(x, y);
             match disp {
                 GestureDisposition::Rejected => {
@@ -105,7 +105,9 @@ impl GestureArena {
                     accepted_idx = Some(i);
                     break;
                 }
-                GestureDisposition::Pending => {}
+                GestureDisposition::Pending => {
+                    i += 1;
+                }
             }
         }
 
@@ -154,7 +156,7 @@ impl GestureArena {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gesture::{GestureRecognizer, TapRecognizer};
+    use crate::gesture::{DragRecognizer, GestureRecognizer, TapRecognizer};
     use std::time::Instant;
 
     #[test]
@@ -171,5 +173,23 @@ mod tests {
         let signal = arena.pointer_up(10.5, 10.5);
         assert!(matches!(signal, Some(GestureSignal::Click(_))));
         assert!(arena.pointer_up(10.5, 10.5).is_none());
+    }
+
+    #[test]
+    fn deepest_drag_member_wins_over_parent_drag() {
+        let mut arena = GestureArena::new("child".to_string());
+        let mut child = DragRecognizer::new("child".to_string());
+        let mut parent = DragRecognizer::new("parent".to_string());
+        assert!(child.on_pointer_down(0.0, 0.0));
+        assert!(parent.on_pointer_down(0.0, 0.0));
+        arena.add(Box::new(child));
+        arena.add(Box::new(parent));
+
+        let signal = arena.pointer_move(8.0, 0.0).expect("drag start");
+
+        assert!(matches!(
+            signal,
+            GestureSignal::DragStart { id, .. } if id == "child"
+        ));
     }
 }

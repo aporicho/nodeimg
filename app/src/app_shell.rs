@@ -1,9 +1,7 @@
-use crate::developer_mode::{build_developer_page, DeveloperModeBuildContext};
-use crate::user_mode::{build_user_page, UserModeBuildContext};
-use crate::visual_audit::{
-    build_visual_audit_popup, VisualAuditState, POPUP_CLOSE_ID, POPUP_TRIGGER_ID, SLIDER_RADIUS_ID,
-    TOGGLE_GRID_ID,
+use crate::developer_mode::{
+    build_developer_page, DeveloperModeBuildContext, DeveloperModeController,
 };
+use crate::user_mode::{build_user_page, UserModeBuildContext};
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
 use crate::workspace::node_palette;
 use gui::action::{node_library_add_type_id, GuiAction};
@@ -71,7 +69,7 @@ pub struct AppShell {
     mode: AppMode,
     camera: Camera,
     navigation: CanvasNavigationController,
-    visual_audit: VisualAuditState,
+    developer: DeveloperModeController,
     workspace: WorkspaceController,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
@@ -96,7 +94,7 @@ impl App for AppShell {
             mode,
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
-            visual_audit: VisualAuditState::default(),
+            developer: DeveloperModeController::new(),
             workspace: WorkspaceController::new(),
             last_canvas_click: None,
             mouse_x: 0.0,
@@ -142,7 +140,7 @@ impl App for AppShell {
             AppMode::Developer => build_developer_page(DeveloperModeBuildContext {
                 viewport,
                 theme: &self.theme,
-                visual_audit: &self.visual_audit,
+                state: self.developer.state(),
                 image: SAMPLE_IMAGE_HANDLE,
             }),
         };
@@ -464,73 +462,29 @@ impl AppShell {
     fn handle_developer_message(&mut self, message: AppMessage) {
         match message {
             AppMessage::WidgetClicked(id) => {
-                let _ = self.visual_audit.apply_click(&id);
-                if id == POPUP_TRIGGER_ID {
-                    if self.gui.overlay_open() {
-                        self.gui.close_overlay();
-                    } else {
-                        self.gui.open_overlay(OverlayRequest {
-                            id: "visual_audit_popup".to_string(),
-                            anchor_id: POPUP_TRIGGER_ID.to_string(),
-                            restore_focus_id: Some(POPUP_TRIGGER_ID.to_string()),
-                            placement: OverlayPlacement::BelowStart,
-                            content: build_visual_audit_popup(),
-                            offset_x: 0.0,
-                            offset_y: 8.0,
-                            match_anchor_width: false,
-                            dismiss_on_escape: true,
-                            dismiss_on_outside_click: true,
-                            restore_focus_to_anchor: true,
-                        });
-                    }
-                }
-                if id == POPUP_CLOSE_ID {
-                    self.gui.close_overlay();
-                }
-                if is_slider_target(&id) {
-                    self.update_slider_from_pointer(self.mouse_x);
-                    tracing::info!(
-                        "visual_audit.slider_value(click) -> {}",
-                        self.visual_audit.slider_value
-                    );
-                }
+                self.developer
+                    .handle_click(&id, self.mouse_x, &mut self.gui);
             }
             AppMessage::WidgetDoubleClicked(id) => {
-                if id == SLIDER_RADIUS_ID {
-                    self.visual_audit.slider_value = 5.0;
-                }
+                self.developer.handle_double_click(&id);
             }
             AppMessage::TextChanged { id, value } => {
-                let _ = self.visual_audit.apply_text_change(&id, value);
+                self.developer.handle_text_change(&id, value);
             }
             AppMessage::NumberChanged { id, value } => {
-                let _ = self.visual_audit.apply_number_change(&id, value);
+                self.developer.handle_number_change(&id, value);
             }
             AppMessage::SelectionChanged { id, selected } => {
-                let _ = self.visual_audit.apply_select_change(&id, selected);
+                self.developer.handle_selection_change(&id, selected);
             }
             AppMessage::WidgetDragStart { id, x, y } => {
-                if is_slider_target(&id) {
-                    self.update_slider_from_pointer(x);
-                    tracing::info!(
-                        "visual_audit.slider_value(drag_start) -> {}",
-                        self.visual_audit.slider_value
-                    );
-                }
-                let _ = y;
+                self.developer.handle_drag_start(&id, x, y, &self.gui);
             }
             AppMessage::WidgetDragMove { id, x, y } => {
-                if is_slider_target(&id) {
-                    self.update_slider_from_pointer(x);
-                    tracing::info!(
-                        "visual_audit.slider_value(drag) -> {}",
-                        self.visual_audit.slider_value
-                    );
-                }
-                let _ = y;
+                self.developer.handle_drag_move(&id, x, y, &self.gui);
             }
             AppMessage::WidgetDragEnd { id, x, y } => {
-                let _ = (id, x, y);
+                self.developer.handle_drag_end(&id, x, y);
             }
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
@@ -565,21 +519,24 @@ impl AppShell {
                 }
             }
 
-            if is_slider_target(id) && self.gui.node_has_gesture(node_id, Gesture::Drag) {
+            if self.mode == AppMode::Developer
+                && self.developer.is_playground_drag_target(id)
+                && self.gui.node_has_gesture(node_id, Gesture::Drag)
+            {
+                ctx.cursor.set(CursorStyle::Move);
+                return;
+            }
+
+            if self.mode == AppMode::Developer
+                && self.developer.is_control_drag_target(id)
+                && self.gui.node_has_gesture(node_id, Gesture::Drag)
+            {
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
 
             if self.gui.node_is_text_input_field(node_id) {
                 ctx.cursor.set(CursorStyle::Text);
-                return;
-            }
-
-            if is_toggle_target(id)
-                && (self.gui.node_has_gesture(node_id, Gesture::Tap)
-                    || self.gui.node_has_gesture(node_id, Gesture::DoubleTap))
-            {
-                ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
 
@@ -594,22 +551,17 @@ impl AppShell {
                 return;
             }
 
+            if self.gui.node_has_gesture(node_id, Gesture::Drag) {
+                ctx.cursor.set(CursorStyle::Pointer);
+                return;
+            }
+
             if self.gui.node_has_gesture(node_id, Gesture::Tap)
                 || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
             {
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
-        }
-    }
-
-    fn update_slider_from_pointer(&mut self, x: f32) {
-        if let Some(value) = self
-            .gui
-            .node_rect(&format!("{SLIDER_RADIUS_ID}::track"))
-            .and_then(|track_rect| slider_value_from_x(track_rect, x, 0.0, 10.0, 0.1))
-        {
-            self.visual_audit.slider_value = value;
         }
     }
 
@@ -683,26 +635,6 @@ fn distance_sq(a: [f32; 2], b: [f32; 2]) -> f32 {
     let dx = a[0] - b[0];
     let dy = a[1] - b[1];
     dx * dx + dy * dy
-}
-
-fn is_toggle_target(id: &str) -> bool {
-    id == TOGGLE_GRID_ID || id.starts_with(&format!("{TOGGLE_GRID_ID}::"))
-}
-
-fn is_slider_target(id: &str) -> bool {
-    id == SLIDER_RADIUS_ID || id.starts_with(&format!("{SLIDER_RADIUS_ID}::"))
-}
-
-fn slider_value_from_x(track_rect: Rect, x: f32, min: f32, max: f32, step: f32) -> Option<f32> {
-    let width = track_rect.w.max(1.0);
-    let ratio = ((x - track_rect.x) / width).clamp(0.0, 1.0);
-    let raw = min + (max - min) * ratio;
-    let stepped = if step > 0.0 {
-        ((raw - min) / step).round() * step + min
-    } else {
-        raw
-    };
-    Some(stepped.clamp(min, max))
 }
 
 fn is_developer_mode_shortcut(event: &AppEvent) -> bool {
