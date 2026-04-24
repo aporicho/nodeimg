@@ -8,8 +8,15 @@ pub struct ClipId(pub u32);
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClipShape {
     Rect(Rect),
-    RoundedRect { rect: Rect, radius: [f32; 4] },
-    Path { data: PathData, fill_rule: FillRule },
+    RoundedRect {
+        rect: Rect,
+        /// Per-corner radii in local paint units.
+        radius: [f32; 4],
+    },
+    Path {
+        data: PathData,
+        fill_rule: FillRule,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

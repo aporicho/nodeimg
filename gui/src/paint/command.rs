@@ -34,6 +34,7 @@ pub struct PathPaint {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CirclePaint {
     pub center: Point,
+    /// Circle radius in local paint units.
     pub radius: f32,
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
@@ -57,6 +58,7 @@ pub struct TextPaint {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowPaint {
     pub rect: Rect,
+    /// Per-corner radii in local paint units.
     pub radius: [f32; 4],
     pub shadow: Shadow,
 }

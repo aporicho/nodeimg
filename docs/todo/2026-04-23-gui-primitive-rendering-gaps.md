@@ -13,23 +13,22 @@ Date: 2026-04-23
 | DONE | Design common `Stroke` model | Lines, curves, paths, and borders should not each invent stroke fields | `Stroke` now covers width, color, cap, join, and miter limit. Dash remains a future extension. |
 | DONE | Design `PathData` primitive | Support general vector paths | `PathData` supports move/line/quad/cubic/close; `PathStyle` supports fill, stroke, and fill rule. |
 | DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets from the generated `assets/icons` registry; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
-| DONE | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Current v1 policy applies translate + uniform scale in both paint and hit; rotate is reserved and inert until renderer-level rotate support exists. |
-| TODO | Define scale behavior policy | Primitive dimensions need explicit world-vs-screen scale semantics | Current paint scales radius, border, shadow, text size, and curve width by transform scale. |
+| DONE | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Paint and hit now share the affine DisplayList transform model. |
+| DONE | Define primitive unit policy | Primitive dimensions need one explicit unit model | All primitive dimensions are local paint units; scaling and movement come only from the DisplayList transform stack. |
 | TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
-| DONE | Add paint-op recording tests | Leaf declarations should be testable without a real GPU renderer | `RecordingPaintTarget` records `PaintOp` values for leaf paint assertions. |
+| DONE | Add paint recording tests | Leaf declarations should be testable without a real GPU renderer | `RecordingPaintTarget` records resolved DisplayList commands for leaf paint assertions. |
 
 ## Current Bottom-Up Rendering Path
 
-The current GUI rendering path is broadly layered correctly:
+The current GUI rendering path is layered through the affine DisplayList contract:
 
 ```text
 widget / canvas / app
   -> tree::Desc
   -> tree layout
-  -> tree::paint
-  -> tree::PaintTarget
-  -> renderer::DrawCommand
-  -> renderer::prepare
+  -> tree::paint DisplayList recording
+  -> renderer DisplayList lowering
+  -> renderer affine prepare
   -> renderer::dispatch
   -> renderer::pipeline
 ```
@@ -38,12 +37,10 @@ Relevant modules:
 
 - `gui/src/tree/desc.rs`: lightweight view description tree.
 - `gui/src/tree/layout/types.rs`: layout style and `LeafKind` primitive declarations.
-- `gui/src/tree/paint.rs`: converts the laid out tree into renderer commands.
-- `gui/src/tree/paint_target.rs`: paint target interface, renderer adapter, and custom paint context.
-- `gui/src/tree/paint_ops.rs`: recording paint target and testable paint operations.
-- `gui/src/renderer/command.rs`: renderer command enum.
-- `gui/src/renderer/renderer.rs`: public draw methods used by paint.
-- `gui/src/renderer/prepare.rs`: batching, tessellation, and clip preparation.
+- `gui/src/tree/paint.rs`: converts the laid out tree into a paint `DisplayList`.
+- `gui/src/paint/*`: local primitive and DisplayList contract.
+- `gui/src/renderer/display_backend.rs`: lowers DisplayList commands to renderer backend commands.
+- `gui/src/renderer/prepare.rs`: affine batching, tessellation, and clip preparation.
 - `gui/src/renderer/vector_tessellator.rs`: CPU vector path tessellation and cache.
 - `gui/src/renderer/pipeline/*`: GPU pipelines.
 
@@ -267,37 +264,36 @@ That avoids forcing custom painters to depend directly on the full GPU renderer,
 
 ### Transform Consistency
 
-Paint and hit now share the same v1 transform policy:
+Paint and hit share the same affine transform policy:
 
 ```text
 translate -> active
-uniform scale -> active
-rotate -> reserved / inert
+scale -> active
+rotate -> active
 ```
 
-`Transform::rotate` remains on the type for future affine rendering work, but it
-does not affect paint or hit testing today. This avoids the previous mismatch
-where hit testing interpreted rotated geometry while paint displayed unrotated
-geometry.
-
-Full rotate support should be designed separately at the renderer level because
-it affects rects, text, images, rounded clips, shadows, vector paths, and SVG
-raster fallback.
+The tree records local primitives and transform stacks; renderer preparation
+maps those primitives into the frame. Hit testing uses the same affine inverse
+path and still tests local rectangular bounds unless shape-aware hit testing is
+implemented later.
 
 ### Scale Behavior
 
-Paint currently scales radius, border width, shadow metrics, text size, and curve width by transform scale.
-
-That is correct for world-space canvas content, but some UI affordances may need screen-space constant sizing.
-
-The system needs an explicit policy, for example:
+Primitive dimensions use one policy:
 
 ```text
-ScaleBehavior::ScaleWithWorld
-ScaleBehavior::FixedScreen
+All primitive dimensions are local paint units.
+The DisplayList transform stack is the only source of scale and movement.
 ```
 
-or an equivalent distinction between world units and screen units.
+This includes border width, stroke width, text size, radius, shadow offset,
+shadow blur, shadow spread, circle radius, clip radius, image rects, text bounds,
+and path coordinates.
+
+Viewport-fixed editor affordances, such as selection outlines or resize handles,
+should reuse the same primitives from a viewport-coordinate DisplayList branch
+that is not under the canvas camera transform. They must not introduce a second
+unit system into primitive styles.
 
 ### Shape-Aware Hit Testing
 
@@ -313,21 +309,23 @@ path hit test by fill/stroke
 
 ### Paint Command Recording
 
-`tree::paint` now targets `PaintTarget`. The runtime path uses `RendererPaintTarget`; tests can use `RecordingPaintTarget`.
+`tree::paint` targets `PaintTarget`; runtime builds a `DisplayList` through
+`RecordingPaintTarget` and then sends that list to the renderer DisplayList
+backend. Tests can inspect the same resolved commands without a GPU.
 
 Current route:
 
 ```text
 tree::paint -> PaintTarget
-  -> RendererPaintTarget -> Renderer
-  -> RecordingPaintTarget -> PaintOp
+  -> RecordingPaintTarget -> DisplayList
+  -> Renderer::draw_display_list
 ```
 
 Then tests can assert:
 
 ```text
-LeafKind::Line produces a line/curve paint op
-LeafKind::Icon produces an icon paint op
+LeafKind::Line produces a local path command
+LeafKind::Icon produces an SVG DisplayList command
 LeafKind::CustomPaint invokes the custom painter
 ```
 
@@ -339,9 +337,9 @@ LeafKind::CustomPaint invokes the custom painter
 2. Connect icon/SVG:
    - vector-first SVG icon rendering
 
-3. Unify transform and scale behavior:
-   - rotate is removed from hit semantics until paint supports it
-   - explicit world-vs-screen scale behavior
+3. Keep transform and unit behavior unified:
+   - local primitive dimensions scale through the DisplayList transform stack
+   - viewport-fixed affordances reuse primitives outside the camera transform
 
 4. Improve testability:
    - command recorder or `PaintTarget`

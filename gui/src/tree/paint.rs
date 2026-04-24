@@ -346,7 +346,6 @@ fn svg_stroke_width_from_icon(stroke_width: IconStrokeWidth) -> SvgStrokeWidth {
     match stroke_width {
         IconStrokeWidth::Preserve => SvgStrokeWidth::Preserve,
         IconStrokeWidth::SvgUnits(width) => SvgStrokeWidth::SvgUnits(width),
-        IconStrokeWidth::ScreenPx(width) => SvgStrokeWidth::ScreenPx(width),
     }
 }
 
@@ -910,14 +909,14 @@ mod tests {
         let style = IconStyle::monochrome(Color::WHITE)
             .with_fill(IconPaintOverride::Preserve)
             .with_stroke(IconPaintOverride::None)
-            .with_stroke_width(IconStrokeWidth::ScreenPx(2.0))
+            .with_stroke_width(IconStrokeWidth::SvgUnits(2.0))
             .with_fit(IconFit::Stretch);
 
         let svg = svg_style_from_icon(style);
 
         assert_eq!(svg.fill, SvgPaintOverride::Preserve);
         assert_eq!(svg.stroke, SvgPaintOverride::None);
-        assert_eq!(svg.stroke_width, SvgStrokeWidth::ScreenPx(2.0));
+        assert_eq!(svg.stroke_width, SvgStrokeWidth::SvgUnits(2.0));
         assert_eq!(svg.fit, SvgFit::Stretch);
     }
 

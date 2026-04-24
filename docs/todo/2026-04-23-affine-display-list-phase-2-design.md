@@ -289,7 +289,6 @@ pub enum SvgPaintOverride {
 pub enum SvgStrokeWidth {
     Preserve,
     SvgUnits(f32),
-    ScreenPx(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

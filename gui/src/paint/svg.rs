@@ -29,9 +29,13 @@ pub enum SvgPaintOverride {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SvgStrokeWidth {
+    /// Preserve the SVG source stroke width in SVG/local units.
     Preserve,
+    /// Override the SVG source stroke width in SVG/local units.
+    ///
+    /// The resolved stroke is part of the SVG geometry and scales with the
+    /// DisplayList transform stack.
     SvgUnits(f32),
-    ScreenPx(f32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

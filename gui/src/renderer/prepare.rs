@@ -746,6 +746,33 @@ mod tests {
     }
 
     #[test]
+    fn prepare_frame_scales_local_path_stroke_width_through_transform() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Path(AffinePathRequest {
+                data: PathData::line(Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }),
+                style: PathStyle::stroke(Stroke::new(2.0, Color::WHITE)),
+                transform: Affine2D::scale(3.0),
+            })],
+            &mut vector_tessellator,
+        );
+
+        let min_y = frame
+            .vector_vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = frame
+            .vector_vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!((min_y + 3.0).abs() < 0.01, "min_y={min_y}");
+        assert!((max_y - 3.0).abs() < 0.01, "max_y={max_y}");
+    }
+
+    #[test]
     fn prepare_frame_applies_affine_to_quad_vertices() {
         let mut vector_tessellator = VectorTessellator::new();
         let frame = prepare_frame(
@@ -846,5 +873,32 @@ mod tests {
         assert!(frame.circle_vertices.is_empty());
         assert!(!frame.vector_vertices.is_empty());
         assert!(matches!(frame.ops[0], DrawOp::Vector { .. }));
+    }
+
+    #[test]
+    fn prepare_frame_scales_local_circle_radius_and_stroke_width() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Circle(AffineCircleRequest {
+                paint: crate::paint::CirclePaint {
+                    center: Point { x: 10.0, y: 10.0 },
+                    radius: 5.0,
+                    fill: Some(Color::BLACK),
+                    stroke: Some(Stroke::new(1.0, Color::WHITE)),
+                },
+                transform: Affine2D::scale(3.0),
+            })],
+            &mut vector_tessellator,
+        );
+
+        assert!(frame
+            .circle_vertices
+            .iter()
+            .any(|vertex| (vertex.radius - 15.0).abs() < 0.01));
+        assert!(frame
+            .circle_vertices
+            .iter()
+            .any(|vertex| (vertex.radius - 12.0).abs() < 0.01));
+        assert!(matches!(frame.ops[0], DrawOp::Circle { .. }));
     }
 }

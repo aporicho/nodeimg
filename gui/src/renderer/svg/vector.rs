@@ -359,7 +359,6 @@ fn resolve_stroke(path: &SvgVectorPath, stroke_scale: f32, style: IconStyle) -> 
     let width = match style.stroke_width {
         IconStrokeWidth::Preserve => source_width * stroke_scale,
         IconStrokeWidth::SvgUnits(width) => width.max(0.0) * stroke_scale,
-        IconStrokeWidth::ScreenPx(width) => width.max(0.0),
     };
     let cap = source_stroke
         .map(|stroke| stroke.cap)

@@ -37,7 +37,7 @@ local primitive + resolved affine transform + clip state
 明确不做：
 
 ```text
-不做 ScaleBehavior / scale policy
+不做 per-primitive unit switching / scale policy
 不做 screen-space fixed affordance
 不做 unrelated layout refactor
 不做 shape-aware hit testing

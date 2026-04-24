@@ -7,7 +7,7 @@
 重要要求：
 - 先读代码和现有文档，再制定计划。
 - 不要实现代码。
-- 不要继续做 ScaleBehavior / scale policy 方向。
+- 不要继续做 per-primitive unit switching / scale policy 方向。
 - affine transform rendering 是本次主题：完整设计 paint、renderer、prepare、GPU pipeline、hit test、clip、recording tests 的统一 transform 方案。
 - 计划必须能落地到当前代码库，不要停留在抽象架构描述。
 - 计划要包含接口化、模块化、文件结构、迁移步骤、验收标准、测试策略。

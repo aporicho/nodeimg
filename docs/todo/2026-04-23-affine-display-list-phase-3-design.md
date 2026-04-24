@@ -46,7 +46,7 @@ Phase 3 完成后，Phase 4 才开始让基础图元 backend 真正支持 rotate
 - 不改 renderer pipeline / shader 来支持 rotate。
 - 不做 Phase 4 的 path / rect / image / stencil affine tessellation。
 - 不做 Phase 5 的 rotated text / shadow / SVG raster / layer 完整支持。
-- 不做 ScaleBehavior / screen-space fixed affordance。
+- 不做 per-primitive unit switching / fixed-size affordance。
 - 不做 unrelated layout refactor。
 - 不把 `tree::legacy_paint_replay` 挪到 renderer 后继续长期保留为同名 legacy bridge。
 - 不新增 silent fallback，例如 rotate command 被当成 identity 画出来。

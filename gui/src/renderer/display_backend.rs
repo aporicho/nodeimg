@@ -7,7 +7,6 @@ use crate::paint::{
     TextureHandle,
 };
 
-use super::affine::similarity_scale;
 use super::command::{
     AffineCircleRequest, AffineClipRequest, AffineImageRequest, AffinePathRequest,
     AffineRectRequest, AffineShadowRequest, AffineSvgRasterRequest, AffineTextRequest,
@@ -37,7 +36,6 @@ pub(crate) struct UnsupportedDisplayCommand {
 pub(crate) enum UnsupportedDisplayReason {
     MissingTexture(TextureHandle),
     MissingSvgSource(String),
-    UnsupportedCommand(&'static str),
     UnsupportedClip(&'static str),
 }
 
@@ -169,13 +167,7 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
         let Some(source) = self.resolve_svg_source(index, &paint.source) else {
             return;
         };
-        let icon_style = match icon_style_for_svg_affine(paint.style, transform) {
-            Ok(style) => style,
-            Err(reason) => {
-                self.report.record(index, reason);
-                return;
-            }
-        };
+        let icon_style = icon_style_from_svg(paint.style);
         match self.svg_vector_cache.get_or_parse(&source) {
             Ok(document) => {
                 for request in resolve_svg_icon_paths(&document, paint.rect, icon_style) {
@@ -445,22 +437,6 @@ fn icon_style_from_svg(style: SvgStyle) -> IconStyle {
     }
 }
 
-fn icon_style_for_svg_affine(
-    style: SvgStyle,
-    transform: Affine2D,
-) -> Result<IconStyle, UnsupportedDisplayReason> {
-    let mut icon_style = icon_style_from_svg(style);
-    if let SvgStrokeWidth::ScreenPx(width) = style.stroke_width {
-        let Some(scale) = similarity_scale(transform) else {
-            return Err(UnsupportedDisplayReason::UnsupportedCommand(
-                "svg screen-px stroke affine",
-            ));
-        };
-        icon_style.stroke_width = IconStrokeWidth::ScreenPx(width / scale);
-    }
-    Ok(icon_style)
-}
-
 fn icon_paint_override(override_paint: SvgPaintOverride) -> IconPaintOverride {
     match override_paint {
         SvgPaintOverride::Preserve => IconPaintOverride::Preserve,
@@ -474,7 +450,6 @@ fn icon_stroke_width(stroke_width: SvgStrokeWidth) -> IconStrokeWidth {
     match stroke_width {
         SvgStrokeWidth::Preserve => IconStrokeWidth::Preserve,
         SvgStrokeWidth::SvgUnits(width) => IconStrokeWidth::SvgUnits(width),
-        SvgStrokeWidth::ScreenPx(width) => IconStrokeWidth::ScreenPx(width),
     }
 }
 

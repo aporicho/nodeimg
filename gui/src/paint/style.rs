@@ -1,3 +1,9 @@
+//! Paint style data is expressed in local paint units.
+//!
+//! Local paint units are transformed by the active DisplayList transform stack.
+//! A caller that wants screen-fixed output should place the same primitives
+//! outside the camera/world transform instead of using a special primitive unit.
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f32,
@@ -33,12 +39,14 @@ impl Color {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Border {
+    /// Border thickness in local paint units.
     pub width: f32,
     pub color: Color,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stroke {
+    /// Stroke thickness in local paint units.
     pub width: f32,
     pub color: Color,
     pub cap: LineCap,
@@ -47,6 +55,7 @@ pub struct Stroke {
 }
 
 impl Stroke {
+    /// Creates a stroke whose width is expressed in local paint units.
     pub fn new(width: f32, color: Color) -> Self {
         Self {
             width,
@@ -119,6 +128,7 @@ pub enum FillRule {
 pub struct RectStyle {
     pub color: Color,
     pub border: Option<Border>,
+    /// Per-corner radii in local paint units.
     pub radius: [f32; 4],
     pub shadow: Option<Shadow>,
 }
@@ -140,6 +150,7 @@ pub enum TextWeight {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextStyle {
     pub color: Color,
+    /// Font size in local paint units.
     pub size: f32,
     pub family: TextFamily,
     pub line_height: f32,
@@ -150,6 +161,7 @@ pub struct TextStyle {
 impl TextStyle {
     pub const DEFAULT_LINE_HEIGHT: f32 = 1.2;
 
+    /// Creates text style whose font size is expressed in local paint units.
     pub fn new(color: Color, size: f32) -> Self {
         Self {
             color,
@@ -185,7 +197,10 @@ impl TextStyle {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
     pub color: Color,
+    /// Shadow offset in local paint units.
     pub offset: [f32; 2],
+    /// Shadow blur radius in local paint units.
     pub blur: f32,
+    /// Shadow spread in local paint units.
     pub spread: f32,
 }
