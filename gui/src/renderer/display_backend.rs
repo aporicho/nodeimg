@@ -1,22 +1,21 @@
-use crate::geometry::{Affine2D, Rect};
+use crate::geometry::Affine2D;
 use crate::icon::{IconFit, IconOpacity, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::paint::{
-    CirclePaint, ClipId, ClipShape, Color, DisplayList, ImagePaint, PaintCommand, PathPaint,
-    PathStyle, RectPaint, RectStyle, ResolvedClip, ResolvedPaintCommand, Shadow, ShadowPaint,
-    Stroke, SvgFit, SvgPaint, SvgPaintOverride, SvgRasterPaint, SvgSourceKey, SvgStrokeWidth,
-    SvgStyle, TextPaint, TextStyle, TextureHandle,
+    CirclePaint, ClipId, Color, DisplayList, ImagePaint, PaintCommand, PathPaint, RectPaint,
+    RectStyle, ResolvedClip, ResolvedPaintCommand, Shadow, ShadowPaint, SvgFit, SvgPaint,
+    SvgPaintOverride, SvgRasterPaint, SvgSourceKey, SvgStrokeWidth, SvgStyle, TextPaint, TextStyle,
+    TextureHandle,
 };
 
-use super::command::BackendCommand;
+use super::affine::{similarity_scale, translate_uniform_scale};
+use super::command::{
+    AffineCircleRequest, AffineClipRequest, AffineImageRequest, AffinePathRequest,
+    AffineRectRequest, BackendCommand,
+};
 use super::display_resources::DisplayResourceResolver;
-use super::path::PathRequest;
-use super::pipeline::circle::CircleRequest;
-use super::pipeline::quad::QuadRequest;
 use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::text::TextRequest;
 use super::svg::{resolve_svg_icon_paths, SvgRasterDraw, SvgVectorCache};
-
-const BACKEND_TRANSFORM_EPSILON: f32 = 1e-5;
 
 #[derive(Default)]
 pub(super) struct DisplayBackendOutput {
@@ -38,18 +37,10 @@ pub(crate) struct UnsupportedDisplayCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UnsupportedDisplayReason {
     NonUniformTransform,
-    NonSimilarityTransform,
     MissingTexture(TextureHandle),
     MissingSvgSource(String),
     UnsupportedCommand(&'static str),
     UnsupportedClip(&'static str),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct LegacyTransform {
-    tx: f32,
-    ty: f32,
-    scale: f32,
 }
 
 struct LoweringContext<'a, R> {
@@ -109,71 +100,50 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
     }
 
     fn lower_rect(&mut self, index: usize, transform: Affine2D, paint: &RectPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
-            self.report
-                .record(index, UnsupportedDisplayReason::NonUniformTransform);
-            return;
-        };
-        let rect = legacy.rect(paint.rect);
-        let style = scale_rect_style(&paint.style, legacy.scale);
-        if let Some(shadow) = style.shadow {
+        if let Some(shadow) = paint.style.shadow {
+            let Some(legacy) = translate_uniform_scale(transform) else {
+                self.report.record(
+                    index,
+                    UnsupportedDisplayReason::UnsupportedCommand("shadow affine"),
+                );
+                self.commands.push(BackendCommand::Rect(AffineRectRequest {
+                    rect: paint.rect,
+                    style: rect_style_without_shadow(&paint.style),
+                    transform,
+                }));
+                return;
+            };
+            let shadow_rect = paint.rect;
             self.commands.push(BackendCommand::Shadow(ShadowRequest {
-                rect,
-                radius: style.radius,
-                shadow,
+                rect: legacy.rect(shadow_rect),
+                radius: paint.style.radius.map(|radius| radius * legacy.scale),
+                shadow: scale_shadow(shadow, legacy.scale),
             }));
         }
-        self.commands
-            .push(BackendCommand::Rect(QuadRequest::from_style(rect, &style)));
-    }
-
-    fn lower_path(&mut self, index: usize, transform: Affine2D, paint: &PathPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
-            self.report
-                .record(index, UnsupportedDisplayReason::NonUniformTransform);
-            return;
-        };
-        self.commands.push(BackendCommand::Path(PathRequest {
-            data: paint.data.transformed(transform),
-            style: scale_path_style(paint.style, legacy.scale),
+        self.commands.push(BackendCommand::Rect(AffineRectRequest {
+            rect: paint.rect,
+            style: rect_style_without_shadow(&paint.style),
+            transform,
         }));
     }
 
-    fn lower_circle(&mut self, index: usize, transform: Affine2D, paint: CirclePaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
-            self.report
-                .record(index, UnsupportedDisplayReason::NonSimilarityTransform);
-            return;
-        };
-        let center = transform.transform_point(paint.center);
-        let radius = paint.radius * legacy.scale;
-        if let Some(stroke) = paint.stroke {
-            self.commands.push(BackendCommand::Circle(CircleRequest {
-                center,
-                radius,
-                color: stroke.color,
+    fn lower_path(&mut self, _index: usize, transform: Affine2D, paint: &PathPaint) {
+        self.commands.push(BackendCommand::Path(AffinePathRequest {
+            data: paint.data.clone(),
+            style: paint.style,
+            transform,
+        }));
+    }
+
+    fn lower_circle(&mut self, _index: usize, transform: Affine2D, paint: CirclePaint) {
+        self.commands
+            .push(BackendCommand::Circle(AffineCircleRequest {
+                paint,
+                transform,
             }));
-        }
-        if let Some(fill) = paint.fill {
-            let fill_radius = paint
-                .stroke
-                .map(|stroke| radius - stroke.width * legacy.scale)
-                .unwrap_or(radius)
-                .max(0.0);
-            self.commands.push(BackendCommand::Circle(CircleRequest {
-                center,
-                radius: fill_radius,
-                color: fill,
-            }));
-        }
     }
 
     fn lower_image(&mut self, index: usize, transform: Affine2D, paint: ImagePaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
-            self.report
-                .record(index, UnsupportedDisplayReason::NonUniformTransform);
-            return;
-        };
         let Some(resource) = self.resources.texture(paint.texture) else {
             self.report.record(
                 index,
@@ -181,16 +151,18 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
             );
             return;
         };
-        self.commands.push(BackendCommand::Image {
-            rect: legacy.rect(paint.rect),
-            view: resource.view,
-            size: resource.size,
-            style: paint.style,
-        });
+        self.commands
+            .push(BackendCommand::Image(AffineImageRequest {
+                rect: paint.rect,
+                transform,
+                view: resource.view,
+                size: resource.size,
+                style: paint.style,
+            }));
     }
 
     fn lower_text(&mut self, index: usize, transform: Affine2D, paint: &TextPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
+        let Some(legacy) = translate_uniform_scale(transform) else {
             self.report
                 .record(index, UnsupportedDisplayReason::NonUniformTransform);
             return;
@@ -204,35 +176,38 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
     }
 
     fn lower_shadow(&mut self, index: usize, transform: Affine2D, paint: ShadowPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
+        let Some(legacy) = translate_uniform_scale(transform) else {
             self.report
                 .record(index, UnsupportedDisplayReason::NonUniformTransform);
             return;
         };
+        let shadow_rect = paint.rect;
         self.commands.push(BackendCommand::Shadow(ShadowRequest {
-            rect: legacy.rect(paint.rect),
+            rect: legacy.rect(shadow_rect),
             radius: paint.radius.map(|radius| radius * legacy.scale),
             shadow: scale_shadow(paint.shadow, legacy.scale),
         }));
     }
 
     fn lower_svg(&mut self, index: usize, transform: Affine2D, paint: &SvgPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
-            self.report
-                .record(index, UnsupportedDisplayReason::NonUniformTransform);
-            return;
-        };
         let Some(source) = self.resolve_svg_source(index, &paint.source) else {
             return;
         };
+        let icon_style = match icon_style_for_svg_affine(paint.style, transform) {
+            Ok(style) => style,
+            Err(reason) => {
+                self.report.record(index, reason);
+                return;
+            }
+        };
         match self.svg_vector_cache.get_or_parse(&source) {
             Ok(document) => {
-                for request in resolve_svg_icon_paths(
-                    &document,
-                    legacy.rect(paint.rect),
-                    icon_style_from_svg(paint.style),
-                ) {
-                    self.commands.push(BackendCommand::Path(request));
+                for request in resolve_svg_icon_paths(&document, paint.rect, icon_style) {
+                    self.commands.push(BackendCommand::Path(AffinePathRequest {
+                        data: request.data,
+                        style: request.style,
+                        transform,
+                    }));
                 }
             }
             Err(err) => {
@@ -243,8 +218,16 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
                         err
                     );
                 }
+                let Some(legacy) = translate_uniform_scale(transform) else {
+                    self.report.record(
+                        index,
+                        UnsupportedDisplayReason::UnsupportedCommand("svg raster affine"),
+                    );
+                    return;
+                };
+                let raster_rect = paint.rect;
                 self.commands.push(BackendCommand::SvgRaster(SvgRasterDraw {
-                    rect: legacy.rect(paint.rect),
+                    rect: legacy.rect(raster_rect),
                     source,
                     style: icon_style_from_svg(paint.style),
                 }));
@@ -253,7 +236,7 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
     }
 
     fn lower_svg_raster(&mut self, index: usize, transform: Affine2D, paint: &SvgRasterPaint) {
-        let Some(legacy) = legacy_translate_uniform_scale(transform) else {
+        let Some(legacy) = translate_uniform_scale(transform) else {
             self.report
                 .record(index, UnsupportedDisplayReason::NonUniformTransform);
             return;
@@ -261,8 +244,9 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
         let Some(source) = self.resolve_svg_source(index, &paint.source) else {
             return;
         };
+        let raster_rect = paint.rect;
         self.commands.push(BackendCommand::SvgRaster(SvgRasterDraw {
-            rect: legacy.rect(paint.rect),
+            rect: legacy.rect(raster_rect),
             source,
             style: IconStyle::monochrome(paint.color.unwrap_or(Color::WHITE)),
         }));
@@ -321,39 +305,11 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
         true
     }
 
-    fn lower_clip(&mut self, index: usize, clip: &ResolvedClip) -> Option<BackendCommand> {
-        let Some(legacy) = legacy_translate_uniform_scale(clip.transform) else {
-            self.report.record(
-                index,
-                UnsupportedDisplayReason::UnsupportedClip("non-uniform transform"),
-            );
-            return None;
-        };
-
-        match &clip.shape {
-            ClipShape::Rect(rect) => Some(BackendCommand::PushClip {
-                rect: legacy.rect(*rect),
-                radius: 0.0,
-            }),
-            ClipShape::RoundedRect { rect, radius } => {
-                if !all_same_radius(*radius) {
-                    self.report.record(
-                        index,
-                        UnsupportedDisplayReason::UnsupportedClip("per-corner radius"),
-                    );
-                    return None;
-                }
-                Some(BackendCommand::PushClip {
-                    rect: legacy.rect(*rect),
-                    radius: radius[0] * legacy.scale,
-                })
-            }
-            ClipShape::Path { .. } => {
-                self.report
-                    .record(index, UnsupportedDisplayReason::UnsupportedClip("path"));
-                None
-            }
-        }
+    fn lower_clip(&mut self, _index: usize, clip: &ResolvedClip) -> Option<BackendCommand> {
+        Some(BackendCommand::PushClip(AffineClipRequest {
+            shape: clip.shape.clone(),
+            transform: clip.transform,
+        }))
     }
 
     fn pop_all_clips(&mut self) {
@@ -375,63 +331,17 @@ impl DisplayRenderReport {
     }
 }
 
-impl LegacyTransform {
-    fn rect(self, rect: Rect) -> Rect {
-        Rect {
-            x: self.tx + rect.x * self.scale,
-            y: self.ty + rect.y * self.scale,
-            w: rect.w * self.scale,
-            h: rect.h * self.scale,
-        }
-    }
-}
-
-fn legacy_translate_uniform_scale(transform: Affine2D) -> Option<LegacyTransform> {
-    if !transform.is_finite()
-        || transform.xy.abs() > BACKEND_TRANSFORM_EPSILON
-        || transform.yx.abs() > BACKEND_TRANSFORM_EPSILON
-        || (transform.xx - transform.yy).abs() > BACKEND_TRANSFORM_EPSILON
-        || transform.xx < 0.0
-    {
-        return None;
-    }
-    Some(LegacyTransform {
-        tx: transform.tx,
-        ty: transform.ty,
-        scale: transform.xx,
-    })
-}
-
-fn all_same_radius(radius: [f32; 4]) -> bool {
-    radius
-        .iter()
-        .all(|value| (*value - radius[0]).abs() <= BACKEND_TRANSFORM_EPSILON)
-}
-
-fn scale_stroke(mut stroke: Stroke, scale: f32) -> Stroke {
-    stroke.width *= scale;
-    stroke
-}
-
-fn scale_path_style(mut style: PathStyle, scale: f32) -> PathStyle {
-    style.stroke = style.stroke.map(|stroke| scale_stroke(stroke, scale));
-    style
-}
-
 fn scale_text_style(mut style: TextStyle, scale: f32) -> TextStyle {
     style.size *= scale;
     style
 }
 
-fn scale_rect_style(style: &RectStyle, scale: f32) -> RectStyle {
+fn rect_style_without_shadow(style: &RectStyle) -> RectStyle {
     RectStyle {
         color: style.color,
-        border: style.border.map(|border| crate::paint::Border {
-            width: border.width * scale,
-            color: border.color,
-        }),
-        radius: style.radius.map(|radius| radius * scale),
-        shadow: style.shadow.map(|shadow| scale_shadow(shadow, scale)),
+        border: style.border,
+        radius: style.radius,
+        shadow: None,
     }
 }
 
@@ -453,6 +363,22 @@ fn icon_style_from_svg(style: SvgStyle) -> IconStyle {
         opacity: IconOpacity::new(style.opacity),
         fit: icon_fit(style.fit),
     }
+}
+
+fn icon_style_for_svg_affine(
+    style: SvgStyle,
+    transform: Affine2D,
+) -> Result<IconStyle, UnsupportedDisplayReason> {
+    let mut icon_style = icon_style_from_svg(style);
+    if let SvgStrokeWidth::ScreenPx(width) = style.stroke_width {
+        let Some(scale) = similarity_scale(transform) else {
+            return Err(UnsupportedDisplayReason::UnsupportedCommand(
+                "svg screen-px stroke affine",
+            ));
+        };
+        icon_style.stroke_width = IconStrokeWidth::ScreenPx(width / scale);
+    }
+    Ok(icon_style)
 }
 
 fn icon_paint_override(override_paint: SvgPaintOverride) -> IconPaintOverride {
@@ -488,6 +414,7 @@ mod tests {
         SvgSourceKey, TextureHandle,
     };
     use crate::renderer::display_resources::EmptyDisplayResources;
+    use crate::renderer::{PathStyle, Rect, Stroke};
 
     fn rect() -> Rect {
         Rect {
@@ -515,10 +442,8 @@ mod tests {
     #[test]
     fn lowers_rect_with_translate_scale() {
         let mut builder = DisplayListBuilder::new();
-        builder.push_transform(Affine2D::compose(
-            Affine2D::translation(10.0, 20.0),
-            Affine2D::scale(2.0),
-        ));
+        let transform = Affine2D::compose(Affine2D::translation(10.0, 20.0), Affine2D::scale(2.0));
+        builder.push_transform(transform);
         builder.draw(PaintCommand::Rect(RectPaint {
             rect: rect(),
             style: rect_style(),
@@ -531,24 +456,18 @@ mod tests {
         assert!(output.report.unsupported.is_empty());
         match &output.commands[0] {
             BackendCommand::Rect(req) => {
-                assert_eq!(
-                    req.rect,
-                    Rect {
-                        x: 12.0,
-                        y: 24.0,
-                        w: 6.0,
-                        h: 8.0,
-                    }
-                );
+                assert_eq!(req.rect, rect());
+                assert_eq!(req.transform, transform);
             }
             _ => panic!("expected rect command"),
         }
     }
 
     #[test]
-    fn reports_rotated_rect_unsupported() {
+    fn lowers_rotated_rect_as_affine_command() {
         let mut builder = DisplayListBuilder::new();
-        builder.push_transform(Affine2D::rotation_radians(0.5));
+        let transform = Affine2D::rotation_radians(0.5);
+        builder.push_transform(transform);
         builder.draw(PaintCommand::Rect(RectPaint {
             rect: rect(),
             style: rect_style(),
@@ -558,20 +477,21 @@ mod tests {
 
         let output = lower(&list);
 
-        assert_eq!(
-            output.report.unsupported,
-            vec![UnsupportedDisplayCommand {
-                index: 0,
-                reason: UnsupportedDisplayReason::NonUniformTransform,
-            }]
-        );
-        assert!(output.commands.is_empty());
+        assert!(output.report.unsupported.is_empty());
+        match &output.commands[0] {
+            BackendCommand::Rect(req) => {
+                assert_eq!(req.rect, rect());
+                assert_eq!(req.transform, transform);
+            }
+            _ => panic!("expected rect command"),
+        }
     }
 
     #[test]
-    fn lowers_path_and_scales_stroke() {
+    fn lowers_path_with_local_geometry_and_affine_transform() {
         let mut builder = DisplayListBuilder::new();
-        builder.push_transform(Affine2D::scale(3.0));
+        let transform = Affine2D::scale(3.0);
+        builder.push_transform(transform);
         builder.draw(PaintCommand::Path(PathPaint {
             data: PathData::line(Point { x: 1.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }),
             style: PathStyle::stroke(Stroke::new(2.0, Color::WHITE)),
@@ -583,10 +503,11 @@ mod tests {
 
         match &output.commands[0] {
             BackendCommand::Path(req) => {
-                assert_eq!(req.style.stroke.unwrap().width, 6.0);
+                assert_eq!(req.style.stroke.unwrap().width, 2.0);
+                assert_eq!(req.transform, transform);
                 assert_eq!(
                     req.data.commands[0],
-                    crate::paint::PathCommand::MoveTo(Point { x: 3.0, y: 3.0 })
+                    crate::paint::PathCommand::MoveTo(Point { x: 1.0, y: 1.0 })
                 );
             }
             _ => panic!("expected path command"),
@@ -606,10 +527,13 @@ mod tests {
 
         let output = lower(&list);
 
-        assert!(matches!(
-            output.commands[0],
-            BackendCommand::PushClip { .. }
-        ));
+        match &output.commands[0] {
+            BackendCommand::PushClip(req) => {
+                assert_eq!(req.shape, ClipShape::Rect(rect()));
+                assert_eq!(req.transform, Affine2D::IDENTITY);
+            }
+            _ => panic!("expected push clip command"),
+        }
         assert!(matches!(output.commands[1], BackendCommand::Rect(_)));
         assert!(matches!(output.commands[2], BackendCommand::PopClip));
     }

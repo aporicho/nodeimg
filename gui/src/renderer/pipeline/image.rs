@@ -3,14 +3,37 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use super::super::image::{ImageFilter, ResolvedImageDraw};
+use crate::geometry::Affine2D;
+
+use super::super::affine::transformed_rect_corners;
+use super::super::image::{ImageFilter, ImageSourceRect, ResolvedImageDraw};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct ImageInstance {
-    rect: [f32; 4],
+    p0p1: [f32; 4],
+    p2p3: [f32; 4],
     uv_rect: [f32; 4],
     modulate: [f32; 4],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreparedImageDraw {
+    pub positions: [[f32; 2]; 4],
+    pub uv_rect: ImageSourceRect,
+    pub modulate: [f32; 4],
+    pub filter: ImageFilter,
+}
+
+impl PreparedImageDraw {
+    pub fn from_resolved(draw: ResolvedImageDraw, transform: Affine2D) -> Self {
+        Self {
+            positions: transformed_rect_corners(transform, draw.rect),
+            uv_rect: draw.uv_rect,
+            modulate: draw.modulate,
+            filter: draw.filter,
+        }
+    }
 }
 
 pub struct ImagePipeline {
@@ -104,6 +127,11 @@ impl ImagePipeline {
                     offset: 32,
                     shader_location: 2,
                 },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 48,
+                    shader_location: 3,
+                },
             ],
         };
 
@@ -149,7 +177,7 @@ impl ImagePipeline {
         pass: &mut wgpu::RenderPass<'a>,
         device: &wgpu::Device,
         texture_view: &wgpu::TextureView,
-        draw: ResolvedImageDraw,
+        draw: PreparedImageDraw,
         viewport_buf: &'a wgpu::Buffer,
     ) {
         let sampler = match draw.filter {
@@ -176,7 +204,18 @@ impl ImagePipeline {
         });
 
         let instance = ImageInstance {
-            rect: [draw.rect.x, draw.rect.y, draw.rect.w, draw.rect.h],
+            p0p1: [
+                draw.positions[0][0],
+                draw.positions[0][1],
+                draw.positions[1][0],
+                draw.positions[1][1],
+            ],
+            p2p3: [
+                draw.positions[2][0],
+                draw.positions[2][1],
+                draw.positions[3][0],
+                draw.positions[3][1],
+            ],
             uv_rect: [
                 draw.uv_rect.x,
                 draw.uv_rect.y,
@@ -195,5 +234,33 @@ impl ImagePipeline {
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, instance_buffer.slice(..));
         pass.draw(0..6, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::Rect;
+    use crate::renderer::{ImageFilter, ImageSourceRect};
+
+    #[test]
+    fn prepared_image_draw_applies_affine_to_rect_corners() {
+        let draw = ResolvedImageDraw {
+            rect: Rect {
+                x: 1.0,
+                y: 2.0,
+                w: 3.0,
+                h: 4.0,
+            },
+            uv_rect: ImageSourceRect::FULL,
+            modulate: [1.0; 4],
+            filter: ImageFilter::Linear,
+        };
+
+        let prepared = PreparedImageDraw::from_resolved(draw, Affine2D::translation(10.0, 20.0));
+
+        assert_eq!(prepared.positions[0], [11.0, 22.0]);
+        assert_eq!(prepared.positions[2], [14.0, 26.0]);
+        assert_eq!(prepared.uv_rect, ImageSourceRect::FULL);
     }
 }

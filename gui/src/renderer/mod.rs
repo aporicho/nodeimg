@@ -1,3 +1,4 @@
+mod affine;
 mod buffer;
 mod command;
 mod dispatch;
@@ -5,6 +6,7 @@ mod display_backend;
 mod display_resources;
 mod image;
 mod path;
+mod path_geometry;
 mod pipeline;
 mod prepare;
 pub(crate) mod svg;

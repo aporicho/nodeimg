@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
-use lyon::math::point;
 use lyon::path::Path as LyonPath;
 use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillRule as LyonFillRule, FillTessellator, FillVertex,
-    LineCap as LyonLineCap, LineJoin as LyonLineJoin, StrokeOptions, StrokeTessellator,
-    StrokeVertex, VertexBuffers,
+    BuffersBuilder, FillOptions, FillTessellator, FillVertex, LineCap as LyonLineCap,
+    LineJoin as LyonLineJoin, StrokeOptions, StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 
-use super::path::{PathCommand, PathData, PathRequest};
+use crate::geometry::Affine2D;
+
+use super::path::{PathCommand, PathRequest};
+use super::path_geometry::{build_lyon_path, lyon_fill_rule};
 use super::pipeline::vector::VectorVertex;
 use super::style::{Fill, FillRule, LineCap, LineJoin, Stroke};
 use super::types::{Color, Point};
@@ -23,9 +24,10 @@ impl VectorTessellator {
         Self::default()
     }
 
-    pub fn append_path(
+    pub fn append_path_transformed(
         &mut self,
         req: &PathRequest,
+        transform: Affine2D,
         vertices: &mut Vec<VectorVertex>,
         indices: &mut Vec<u32>,
     ) -> u32 {
@@ -36,13 +38,22 @@ impl VectorTessellator {
 
         let vertex_offset = vertices.len() as u32;
         let index_count = cached.indices.len() as u32;
-        vertices.extend_from_slice(&cached.vertices);
+        vertices.extend(cached.vertices.iter().map(|vertex| {
+            let transformed = transform.transform_point(Point {
+                x: vertex.position[0],
+                y: vertex.position[1],
+            });
+            VectorVertex {
+                position: [transformed.x, transformed.y],
+                color: vertex.color,
+            }
+        }));
         indices.extend(cached.indices.iter().map(|idx| idx + vertex_offset));
         index_count
     }
 
     #[cfg(test)]
-    fn cache_len(&self) -> usize {
+    pub(crate) fn cache_len(&self) -> usize {
         self.cache.len()
     }
 
@@ -220,54 +231,6 @@ fn tessellate_stroke(
         .expect("failed to tessellate vector stroke");
 }
 
-fn build_lyon_path(data: &PathData) -> LyonPath {
-    let mut builder = LyonPath::builder();
-    let mut open = false;
-
-    for command in &data.commands {
-        match *command {
-            PathCommand::MoveTo(to) => {
-                if open {
-                    builder.end(false);
-                }
-                builder.begin(point(to.x, to.y));
-                open = true;
-            }
-            PathCommand::LineTo(to) => {
-                if open {
-                    builder.line_to(point(to.x, to.y));
-                }
-            }
-            PathCommand::QuadTo(ctrl, to) => {
-                if open {
-                    builder.quadratic_bezier_to(point(ctrl.x, ctrl.y), point(to.x, to.y));
-                }
-            }
-            PathCommand::CubicTo(ctrl1, ctrl2, to) => {
-                if open {
-                    builder.cubic_bezier_to(
-                        point(ctrl1.x, ctrl1.y),
-                        point(ctrl2.x, ctrl2.y),
-                        point(to.x, to.y),
-                    );
-                }
-            }
-            PathCommand::Close => {
-                if open {
-                    builder.close();
-                    open = false;
-                }
-            }
-        }
-    }
-
-    if open {
-        builder.end(false);
-    }
-
-    builder.build()
-}
-
 fn stroke_options(stroke: Stroke) -> StrokeOptions {
     StrokeOptions::default()
         .with_line_width(stroke.width)
@@ -292,17 +255,10 @@ fn lyon_line_join(join: LineJoin) -> LyonLineJoin {
     }
 }
 
-fn lyon_fill_rule(rule: FillRule) -> LyonFillRule {
-    match rule {
-        FillRule::NonZero => LyonFillRule::NonZero,
-        FillRule::EvenOdd => LyonFillRule::EvenOdd,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{Color, Fill, PathStyle};
+    use crate::renderer::{Color, Fill, PathData, PathStyle};
 
     fn p(x: f32, y: f32) -> Point {
         Point { x, y }
@@ -326,7 +282,12 @@ mod tests {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
-        let index_count = tessellator.append_path(&req, &mut vertices, &mut indices);
+        let index_count = tessellator.append_path_transformed(
+            &req,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
 
         assert!(index_count > 0);
         assert!(!vertices.is_empty());
@@ -340,10 +301,20 @@ mod tests {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
-        let first_count = tessellator.append_path(&req, &mut vertices, &mut indices);
+        let first_count = tessellator.append_path_transformed(
+            &req,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
         let first_vertices = vertices.len();
         let first_indices = indices.len();
-        let second_count = tessellator.append_path(&req, &mut vertices, &mut indices);
+        let second_count = tessellator.append_path_transformed(
+            &req,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
 
         assert_eq!(tessellator.cache_len(), 1);
         assert_eq!(second_count, first_count);
@@ -359,9 +330,48 @@ mod tests {
         let thin = triangle(PathStyle::stroke(Stroke::new(1.0, Color::WHITE)));
         let thick = triangle(PathStyle::stroke(Stroke::new(2.0, Color::WHITE)));
 
-        tessellator.append_path(&thin, &mut vertices, &mut indices);
-        tessellator.append_path(&thick, &mut vertices, &mut indices);
+        tessellator.append_path_transformed(&thin, Affine2D::IDENTITY, &mut vertices, &mut indices);
+        tessellator.append_path_transformed(
+            &thick,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
 
         assert_eq!(tessellator.cache_len(), 2);
+    }
+
+    #[test]
+    fn transformed_append_reuses_local_geometry_cache() {
+        let mut tessellator = VectorTessellator::new();
+        let req = triangle(PathStyle::fill(Fill::non_zero(Color::WHITE)));
+        let mut first_vertices = Vec::new();
+        let mut first_indices = Vec::new();
+        let mut second_vertices = Vec::new();
+        let mut second_indices = Vec::new();
+
+        tessellator.append_path_transformed(
+            &req,
+            Affine2D::IDENTITY,
+            &mut first_vertices,
+            &mut first_indices,
+        );
+        tessellator.append_path_transformed(
+            &req,
+            Affine2D::translation(20.0, 30.0),
+            &mut second_vertices,
+            &mut second_indices,
+        );
+
+        assert_eq!(tessellator.cache_len(), 1);
+        assert_eq!(first_indices, second_indices);
+        assert_eq!(first_vertices.len(), second_vertices.len());
+        assert!(first_vertices
+            .iter()
+            .zip(second_vertices.iter())
+            .all(|(first, second)| {
+                (second.position[0] - first.position[0] - 20.0).abs() < 1e-5
+                    && (second.position[1] - first.position[1] - 30.0).abs() < 1e-5
+            }));
     }
 }

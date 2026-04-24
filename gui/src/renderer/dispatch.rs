@@ -1,11 +1,13 @@
 use std::ops::Range;
 use winit::dpi::PhysicalSize;
 
+use crate::geometry::Affine2D;
+
 use super::buffer::SharedViewport;
 use super::command::BackendCommand;
 use super::pipeline::blit::BlitPipeline;
 use super::pipeline::circle::CirclePipeline;
-use super::pipeline::image::ImagePipeline;
+use super::pipeline::image::{ImagePipeline, PreparedImageDraw};
 use super::pipeline::quad::QuadPipeline;
 use super::pipeline::shadow::ShadowPipeline;
 use super::pipeline::stencil::StencilState;
@@ -237,6 +239,10 @@ pub(super) fn dispatch(
                                             draw.rect,
                                             resource.size,
                                             ImageStyle::default(),
+                                        );
+                                        let image_draw = PreparedImageDraw::from_resolved(
+                                            image_draw,
+                                            Affine2D::IDENTITY,
                                         );
                                         image_pipeline.draw(
                                             &mut pass,

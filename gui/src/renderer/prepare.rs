@@ -1,26 +1,34 @@
 use std::sync::Arc;
 
+use lyon::path::Path as LyonPath;
 use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillTessellator, FillVertex, StrokeOptions, StrokeTessellator,
     StrokeVertex, VertexBuffers,
 };
 
-use super::command::BackendCommand;
-use super::image::{resolve_image_draw, ResolvedImageDraw};
-use super::path::PathRequest;
-use super::pipeline::circle::{CircleRequest, CircleVertex};
-use super::pipeline::quad::{
-    build_rounded_rect_path, QuadRequest, QuadVertex, DEFAULT_CORNER_SMOOTHING,
+use crate::geometry::{Affine2D, Point};
+use crate::paint::ClipShape;
+
+use super::affine::similarity_scale;
+use super::command::{
+    AffineCircleRequest, AffineClipRequest, AffinePathRequest, AffineRectRequest, BackendCommand,
 };
+use super::image::resolve_image_draw;
+use super::path::{PathRequest, PathStyle};
+use super::path_geometry::{
+    build_lyon_path, build_rounded_rect_path, circle_path_data, lyon_fill_rule,
+    DEFAULT_CORNER_SMOOTHING,
+};
+use super::pipeline::circle::{CircleRequest, CircleVertex};
+use super::pipeline::image::PreparedImageDraw;
+use super::pipeline::quad::QuadVertex;
 use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
 use super::pipeline::text::TextRequest;
 use super::pipeline::vector::VectorVertex;
+use super::style::Fill;
 use super::svg::SvgRasterDraw;
-use super::types::Rect;
 use super::vector_tessellator::VectorTessellator;
-
-// ── 绘制操作 ──
 
 pub enum DrawOp {
     Quad {
@@ -38,7 +46,7 @@ pub enum DrawOp {
     Shadow(ShadowRequest),
     Image {
         view: Arc<wgpu::TextureView>,
-        draw: ResolvedImageDraw,
+        draw: PreparedImageDraw,
     },
     SvgRaster(SvgRasterDraw),
     Text {
@@ -53,8 +61,6 @@ pub enum DrawOp {
         index_count: u32,
     },
 }
-
-// ── 预处理结果 ──
 
 pub struct PreparedFrame {
     pub ops: Vec<DrawOp>,
@@ -73,8 +79,6 @@ pub struct PreparedFrame {
     pub stencil_indices: Vec<u32>,
 }
 
-// ── 预处理 ──
-
 pub fn prepare_frame(
     commands: &[BackendCommand],
     vector_tessellator: &mut VectorTessellator,
@@ -92,33 +96,50 @@ pub fn prepare_frame(
         stencil_indices: Vec::new(),
     };
 
-    let mut quad_batch: Vec<&QuadRequest> = Vec::new();
-    let mut circle_batch: Vec<&CircleRequest> = Vec::new();
-    let mut vector_batch: Vec<&PathRequest> = Vec::new();
-    let mut clip_stack: Vec<(Rect, f32)> = Vec::new();
+    let mut quad_batch: Vec<&AffineRectRequest> = Vec::new();
+    let mut circle_batch: Vec<CircleRequest> = Vec::new();
+    let mut vector_batch: Vec<&AffinePathRequest> = Vec::new();
+    let mut clip_stack: Vec<AffineClipRequest> = Vec::new();
 
     for cmd in commands {
         match cmd {
             BackendCommand::Shadow(req) => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
                 frame.ops.push(DrawOp::Shadow(req.clone()));
             }
             BackendCommand::Rect(req) => {
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+                flush_circle_and_vector(
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
                 quad_batch.push(req);
             }
             BackendCommand::Circle(req) => {
                 flush_quad_batch(&mut quad_batch, &mut frame);
                 flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
-                circle_batch.push(req);
+                if let Some(scale) = similarity_scale(req.transform) {
+                    append_circle_requests(req, scale, &mut circle_batch);
+                } else {
+                    flush_circle_batch(&mut circle_batch, &mut frame);
+                    append_circle_vector_fallback(req, &mut frame, vector_tessellator);
+                }
             }
             BackendCommand::Text(req) => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
                 let index = frame.text_requests.len();
                 frame.text_requests.push(TextRequest {
                     pos: req.pos,
@@ -128,24 +149,28 @@ pub fn prepare_frame(
                 });
                 frame.ops.push(DrawOp::Text { index });
             }
-            BackendCommand::Image {
-                rect,
-                view,
-                size,
-                style,
-            } => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+            BackendCommand::Image(req) => {
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
+                let draw = resolve_image_draw(req.rect, req.size, req.style);
                 frame.ops.push(DrawOp::Image {
-                    view: view.clone(),
-                    draw: resolve_image_draw(*rect, *size, *style),
+                    view: req.view.clone(),
+                    draw: PreparedImageDraw::from_resolved(draw, req.transform),
                 });
             }
             BackendCommand::SvgRaster(draw) => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
                 frame.ops.push(DrawOp::SvgRaster(draw.clone()));
             }
             BackendCommand::Path(req) => {
@@ -153,34 +178,66 @@ pub fn prepare_frame(
                 flush_circle_batch(&mut circle_batch, &mut frame);
                 vector_batch.push(req);
             }
-            BackendCommand::PushClip { rect, radius } => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
-                clip_stack.push((*rect, *radius));
-                tessellate_stencil(&mut frame, *rect, *radius, true);
+            BackendCommand::PushClip(req) => {
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
+                clip_stack.push(req.clone());
+                tessellate_stencil(&mut frame, req, true);
             }
             BackendCommand::PopClip => {
-                flush_quad_batch(&mut quad_batch, &mut frame);
-                flush_circle_batch(&mut circle_batch, &mut frame);
-                flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
-                if let Some((rect, radius)) = clip_stack.pop() {
-                    tessellate_stencil(&mut frame, rect, radius, false);
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
+                if let Some(req) = clip_stack.pop() {
+                    tessellate_stencil(&mut frame, &req, false);
                 }
             }
         }
     }
 
-    flush_quad_batch(&mut quad_batch, &mut frame);
-    flush_circle_batch(&mut circle_batch, &mut frame);
-    flush_vector_batch(&mut vector_batch, &mut frame, vector_tessellator);
+    flush_all_batches(
+        &mut quad_batch,
+        &mut circle_batch,
+        &mut vector_batch,
+        &mut frame,
+        vector_tessellator,
+    );
 
     frame
 }
 
-// ── 批次 flush ──
+fn flush_all_batches(
+    quad_batch: &mut Vec<&AffineRectRequest>,
+    circle_batch: &mut Vec<CircleRequest>,
+    vector_batch: &mut Vec<&AffinePathRequest>,
+    frame: &mut PreparedFrame,
+    vector_tessellator: &mut VectorTessellator,
+) {
+    flush_quad_batch(quad_batch, frame);
+    flush_circle_batch(circle_batch, frame);
+    flush_vector_batch(vector_batch, frame, vector_tessellator);
+}
 
-fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
+fn flush_circle_and_vector(
+    circle_batch: &mut Vec<CircleRequest>,
+    vector_batch: &mut Vec<&AffinePathRequest>,
+    frame: &mut PreparedFrame,
+    vector_tessellator: &mut VectorTessellator,
+) {
+    flush_circle_batch(circle_batch, frame);
+    flush_vector_batch(vector_batch, frame, vector_tessellator);
+}
+
+fn flush_quad_batch(batch: &mut Vec<&AffineRectRequest>, frame: &mut PreparedFrame) {
     if batch.is_empty() {
         return;
     }
@@ -190,29 +247,34 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
     let mut stroke_tessellator = StrokeTessellator::new();
 
     for req in batch.iter() {
-        let path = build_rounded_rect_path(req.rect, req.radius, req.smoothing);
-        let color = req.style_color;
+        let path = build_rounded_rect_path(req.rect, req.style.radius, DEFAULT_CORNER_SMOOTHING);
+        let transform = req.transform;
+        let color = req.style.color.to_array();
 
         fill_tessellator
             .tessellate_path(
                 &path,
                 &FillOptions::default(),
                 &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| QuadVertex {
-                    position: vertex.position().to_array(),
+                    position: transform_position(transform, vertex.position().to_array()),
                     color,
                 }),
             )
             .expect("failed to tessellate quad fill");
 
-        if req.border_width > 0.0 {
-            if let Some(border_color) = req.border_color {
+        if let Some(border) = req.style.border {
+            if border.width > 0.0 {
+                let border_color = border.color.to_array();
                 stroke_tessellator
                     .tessellate_path(
                         &path,
-                        &StrokeOptions::default().with_line_width(req.border_width),
+                        &StrokeOptions::default().with_line_width(border.width),
                         &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| {
                             QuadVertex {
-                                position: vertex.position().to_array(),
+                                position: transform_position(
+                                    transform,
+                                    vertex.position().to_array(),
+                                ),
                                 color: border_color,
                             }
                         }),
@@ -231,10 +293,9 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
     let index_start = frame.quad_indices.len() as u32;
     let vertex_offset = frame.quad_vertices.len() as u32;
 
-    // 偏移索引值
-    for idx in &geometry.indices {
-        frame.quad_indices.push(idx + vertex_offset);
-    }
+    frame
+        .quad_indices
+        .extend(geometry.indices.iter().map(|idx| idx + vertex_offset));
     frame.quad_vertices.extend_from_slice(&geometry.vertices);
 
     frame.ops.push(DrawOp::Quad {
@@ -244,7 +305,7 @@ fn flush_quad_batch(batch: &mut Vec<&QuadRequest>, frame: &mut PreparedFrame) {
 }
 
 fn flush_vector_batch(
-    batch: &mut Vec<&PathRequest>,
+    batch: &mut Vec<&AffinePathRequest>,
     frame: &mut PreparedFrame,
     vector_tessellator: &mut VectorTessellator,
 ) {
@@ -255,8 +316,13 @@ fn flush_vector_batch(
     let index_start = frame.vector_indices.len() as u32;
     let mut index_count = 0;
     for req in batch.iter() {
-        index_count += vector_tessellator.append_path(
-            req,
+        let path = PathRequest {
+            data: req.data.clone(),
+            style: req.style,
+        };
+        index_count += vector_tessellator.append_path_transformed(
+            &path,
+            req.transform,
             &mut frame.vector_vertices,
             &mut frame.vector_indices,
         );
@@ -271,7 +337,95 @@ fn flush_vector_batch(
     }
 }
 
-fn flush_circle_batch(batch: &mut Vec<&CircleRequest>, frame: &mut PreparedFrame) {
+fn append_circle_requests(req: &AffineCircleRequest, scale: f32, batch: &mut Vec<CircleRequest>) {
+    let center = req.transform.transform_point(req.paint.center);
+    let radius = req.paint.radius * scale;
+    if let Some(stroke) = req.paint.stroke {
+        batch.push(CircleRequest {
+            center,
+            radius,
+            color: stroke.color,
+        });
+    }
+    if let Some(fill) = req.paint.fill {
+        let fill_radius = req
+            .paint
+            .stroke
+            .map(|stroke| radius - stroke.width * scale)
+            .unwrap_or(radius)
+            .max(0.0);
+        batch.push(CircleRequest {
+            center,
+            radius: fill_radius,
+            color: fill,
+        });
+    }
+}
+
+fn append_circle_vector_fallback(
+    req: &AffineCircleRequest,
+    frame: &mut PreparedFrame,
+    vector_tessellator: &mut VectorTessellator,
+) {
+    let index_start = frame.vector_indices.len() as u32;
+    let mut index_count = 0;
+
+    if let Some(stroke) = req.paint.stroke {
+        index_count += append_filled_circle_path(
+            req.paint.center,
+            req.paint.radius,
+            Fill::non_zero(stroke.color),
+            req.transform,
+            frame,
+            vector_tessellator,
+        );
+    }
+    if let Some(fill) = req.paint.fill {
+        let fill_radius = req
+            .paint
+            .stroke
+            .map(|stroke| req.paint.radius - stroke.width)
+            .unwrap_or(req.paint.radius)
+            .max(0.0);
+        index_count += append_filled_circle_path(
+            req.paint.center,
+            fill_radius,
+            Fill::non_zero(fill),
+            req.transform,
+            frame,
+            vector_tessellator,
+        );
+    }
+
+    if index_count > 0 {
+        frame.ops.push(DrawOp::Vector {
+            index_start,
+            index_count,
+        });
+    }
+}
+
+fn append_filled_circle_path(
+    center: Point,
+    radius: f32,
+    fill: Fill,
+    transform: Affine2D,
+    frame: &mut PreparedFrame,
+    vector_tessellator: &mut VectorTessellator,
+) -> u32 {
+    let req = PathRequest {
+        data: circle_path_data(center, radius),
+        style: PathStyle::fill(fill),
+    };
+    vector_tessellator.append_path_transformed(
+        &req,
+        transform,
+        &mut frame.vector_vertices,
+        &mut frame.vector_indices,
+    )
+}
+
+fn flush_circle_batch(batch: &mut Vec<CircleRequest>, frame: &mut PreparedFrame) {
     if batch.is_empty() {
         return;
     }
@@ -336,18 +490,57 @@ fn flush_circle_batch(batch: &mut Vec<&CircleRequest>, frame: &mut PreparedFrame
     });
 }
 
-fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_write: bool) {
-    let path = build_rounded_rect_path(rect, [radius; 4], DEFAULT_CORNER_SMOOTHING);
+fn tessellate_stencil(frame: &mut PreparedFrame, req: &AffineClipRequest, is_write: bool) {
+    match &req.shape {
+        ClipShape::Rect(rect) => {
+            let path = build_rounded_rect_path(*rect, [0.0; 4], DEFAULT_CORNER_SMOOTHING);
+            append_stencil_path(
+                frame,
+                &path,
+                FillOptions::default(),
+                req.transform,
+                is_write,
+            );
+        }
+        ClipShape::RoundedRect { rect, radius } => {
+            let path = build_rounded_rect_path(*rect, *radius, DEFAULT_CORNER_SMOOTHING);
+            append_stencil_path(
+                frame,
+                &path,
+                FillOptions::default(),
+                req.transform,
+                is_write,
+            );
+        }
+        ClipShape::Path { data, fill_rule } => {
+            let path = build_lyon_path(data);
+            append_stencil_path(
+                frame,
+                &path,
+                FillOptions::default().with_fill_rule(lyon_fill_rule(*fill_rule)),
+                req.transform,
+                is_write,
+            );
+        }
+    }
+}
 
+fn append_stencil_path(
+    frame: &mut PreparedFrame,
+    path: &LyonPath,
+    fill_options: FillOptions,
+    transform: Affine2D,
+    is_write: bool,
+) {
     let mut geometry: VertexBuffers<StencilVertex, u32> = VertexBuffers::new();
     let mut tessellator = FillTessellator::new();
 
     tessellator
         .tessellate_path(
-            &path,
-            &FillOptions::default(),
+            path,
+            &fill_options,
             &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| StencilVertex {
-                position: vertex.position().to_array(),
+                position: transform_position(transform, vertex.position().to_array()),
             }),
         )
         .expect("failed to tessellate stencil shape");
@@ -359,9 +552,9 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
     let index_start = frame.stencil_indices.len() as u32;
     let vertex_offset = frame.stencil_vertices.len() as u32;
 
-    for idx in &geometry.indices {
-        frame.stencil_indices.push(idx + vertex_offset);
-    }
+    frame
+        .stencil_indices
+        .extend(geometry.indices.iter().map(|idx| idx + vertex_offset));
     frame.stencil_vertices.extend_from_slice(&geometry.vertices);
 
     let index_count = geometry.indices.len() as u32;
@@ -379,28 +572,36 @@ fn tessellate_stencil(frame: &mut PreparedFrame, rect: Rect, radius: f32, is_wri
     }
 }
 
+fn transform_position(transform: Affine2D, position: [f32; 2]) -> [f32; 2] {
+    let point = transform.transform_point(Point {
+        x: position[0],
+        y: position[1],
+    });
+    [point.x, point.y]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{
-        Color, Fill, PathData, PathRequest, PathStyle, Point, Rect, RectStyle, Stroke, TextStyle,
-    };
+    use crate::geometry::Rect;
+    use crate::renderer::{Color, FillRule, PathData, RectStyle, Stroke, TextStyle};
 
     fn rect_command(x: f32) -> BackendCommand {
-        BackendCommand::Rect(QuadRequest::from_style(
-            Rect {
+        BackendCommand::Rect(AffineRectRequest {
+            rect: Rect {
                 x,
                 y: 0.0,
                 w: 10.0,
                 h: 10.0,
             },
-            &RectStyle {
+            style: RectStyle {
                 color: Color::WHITE,
                 border: None,
                 radius: [0.0; 4],
                 shadow: None,
             },
-        ))
+            transform: Affine2D::IDENTITY,
+        })
     }
 
     fn text_command(text: &str) -> BackendCommand {
@@ -413,13 +614,14 @@ mod tests {
     }
 
     fn path_command(style: PathStyle) -> BackendCommand {
-        BackendCommand::Path(PathRequest {
+        BackendCommand::Path(AffinePathRequest {
             data: PathData::new()
                 .move_to(Point { x: 0.0, y: 0.0 })
                 .line_to(Point { x: 10.0, y: 0.0 })
                 .line_to(Point { x: 10.0, y: 10.0 })
                 .close(),
             style,
+            transform: Affine2D::IDENTITY,
         })
     }
 
@@ -462,15 +664,119 @@ mod tests {
     fn prepare_frame_tessellates_path_stroke_to_vector_op() {
         let mut vector_tessellator = VectorTessellator::new();
         let frame = prepare_frame(
-            &[BackendCommand::Path(PathRequest {
+            &[BackendCommand::Path(AffinePathRequest {
                 data: PathData::line(Point { x: 0.0, y: 0.0 }, Point { x: 10.0, y: 0.0 }),
                 style: PathStyle::stroke(Stroke::new(2.0, Color::WHITE)),
+                transform: Affine2D::IDENTITY,
             })],
             &mut vector_tessellator,
         );
 
         assert!(!frame.vector_vertices.is_empty());
         assert!(!frame.vector_indices.is_empty());
+        assert!(matches!(frame.ops[0], DrawOp::Vector { .. }));
+    }
+
+    #[test]
+    fn prepare_frame_applies_affine_to_quad_vertices() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Rect(AffineRectRequest {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 10.0,
+                    h: 10.0,
+                },
+                style: RectStyle {
+                    color: Color::WHITE,
+                    border: None,
+                    radius: [0.0; 4],
+                    shadow: None,
+                },
+                transform: Affine2D::translation(20.0, 30.0),
+            })],
+            &mut vector_tessellator,
+        );
+
+        assert!(!frame.quad_vertices.is_empty());
+        assert!(frame
+            .quad_vertices
+            .iter()
+            .all(|vertex| vertex.position[0] >= 20.0 && vertex.position[1] >= 30.0));
+    }
+
+    #[test]
+    fn prepare_frame_applies_affine_to_vector_vertices() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Path(AffinePathRequest {
+                data: PathData::new()
+                    .move_to(Point { x: 0.0, y: 0.0 })
+                    .line_to(Point { x: 10.0, y: 0.0 })
+                    .line_to(Point { x: 10.0, y: 10.0 })
+                    .close(),
+                style: PathStyle::fill(Fill::non_zero(Color::WHITE)),
+                transform: Affine2D::translation(5.0, 7.0),
+            })],
+            &mut vector_tessellator,
+        );
+
+        assert!(!frame.vector_vertices.is_empty());
+        assert!(frame
+            .vector_vertices
+            .iter()
+            .all(|vertex| vertex.position[0] >= 5.0 && vertex.position[1] >= 7.0));
+    }
+
+    #[test]
+    fn prepare_frame_tessellates_path_clip_to_stencil() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[
+                BackendCommand::PushClip(AffineClipRequest {
+                    shape: ClipShape::Path {
+                        data: PathData::new()
+                            .move_to(Point { x: 0.0, y: 0.0 })
+                            .line_to(Point { x: 10.0, y: 0.0 })
+                            .line_to(Point { x: 10.0, y: 10.0 })
+                            .close(),
+                        fill_rule: FillRule::NonZero,
+                    },
+                    transform: Affine2D::translation(5.0, 0.0),
+                }),
+                BackendCommand::PopClip,
+            ],
+            &mut vector_tessellator,
+        );
+
+        assert!(matches!(frame.ops[0], DrawOp::StencilWrite { .. }));
+        assert!(matches!(frame.ops[1], DrawOp::StencilClear { .. }));
+        assert!(!frame.stencil_vertices.is_empty());
+        assert!(frame
+            .stencil_vertices
+            .iter()
+            .all(|vertex| vertex.position[0] >= 5.0));
+    }
+
+    #[test]
+    fn non_similarity_circle_falls_back_to_vector_op() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Circle(AffineCircleRequest {
+                paint: crate::paint::CirclePaint {
+                    center: Point { x: 10.0, y: 10.0 },
+                    radius: 5.0,
+                    fill: Some(Color::WHITE),
+                    stroke: None,
+                },
+                transform: Affine2D::scale_non_uniform(2.0, 1.0),
+            })],
+            &mut vector_tessellator,
+        );
+
+        assert!(frame.circle_vertices.is_empty());
+        assert!(!frame.vector_vertices.is_empty());
         assert!(matches!(frame.ops[0], DrawOp::Vector { .. }));
     }
 }
