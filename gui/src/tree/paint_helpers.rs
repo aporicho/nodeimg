@@ -3,6 +3,8 @@
 use crate::geometry::{Point, Rect};
 use crate::paint::PathData;
 
+pub(crate) const CONNECTION_WIDTH: f32 = 2.0;
+
 pub fn connection_path(from: Point, to: Point) -> PathData {
     PathData::cubic(bezier_control_points(from, to))
 }

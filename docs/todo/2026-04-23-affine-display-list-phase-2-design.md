@@ -40,7 +40,7 @@ Phase 2 交付以下能力：
 - 不在 tree 里调用 `renderer::svg::resolve_svg_icon_paths` 或任何 renderer SVG internals。
 - 不新增第二套 transform math。
 - 不把旧 `PaintTransform` 留作兼容事实来源。
-- 不做 shape-aware hit testing。hit 仍检查 local bounds / clip bounds。
+- Phase 2 当时未包含 shape-aware hit testing。后续已由 `tree::hit_shape` 完成 leaf geometry hit，`hit.rs` 仍保留 traversal / overflow / z-order / hittable 的职责边界。
 - 不做 unrelated layout refactor。
 
 ## 3. 当前坐标语义和 Phase 2 定义
@@ -599,7 +599,7 @@ if inside && is_hittable:
 Clip / overflow：
 
 - Hidden/Scroll 仍以 local bounds 裁剪 children。
-- ClipShape path 不参与 shape-aware hit。
+- Phase 2 的 ClipShape path 不参与 shape-aware hit；当前 leaf shape hit 不改变 overflow clip 语义。
 - 如果 transform 不可逆，当前节点自身可以按 local inverse 失败视为不命中；children 也不命中。
 
 测试替换：

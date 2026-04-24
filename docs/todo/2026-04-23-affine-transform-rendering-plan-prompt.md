@@ -106,7 +106,7 @@
 - 不做 scale policy。
 - 不做 screen-space fixed affordance。
 - 不做 unrelated layout 重构。
-- 不做 shape-aware hit testing，除非作为后续边界说明。
+- 当时未包含 shape-aware hit testing，只作为后续边界说明；后续 leaf geometry hit 已由 `tree::hit_shape` 完成。
 
 3. 核心数学设计
 设计 Affine2D / Transform2D 类型。

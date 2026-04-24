@@ -40,10 +40,10 @@ local primitive + resolved affine transform + clip state
 不做 per-primitive unit switching / scale policy
 不做 screen-space fixed affordance
 不做 unrelated layout refactor
-不做 shape-aware hit testing
+Phase 2 当时未包含 shape-aware hit testing（后续已由 tree::hit_shape 完成叶子图元精确命中）
 ```
 
-但 hit 必须支持 affine inverse，只是命中形状仍用 local bounds / clip bounds。
+Phase 2 的 hit 必须支持 affine inverse；当前实现已在此基础上加入 leaf shape hit，支持 circle / line / curve / path / grid / connection / pending connection 的几何命中。
 
 **文件结构**
 
@@ -336,7 +336,7 @@ screen point
 -> local bounds / ClipShape bounds check
 ```
 
-hit chain 顺序、z-index、source order 不变。overflow hidden/scroll 使用同一 clip 语义。仍不做 shape-aware hit testing。
+hit chain 顺序、z-index、source order 不变。overflow hidden/scroll 使用同一 clip 语义。Phase 2 当时仍只做 local bounds / clip bounds；后续 shape-aware hit testing 已完成：`tree::hit_shape` 负责叶子图元几何命中，`hit.rs` 仍只负责 traversal、overflow clip、z-order 和 hittable 判定。
 
 **完整实施计划**
 

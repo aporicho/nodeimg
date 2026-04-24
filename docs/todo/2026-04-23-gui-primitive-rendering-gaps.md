@@ -15,7 +15,7 @@ Date: 2026-04-23
 | DONE | Connect vector SVG icon rendering | `LeafKind::Icon` must render through an icon/SVG resource path | `IconRegistry` resolves SVG assets from the generated `assets/icons` registry; supported SVG icons render as vector paths with fill/stroke/stroke-width overrides, with raster fallback for complex SVG. |
 | DONE | Align paint and hit transforms | Paint and hit testing must agree on rotate/scale/translate | Paint and hit now share the affine DisplayList transform model. |
 | DONE | Define primitive unit policy | Primitive dimensions need one explicit unit model | All primitive dimensions are local paint units; scaling and movement come only from the DisplayList transform stack. |
-| TODO | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | Rectangular hit is acceptable for basic UI but not for precise graph interactions. |
+| DONE | Add shape-aware hit testing where needed | Thin lines, curves, circles, and paths should not rely only on rectangular bounds forever | `tree::hit_shape` provides leaf geometry hit tests for circle, line, curve, path, grid, connection, and pending connection leaves; text/image/icon/custom paint keep rectangular fallback. |
 | DONE | Add paint recording tests | Leaf declarations should be testable without a real GPU renderer | `RecordingPaintTarget` records resolved DisplayList commands for leaf paint assertions. |
 
 ## Current Bottom-Up Rendering Path
@@ -60,6 +60,7 @@ The implementation already supports enough primitives for the current UI and nod
 - Shadows render for rect styles.
 - Rounded rectangular clips work through the stencil path.
 - Paint and hit order respect `z_index` and source order.
+- Hit testing uses precise geometry for vector-like leaves and rectangular fallback for leaves without a declared shape model.
 
 ## Main Architectural Gap
 
@@ -274,8 +275,9 @@ rotate -> active
 
 The tree records local primitives and transform stacks; renderer preparation
 maps those primitives into the frame. Hit testing uses the same affine inverse
-path and still tests local rectangular bounds unless shape-aware hit testing is
-implemented later.
+path. Leaf hit testing then uses the leaf's declared geometry when available,
+falling back to local rectangular bounds only for leaves without a stable shape
+model.
 
 ### Scale Behavior
 
@@ -297,15 +299,24 @@ unit system into primitive styles.
 
 ### Shape-Aware Hit Testing
 
-Hit testing currently uses rectangular bounds. This is enough for basic UI containers but weak for precise graph interactions and thin vector shapes.
-
-Eventually needed:
+Hit testing uses the same traversal, `z_index`, source order, overflow clipping,
+and affine inverse as before. The only change is the self-hit predicate for
+primitive leaves:
 
 ```text
-circle hit test by radius
-line/curve hit test by stroke distance
-path hit test by fill/stroke
+Circle -> radius/fill/stroke
+Line -> stroke distance
+Curve -> flattened cubic stroke distance
+Path -> fill rule and stroke distance
+Grid -> dot radius
+Connection/PendingConnection -> resolved connection path stroke distance
+Text/Image/Icon/CustomPaint -> rectangular fallback
 ```
+
+The shape predicate is intentionally centralized in `tree::hit_shape`; `hit.rs`
+owns traversal and input policy, while paint and hit share path helpers such as
+the connection path and connection stroke width. This keeps graph interactions
+precise without spreading geometry decisions across callers.
 
 ### Paint Command Recording
 

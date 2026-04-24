@@ -3,6 +3,7 @@ mod connection_endpoint;
 mod desc;
 mod diff;
 mod hit;
+mod hit_shape;
 mod id;
 pub mod layout;
 mod layout_adapter;

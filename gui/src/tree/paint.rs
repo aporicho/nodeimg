@@ -1,7 +1,7 @@
 use super::connection_endpoint::node_screen_center;
 use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
-use super::paint_helpers::{connection_path, grid_cells};
+use super::paint_helpers::{connection_path, grid_cells, CONNECTION_WIDTH};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::stacking::children_in_paint_order;
@@ -21,8 +21,6 @@ use crate::widget::painters::{
     widget_visual_override as paint_widget_visual_override,
 };
 use crate::widget::state::TextInputStore;
-
-const CONNECTION_WIDTH: f32 = 2.0;
 
 pub(crate) struct PaintCx<'a> {
     pub(crate) interaction: Option<&'a InteractionState>,
