@@ -17,9 +17,18 @@ pub struct AppContext {
     pub cursor: CursorState,
     pub(crate) ime_allowed: bool,
     pub(crate) clipboard: Option<Clipboard>,
+    pub(crate) redraw_requested: bool,
 }
 
 impl AppContext {
+    pub fn request_redraw(&mut self) {
+        self.redraw_requested = true;
+    }
+
+    pub(crate) fn take_redraw_request(&mut self) -> bool {
+        std::mem::take(&mut self.redraw_requested)
+    }
+
     pub fn apply_ime_request(&mut self, request: ImeRequest) {
         if self.ime_allowed != request.allowed {
             self.window.set_ime_allowed(request.allowed);

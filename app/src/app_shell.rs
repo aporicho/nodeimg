@@ -121,12 +121,16 @@ impl App for AppShell {
     }
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
+        self.gui.tick_animations(Instant::now());
         let viewport = viewport_rect(ctx);
         let desc = self.build_user_desc(viewport);
         self.gui
             .update(desc, viewport, renderer.text_measurer(), &self.theme);
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
+        if self.gui.animations_active() {
+            ctx.request_redraw();
+        }
     }
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {

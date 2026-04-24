@@ -1,7 +1,8 @@
 use std::time::Instant;
 
+use crate::animation::AnimationStore;
 use crate::shell::{AppEvent, MouseButton};
-use crate::tree::{hit_test, HitChain, Tree};
+use crate::tree::{hit_test_with_animations, HitChain, Tree};
 
 use super::arena::GestureArena;
 use super::factory::arena_from_hit_chain;
@@ -42,12 +43,17 @@ impl GestureSession {
         }
     }
 
-    pub(crate) fn handle_event(&mut self, tree: &Tree, event: &AppEvent) -> GestureSessionUpdate {
+    pub(crate) fn handle_event(
+        &mut self,
+        tree: &Tree,
+        animations: Option<&AnimationStore>,
+        event: &AppEvent,
+    ) -> GestureSessionUpdate {
         match *event {
             AppEvent::MousePress { x, y, button }
                 if button == MouseButton::Left && self.arena.is_none() =>
             {
-                let chain = hit_chain(tree, x, y);
+                let chain = hit_chain(tree, animations, x, y);
                 if let Some(arena) = arena_from_hit_chain(tree, &chain, x, y, self.last_tap_time) {
                     self.arena = Some(arena);
                     return GestureSessionUpdate::consumed();
@@ -113,9 +119,9 @@ impl Default for GestureSession {
     }
 }
 
-fn hit_chain(tree: &Tree, x: f32, y: f32) -> HitChain {
+fn hit_chain(tree: &Tree, animations: Option<&AnimationStore>, x: f32, y: f32) -> HitChain {
     let Some(root) = tree.root() else {
         return HitChain::empty();
     };
-    hit_test(tree, root, x, y)
+    hit_test_with_animations(tree, root, x, y, animations)
 }

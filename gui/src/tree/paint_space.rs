@@ -20,6 +20,12 @@ impl PaintSpace {
         }
     }
 
+    pub(crate) fn transformed(self, transform: Affine2D) -> Self {
+        Self {
+            to_screen: Affine2D::compose(self.to_screen, transform),
+        }
+    }
+
     pub(crate) fn node_space(
         self,
         node_rect: Rect,

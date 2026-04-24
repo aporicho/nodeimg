@@ -4,6 +4,7 @@ use super::node::{NodeId, NodeKind, TreeNode};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::stacking::children_in_hit_order;
 use super::tree::Tree;
+use crate::animation::{visual_affine, AnimationStore};
 use crate::geometry::Point;
 
 /// 从命中的叶子到根的节点链。
@@ -49,8 +50,25 @@ impl HitChain {
 /// 公开入口：返回命中链。从 root 开始向下递归，返回的链从叶子到根。
 /// 如果没命中返回 empty HitChain。
 pub fn hit_test(tree: &Tree, root: NodeId, x: f32, y: f32) -> HitChain {
+    hit_test_with_animations(tree, root, x, y, None)
+}
+
+pub fn hit_test_with_animations(
+    tree: &Tree,
+    root: NodeId,
+    x: f32,
+    y: f32,
+    animations: Option<&AnimationStore>,
+) -> HitChain {
     let mut nodes = Vec::new();
-    hit_recursive(tree, root, Point { x, y }, PaintSpace::root(), &mut nodes);
+    hit_recursive(
+        tree,
+        root,
+        Point { x, y },
+        PaintSpace::root(),
+        animations,
+        &mut nodes,
+    );
     HitChain::new(nodes)
 }
 
@@ -59,12 +77,18 @@ fn hit_recursive(
     node_id: NodeId,
     screen: Point,
     current_space: PaintSpace,
+    animations: Option<&AnimationStore>,
     chain: &mut Vec<NodeId>,
 ) -> bool {
     let Some(node) = tree.get(node_id) else {
         return false;
     };
 
+    let visual = animations.and_then(|store| store.visual_for(node.id.as_ref()));
+    let current_space = visual
+        .and_then(|visual| visual_affine(node.rect, visual))
+        .map(|transform| current_space.transformed(transform))
+        .unwrap_or(current_space);
     let node_space = current_space.node_space(node.rect, node.style.transform);
     let Some(local_point) = current_space.point_to_local(node.rect, screen) else {
         return false;
@@ -85,7 +109,7 @@ fn hit_recursive(
     };
 
     for child_id in children {
-        if hit_recursive(tree, child_id, screen, child_space, chain) {
+        if hit_recursive(tree, child_id, screen, child_space, animations, chain) {
             chain.push(node_id);
             return true;
         }
@@ -133,12 +157,14 @@ fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::{AnimationProps, AnimationStore, Ease};
     use crate::geometry::TransformSpec;
     use crate::renderer::{Color, Rect, Stroke};
     use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
     use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
+    use std::time::{Duration, Instant};
 
     fn node_with_rect(
         id: &'static str,
@@ -1022,6 +1048,37 @@ mod tests {
         // 屏幕 (30, 30) → 逆变换 (30/2, 30/2) = (15, 15) → 命中 child local (10,10,10,10)
         let chain = hit_test(&tree, root_id, 30.0, 30.0);
         assert_eq!(chain.leaf(), Some(child_id));
+    }
+
+    #[test]
+    fn hit_uses_animation_transform_for_whole_node() {
+        let mut tree = Tree::new();
+        let node_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 20.0,
+                h: 20.0,
+            },
+        ));
+        tree.set_root(node_id);
+
+        let mut animations = AnimationStore::new();
+        let now = Instant::now();
+        animations
+            .animate("test")
+            .to(AnimationProps::new().translate([40.0, 0.0]))
+            .duration_ms(100)
+            .ease(Ease::Linear)
+            .play_at(now);
+        animations.tick(now + Duration::from_millis(100));
+
+        let chain = hit_test_with_animations(&tree, node_id, 55.0, 15.0, Some(&animations));
+
+        assert_eq!(chain.leaf(), Some(node_id));
+        assert!(hit_test_with_animations(&tree, node_id, 15.0, 15.0, Some(&animations)).is_empty());
     }
 
     #[test]

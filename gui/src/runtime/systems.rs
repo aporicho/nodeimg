@@ -1,3 +1,4 @@
+use crate::animation::AnimationStore;
 use crate::context::ImeRequest;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
@@ -20,6 +21,7 @@ pub(crate) struct RuntimeSyncCx<'a> {
 pub(crate) struct RuntimeEventCx<'a> {
     pub(crate) tree: &'a mut Tree,
     pub(crate) interaction: &'a mut InteractionState,
+    pub(crate) animations: Option<&'a AnimationStore>,
 }
 
 #[derive(Debug, Default)]
@@ -64,7 +66,10 @@ impl RuntimeSystems {
         event: &AppEvent,
     ) -> RuntimeEventResult {
         {
-            if self.overlay.handle_event(cx.tree, cx.interaction, event) {
+            if self
+                .overlay
+                .handle_event(cx.tree, cx.animations, cx.interaction, event)
+            {
                 return RuntimeEventResult {
                     output: FrameworkOutput::consumed(),
                     cancel_gesture: true,
@@ -73,11 +78,12 @@ impl RuntimeSystems {
         }
 
         let dropdown_output = {
-            let dropdown_cx = OverlaySystemCx::new(cx.tree, cx.interaction, &mut self.overlay);
+            let dropdown_cx =
+                OverlaySystemCx::new(cx.tree, cx.animations, cx.interaction, &mut self.overlay);
             self.dropdown.handle_event(dropdown_cx, event)
         };
         let text_output = {
-            let text_cx = SystemCx::new(cx.tree, cx.interaction);
+            let text_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction);
             self.text_input.handle_event(text_cx, event)
         };
 

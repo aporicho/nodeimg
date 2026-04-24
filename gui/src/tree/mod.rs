@@ -23,7 +23,7 @@ mod tree;
 
 pub use desc::Desc;
 pub use diff::reconcile;
-pub use hit::{hit_test, HitChain};
+pub use hit::{hit_test, hit_test_with_animations, HitChain};
 pub use id::{NodeId, StableId, TreeNodeId};
 pub use layout::layout;
 pub use node::{AnimationRuntime, LayoutRuntime, NodeKind, NodeLocalRuntime, TreeNode};

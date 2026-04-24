@@ -1,4 +1,5 @@
 pub mod action;
+pub mod animation;
 pub mod canvas;
 pub mod context;
 pub(crate) mod event;

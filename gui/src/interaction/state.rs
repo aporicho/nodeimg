@@ -1,3 +1,4 @@
+use crate::animation::AnimationStore;
 use crate::shell::AppEvent;
 use crate::tree::{NodeId, Tree};
 
@@ -36,8 +37,13 @@ impl InteractionState {
         }
     }
 
-    pub(crate) fn handle_event(&mut self, tree: &Tree, event: &AppEvent) {
-        reducer::apply_event(self, tree, event);
+    pub(crate) fn handle_event(
+        &mut self,
+        tree: &Tree,
+        animations: Option<&AnimationStore>,
+        event: &AppEvent,
+    ) {
+        reducer::apply_event(self, tree, animations, event);
     }
 
     pub fn visual_state(&self, node_id: NodeId, disabled: bool) -> WidgetVisualState {

@@ -1,4 +1,5 @@
 use super::runtime::OverlayState;
+use crate::animation::AnimationStore;
 use crate::interaction::InteractionState;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::{NodeId, Tree};
@@ -29,6 +30,7 @@ pub(crate) fn close_overlay(
 pub(crate) fn handle_dismiss_event(
     state: &OverlayState,
     tree: &Tree,
+    animations: Option<&AnimationStore>,
     event: &AppEvent,
 ) -> DismissOutcome {
     match *event {
@@ -39,7 +41,7 @@ pub(crate) fn handle_dismiss_event(
         AppEvent::MousePress { x, y, button }
             if button == MouseButton::Left && state.request.dismiss_on_outside_click =>
         {
-            if hit_overlay(tree, &state.request.id, x, y) {
+            if hit_overlay(tree, animations, &state.request.id, x, y) {
                 DismissOutcome::Keep
             } else {
                 DismissOutcome::CloseNoFocusRestore
@@ -55,12 +57,18 @@ pub(crate) enum DismissOutcome {
     CloseNoFocusRestore,
 }
 
-fn hit_overlay(tree: &Tree, overlay_id: &str, x: f32, y: f32) -> bool {
+fn hit_overlay(
+    tree: &Tree,
+    animations: Option<&AnimationStore>,
+    overlay_id: &str,
+    x: f32,
+    y: f32,
+) -> bool {
     let Some(root) = tree.root() else {
         return false;
     };
     let prefix = format!("__overlay::{overlay_id}");
-    crate::tree::hit_test(tree, root, x, y)
+    crate::tree::hit_test_with_animations(tree, root, x, y, animations)
         .iter()
         .filter_map(|node_id| tree.get(node_id))
         .any(|node| node.id.as_ref().starts_with(&prefix))

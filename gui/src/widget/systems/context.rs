@@ -1,16 +1,26 @@
+use crate::animation::AnimationStore;
 use crate::interaction::InteractionState;
 use crate::overlay::{OverlayRequest, OverlaySystem};
-use crate::tree::{hit_test, HitChain, NodeId, NodeKind, Tree};
+use crate::tree::{hit_test_with_animations, HitChain, NodeId, NodeKind, Tree};
 use crate::widget::state::dropdown::DropdownRuntime;
 
 pub(crate) struct SystemCx<'a> {
     tree: &'a Tree,
+    animations: Option<&'a AnimationStore>,
     interaction: &'a mut InteractionState,
 }
 
 impl<'a> SystemCx<'a> {
-    pub(crate) fn new(tree: &'a Tree, interaction: &'a mut InteractionState) -> Self {
-        Self { tree, interaction }
+    pub(crate) fn new(
+        tree: &'a Tree,
+        animations: Option<&'a AnimationStore>,
+        interaction: &'a mut InteractionState,
+    ) -> Self {
+        Self {
+            tree,
+            animations,
+            interaction,
+        }
     }
 
     pub(crate) fn tree(&self) -> &Tree {
@@ -29,7 +39,7 @@ impl<'a> SystemCx<'a> {
         let Some(root) = self.tree.root() else {
             return HitChain::empty();
         };
-        hit_test(self.tree, root, x, y)
+        hit_test_with_animations(self.tree, root, x, y, self.animations)
     }
 
     pub(crate) fn node_name(&self, node_id: NodeId) -> Option<&str> {
@@ -55,6 +65,7 @@ impl<'a> SystemCx<'a> {
 
 pub(crate) struct OverlaySystemCx<'a> {
     tree: &'a mut Tree,
+    animations: Option<&'a AnimationStore>,
     interaction: &'a mut InteractionState,
     overlay: &'a mut OverlaySystem,
 }
@@ -62,11 +73,13 @@ pub(crate) struct OverlaySystemCx<'a> {
 impl<'a> OverlaySystemCx<'a> {
     pub(crate) fn new(
         tree: &'a mut Tree,
+        animations: Option<&'a AnimationStore>,
         interaction: &'a mut InteractionState,
         overlay: &'a mut OverlaySystem,
     ) -> Self {
         Self {
             tree,
+            animations,
             interaction,
             overlay,
         }
@@ -74,6 +87,13 @@ impl<'a> OverlaySystemCx<'a> {
 
     pub(crate) fn tree(&self) -> &Tree {
         self.tree
+    }
+
+    pub(crate) fn hit_chain(&self, x: f32, y: f32) -> HitChain {
+        let Some(root) = self.tree.root() else {
+            return HitChain::empty();
+        };
+        hit_test_with_animations(self.tree, root, x, y, self.animations)
     }
 
     pub(crate) fn dropdown_runtime(&self) -> &DropdownRuntime {

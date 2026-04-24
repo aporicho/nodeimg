@@ -1,7 +1,7 @@
 use crate::context::{OverlayPlacement, OverlayRequest};
 use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
-use crate::tree::{hit_test, NodeId, NodeKind, Tree};
+use crate::tree::{HitChain, NodeId, NodeKind, Tree};
 use crate::ui;
 use crate::widget::atoms::dropdown::{DropdownOptionProps, DropdownProps};
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
@@ -60,13 +60,14 @@ impl DropdownSystem {
                 y,
                 button: MouseButton::Left,
             } => {
-                if let Some((dropdown_id, index)) = overlay_option_hit(cx.tree(), x, y) {
+                let hit_chain = cx.hit_chain(x, y);
+                if let Some((dropdown_id, index)) = overlay_option_hit(cx.tree(), &hit_chain) {
                     cx.close_overlay();
                     cx.dropdown_runtime_mut().open = None;
                     return selection_output(dropdown_id, index);
                 }
 
-                if let Some(dropdown_id) = dropdown_field_hit(cx.tree(), x, y) {
+                if let Some(dropdown_id) = dropdown_field_hit(cx.tree(), &hit_chain) {
                     self.toggle_dropdown(&mut cx, &dropdown_id);
                     return FrameworkOutput::consumed();
                 }
@@ -257,9 +258,8 @@ fn dropdown_props<'a>(tree: &'a Tree, dropdown_id: &str) -> Option<&'a DropdownP
     props.as_any().downcast_ref::<DropdownProps>()
 }
 
-fn dropdown_field_hit(tree: &Tree, x: f32, y: f32) -> Option<String> {
-    let root = tree.root()?;
-    hit_test(tree, root, x, y).iter().find_map(|node_id| {
+fn dropdown_field_hit(tree: &Tree, hit_chain: &HitChain) -> Option<String> {
+    hit_chain.iter().find_map(|node_id| {
         let node = tree.get(node_id)?;
         let node_id = node.id.as_ref();
         let dropdown_id = node_id.strip_suffix("::field")?;
@@ -267,9 +267,8 @@ fn dropdown_field_hit(tree: &Tree, x: f32, y: f32) -> Option<String> {
     })
 }
 
-fn overlay_option_hit(tree: &Tree, x: f32, y: f32) -> Option<(String, usize)> {
-    let root = tree.root()?;
-    hit_test(tree, root, x, y).iter().find_map(|node_id| {
+fn overlay_option_hit(tree: &Tree, hit_chain: &HitChain) -> Option<(String, usize)> {
+    hit_chain.iter().find_map(|node_id| {
         let node = tree.get(node_id)?;
         let node_id = node.id.as_ref();
         let suffix = node_id.strip_prefix("__dropdown_option::")?;

@@ -7,13 +7,14 @@ use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
+use crate::animation::{visual_affine, AnimationStore};
 use crate::geometry::{Affine2D, Point, Rect};
 use crate::icon::{IconFit, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::interaction::InteractionState;
 use crate::paint::{
-    CirclePaint, ClipShape, Color, DisplayList, PaintBuildError, PathData, PathStyle,
-    RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride, SvgSourceKey,
-    SvgStrokeWidth, SvgStyle, TextStyle,
+    CirclePaint, ClipShape, Color, DisplayList, LayerPaint, PaintBuildError, PaintCommand,
+    PathData, PathStyle, RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride,
+    SvgSourceKey, SvgStrokeWidth, SvgStyle, TextStyle,
 };
 use crate::theme::Theme;
 use crate::widget::painters::{
@@ -25,6 +26,7 @@ use crate::widget::state::TextInputStore;
 pub(crate) struct PaintCx<'a> {
     pub(crate) interaction: Option<&'a InteractionState>,
     pub(crate) text_inputs: Option<&'a TextInputStore>,
+    pub(crate) animations: Option<&'a AnimationStore>,
     pub(crate) theme: &'a Theme,
 }
 
@@ -41,6 +43,7 @@ pub(crate) fn build_display_list(
         &mut target,
         cx.interaction,
         cx.text_inputs,
+        cx.animations,
         cx.theme,
     );
     target.display_list()
@@ -53,6 +56,7 @@ pub(crate) fn paint_to_target(
     target: &mut dyn PaintTarget,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
+    animations: Option<&AnimationStore>,
     theme: &Theme,
 ) {
     paint_node(
@@ -62,6 +66,7 @@ pub(crate) fn paint_to_target(
         PaintSpace::root(),
         interaction,
         text_inputs,
+        animations,
         theme,
         None,
     );
@@ -75,6 +80,78 @@ fn paint_node(
     current_space: PaintSpace,
     interaction: Option<&InteractionState>,
     text_inputs: Option<&TextInputStore>,
+    animations: Option<&AnimationStore>,
+    theme: &Theme,
+    inherited_text_color: Option<Color>,
+) {
+    let Some(node) = tree.get(node_id) else {
+        return;
+    };
+    if let Some(visual) = animations.and_then(|store| store.visual_for(node.id.as_ref())) {
+        if visual.opacity <= 0.0 {
+            return;
+        }
+
+        let layer = {
+            let mut layer_target =
+                RecordingPaintTarget::with_measure(|text, style| target.measure_text(text, style));
+            paint_node_inner(
+                tree,
+                node_id,
+                &mut layer_target,
+                current_space,
+                interaction,
+                text_inputs,
+                animations,
+                theme,
+                inherited_text_color,
+            );
+            match layer_target.display_list() {
+                Ok(layer) => layer,
+                Err(err) => {
+                    tracing::warn!("failed to build animated node layer: {:?}", err);
+                    return;
+                }
+            }
+        };
+
+        let pushed_transform = visual_affine(node.rect, visual);
+        if let Some(transform) = pushed_transform {
+            target.push_transform(transform);
+        }
+        target.draw(PaintCommand::Layer(LayerPaint::new(
+            node.rect,
+            visual.opacity,
+            layer,
+        )));
+        if pushed_transform.is_some() {
+            target.pop_transform();
+        }
+        return;
+    }
+
+    paint_node_inner(
+        tree,
+        node_id,
+        target,
+        current_space,
+        interaction,
+        text_inputs,
+        animations,
+        theme,
+        inherited_text_color,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_node_inner(
+    tree: &Tree,
+    node_id: NodeId,
+    target: &mut dyn PaintTarget,
+    current_space: PaintSpace,
+    interaction: Option<&InteractionState>,
+    text_inputs: Option<&TextInputStore>,
+    animations: Option<&AnimationStore>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
 ) {
@@ -147,6 +224,7 @@ fn paint_node(
                 child_space,
                 interaction,
                 text_inputs,
+                animations,
                 theme,
                 child_text_color,
             );
@@ -166,6 +244,7 @@ fn paint_node(
                 current_space,
                 interaction,
                 text_inputs,
+                animations,
                 theme,
                 child_text_color,
             );
@@ -361,13 +440,14 @@ fn build_display_list_for_test(
     theme: &Theme,
 ) -> Result<DisplayList, PaintBuildError> {
     let mut target = RecordingPaintTarget::new();
-    paint_to_target(tree, root, &mut target, None, None, theme);
+    paint_to_target(tree, root, &mut target, None, None, None, theme);
     target.display_list()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::{AnimationProps, AnimationStore, Ease};
     use crate::geometry::TransformSpec;
     use crate::icon::IconSpec;
     use crate::paint::{
@@ -382,6 +462,7 @@ mod tests {
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
     use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
 
     const EPS: f32 = 1e-5;
 
@@ -440,6 +521,24 @@ mod tests {
 
     fn paint_tree(tree: &Tree, root: NodeId) -> DisplayList {
         build_display_list_for_test(tree, root, &Theme::default()).unwrap()
+    }
+
+    fn paint_tree_with_animations(
+        tree: &Tree,
+        root: NodeId,
+        animations: &AnimationStore,
+    ) -> DisplayList {
+        let mut target = RecordingPaintTarget::new();
+        paint_to_target(
+            tree,
+            root,
+            &mut target,
+            None,
+            None,
+            Some(animations),
+            &Theme::default(),
+        );
+        target.display_list().unwrap()
     }
 
     fn paint_single_leaf(kind: LeafKind, rect: Rect) -> DisplayList {
@@ -723,6 +822,51 @@ mod tests {
                 PathCommand::MoveTo(point(12.0, 22.0)),
                 PathCommand::CubicTo(point(31.0, 22.0), point(31.0, 70.0), point(50.0, 70.0)),
             ]
+        );
+    }
+
+    #[test]
+    fn animated_node_records_layer_with_opacity_and_transform() {
+        let mut tree = Tree::new();
+        let child = tree.insert(leaf_node(
+            "child",
+            LeafKind::Circle {
+                radius: 4.0,
+                fill: Some(Color::WHITE),
+                stroke: None,
+            },
+            rect(10.0, 20.0, 8.0, 8.0),
+        ));
+        let root = tree.insert(container_node(
+            "root",
+            rect(0.0, 0.0, 100.0, 100.0),
+            vec![child],
+        ));
+        tree.set_root(root);
+
+        let mut animations = AnimationStore::new();
+        let now = Instant::now();
+        animations
+            .animate("child")
+            .to(AnimationProps::new().opacity(0.5).translate([12.0, 0.0]))
+            .duration_ms(100)
+            .ease(Ease::Linear)
+            .play_at(now);
+        animations.tick(now + Duration::from_millis(100));
+
+        let list = paint_tree_with_animations(&tree, root, &animations);
+        let command = only_command(&list);
+
+        match &command.command {
+            PaintCommand::Layer(layer) => {
+                assert_eq!(layer.opacity, 0.5);
+                assert_eq!(layer.content.commands.len(), 1);
+            }
+            other => panic!("expected animated layer, got {other:?}"),
+        }
+        assert_eq!(
+            command.transform.transform_point(point(10.0, 20.0)),
+            point(22.0, 20.0)
         );
     }
 

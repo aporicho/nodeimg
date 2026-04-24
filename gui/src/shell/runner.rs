@@ -63,6 +63,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
             cursor: super::cursor::CursorState::new(),
             ime_allowed: false,
             clipboard: Clipboard::new().ok(),
+            redraw_requested: true,
         };
 
         let app = A::init(&mut ctx);
@@ -96,6 +97,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 new_size,
             );
             state.renderer.resize(&state.ctx.device, new_size);
+            state.ctx.request_redraw();
         }
 
         // 翻译并分发事件
@@ -105,7 +107,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     event_loop.exit();
                     return;
                 }
-                _ => state.app.event(app_event, &mut state.ctx),
+                _ => {
+                    state.app.event(app_event, &mut state.ctx);
+                    state.ctx.request_redraw();
+                }
             }
         }
 
@@ -136,7 +141,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(state) = self.state.as_ref() {
+        if let Some(state) = self.state.as_mut() {
+            if !state.ctx.take_redraw_request() {
+                return;
+            }
             state.ctx.window.request_redraw();
         }
     }

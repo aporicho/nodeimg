@@ -2,11 +2,11 @@ use crate::context::Context;
 use crate::output::FrameworkOutput;
 use crate::shell::AppEvent;
 use crate::tree::layout::Overflow;
-use crate::tree::{hit_test, NodeId, Tree};
+use crate::tree::NodeId;
 
 pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
     ctx.handle_interaction_event(event);
-    let scroll_consumed = handle_scroll_event(&mut ctx.tree, event);
+    let scroll_consumed = handle_scroll_event(ctx, event);
     let runtime_result = ctx.handle_runtime_pre_gesture_event(event);
     if runtime_result.cancel_gesture {
         ctx.cancel_gesture();
@@ -27,30 +27,24 @@ fn finalize_output(mut output: FrameworkOutput) -> FrameworkOutput {
     output
 }
 
-fn handle_scroll_event(tree: &mut Tree, event: &AppEvent) -> bool {
+fn handle_scroll_event(ctx: &mut Context, event: &AppEvent) -> bool {
     let Some((x, y, delta)) = scroll_event_delta(event) else {
         return false;
     };
-    let Some(node_id) = scroll_target_at(tree, x, y) else {
+    let Some(node_id) = scroll_target_at(ctx, x, y) else {
         return false;
     };
-    tree.scroll(node_id, delta);
+    ctx.tree.scroll(node_id, delta);
     true
 }
 
-fn scroll_target_at(tree: &Tree, x: f32, y: f32) -> Option<NodeId> {
-    hit_chain(tree, x, y).iter().find(|&node_id| {
-        tree.get(node_id)
+fn scroll_target_at(ctx: &Context, x: f32, y: f32) -> Option<NodeId> {
+    ctx.hit_test(x, y).iter().find(|&node_id| {
+        ctx.tree
+            .get(node_id)
             .map(|node| node.style.overflow == Overflow::Scroll)
             .unwrap_or(false)
     })
-}
-
-fn hit_chain(tree: &Tree, x: f32, y: f32) -> crate::tree::HitChain {
-    let Some(root) = tree.root() else {
-        return crate::tree::HitChain::empty();
-    };
-    hit_test(tree, root, x, y)
 }
 
 fn scroll_event_delta(event: &AppEvent) -> Option<(f32, f32, f32)> {

@@ -3,6 +3,7 @@ use super::dismiss::{close_overlay, handle_dismiss_event, DismissOutcome};
 use super::placement::resolve_placement;
 use super::runtime::OverlayState;
 use super::OverlayRequest;
+use crate::animation::AnimationStore;
 use crate::interaction::InteractionState;
 use crate::shell::AppEvent;
 use crate::tree::{Desc, Tree};
@@ -49,13 +50,14 @@ impl OverlaySystem {
     pub(crate) fn handle_event(
         &mut self,
         tree: &Tree,
+        animations: Option<&AnimationStore>,
         interaction: &mut InteractionState,
         event: &AppEvent,
     ) -> bool {
         let Some(state) = &self.current else {
             return false;
         };
-        match handle_dismiss_event(state, tree, event) {
+        match handle_dismiss_event(state, tree, animations, event) {
             DismissOutcome::Keep => false,
             DismissOutcome::CloseAndConsume => {
                 self.close(tree, interaction);

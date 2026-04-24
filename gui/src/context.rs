@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use std::time::Instant;
 
+use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBuilder};
 use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
@@ -14,7 +16,8 @@ use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
 use crate::tree::{
-    build_display_list, hit_test, layout, reconcile, Desc, HitChain, NodeId, NodeKind, Tree,
+    build_display_list, hit_test_with_animations, layout, reconcile, Desc, HitChain, NodeId,
+    NodeKind, Tree,
 };
 use crate::widget::props::WidgetBuildCx;
 
@@ -26,6 +29,7 @@ pub use crate::overlay::{OverlayPlacement, OverlayRequest};
 /// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
     pub(crate) tree: Tree,
+    animations: AnimationStore,
     gesture_session: GestureSession,
     interaction: InteractionState,
     pub(crate) systems: RuntimeSystems,
@@ -44,6 +48,7 @@ impl Context {
     pub fn new() -> Self {
         Self {
             tree: Tree::new(),
+            animations: AnimationStore::new(),
             gesture_session: GestureSession::new(),
             interaction: InteractionState::new(),
             systems: RuntimeSystems::new(),
@@ -98,6 +103,7 @@ impl Context {
                 crate::tree::PaintCx {
                     interaction: Some(&self.interaction),
                     text_inputs: Some(self.systems.text_input_store()),
+                    animations: Some(&self.animations),
                     theme,
                 },
                 |text, style| renderer.text_measurer().measure_with_style(text, style),
@@ -147,6 +153,30 @@ impl Context {
 
     pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
         router::handle_event(self, event)
+    }
+
+    pub fn animate(&mut self, id: impl Into<String>) -> AnimationBuilder<'_> {
+        self.animations.animate(id)
+    }
+
+    pub fn timeline(&mut self) -> TimelineBuilder<'_> {
+        self.animations.timeline()
+    }
+
+    pub fn cancel_animation(&mut self, id: AnimationId) -> bool {
+        self.animations.cancel(id)
+    }
+
+    pub fn clear_animation_visual(&mut self, id: &str) -> bool {
+        self.animations.clear_visual(id)
+    }
+
+    pub fn tick_animations(&mut self, now: Instant) -> bool {
+        self.animations.tick(now)
+    }
+
+    pub fn animations_active(&self) -> bool {
+        self.animations.active()
     }
 
     pub fn ime_request(&self) -> ImeRequest {
@@ -262,7 +292,7 @@ impl Context {
         let Some(root) = self.tree.root() else {
             return HitChain::empty();
         };
-        hit_test(&self.tree, root, x, y)
+        hit_test_with_animations(&self.tree, root, x, y, Some(&self.animations))
     }
 
     pub fn root(&self) -> Option<NodeId> {
@@ -355,7 +385,8 @@ impl Context {
     }
 
     pub(crate) fn handle_interaction_event(&mut self, event: &AppEvent) {
-        self.interaction.handle_event(&self.tree, event);
+        self.interaction
+            .handle_event(&self.tree, Some(&self.animations), event);
     }
 
     pub(crate) fn handle_runtime_pre_gesture_event(
@@ -366,6 +397,7 @@ impl Context {
             RuntimeEventCx {
                 tree: &mut self.tree,
                 interaction: &mut self.interaction,
+                animations: Some(&self.animations),
             },
             event,
         )
@@ -385,7 +417,8 @@ impl Context {
         &mut self,
         event: &AppEvent,
     ) -> GestureSessionUpdate {
-        self.gesture_session.handle_event(&self.tree, event)
+        self.gesture_session
+            .handle_event(&self.tree, Some(&self.animations), event)
     }
 
     pub(crate) fn cancel_gesture(&mut self) {
@@ -421,6 +454,7 @@ mod tests {
     use crate::widget::frameworks::scroll_area::ScrollAreaProps;
     use crate::widget::props::WidgetProps;
     use std::borrow::Cow;
+    use std::time::{Duration, Instant};
 
     fn root_desc(height: f32, child: impl Into<Desc>) -> Desc {
         ui::container("root")
@@ -723,6 +757,40 @@ mod tests {
         assert_eq!(ctx.node_root_widget_type(field_id), Some("TextInput"));
         assert!(ctx.node_is_text_input_field(field_id));
         assert!(ctx.node_rect("missing").is_none());
+    }
+
+    #[test]
+    fn context_animation_transform_participates_in_hit_testing() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            button_desc(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let rect = button_rect(&ctx);
+        let now = Instant::now();
+        ctx.animate("button")
+            .to(crate::animation::AnimationProps::new().translate([120.0, 0.0]))
+            .duration_ms(100)
+            .ease(crate::animation::Ease::Linear)
+            .play_at(now);
+        ctx.tick_animations(now + Duration::from_millis(100));
+
+        let chain = ctx.hit_test(rect.x + rect.w * 0.5 + 120.0, rect.y + rect.h * 0.5);
+
+        assert!(chain.iter().any(|node_id| {
+            ctx.node_name(node_id)
+                .map(|name| name == "button")
+                .unwrap_or(false)
+        }));
     }
 
     #[test]

@@ -1,14 +1,20 @@
+use crate::animation::AnimationStore;
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{HitChain, Tree};
 
 use super::state::InteractionState;
 use super::target;
 
-pub(crate) fn apply_event(store: &mut InteractionState, tree: &Tree, event: &AppEvent) {
+pub(crate) fn apply_event(
+    store: &mut InteractionState,
+    tree: &Tree,
+    animations: Option<&AnimationStore>,
+    event: &AppEvent,
+) {
     match *event {
         AppEvent::MouseMove { x, y } => {
             if store.captured().is_none() {
-                let chain = hit_chain(tree, x, y);
+                let chain = hit_chain(tree, animations, x, y);
                 store.set_hovered(target::input_target(tree, &chain));
             }
         }
@@ -17,7 +23,7 @@ pub(crate) fn apply_event(store: &mut InteractionState, tree: &Tree, event: &App
             y,
             button: MouseButton::Left,
         } => {
-            let chain = hit_chain(tree, x, y);
+            let chain = hit_chain(tree, animations, x, y);
             let input_target = target::input_target(tree, &chain);
             let focus_target = target::interactive_target(tree, &chain);
             store.set_hovered(input_target);
@@ -54,9 +60,9 @@ pub(crate) fn apply_event(store: &mut InteractionState, tree: &Tree, event: &App
     }
 }
 
-fn hit_chain(tree: &Tree, x: f32, y: f32) -> HitChain {
+fn hit_chain(tree: &Tree, animations: Option<&AnimationStore>, x: f32, y: f32) -> HitChain {
     match tree.root() {
-        Some(root) => crate::tree::hit_test(tree, root, x, y),
+        Some(root) => crate::tree::hit_test_with_animations(tree, root, x, y, animations),
         None => HitChain::empty(),
     }
 }
