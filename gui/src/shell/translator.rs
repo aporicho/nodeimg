@@ -1,5 +1,5 @@
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key as WinitKey, KeyCode, NamedKey, PhysicalKey};
 
 use super::event::{AppEvent, Key, Modifiers, MouseButton};
 
@@ -174,60 +174,112 @@ fn translate_text(event: &winit::event::KeyEvent) -> Option<String> {
 }
 
 fn translate_key(event: &winit::event::KeyEvent) -> Key {
-    match event.physical_key {
-        PhysicalKey::Code(code) => match code {
-            KeyCode::Escape => Key::Escape,
-            KeyCode::Tab => Key::Tab,
-            KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
-            KeyCode::Backspace => Key::Backspace,
-            KeyCode::Delete => Key::Delete,
-            KeyCode::Home => Key::Home,
-            KeyCode::End => Key::End,
-            KeyCode::ArrowLeft => Key::Left,
-            KeyCode::ArrowRight => Key::Right,
-            KeyCode::ArrowUp => Key::Up,
-            KeyCode::ArrowDown => Key::Down,
-            KeyCode::Space => Key::Space,
-            KeyCode::F1 => Key::Function(1),
-            KeyCode::F2 => Key::Function(2),
-            KeyCode::F3 => Key::Function(3),
-            KeyCode::F4 => Key::Function(4),
-            KeyCode::F5 => Key::Function(5),
-            KeyCode::F6 => Key::Function(6),
-            KeyCode::F7 => Key::Function(7),
-            KeyCode::F8 => Key::Function(8),
-            KeyCode::F9 => Key::Function(9),
-            KeyCode::F10 => Key::Function(10),
-            KeyCode::F11 => Key::Function(11),
-            KeyCode::F12 => Key::Function(12),
-            KeyCode::KeyA => Key::Char('A'),
-            KeyCode::KeyB => Key::Char('B'),
-            KeyCode::KeyC => Key::Char('C'),
-            KeyCode::KeyD => Key::Char('D'),
-            KeyCode::KeyE => Key::Char('E'),
-            KeyCode::KeyF => Key::Char('F'),
-            KeyCode::KeyG => Key::Char('G'),
-            KeyCode::KeyH => Key::Char('H'),
-            KeyCode::KeyI => Key::Char('I'),
-            KeyCode::KeyJ => Key::Char('J'),
-            KeyCode::KeyK => Key::Char('K'),
-            KeyCode::KeyL => Key::Char('L'),
-            KeyCode::KeyM => Key::Char('M'),
-            KeyCode::KeyN => Key::Char('N'),
-            KeyCode::KeyO => Key::Char('O'),
-            KeyCode::KeyP => Key::Char('P'),
-            KeyCode::KeyQ => Key::Char('Q'),
-            KeyCode::KeyR => Key::Char('R'),
-            KeyCode::KeyS => Key::Char('S'),
-            KeyCode::KeyT => Key::Char('T'),
-            KeyCode::KeyU => Key::Char('U'),
-            KeyCode::KeyV => Key::Char('V'),
-            KeyCode::KeyW => Key::Char('W'),
-            KeyCode::KeyX => Key::Char('X'),
-            KeyCode::KeyY => Key::Char('Y'),
-            KeyCode::KeyZ => Key::Char('Z'),
-            _ => Key::Other,
-        },
+    let physical = match event.physical_key {
+        PhysicalKey::Code(code) => translate_key_code(code),
+        _ => Key::Other,
+    };
+    if physical != Key::Other {
+        return physical;
+    }
+
+    translate_logical_key(&event.logical_key)
+}
+
+fn translate_key_code(code: KeyCode) -> Key {
+    match code {
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::ArrowLeft => Key::Left,
+        KeyCode::ArrowRight => Key::Right,
+        KeyCode::ArrowUp => Key::Up,
+        KeyCode::ArrowDown => Key::Down,
+        KeyCode::Space => Key::Space,
+        KeyCode::F1 => Key::Function(1),
+        KeyCode::F2 => Key::Function(2),
+        KeyCode::F3 => Key::Function(3),
+        KeyCode::F4 => Key::Function(4),
+        KeyCode::F5 => Key::Function(5),
+        KeyCode::F6 => Key::Function(6),
+        KeyCode::F7 => Key::Function(7),
+        KeyCode::F8 => Key::Function(8),
+        KeyCode::F9 => Key::Function(9),
+        KeyCode::F10 => Key::Function(10),
+        KeyCode::F11 => Key::Function(11),
+        KeyCode::F12 => Key::Function(12),
+        KeyCode::KeyA => Key::Char('A'),
+        KeyCode::KeyB => Key::Char('B'),
+        KeyCode::KeyC => Key::Char('C'),
+        KeyCode::KeyD => Key::Char('D'),
+        KeyCode::KeyE => Key::Char('E'),
+        KeyCode::KeyF => Key::Char('F'),
+        KeyCode::KeyG => Key::Char('G'),
+        KeyCode::KeyH => Key::Char('H'),
+        KeyCode::KeyI => Key::Char('I'),
+        KeyCode::KeyJ => Key::Char('J'),
+        KeyCode::KeyK => Key::Char('K'),
+        KeyCode::KeyL => Key::Char('L'),
+        KeyCode::KeyM => Key::Char('M'),
+        KeyCode::KeyN => Key::Char('N'),
+        KeyCode::KeyO => Key::Char('O'),
+        KeyCode::KeyP => Key::Char('P'),
+        KeyCode::KeyQ => Key::Char('Q'),
+        KeyCode::KeyR => Key::Char('R'),
+        KeyCode::KeyS => Key::Char('S'),
+        KeyCode::KeyT => Key::Char('T'),
+        KeyCode::KeyU => Key::Char('U'),
+        KeyCode::KeyV => Key::Char('V'),
+        KeyCode::KeyW => Key::Char('W'),
+        KeyCode::KeyX => Key::Char('X'),
+        KeyCode::KeyY => Key::Char('Y'),
+        KeyCode::KeyZ => Key::Char('Z'),
+        _ => Key::Other,
+    }
+}
+
+fn translate_logical_key(logical_key: &WinitKey) -> Key {
+    match logical_key {
+        WinitKey::Named(named) => translate_named_key(*named),
+        WinitKey::Character(text) => text
+            .chars()
+            .next()
+            .filter(|ch| ch.is_ascii_alphabetic())
+            .map(|ch| Key::Char(ch.to_ascii_uppercase()))
+            .unwrap_or(Key::Other),
+        _ => Key::Other,
+    }
+}
+
+fn translate_named_key(named: NamedKey) -> Key {
+    match named {
+        NamedKey::Escape => Key::Escape,
+        NamedKey::Tab => Key::Tab,
+        NamedKey::Enter => Key::Enter,
+        NamedKey::Backspace => Key::Backspace,
+        NamedKey::Delete => Key::Delete,
+        NamedKey::Home => Key::Home,
+        NamedKey::End => Key::End,
+        NamedKey::ArrowLeft => Key::Left,
+        NamedKey::ArrowRight => Key::Right,
+        NamedKey::ArrowUp => Key::Up,
+        NamedKey::ArrowDown => Key::Down,
+        NamedKey::Space => Key::Space,
+        NamedKey::F1 => Key::Function(1),
+        NamedKey::F2 => Key::Function(2),
+        NamedKey::F3 => Key::Function(3),
+        NamedKey::F4 => Key::Function(4),
+        NamedKey::F5 => Key::Function(5),
+        NamedKey::F6 => Key::Function(6),
+        NamedKey::F7 => Key::Function(7),
+        NamedKey::F8 => Key::Function(8),
+        NamedKey::F9 => Key::Function(9),
+        NamedKey::F10 => Key::Function(10),
+        NamedKey::F11 => Key::Function(11),
+        NamedKey::F12 => Key::Function(12),
         _ => Key::Other,
     }
 }

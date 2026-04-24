@@ -219,6 +219,7 @@ impl AppShell {
         if next_mode != self.mode {
             self.mode = next_mode;
             self.gui.close_overlay();
+            tracing::info!("app mode switched to {:?}", self.mode);
         }
         true
     }
