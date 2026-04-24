@@ -695,6 +695,10 @@ fn slider_value_from_x(track_rect: Rect, x: f32, min: f32, max: f32, step: f32) 
 
 fn is_developer_mode_shortcut(event: &AppEvent) -> bool {
     match event {
+        AppEvent::KeyPress {
+            key: Key::Function(12),
+            ..
+        } => true,
         AppEvent::KeyPress { key, modifiers } => {
             *key == Key::Char('D')
                 && modifiers.shift
@@ -762,6 +766,11 @@ mod tests {
 
     #[test]
     fn developer_mode_shortcut_is_ctrl_shift_d() {
+        assert!(is_developer_mode_shortcut(&AppEvent::KeyPress {
+            key: Key::Function(12),
+            modifiers: Modifiers::default(),
+        }));
+
         assert!(is_developer_mode_shortcut(&AppEvent::KeyPress {
             key: Key::Char('D'),
             modifiers: Modifiers {

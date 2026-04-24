@@ -21,6 +21,8 @@ pub enum Key {
     Up,
     Down,
     Space,
+    /// 功能键 F1-F12。
+    Function(u8),
     /// 字母 A-Z（大写存储，不区分大小写）
     Char(char),
     /// 其他未映射的按键
