@@ -7,6 +7,7 @@ use crate::geometry::Affine2D;
 
 use super::super::affine::transformed_rect_corners;
 use super::super::image::{ImageFilter, ImageSourceRect, ResolvedImageDraw};
+use super::super::types::Rect;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -32,6 +33,15 @@ impl PreparedImageDraw {
             uv_rect: draw.uv_rect,
             modulate: draw.modulate,
             filter: draw.filter,
+        }
+    }
+
+    pub fn from_rect(rect: Rect, transform: Affine2D) -> Self {
+        Self {
+            positions: transformed_rect_corners(transform, rect),
+            uv_rect: ImageSourceRect::FULL,
+            modulate: [1.0; 4],
+            filter: ImageFilter::Linear,
         }
     }
 }

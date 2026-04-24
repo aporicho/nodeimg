@@ -5,6 +5,7 @@ mod dispatch;
 mod display_backend;
 mod display_resources;
 mod image;
+mod offscreen;
 mod path;
 mod path_geometry;
 mod pipeline;

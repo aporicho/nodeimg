@@ -1,13 +1,16 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use bytemuck::{Pod, Zeroable};
 use lyon::tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
 use wgpu::util::DeviceExt;
+
+use crate::geometry::Affine2D;
 
 use super::super::buffer::ViewportUniform;
 use super::super::style::Shadow;
 use super::super::types::Rect;
 use super::blur::{BlurPipeline, BlurRun};
+use super::image::PreparedImageDraw;
 use super::quad::{build_rounded_rect_path, QuadVertex, DEFAULT_CORNER_SMOOTHING};
 
 // ── 请求 ──
@@ -56,27 +59,16 @@ impl CacheKey {
 }
 
 struct CachedShadow {
-    texture_view: wgpu::TextureView,
+    texture_view: Arc<wgpu::TextureView>,
     tex_w: u32,
     tex_h: u32,
     unused_frames: u32,
-}
-
-// ── Uniform 类型 ──
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct ShadowRectUniform {
-    rect: [f32; 4],
 }
 
 // ── Pipeline ──
 
 pub struct ShadowPipeline {
     blur: BlurPipeline,
-    composite_pipeline: wgpu::RenderPipeline,
-    composite_bind_group_layout: wgpu::BindGroupLayout,
-    sampler: wgpu::Sampler,
     shape_pipeline: wgpu::RenderPipeline,
     shape_bind_group_layout: wgpu::BindGroupLayout,
     cache: HashMap<CacheKey, CachedShadow>,
@@ -97,25 +89,14 @@ struct ShapePass<'a> {
 impl ShadowPipeline {
     pub fn new(
         device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-        multisample: wgpu::MultisampleState,
+        _format: wgpu::TextureFormat,
+        _multisample: wgpu::MultisampleState,
     ) -> Self {
         let blur = BlurPipeline::new(device);
-        let (composite_pipeline, composite_bind_group_layout) =
-            Self::create_composite_pipeline(device, format, multisample);
         let (shape_pipeline, shape_bind_group_layout) = Self::create_shape_pipeline(device);
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("shadow_sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
 
         Self {
             blur,
-            composite_pipeline,
-            composite_bind_group_layout,
-            sampler,
             shape_pipeline,
             shape_bind_group_layout,
             cache: HashMap::new(),
@@ -144,7 +125,8 @@ impl ShadowPipeline {
         let tex_w = ((request.rect.w + expand * 2.0) / self.downsample_factor as f32).ceil() as u32;
         let tex_h = ((request.rect.h + expand * 2.0) / self.downsample_factor as f32).ceil() as u32;
 
-        let blurred_view = self.render_and_blur(device, encoder, request, tex_w, tex_h, expand);
+        let blurred_view =
+            Arc::new(self.render_and_blur(device, encoder, request, tex_w, tex_h, expand));
         self.cache.insert(
             key,
             CachedShadow {
@@ -156,36 +138,25 @@ impl ShadowPipeline {
         );
     }
 
-    /// 阶段二：在主 render pass 内调用。从缓存取模糊结果，合成到主画面。
-    pub fn draw<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
-        device: &wgpu::Device,
+    pub fn prepared_image(
+        &self,
         request: &ShadowRequest,
-        viewport_buf: &'a wgpu::Buffer,
-        stencil_ref: u32,
-    ) {
+        transform: Affine2D,
+    ) -> Option<(Arc<wgpu::TextureView>, PreparedImageDraw)> {
         let key = CacheKey::new(request.rect, request.radius, &request.shadow);
         let shadow = &request.shadow;
         let expand = shadow.blur + shadow.spread;
-
-        if let Some(cached) = self.cache.get(&key) {
-            let dest_rect = Rect {
-                x: request.rect.x + shadow.offset[0] - expand,
-                y: request.rect.y + shadow.offset[1] - expand,
-                w: cached.tex_w as f32 * self.downsample_factor as f32,
-                h: cached.tex_h as f32 * self.downsample_factor as f32,
-            };
-
-            self.composite(
-                pass,
-                device,
-                &cached.texture_view,
-                dest_rect,
-                viewport_buf,
-                stencil_ref,
-            );
-        }
+        let cached = self.cache.get(&key)?;
+        let dest_rect = Rect {
+            x: request.rect.x + shadow.offset[0] - expand,
+            y: request.rect.y + shadow.offset[1] - expand,
+            w: cached.tex_w as f32 * self.downsample_factor as f32,
+            h: cached.tex_h as f32 * self.downsample_factor as f32,
+        };
+        Some((
+            cached.texture_view.clone(),
+            PreparedImageDraw::from_rect(dest_rect, transform),
+        ))
     }
 
     /// 每帧结束时清理过期缓存
@@ -369,152 +340,7 @@ impl ShadowPipeline {
         }
     }
 
-    // ── 内部：合成 ──
-
-    fn composite<'a>(
-        &'a self,
-        pass: &mut wgpu::RenderPass<'a>,
-        device: &wgpu::Device,
-        shadow_view: &'a wgpu::TextureView,
-        dest_rect: Rect,
-        viewport_buf: &'a wgpu::Buffer,
-        stencil_ref: u32,
-    ) {
-        let rect_uniform = ShadowRectUniform {
-            rect: [dest_rect.x, dest_rect.y, dest_rect.w, dest_rect.h],
-        };
-        let rect_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("shadow_composite_rect"),
-            contents: bytemuck::bytes_of(&rect_uniform),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow_composite_bind_group"),
-            layout: &self.composite_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: viewport_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: rect_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
-
-        pass.set_stencil_reference(stencil_ref);
-        pass.set_pipeline(&self.composite_pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.draw(0..6, 0..1);
-    }
-
     // ── Pipeline 创建 ──
-
-    fn create_composite_pipeline(
-        device: &wgpu::Device,
-        format: wgpu::TextureFormat,
-        multisample: wgpu::MultisampleState,
-    ) -> (wgpu::RenderPipeline, wgpu::BindGroupLayout) {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shadow_composite_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("../shaders/shadow_composite.wgsl").into(),
-            ),
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("shadow_composite_bind_group_layout"),
-            entries: &[
-                // viewport uniform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // shadow rect uniform
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // shadow texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                // sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("shadow_composite_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            immediate_size: 0,
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("shadow_composite_pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: Some(super::stencil::content_depth_stencil_state()),
-            multisample,
-            cache: None,
-            multiview_mask: None,
-        });
-
-        (pipeline, bind_group_layout)
-    }
 
     fn create_shape_pipeline(
         device: &wgpu::Device,

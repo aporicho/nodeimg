@@ -1,16 +1,8 @@
 use std::collections::HashMap;
 
-use crate::icon::IconStyle;
-use crate::renderer::{Color, Rect, TextureResource, TextureSize};
+use crate::renderer::{Color, TextureResource, TextureSize};
 
 use super::{SvgError, SvgSource, SvgSourceKey};
-
-#[derive(Debug, Clone)]
-pub(crate) struct SvgRasterDraw {
-    pub(crate) rect: Rect,
-    pub(crate) source: SvgSource,
-    pub(crate) style: IconStyle,
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct SvgRasterRequest {

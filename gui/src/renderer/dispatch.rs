@@ -1,15 +1,18 @@
 use std::ops::Range;
 use winit::dpi::PhysicalSize;
 
-use crate::geometry::Affine2D;
+use crate::geometry::{Affine2D, Point, Rect};
 
 use super::buffer::SharedViewport;
+use super::command::AffineTextRequest;
 use super::command::BackendCommand;
+use super::core::MSAA_SAMPLE_COUNT;
+use super::offscreen::{transformed_rect_pixel_size, OffscreenTarget};
 use super::pipeline::blit::BlitPipeline;
 use super::pipeline::circle::CirclePipeline;
 use super::pipeline::image::{ImagePipeline, PreparedImageDraw};
 use super::pipeline::quad::QuadPipeline;
-use super::pipeline::shadow::ShadowPipeline;
+use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
 use super::pipeline::stencil::StencilState;
 use super::pipeline::text::TextPipeline;
 use super::pipeline::vector::VectorPipeline;
@@ -26,6 +29,7 @@ pub(super) struct DispatchFrame<'a> {
     pub(super) internal_size: PhysicalSize<u32>,
     pub(super) scale_factor: f64,
     pub(super) render_scale: f32,
+    pub(super) format: wgpu::TextureFormat,
     pub(super) clear_color: super::types::Color,
     pub(super) device: &'a wgpu::Device,
     pub(super) queue: &'a wgpu::Queue,
@@ -64,6 +68,7 @@ pub(super) fn dispatch(
         internal_size,
         scale_factor,
         render_scale,
+        format,
         clear_color,
         device,
         queue,
@@ -90,13 +95,23 @@ pub(super) fn dispatch(
         label: Some("renderer"),
     });
 
-    for cmd in commands {
-        if let BackendCommand::Shadow(req) = cmd {
-            shadow_pipeline.prepare(&mut encoder, device, req);
-        }
-    }
-
-    let prepared = prepare_frame(commands, vector_tessellator);
+    let mut prepared = prepare_frame(commands, vector_tessellator);
+    let mut runtime_textures = Vec::new();
+    text_pipeline.begin_frame();
+    resolve_deferred_ops(ResolveDeferredOps {
+        ops: &mut prepared.ops,
+        encoder: &mut encoder,
+        device,
+        queue,
+        format,
+        scale_factor,
+        render_scale,
+        text_pipeline,
+        svg_raster_cache,
+        shadow_pipeline,
+        text_measurer,
+        runtime_textures: &mut runtime_textures,
+    });
 
     quad_pipeline.upload(
         device,
@@ -131,7 +146,6 @@ pub(super) fn dispatch(
     let has_quads = !prepared.quad_vertices.is_empty();
     let has_stencils = !prepared.stencil_vertices.is_empty();
     let render_steps = plan_render_steps(&prepared.ops);
-    text_pipeline.begin_frame();
 
     {
         let total_steps = render_steps.len();
@@ -210,60 +224,35 @@ pub(super) fn dispatch(
                             }
                             DrawOp::Shadow(req) => {
                                 last_bound = PipelineKind::Other;
-                                shadow_pipeline.draw(
-                                    &mut pass,
-                                    device,
-                                    req,
-                                    viewport_buf,
-                                    clip_depth,
-                                );
+                                let shadow_req = shadow_request(req);
+                                if let Some((view, draw)) =
+                                    shadow_pipeline.prepared_image(&shadow_req, req.transform)
+                                {
+                                    pass.set_stencil_reference(clip_depth);
+                                    image_pipeline.draw(
+                                        &mut pass,
+                                        device,
+                                        &view,
+                                        draw,
+                                        viewport_buf,
+                                    );
+                                }
                             }
                             DrawOp::Image { view, draw } => {
                                 last_bound = PipelineKind::Other;
                                 pass.set_stencil_reference(clip_depth);
                                 image_pipeline.draw(&mut pass, device, view, *draw, viewport_buf);
                             }
-                            DrawOp::SvgRaster(draw) => {
-                                last_bound = PipelineKind::Other;
-                                pass.set_stencil_reference(clip_depth);
-                                let pixel_size =
-                                    svg_raster_pixel_size(draw.rect, scale_factor, render_scale);
-                                let request = SvgRasterRequest::new(
-                                    draw.source.clone(),
-                                    pixel_size,
-                                    draw.style.raster_color(),
-                                );
-                                match svg_raster_cache.get_or_rasterize(device, queue, request) {
-                                    Ok(resource) => {
-                                        let image_draw = resolve_image_draw(
-                                            draw.rect,
-                                            resource.size,
-                                            ImageStyle::default(),
-                                        );
-                                        let image_draw = PreparedImageDraw::from_resolved(
-                                            image_draw,
-                                            Affine2D::IDENTITY,
-                                        );
-                                        image_pipeline.draw(
-                                            &mut pass,
-                                            device,
-                                            &resource.view,
-                                            image_draw,
-                                            viewport_buf,
-                                        );
-                                    }
-                                    Err(err) => {
-                                        tracing::warn!(
-                                            "SVG icon '{}' could not be rasterized: {:?}",
-                                            draw.source.key().id(),
-                                            err
-                                        );
-                                    }
-                                }
+                            DrawOp::SvgRaster(_) => {
+                                unreachable!("svg raster ops are resolved before render")
                             }
                             DrawOp::Text { .. } => {
                                 unreachable!("text ops are split into dedicated render steps")
                             }
+                            DrawOp::AffineText(_) => {
+                                unreachable!("affine text ops are resolved before render")
+                            }
+                            DrawOp::Noop => {}
                             DrawOp::StencilWrite {
                                 index_start,
                                 index_count,
@@ -378,16 +367,223 @@ pub(super) fn dispatch(
     queue.submit(std::iter::once(encoder.finish()));
 }
 
+struct ResolveDeferredOps<'a> {
+    ops: &'a mut [DrawOp],
+    encoder: &'a mut wgpu::CommandEncoder,
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    format: wgpu::TextureFormat,
+    scale_factor: f64,
+    render_scale: f32,
+    text_pipeline: &'a mut TextPipeline,
+    svg_raster_cache: &'a mut SvgRasterCache,
+    shadow_pipeline: &'a mut ShadowPipeline,
+    text_measurer: &'a mut TextMeasurer,
+    runtime_textures: &'a mut Vec<wgpu::Texture>,
+}
+
+fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
+    let ResolveDeferredOps {
+        ops,
+        encoder,
+        device,
+        queue,
+        format,
+        scale_factor,
+        render_scale,
+        text_pipeline,
+        svg_raster_cache,
+        shadow_pipeline,
+        text_measurer,
+        runtime_textures,
+    } = ctx;
+
+    for op in ops {
+        match op {
+            DrawOp::Shadow(req) => {
+                let shadow_req = shadow_request(req);
+                shadow_pipeline.prepare(encoder, device, &shadow_req);
+            }
+            DrawOp::AffineText(req) => {
+                match rasterize_affine_text(RasterText {
+                    req,
+                    encoder: &mut *encoder,
+                    device,
+                    queue,
+                    format,
+                    scale_factor,
+                    render_scale,
+                    text_pipeline: &mut *text_pipeline,
+                    text_measurer: &mut *text_measurer,
+                    runtime_textures: &mut *runtime_textures,
+                }) {
+                    Some((view, draw)) => {
+                        *op = DrawOp::Image { view, draw };
+                    }
+                    None => {
+                        *op = DrawOp::Noop;
+                    }
+                }
+            }
+            DrawOp::SvgRaster(req) => {
+                let pixel_size =
+                    svg_raster_pixel_size(req.transform, req.rect, scale_factor, render_scale);
+                let request =
+                    SvgRasterRequest::new(req.source.clone(), pixel_size, req.style.raster_color());
+                match svg_raster_cache.get_or_rasterize(device, queue, request) {
+                    Ok(resource) => {
+                        let draw =
+                            resolve_image_draw(req.rect, resource.size, ImageStyle::default());
+                        *op = DrawOp::Image {
+                            view: resource.view,
+                            draw: PreparedImageDraw::from_resolved(draw, req.transform),
+                        };
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "SVG icon '{}' could not be rasterized: {:?}",
+                            req.source.key().id(),
+                            err
+                        );
+                        *op = DrawOp::Noop;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+struct RasterText<'a> {
+    req: &'a AffineTextRequest,
+    encoder: &'a mut wgpu::CommandEncoder,
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    format: wgpu::TextureFormat,
+    scale_factor: f64,
+    render_scale: f32,
+    text_pipeline: &'a mut TextPipeline,
+    text_measurer: &'a mut TextMeasurer,
+    runtime_textures: &'a mut Vec<wgpu::Texture>,
+}
+
+fn rasterize_affine_text(
+    ctx: RasterText<'_>,
+) -> Option<(std::sync::Arc<wgpu::TextureView>, PreparedImageDraw)> {
+    let RasterText {
+        req,
+        encoder,
+        device,
+        queue,
+        format,
+        scale_factor,
+        render_scale,
+        text_pipeline,
+        text_measurer,
+        runtime_textures,
+    } = ctx;
+    let bounds = text_local_bounds(req, text_measurer)?;
+    let pixel_size = transformed_rect_pixel_size(req.transform, bounds, scale_factor, render_scale);
+    let raster_scale = ((pixel_size.width as f32 / bounds.w.abs().max(1.0))
+        .max(pixel_size.height as f32 / bounds.h.abs().max(1.0)))
+    .max(1.0);
+    let target = OffscreenTarget::new(
+        device,
+        format,
+        pixel_size,
+        MSAA_SAMPLE_COUNT,
+        "affine_text_offscreen",
+    );
+    let text_req = super::pipeline::text::TextRequest {
+        pos: Point {
+            x: req.pos.x - bounds.x,
+            y: req.pos.y - bounds.y,
+        },
+        text: req.text.clone(),
+        style: req.style,
+        bounds: Some(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: bounds.w,
+            h: bounds.h,
+        }),
+    };
+    let batch_index = text_pipeline.prepare(
+        device,
+        queue,
+        std::slice::from_ref(&text_req),
+        target.size,
+        raster_scale as f64,
+        text_measurer,
+    );
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("affine_text_offscreen"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target.msaa_view,
+                resolve_target: Some(target.view.as_ref()),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &target.depth_view,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Store,
+                }),
+            }),
+            ..Default::default()
+        });
+        pass.set_stencil_reference(0);
+        text_pipeline.render_batch(batch_index, &mut pass);
+    }
+
+    let view = target.view.clone();
+    let draw = PreparedImageDraw::from_rect(bounds, req.transform);
+    target.keep_alive(runtime_textures);
+    Some((view, draw))
+}
+
+fn text_local_bounds(req: &AffineTextRequest, text_measurer: &mut TextMeasurer) -> Option<Rect> {
+    let bounds = if let Some(bounds) = req.bounds {
+        bounds
+    } else {
+        let (w, h) = text_measurer.measure_with_style(&req.text, &req.style);
+        Rect {
+            x: req.pos.x,
+            y: req.pos.y,
+            w,
+            h,
+        }
+    };
+    (bounds.w.is_finite()
+        && bounds.h.is_finite()
+        && bounds.w.abs() > f32::EPSILON
+        && bounds.h.abs() > f32::EPSILON)
+        .then_some(bounds)
+}
+
+fn shadow_request(req: &super::command::AffineShadowRequest) -> ShadowRequest {
+    ShadowRequest {
+        rect: req.rect,
+        radius: req.radius,
+        shadow: req.shadow,
+    }
+}
+
 fn svg_raster_pixel_size(
+    transform: Affine2D,
     rect: super::types::Rect,
     scale_factor: f64,
     render_scale: f32,
 ) -> TextureSize {
-    let scale = scale_factor as f32 * render_scale;
-    TextureSize::new(
-        (rect.w.abs() * scale).ceil().max(1.0) as u32,
-        (rect.h.abs() * scale).ceil().max(1.0) as u32,
-    )
+    let size = transformed_rect_pixel_size(transform, rect, scale_factor, render_scale);
+    TextureSize::new(size.width.max(1), size.height.max(1))
 }
 
 #[derive(Debug, PartialEq)]

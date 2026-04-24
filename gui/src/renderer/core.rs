@@ -191,6 +191,7 @@ impl Renderer {
                 internal_size: internal,
                 scale_factor: frame.scale_factor,
                 render_scale: self.render_scale,
+                format: self.format,
                 clear_color: self.clear_color,
                 device,
                 queue,

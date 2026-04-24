@@ -9,9 +9,10 @@ use lyon::tessellation::{
 use crate::geometry::{Affine2D, Point};
 use crate::paint::ClipShape;
 
-use super::affine::similarity_scale;
+use super::affine::{similarity_scale, translate_uniform_scale};
 use super::command::{
-    AffineCircleRequest, AffineClipRequest, AffinePathRequest, AffineRectRequest, BackendCommand,
+    AffineCircleRequest, AffineClipRequest, AffinePathRequest, AffineRectRequest,
+    AffineShadowRequest, AffineSvgRasterRequest, AffineTextRequest, BackendCommand,
 };
 use super::image::resolve_image_draw;
 use super::path::{PathRequest, PathStyle};
@@ -22,12 +23,10 @@ use super::path_geometry::{
 use super::pipeline::circle::{CircleRequest, CircleVertex};
 use super::pipeline::image::PreparedImageDraw;
 use super::pipeline::quad::QuadVertex;
-use super::pipeline::shadow::ShadowRequest;
 use super::pipeline::stencil::StencilVertex;
 use super::pipeline::text::TextRequest;
 use super::pipeline::vector::VectorVertex;
 use super::style::Fill;
-use super::svg::SvgRasterDraw;
 use super::vector_tessellator::VectorTessellator;
 
 pub enum DrawOp {
@@ -43,12 +42,14 @@ pub enum DrawOp {
         index_start: u32,
         index_count: u32,
     },
-    Shadow(ShadowRequest),
+    Shadow(AffineShadowRequest),
     Image {
         view: Arc<wgpu::TextureView>,
         draw: PreparedImageDraw,
     },
-    SvgRaster(SvgRasterDraw),
+    SvgRaster(AffineSvgRasterRequest),
+    AffineText(AffineTextRequest),
+    Noop,
     Text {
         index: usize,
     },
@@ -111,7 +112,7 @@ pub fn prepare_frame(
                     &mut frame,
                     vector_tessellator,
                 );
-                frame.ops.push(DrawOp::Shadow(req.clone()));
+                frame.ops.push(DrawOp::Shadow(*req));
             }
             BackendCommand::Rect(req) => {
                 flush_circle_and_vector(
@@ -140,14 +141,7 @@ pub fn prepare_frame(
                     &mut frame,
                     vector_tessellator,
                 );
-                let index = frame.text_requests.len();
-                frame.text_requests.push(TextRequest {
-                    pos: req.pos,
-                    text: req.text.clone(),
-                    style: req.style,
-                    bounds: req.bounds,
-                });
-                frame.ops.push(DrawOp::Text { index });
+                push_text_op(req, &mut frame);
             }
             BackendCommand::Image(req) => {
                 flush_all_batches(
@@ -360,6 +354,27 @@ fn append_circle_requests(req: &AffineCircleRequest, scale: f32, batch: &mut Vec
             color: fill,
         });
     }
+}
+
+fn push_text_op(req: &AffineTextRequest, frame: &mut PreparedFrame) {
+    let Some(legacy) = translate_uniform_scale(req.transform) else {
+        frame.ops.push(DrawOp::AffineText(req.clone()));
+        return;
+    };
+
+    let index = frame.text_requests.len();
+    frame.text_requests.push(TextRequest {
+        pos: req.transform.transform_point(req.pos),
+        text: req.text.clone(),
+        style: scale_text_style(req.style, legacy.scale),
+        bounds: req.bounds.map(|bounds| legacy.rect(bounds)),
+    });
+    frame.ops.push(DrawOp::Text { index });
+}
+
+fn scale_text_style(mut style: crate::paint::TextStyle, scale: f32) -> crate::paint::TextStyle {
+    style.size *= scale;
+    style
 }
 
 fn append_circle_vector_fallback(
@@ -605,11 +620,12 @@ mod tests {
     }
 
     fn text_command(text: &str) -> BackendCommand {
-        BackendCommand::Text(TextRequest {
+        BackendCommand::Text(AffineTextRequest {
             pos: Point { x: 0.0, y: 0.0 },
             text: text.to_string(),
             style: TextStyle::new(Color::WHITE, 12.0),
             bounds: None,
+            transform: Affine2D::IDENTITY,
         })
     }
 
@@ -645,6 +661,58 @@ mod tests {
         assert_eq!(frame.text_requests.len(), 2);
         assert_eq!(frame.text_requests[0].text, "first");
         assert_eq!(frame.text_requests[1].text, "second");
+    }
+
+    #[test]
+    fn prepare_frame_keeps_translate_scale_text_on_legacy_path() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(
+            &[BackendCommand::Text(AffineTextRequest {
+                pos: Point { x: 1.0, y: 2.0 },
+                text: "fast".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0),
+                bounds: Some(Rect {
+                    x: 1.0,
+                    y: 2.0,
+                    w: 40.0,
+                    h: 16.0,
+                }),
+                transform: Affine2D::compose(
+                    Affine2D::translation(10.0, 20.0),
+                    Affine2D::scale(2.0),
+                ),
+            })],
+            &mut vector_tessellator,
+        );
+
+        assert!(matches!(frame.ops[0], DrawOp::Text { index: 0 }));
+        assert_eq!(frame.text_requests[0].pos, Point { x: 12.0, y: 24.0 });
+        assert_eq!(frame.text_requests[0].style.size, 24.0);
+    }
+
+    #[test]
+    fn prepare_frame_defers_rotated_text_to_affine_raster_path() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let transform = Affine2D::rotation_radians(0.25);
+        let frame = prepare_frame(
+            &[BackendCommand::Text(AffineTextRequest {
+                pos: Point { x: 1.0, y: 2.0 },
+                text: "affine".to_string(),
+                style: TextStyle::new(Color::WHITE, 12.0),
+                bounds: None,
+                transform,
+            })],
+            &mut vector_tessellator,
+        );
+
+        match &frame.ops[0] {
+            DrawOp::AffineText(req) => {
+                assert_eq!(req.text, "affine");
+                assert_eq!(req.transform, transform);
+            }
+            _ => panic!("expected affine text op"),
+        }
+        assert!(frame.text_requests.is_empty());
     }
 
     #[test]

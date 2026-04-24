@@ -1,22 +1,22 @@
 use std::sync::Arc;
 
 use crate::geometry::Affine2D;
-use crate::paint::{CirclePaint, ClipShape, PathData, RectStyle};
+use crate::icon::IconStyle;
+use crate::paint::{CirclePaint, ClipShape, PathData, RectStyle, Shadow, TextStyle};
 
 use super::image::{ImageStyle, TextureSize};
 use super::path::PathStyle;
-use super::pipeline::shadow::ShadowRequest;
-use super::pipeline::text::TextRequest;
-use super::svg::SvgRasterDraw;
+use super::svg::SvgSource;
 use super::types::Rect;
 
+#[derive(Clone)]
 pub(super) enum BackendCommand {
-    Shadow(ShadowRequest),
+    Shadow(AffineShadowRequest),
     Rect(AffineRectRequest),
     Circle(AffineCircleRequest),
-    Text(TextRequest),
+    Text(AffineTextRequest),
     Image(AffineImageRequest),
-    SvgRaster(SvgRasterDraw),
+    SvgRaster(AffineSvgRasterRequest),
     Path(AffinePathRequest),
     PushClip(AffineClipRequest),
     PopClip,
@@ -54,5 +54,30 @@ pub(super) struct AffineImageRequest {
 #[derive(Clone)]
 pub(super) struct AffineClipRequest {
     pub shape: ClipShape,
+    pub transform: Affine2D,
+}
+
+#[derive(Clone)]
+pub(super) struct AffineTextRequest {
+    pub pos: crate::geometry::Point,
+    pub text: String,
+    pub style: TextStyle,
+    pub bounds: Option<Rect>,
+    pub transform: Affine2D,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct AffineShadowRequest {
+    pub rect: Rect,
+    pub radius: [f32; 4],
+    pub shadow: Shadow,
+    pub transform: Affine2D,
+}
+
+#[derive(Clone)]
+pub(super) struct AffineSvgRasterRequest {
+    pub rect: Rect,
+    pub source: SvgSource,
+    pub style: IconStyle,
     pub transform: Affine2D,
 }
