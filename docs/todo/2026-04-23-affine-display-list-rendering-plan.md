@@ -349,7 +349,7 @@ hit chain 顺序、z-index、source order 不变。overflow hidden/scroll 使用
 | 4 | 基础图元 affine backend | `quad.rs`, `vector_tessellator.rs`, `circle.rs`, `image.rs`, `stencil.rs`, shaders | rect/path/circle/image/clip/SVG vector 支持 rotate；path cache 不含 transform |
 | 5 | Text / Shadow / SVG raster / Layer 完整接入 | `paint/layer.rs`, `pipeline/text.rs`, `pipeline/shadow.rs`, `svg/raster.rs`, image affine composite | rotated text、rotated shadow、SVG raster fallback 都正确 affine 输出 |
 | 6 | CustomPaint / workspace camera / connection 完整回归 | `paint/target.rs`, `tree/paint.rs`, `canvas/camera.rs`, workspace tests | CustomPaintCx 正确；camera pan/zoom 不变；connection endpoint under affine 正确 |
-| 7 | 清理旧债并正式启用 rotate | `paint_helpers.rs`, `path.rs`, docs/tests | 删除旧 helper、旧 comments、screen-space PaintOp；`TransformSpec::rotate` 正式生效 |
+| 7 | 清理旧债并正式启用 rotate | `geometry/transform.rs`, `tree/layout/types.rs`, `tree/paint_space.rs`, `path.rs`, docs/tests | 删除旧 `Transform`/legacy adapter/paint_ops shim/helper/comments；`TransformSpec::rotate` 正式生效 |
 
 这些阶段属于同一个 affine milestone。Phase 5 不是未来事项，最终合并前必须完成。
 
@@ -442,7 +442,7 @@ duplicated transform math
 ```text
 Phase 2: PaintTransform / inverse helper 不再作为事实来源
 Phase 3: DrawCommand 降级为 renderer 内部
-Phase 4: PathData::translated_scaled 退场
+Phase 7: PathData::translated_scaled 退场
 Phase 5: text/shadow/raster silent mismatch 消失
 Phase 7: 删除旧 tests/comments/imports/API
 ```

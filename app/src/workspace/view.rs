@@ -3,9 +3,10 @@ use gui::canvas::connection_layer;
 use gui::canvas::node_card::node_card_from_render_view;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{CanvasConnectionView, CanvasPendingConnectionView};
+use gui::geometry::TransformSpec;
 use gui::renderer::Rect;
 use gui::theme::Theme;
-use gui::tree::layout::{LeafKind, Transform};
+use gui::tree::layout::LeafKind;
 use gui::tree::Desc;
 use gui::ui::{self, DecorationBuilder, StyleBuilder};
 
@@ -63,11 +64,10 @@ pub(crate) fn build_workspace_tree(
                 .absolute_xy(0.0, 0.0)
                 .fixed_width(viewport.w)
                 .fixed_height(viewport.h)
-                .transform(Transform {
-                    translate: [camera.x, camera.y],
-                    scale: camera.zoom,
-                    rotate: 0.0,
-                })
+                .transform(TransformSpec::translate_scale(
+                    [camera.x, camera.y],
+                    camera.zoom,
+                ))
                 .children(canvas_children)
                 .build(),
             panel_root,
@@ -84,9 +84,9 @@ mod tests {
     use super::{align_grid_start, build_workspace_tree};
     use gui::canvas::camera::Camera;
     use gui::canvas::CanvasPendingConnectionView;
+    use gui::geometry::TransformSpec;
     use gui::renderer::Rect;
     use gui::theme::light_theme;
-    use gui::tree::layout::Transform;
     use gui::tree::Desc;
     use gui::ui::{self, StyleBuilder};
 
@@ -160,11 +160,7 @@ mod tests {
         assert_eq!(id.as_ref(), "canvas_root");
         assert_eq!(
             style.transform,
-            Some(Transform {
-                translate: [120.0, -40.0],
-                scale: 1.75,
-                rotate: 0.0,
-            })
+            Some(TransformSpec::translate_scale([120.0, -40.0], 1.75))
         );
     }
 

@@ -109,8 +109,9 @@ fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::TransformSpec;
     use crate::renderer::{Color, Rect};
-    use crate::tree::layout::{BoxStyle, Decoration, Transform};
+    use crate::tree::layout::{BoxStyle, Decoration};
     use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
@@ -578,11 +579,7 @@ mod tests {
         let root = {
             let mut n = container_with_rect(
                 BoxStyle {
-                    transform: Some(Transform {
-                        translate: [0.0, 0.0],
-                        scale: 1.0,
-                        rotate: 0.0,
-                    }),
+                    transform: Some(TransformSpec::translate_scale([0.0, 0.0], 1.0)),
                     ..Default::default()
                 },
                 None,
@@ -619,11 +616,7 @@ mod tests {
         let root = {
             let mut n = container_with_rect(
                 BoxStyle {
-                    transform: Some(Transform {
-                        translate: [50.0, 50.0],
-                        scale: 1.0,
-                        rotate: 0.0,
-                    }),
+                    transform: Some(TransformSpec::translate_scale([50.0, 50.0], 1.0)),
                     ..Default::default()
                 },
                 None,
@@ -661,11 +654,7 @@ mod tests {
         let root = {
             let mut n = container_with_rect(
                 BoxStyle {
-                    transform: Some(Transform {
-                        translate: [0.0, 0.0],
-                        scale: 2.0,
-                        rotate: 0.0,
-                    }),
+                    transform: Some(TransformSpec::translate_scale([0.0, 0.0], 2.0)),
                     ..Default::default()
                 },
                 None,
@@ -703,11 +692,11 @@ mod tests {
         let root = {
             let mut n = container_with_rect(
                 BoxStyle {
-                    transform: Some(Transform {
-                        translate: [0.0, 0.0],
-                        scale: 1.0,
-                        rotate: std::f32::consts::FRAC_PI_2,
-                    }),
+                    transform: Some(TransformSpec::translate_scale_rotate(
+                        [0.0, 0.0],
+                        1.0,
+                        std::f32::consts::FRAC_PI_2,
+                    )),
                     ..Default::default()
                 },
                 None,
@@ -747,11 +736,7 @@ mod tests {
         let root = {
             let mut n = container_with_rect(
                 BoxStyle {
-                    transform: Some(Transform {
-                        translate: [0.0, 0.0],
-                        scale: 0.0,
-                        rotate: 0.0,
-                    }),
+                    transform: Some(TransformSpec::translate_scale([0.0, 0.0], 0.0)),
                     ..Default::default()
                 },
                 None,

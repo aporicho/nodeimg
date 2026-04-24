@@ -43,8 +43,7 @@ fn node_screen_center_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geometry::Rect;
-    use crate::tree::layout::Transform;
+    use crate::geometry::{Rect, TransformSpec};
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeKind, NodeProps, RuntimeSlots};
     use std::borrow::Cow;
@@ -94,11 +93,11 @@ mod tests {
         let mut tree = Tree::new();
         let child = tree.insert(node("target", rect(10.0, 0.0, 4.0, 4.0), vec![]));
         let mut parent = node("parent", rect(20.0, 30.0, 40.0, 40.0), vec![child]);
-        parent.style.transform = Some(Transform {
-            translate: [0.0, 0.0],
-            scale: 2.0,
-            rotate: std::f32::consts::FRAC_PI_2,
-        });
+        parent.style.transform = Some(TransformSpec::translate_scale_rotate(
+            [0.0, 0.0],
+            2.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
         let parent = tree.insert(parent);
         let root = tree.insert(node("root", rect(0.0, 0.0, 100.0, 100.0), vec![parent]));
         tree.set_root(root);

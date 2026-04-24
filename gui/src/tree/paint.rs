@@ -6,7 +6,6 @@ use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
-use super::transform::legacy_transform_affine;
 use super::tree::Tree;
 use crate::geometry::{Affine2D, Point, Rect};
 use crate::icon::{IconFit, IconPaintOverride, IconStrokeWidth, IconStyle};
@@ -141,7 +140,7 @@ fn paint_node(
     }
 
     if let Some(transform) = transform {
-        target.push_transform(legacy_transform_affine(transform, local_rect));
+        target.push_transform(transform.to_affine(local_rect));
         let child_space = node_space.child_space();
         for child_id in children {
             paint_node(
@@ -375,6 +374,7 @@ fn build_display_list_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::TransformSpec;
     use crate::icon::IconSpec;
     use crate::paint::{
         Border, ImageFit, ImageOpacity, ImageStyle, PaintCommand, PathCommand, RectPaint,
@@ -382,7 +382,7 @@ mod tests {
     };
     use crate::tree::layout::{
         BoxStyle, CustomPaintFn, CustomPainter, LeafKind, Overflow, TextLayout, TextOverflow,
-        TextureHandle, Transform,
+        TextureHandle,
     };
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
     use crate::tree::{NodeProps, RuntimeSlots};
@@ -644,11 +644,11 @@ mod tests {
             rect(10.0, 0.0, 4.0, 4.0),
         ));
         let mut port_group = container_node("port_group", rect(20.0, 30.0, 40.0, 40.0), vec![from]);
-        port_group.style.transform = Some(Transform {
-            translate: [0.0, 0.0],
-            scale: 2.0,
-            rotate: std::f32::consts::FRAC_PI_2,
-        });
+        port_group.style.transform = Some(TransformSpec::translate_scale_rotate(
+            [0.0, 0.0],
+            2.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
         let port_group = tree.insert(port_group);
         let to = tree.insert(leaf_node(
             "to_port",
@@ -711,11 +711,7 @@ mod tests {
             rect(0.0, 0.0, 200.0, 200.0),
             vec![from, pending],
         );
-        canvas_root.style.transform = Some(Transform {
-            translate: [100.0, 50.0],
-            scale: 2.0,
-            rotate: 0.0,
-        });
+        canvas_root.style.transform = Some(TransformSpec::translate_scale([100.0, 50.0], 2.0));
         let canvas_root = tree.insert(canvas_root);
         let root = tree.insert(container_node(
             "root",
@@ -783,11 +779,11 @@ mod tests {
             rect(10.0, 10.0, 10.0, 10.0),
         ));
         let mut root_node = container_node("root", rect(0.0, 0.0, 100.0, 100.0), vec![child]);
-        root_node.style.transform = Some(Transform {
-            translate: [0.0, 0.0],
-            scale: 1.0,
-            rotate: std::f32::consts::FRAC_PI_2,
-        });
+        root_node.style.transform = Some(TransformSpec::translate_scale_rotate(
+            [0.0, 0.0],
+            1.0,
+            std::f32::consts::FRAC_PI_2,
+        ));
         let root = tree.insert(root_node);
         tree.set_root(root);
 
@@ -875,11 +871,8 @@ mod tests {
             }))),
             rect(3.0, 4.0, 8.0, 10.0),
         ));
-        let parent_transform = Transform {
-            translate: [5.0, 7.0],
-            scale: 2.0,
-            rotate: std::f32::consts::FRAC_PI_2,
-        };
+        let parent_transform =
+            TransformSpec::translate_scale_rotate([5.0, 7.0], 2.0, std::f32::consts::FRAC_PI_2);
         let mut parent = container_node("parent", rect(20.0, 30.0, 40.0, 40.0), vec![custom]);
         parent.style.transform = Some(parent_transform);
         let parent = tree.insert(parent);
@@ -897,7 +890,7 @@ mod tests {
             .expect("custom paint context");
         let expected_parent = Affine2D::compose(
             Affine2D::translation(20.0, 30.0),
-            legacy_transform_affine(parent_transform, rect(0.0, 0.0, 40.0, 40.0)),
+            parent_transform.to_affine(rect(0.0, 0.0, 40.0, 40.0)),
         );
         let expected_transform =
             Affine2D::compose(expected_parent, Affine2D::translation(3.0, 4.0));

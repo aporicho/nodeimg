@@ -70,13 +70,6 @@ impl PathData {
         self
     }
 
-    pub fn translated_scaled(&self, tx: f32, ty: f32, scale: f32) -> Self {
-        self.map_points(|point| Point {
-            x: tx + point.x * scale,
-            y: ty + point.y * scale,
-        })
-    }
-
     pub fn transformed(&self, transform: Affine2D) -> Self {
         self.map_points(|point| transform.transform_point(point))
     }
@@ -246,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn translated_scaled_transforms_all_points() {
+    fn transformed_affine_transforms_all_points() {
         let data = PathData::new()
             .move_to(p(1.0, 2.0))
             .line_to(p(3.0, 4.0))
@@ -254,7 +247,10 @@ mod tests {
             .cubic_to(p(9.0, 10.0), p(11.0, 12.0), p(13.0, 14.0))
             .close();
 
-        let transformed = data.translated_scaled(10.0, 20.0, 2.0);
+        let transformed = data.transformed(Affine2D::compose(
+            Affine2D::translation(10.0, 20.0),
+            Affine2D::scale(2.0),
+        ));
 
         assert_eq!(
             transformed.commands,

@@ -1,3 +1,4 @@
+use crate::geometry::TransformSpec;
 use crate::icon::IconSpec;
 pub use crate::paint::TextureHandle;
 use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
@@ -57,7 +58,7 @@ pub struct BoxStyle {
     // ── 定位（新增）──
     pub position: Position,
     pub z_index: i32,
-    pub transform: Option<Transform>,
+    pub transform: Option<TransformSpec>,
 
     // ── 交互（新增）──
     /// 是否参与命中测试。None 表示沿用 "有 Decoration 则可命中" 的旧判据。
@@ -201,27 +202,6 @@ impl Inset {
             right: Some(v),
             bottom: Some(v),
             left: Some(v),
-        }
-    }
-}
-
-/// 节点 transform 声明。
-///
-/// 当前运行时 policy 只在 paint/hit 中应用 `translate` 和 uniform `scale`。
-/// `rotate` 是保留字段，等待 renderer 具备完整旋转绘制能力后再启用。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Transform {
-    pub translate: [f32; 2],
-    pub scale: f32,
-    pub rotate: f32,
-}
-
-impl Default for Transform {
-    fn default() -> Self {
-        Self {
-            translate: [0.0, 0.0],
-            scale: 1.0,
-            rotate: 0.0,
         }
     }
 }

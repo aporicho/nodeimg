@@ -1,7 +1,4 @@
-use crate::geometry::{Affine2D, Point, Rect};
-use crate::tree::layout::Transform;
-
-use super::transform::legacy_transform_affine;
+use crate::geometry::{Affine2D, Point, Rect, TransformSpec};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PaintSpace {
@@ -26,7 +23,7 @@ impl PaintSpace {
     pub(crate) fn node_space(
         self,
         node_rect: Rect,
-        transform: Option<Transform>,
+        transform: Option<TransformSpec>,
     ) -> NodePaintSpace {
         let local_rect = Rect {
             x: 0.0,
@@ -40,10 +37,7 @@ impl PaintSpace {
         );
         let (child_to_screen, children_are_local) = match transform {
             Some(transform) => (
-                Affine2D::compose(
-                    local_to_screen,
-                    legacy_transform_affine(transform, local_rect),
-                ),
+                Affine2D::compose(local_to_screen, transform.to_affine(local_rect)),
                 true,
             ),
             None => (self.to_screen, false),
@@ -136,11 +130,7 @@ mod tests {
         };
         let node = current.node_space(
             rect(10.0, 20.0, 30.0, 40.0),
-            Some(Transform {
-                translate: [5.0, 7.0],
-                scale: 2.0,
-                rotate: 0.0,
-            }),
+            Some(TransformSpec::translate_scale([5.0, 7.0], 2.0)),
         );
 
         assert!(node.children_are_local);
@@ -156,11 +146,7 @@ mod tests {
     fn screen_to_node_local_round_trips_for_translate_scale() {
         let node = PaintSpace::root().node_space(
             rect(10.0, 20.0, 30.0, 40.0),
-            Some(Transform {
-                translate: [5.0, 7.0],
-                scale: 2.0,
-                rotate: 0.0,
-            }),
+            Some(TransformSpec::translate_scale([5.0, 7.0], 2.0)),
         );
         let child_space = node.child_space();
         let screen = child_space.to_screen.transform_point(point(6.0, 8.0));
@@ -175,11 +161,11 @@ mod tests {
     fn screen_to_node_local_round_trips_for_rotate() {
         let node = PaintSpace::root().node_space(
             rect(0.0, 0.0, 30.0, 40.0),
-            Some(Transform {
-                translate: [0.0, 0.0],
-                scale: 1.0,
-                rotate: std::f32::consts::FRAC_PI_2,
-            }),
+            Some(TransformSpec::translate_scale_rotate(
+                [0.0, 0.0],
+                1.0,
+                std::f32::consts::FRAC_PI_2,
+            )),
         );
         let child_space = node.child_space();
         let screen = child_space.to_screen.transform_point(point(10.0, 15.0));
@@ -194,11 +180,7 @@ mod tests {
     fn non_invertible_transform_returns_none() {
         let node = PaintSpace::root().node_space(
             rect(0.0, 0.0, 30.0, 40.0),
-            Some(Transform {
-                translate: [0.0, 0.0],
-                scale: 0.0,
-                rotate: 0.0,
-            }),
+            Some(TransformSpec::translate_scale([0.0, 0.0], 0.0)),
         );
 
         assert_eq!(

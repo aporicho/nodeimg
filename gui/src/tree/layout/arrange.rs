@@ -100,7 +100,7 @@ fn arrange_in_containing_block<T: LayoutTree>(
         .copied()
         .partition(|&c| !tree.style(c).position.is_absolute());
 
-    // Transform 节点的子节点在 local 空间，起点相对 (0, 0) + padding；
+    // TransformSpec 节点的子节点在 local 空间，起点相对 (0, 0) + padding；
     // 普通节点的子节点在父坐标空间，起点相对 border box + padding。
     let child_space = if style.transform.is_some() {
         ChildCoordinateSpace::Local
@@ -392,6 +392,7 @@ fn resolve_shrink_main_sizes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::TransformSpec;
     use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
     use crate::tree::tree::Tree;
     use crate::tree::{NodeProps, RuntimeSlots};
@@ -1160,11 +1161,7 @@ mod tests {
         let mut root = container(BoxStyle {
             width: Size::Fixed(400.0),
             height: Size::Fixed(300.0),
-            transform: Some(Transform {
-                translate: [10.0, 20.0],
-                scale: 2.0,
-                rotate: 0.0,
-            }),
+            transform: Some(TransformSpec::translate_scale([10.0, 20.0], 2.0)),
             ..Default::default()
         });
         root.children = vec![child_id];
@@ -1187,7 +1184,7 @@ mod tests {
         let child = tree.get(child_id).unwrap();
         assert_eq!(
             child.rect.x, 0.0,
-            "Transform 父的 Flow 子应从 local origin (0,0) 开始"
+            "TransformSpec 父的 Flow 子应从 local origin (0,0) 开始"
         );
         assert_eq!(child.rect.y, 0.0);
         assert_eq!(child.rect.w, 100.0);
@@ -1207,11 +1204,7 @@ mod tests {
             width: Size::Fixed(400.0),
             height: Size::Fixed(300.0),
             padding: Edges::all(20.0),
-            transform: Some(Transform {
-                translate: [10.0, 20.0],
-                scale: 2.0,
-                rotate: 0.0,
-            }),
+            transform: Some(TransformSpec::translate_scale([10.0, 20.0], 2.0)),
             ..Default::default()
         });
         root.children = vec![child_id];
@@ -1234,7 +1227,7 @@ mod tests {
         let child = tree.get(child_id).unwrap();
         assert_eq!(
             child.rect.x, 30.0,
-            "Transform 父的 Absolute 子应从 local padding + abs.x 开始"
+            "TransformSpec 父的 Absolute 子应从 local padding + abs.x 开始"
         );
         assert_eq!(child.rect.y, 35.0);
         assert_eq!(child.rect.w, 100.0);

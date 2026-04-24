@@ -1,7 +1,8 @@
+use crate::geometry::TransformSpec;
 use crate::gesture::Gesture;
 use crate::tree::build::{ContainerBuilder, LeafBuilder};
 use crate::tree::layout::{
-    Align, BoxStyle, Direction, Edges, Inset, Justify, Overflow, Position, Size, Transform,
+    Align, BoxStyle, Direction, Edges, Inset, Justify, Overflow, Position, Size,
 };
 use crate::widget::build::WidgetBuildBuilder;
 
@@ -134,7 +135,7 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.z_index = z_index)
     }
 
-    fn transform(self, transform: Transform) -> Self {
+    fn transform(self, transform: TransformSpec) -> Self {
         self.map_style(|style| style.transform = Some(transform))
     }
 

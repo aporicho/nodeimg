@@ -9,7 +9,6 @@ mod layout_adapter;
 mod node;
 mod paint;
 pub(crate) mod paint_helpers;
-pub mod paint_ops;
 mod paint_space;
 pub mod paint_target;
 mod props;
@@ -18,7 +17,6 @@ mod runtime_slots;
 mod scroll;
 mod stacking;
 pub(crate) mod text_layout;
-mod transform;
 #[allow(clippy::module_inception)]
 mod tree;
 
