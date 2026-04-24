@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::icon::IconFit;
 use crate::renderer::{Color, TextureResource, TextureSize};
 
 use super::{SvgError, SvgSource, SvgSourceKey};
@@ -9,14 +10,21 @@ pub(crate) struct SvgRasterRequest {
     pub(crate) source: SvgSource,
     pub(crate) pixel_size: TextureSize,
     pub(crate) color: Color,
+    pub(crate) fit: IconFit,
 }
 
 impl SvgRasterRequest {
-    pub(crate) fn new(source: SvgSource, pixel_size: TextureSize, color: Color) -> Self {
+    pub(crate) fn new(
+        source: SvgSource,
+        pixel_size: TextureSize,
+        color: Color,
+        fit: IconFit,
+    ) -> Self {
         Self {
             source,
             pixel_size,
             color,
+            fit,
         }
     }
 }
@@ -38,6 +46,7 @@ struct SvgRasterKey {
     width: u32,
     height: u32,
     color: [u8; 4],
+    fit: IconFit,
 }
 
 impl SvgRasterCache {
@@ -57,6 +66,7 @@ impl SvgRasterCache {
             width: request.pixel_size.width,
             height: request.pixel_size.height,
             color,
+            fit: request.fit,
         };
 
         if let Some(entry) = self.cache.get(&key) {
@@ -69,6 +79,7 @@ impl SvgRasterCache {
             request.source.bytes(),
             request.pixel_size,
             color,
+            request.fit,
         )?;
         let result = resource.clone();
         self.cache.insert(key, SvgRasterEntry { texture, resource });
@@ -82,6 +93,7 @@ fn rasterize_svg(
     svg_data: &[u8],
     size: TextureSize,
     color: [u8; 4],
+    fit: IconFit,
 ) -> Result<(wgpu::Texture, TextureResource), SvgError> {
     let tree = resvg::usvg::Tree::from_data(svg_data, &resvg::usvg::Options::default())
         .map_err(|err| SvgError::Parse(err.to_string()))?;
@@ -90,10 +102,7 @@ fn rasterize_svg(
         .ok_or_else(|| SvgError::Parse("failed to create SVG pixmap".to_string()))?;
 
     let svg_size = tree.size();
-    let scale = (size.width as f32 / svg_size.width()).min(size.height as f32 / svg_size.height());
-    let dx = (size.width as f32 - svg_size.width() * scale) * 0.5;
-    let dy = (size.height as f32 - svg_size.height() * scale) * 0.5;
-    let transform = resvg::tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, dx, dy);
+    let transform = raster_transform(svg_size.width(), svg_size.height(), size, fit);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     let [r, g, b, a] = color;
@@ -146,6 +155,35 @@ fn rasterize_svg(
     Ok((texture, resource))
 }
 
+fn raster_transform(
+    source_w: f32,
+    source_h: f32,
+    size: TextureSize,
+    fit: IconFit,
+) -> resvg::tiny_skia::Transform {
+    let target_w = size.width.max(1) as f32;
+    let target_h = size.height.max(1) as f32;
+    let source_w = source_w.max(1.0);
+    let source_h = source_h.max(1.0);
+
+    match fit {
+        IconFit::Stretch => resvg::tiny_skia::Transform::from_row(
+            target_w / source_w,
+            0.0,
+            0.0,
+            target_h / source_h,
+            0.0,
+            0.0,
+        ),
+        IconFit::Contain => {
+            let scale = (target_w / source_w).min(target_h / source_h);
+            let dx = (target_w - source_w * scale) * 0.5;
+            let dy = (target_h - source_h * scale) * 0.5;
+            resvg::tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, dx, dy)
+        }
+    }
+}
+
 fn color_bytes(color: Color) -> [u8; 4] {
     [
         float_to_u8(color.r),
@@ -175,5 +213,53 @@ mod tests {
 
         assert_ne!(a.key(), b.key());
         assert_eq!(a.key().id(), "same");
+    }
+
+    #[test]
+    fn svg_raster_cache_key_includes_fit() {
+        let source = SvgSource::new("same", Arc::<[u8]>::from(&b"<svg/>"[..]));
+        let contain = SvgRasterKey {
+            source: source.key().clone(),
+            width: 100,
+            height: 50,
+            color: [255, 255, 255, 255],
+            fit: IconFit::Contain,
+        };
+        let stretch = SvgRasterKey {
+            fit: IconFit::Stretch,
+            ..contain.clone()
+        };
+
+        assert_ne!(contain, stretch);
+    }
+
+    #[test]
+    fn raster_transform_uses_contain_fit() {
+        let transform = raster_transform(10.0, 20.0, TextureSize::new(100, 100), IconFit::Contain);
+        let mut origin = resvg::tiny_skia::Point::from_xy(0.0, 0.0);
+        let mut far = resvg::tiny_skia::Point::from_xy(10.0, 20.0);
+
+        transform.map_point(&mut origin);
+        transform.map_point(&mut far);
+
+        assert_eq!(origin.x, 25.0);
+        assert_eq!(origin.y, 0.0);
+        assert_eq!(far.x, 75.0);
+        assert_eq!(far.y, 100.0);
+    }
+
+    #[test]
+    fn raster_transform_uses_stretch_fit() {
+        let transform = raster_transform(10.0, 20.0, TextureSize::new(100, 100), IconFit::Stretch);
+        let mut origin = resvg::tiny_skia::Point::from_xy(0.0, 0.0);
+        let mut far = resvg::tiny_skia::Point::from_xy(10.0, 20.0);
+
+        transform.map_point(&mut origin);
+        transform.map_point(&mut far);
+
+        assert_eq!(origin.x, 0.0);
+        assert_eq!(origin.y, 0.0);
+        assert_eq!(far.x, 100.0);
+        assert_eq!(far.y, 100.0);
     }
 }

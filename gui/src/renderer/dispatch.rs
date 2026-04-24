@@ -428,8 +428,12 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
             DrawOp::SvgRaster(req) => {
                 let pixel_size =
                     svg_raster_pixel_size(req.transform, req.rect, scale_factor, render_scale);
-                let request =
-                    SvgRasterRequest::new(req.source.clone(), pixel_size, req.style.raster_color());
+                let request = SvgRasterRequest::new(
+                    req.source.clone(),
+                    pixel_size,
+                    req.style.raster_color(),
+                    req.style.fit,
+                );
                 match svg_raster_cache.get_or_rasterize(device, queue, request) {
                     Ok(resource) => {
                         let draw =

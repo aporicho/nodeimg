@@ -86,7 +86,6 @@ fn paint_node(
 
     let node_space = current_space.node_space(node.rect, node.style.transform);
     let local_rect = node_space.local_rect;
-    let local_to_screen = node_space.local_to_screen;
     let transform = node.style.transform;
     let should_clip_children = matches!(node.style.overflow, Overflow::Hidden | Overflow::Scroll);
     let clip_radius = node
@@ -177,8 +176,6 @@ fn paint_node(
             target.pop_clip();
         }
     }
-
-    let _ = local_to_screen;
 }
 
 #[allow(clippy::too_many_arguments)]
