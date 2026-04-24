@@ -3,6 +3,9 @@ use super::ids;
 use gui::renderer::Rect;
 use std::collections::BTreeMap;
 
+const MIN_TILE_WIDTH: f32 = 150.0;
+const MIN_TILE_HEIGHT: f32 = 92.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlaygroundPosition {
     pub(crate) x: f32,
@@ -14,6 +17,21 @@ impl From<[f32; 2]> for PlaygroundPosition {
         Self {
             x: value[0],
             y: value[1],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlaygroundSize {
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+}
+
+impl From<[f32; 2]> for PlaygroundSize {
+    fn from(value: [f32; 2]) -> Self {
+        Self {
+            width: value[0],
+            height: value[1],
         }
     }
 }
@@ -54,7 +72,9 @@ impl Default for DeveloperControlState {
 #[derive(Debug, Clone)]
 pub(crate) struct DeveloperModeState {
     placements: BTreeMap<PlaygroundItemId, PlaygroundPosition>,
+    sizes: BTreeMap<PlaygroundItemId, PlaygroundSize>,
     drag: Option<PlaygroundDragSession>,
+    resize: Option<PlaygroundResizeSession>,
     controls: DeveloperControlState,
 }
 
@@ -65,16 +85,29 @@ struct PlaygroundDragSession {
     item_origin: PlaygroundPosition,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PlaygroundResizeSession {
+    item: PlaygroundItemId,
+    pointer_origin: [f32; 2],
+    size_origin: PlaygroundSize,
+}
+
 impl Default for DeveloperModeState {
     fn default() -> Self {
         let placements = item_specs()
             .iter()
             .map(|spec| (spec.id, spec.default_position.into()))
             .collect();
+        let sizes = item_specs()
+            .iter()
+            .map(|spec| (spec.id, spec.size.into()))
+            .collect();
 
         Self {
             placements,
+            sizes,
             drag: None,
+            resize: None,
             controls: DeveloperControlState::default(),
         }
     }
@@ -90,6 +123,13 @@ impl DeveloperModeState {
             .get(&item)
             .copied()
             .unwrap_or_else(|| [0.0, 0.0].into())
+    }
+
+    pub(crate) fn size(&self, item: PlaygroundItemId) -> PlaygroundSize {
+        self.sizes
+            .get(&item)
+            .copied()
+            .unwrap_or_else(|| [MIN_TILE_WIDTH, MIN_TILE_HEIGHT].into())
     }
 
     pub(crate) fn start_drag(&mut self, id: &str, x: f32, y: f32) -> bool {
@@ -124,6 +164,41 @@ impl DeveloperModeState {
         let moved = self.drag(id, x, y);
         self.drag = None;
         moved
+    }
+
+    pub(crate) fn start_resize(&mut self, id: &str, x: f32, y: f32) -> bool {
+        let Some(item) = ids::item_from_tile_resize_handle_id(id) else {
+            return false;
+        };
+        self.resize = Some(PlaygroundResizeSession {
+            item,
+            pointer_origin: [x, y],
+            size_origin: self.size(item),
+        });
+        true
+    }
+
+    pub(crate) fn resize(&mut self, id: &str, x: f32, y: f32) -> bool {
+        let Some(session) = self.resize else {
+            return false;
+        };
+        if ids::item_from_tile_resize_handle_id(id) != Some(session.item) {
+            return false;
+        }
+
+        let next = PlaygroundSize {
+            width: (session.size_origin.width + x - session.pointer_origin[0]).max(MIN_TILE_WIDTH),
+            height: (session.size_origin.height + y - session.pointer_origin[1])
+                .max(MIN_TILE_HEIGHT),
+        };
+        self.sizes.insert(session.item, next);
+        true
+    }
+
+    pub(crate) fn end_resize(&mut self, id: &str, x: f32, y: f32) -> bool {
+        let resized = self.resize(id, x, y);
+        self.resize = None;
+        resized
     }
 
     pub(crate) fn apply_click(&mut self, id: &str) -> bool {

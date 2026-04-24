@@ -15,6 +15,7 @@ pub(crate) use view::{build_developer_page, DeveloperModeBuildContext};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gui::canvas::camera::Camera;
     use gui::theme::light_theme;
     use gui::tree::layout::{LeafKind, TextureHandle};
     use gui::tree::Desc;
@@ -69,6 +70,7 @@ mod tests {
                 w: 1280.0,
                 h: 800.0,
             },
+            camera: &Camera::new(),
             theme: &theme,
             state: &state,
             image: TextureHandle(1),
@@ -79,6 +81,37 @@ mod tests {
             kind,
             LeafKind::Grid { .. }
         )));
+    }
+
+    #[test]
+    fn developer_canvas_root_transform_matches_camera() {
+        let theme = light_theme();
+        let state = state::DeveloperModeState::default();
+        let mut camera = Camera::new();
+        camera.x = 80.0;
+        camera.y = -24.0;
+        camera.zoom = 1.5;
+
+        let page = view::build_developer_page(view::DeveloperModeBuildContext {
+            viewport: gui::renderer::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 1280.0,
+                h: 800.0,
+            },
+            camera: &camera,
+            theme: &theme,
+            state: &state,
+            image: TextureHandle(1),
+        });
+        let Some(transform) = find_container_transform(&page, ids::PLAYGROUND_CANVAS_ID) else {
+            panic!("expected developer canvas root transform");
+        };
+
+        assert_eq!(
+            transform,
+            gui::geometry::TransformSpec::translate_scale([80.0, -24.0], 1.5)
+        );
     }
 
     #[test]
@@ -152,6 +185,29 @@ mod tests {
     }
 
     #[test]
+    fn resizing_tile_changes_only_that_item_size() {
+        let mut state = state::DeveloperModeState::default();
+        let item = catalog::PlaygroundItemId::Surface;
+        let original = state.size(item);
+        let handle_id = ids::tile_resize_handle_id(item);
+
+        assert!(state.start_resize(&handle_id, 10.0, 10.0));
+        assert!(state.resize(&handle_id, 42.0, 31.0));
+        assert!(state.end_resize(&handle_id, 42.0, 31.0));
+
+        let resized = state.size(item);
+        assert_eq!(resized.width, original.width + 32.0);
+        assert_eq!(resized.height, original.height + 21.0);
+        assert_eq!(
+            state.size(catalog::PlaygroundItemId::Text),
+            catalog::spec_for(catalog::PlaygroundItemId::Text)
+                .expect("text spec")
+                .size
+                .into()
+        );
+    }
+
+    #[test]
     fn widget_state_updates_are_centralized() {
         let mut state = state::DeveloperModeState::default();
 
@@ -185,5 +241,31 @@ mod tests {
             Desc::Container { children, .. } => contains_leaf(children, predicate),
             Desc::Widget(widget) => contains_leaf(widget.children(), predicate),
         })
+    }
+
+    fn find_container_transform(
+        desc: &Desc,
+        expected: &str,
+    ) -> Option<gui::geometry::TransformSpec> {
+        match desc {
+            Desc::Container {
+                id,
+                style,
+                children,
+                ..
+            } => {
+                if id.as_ref() == expected {
+                    return style.transform;
+                }
+                children
+                    .iter()
+                    .find_map(|child| find_container_transform(child, expected))
+            }
+            Desc::Widget(widget) => widget
+                .children()
+                .iter()
+                .find_map(|child| find_container_transform(child, expected)),
+            Desc::Leaf { .. } => None,
+        }
     }
 }

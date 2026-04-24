@@ -68,6 +68,7 @@ pub struct AppShell {
     gui: Context,
     mode: AppMode,
     camera: Camera,
+    developer_camera: Camera,
     navigation: CanvasNavigationController,
     developer: DeveloperModeController,
     workspace: WorkspaceController,
@@ -93,6 +94,7 @@ impl App for AppShell {
             gui,
             mode,
             camera: Camera::new(),
+            developer_camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             developer: DeveloperModeController::new(),
             workspace: WorkspaceController::new(),
@@ -117,10 +119,17 @@ impl App for AppShell {
         let consumed = output.consumed;
         self.handle_framework_output(output, ctx);
 
-        if self.mode == AppMode::User
-            && !consumed
-            && self.navigation.handle_event(&event, &mut self.camera)
-        {
+        let navigation_consumed = if consumed {
+            false
+        } else {
+            match self.mode {
+                AppMode::User => self.navigation.handle_event(&event, &mut self.camera),
+                AppMode::Developer => self
+                    .navigation
+                    .handle_event(&event, &mut self.developer_camera),
+            }
+        };
+        if navigation_consumed {
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
             }
@@ -139,6 +148,7 @@ impl App for AppShell {
             AppMode::User => self.build_user_desc(viewport),
             AppMode::Developer => build_developer_page(DeveloperModeBuildContext {
                 viewport,
+                camera: &self.developer_camera,
                 theme: &self.theme,
                 state: self.developer.state(),
                 image: SAMPLE_IMAGE_HANDLE,
@@ -462,8 +472,12 @@ impl AppShell {
     fn handle_developer_message(&mut self, message: AppMessage) {
         match message {
             AppMessage::WidgetClicked(id) => {
-                self.developer
-                    .handle_click(&id, self.mouse_x, &mut self.gui);
+                self.developer.handle_click(
+                    &id,
+                    self.mouse_x,
+                    &self.developer_camera,
+                    &mut self.gui,
+                );
             }
             AppMessage::WidgetDoubleClicked(id) => {
                 self.developer.handle_double_click(&id);
@@ -478,13 +492,16 @@ impl AppShell {
                 self.developer.handle_selection_change(&id, selected);
             }
             AppMessage::WidgetDragStart { id, x, y } => {
-                self.developer.handle_drag_start(&id, x, y, &self.gui);
+                self.developer
+                    .handle_drag_start(&id, x, y, &self.developer_camera, &self.gui);
             }
             AppMessage::WidgetDragMove { id, x, y } => {
-                self.developer.handle_drag_move(&id, x, y, &self.gui);
+                self.developer
+                    .handle_drag_move(&id, x, y, &self.developer_camera, &self.gui);
             }
             AppMessage::WidgetDragEnd { id, x, y } => {
-                self.developer.handle_drag_end(&id, x, y);
+                self.developer
+                    .handle_drag_end(&id, x, y, &self.developer_camera);
             }
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
@@ -517,6 +534,14 @@ impl AppShell {
                     ctx.cursor.set(cursor_for_resize_edge(edge));
                     return;
                 }
+            }
+
+            if self.mode == AppMode::Developer
+                && self.developer.is_playground_resize_target(id)
+                && self.gui.node_has_gesture(node_id, Gesture::Drag)
+            {
+                ctx.cursor.set(CursorStyle::ResizeSE);
+                return;
             }
 
             if self.mode == AppMode::Developer

@@ -4,6 +4,7 @@ pub(super) const PLAYGROUND_PAGE_ID: &str = "developer_playground_page";
 pub(super) const PLAYGROUND_CANVAS_ID: &str = "developer_playground_canvas";
 pub(super) const PLAYGROUND_GRID_ID: &str = "developer_playground_grid";
 pub(super) const PLAYGROUND_TILE_PREFIX: &str = "playground_item::";
+const TILE_RESIZE_HANDLE_SUFFIX: &str = "::resize";
 
 pub(super) const CONTROL_LABEL_ID: &str = "playground_control_label";
 pub(super) const CONTROL_BUTTON_ID: &str = "playground_control_button";
@@ -38,6 +39,10 @@ pub(super) fn tile_description_id(item: PlaygroundItemId) -> String {
     format!("{}::description", tile_id(item))
 }
 
+pub(super) fn tile_resize_handle_id(item: PlaygroundItemId) -> String {
+    format!("{}{TILE_RESIZE_HANDLE_SUFFIX}", tile_id(item))
+}
+
 pub(super) fn item_from_tile_id(id: &str) -> Option<PlaygroundItemId> {
     let key = id.strip_prefix(PLAYGROUND_TILE_PREFIX)?;
     if key.contains("::") {
@@ -46,8 +51,22 @@ pub(super) fn item_from_tile_id(id: &str) -> Option<PlaygroundItemId> {
     PlaygroundItemId::from_key(key)
 }
 
+pub(super) fn item_from_tile_resize_handle_id(id: &str) -> Option<PlaygroundItemId> {
+    let key = id
+        .strip_prefix(PLAYGROUND_TILE_PREFIX)?
+        .strip_suffix(TILE_RESIZE_HANDLE_SUFFIX)?;
+    if key.contains("::") {
+        return None;
+    }
+    PlaygroundItemId::from_key(key)
+}
+
 pub(super) fn is_tile_drag_target(id: &str) -> bool {
     item_from_tile_id(id).is_some()
+}
+
+pub(super) fn is_tile_resize_target(id: &str) -> bool {
+    item_from_tile_resize_handle_id(id).is_some()
 }
 
 pub(super) fn is_slider_target(id: &str) -> bool {

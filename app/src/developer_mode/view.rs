@@ -6,6 +6,8 @@ use super::overlay::overlay_sample;
 use super::primitives::primitive_sample;
 use super::state::DeveloperModeState;
 use super::widgets::control_sample;
+use gui::canvas::camera::Camera;
+use gui::geometry::TransformSpec;
 use gui::gesture::Gesture;
 use gui::renderer::{Border, Rect, TextStyle};
 use gui::theme::Theme;
@@ -16,9 +18,13 @@ use gui::ui::{self, DecorationBuilder, StyleBuilder};
 
 const CONCEPT_MAP_WIDTH: f32 = 1280.0;
 const CONCEPT_MAP_HEIGHT: f32 = 1240.0;
+const GRID_SPACING: f32 = 24.0;
+const GRID_DOT_SIZE: f32 = 1.2;
+const RESIZE_HANDLE_SIZE: f32 = 18.0;
 
 pub(crate) struct DeveloperModeBuildContext<'a> {
     pub(crate) viewport: Rect,
+    pub(crate) camera: &'a Camera,
     pub(crate) theme: &'a Theme,
     pub(crate) state: &'a DeveloperModeState,
     pub(crate) image: TextureHandle,
@@ -27,6 +33,12 @@ pub(crate) struct DeveloperModeBuildContext<'a> {
 pub(crate) fn build_developer_page(ctx: DeveloperModeBuildContext<'_>) -> Desc {
     let map_width = ctx.viewport.w.max(CONCEPT_MAP_WIDTH);
     let map_height = ctx.viewport.h.max(CONCEPT_MAP_HEIGHT);
+    let (canvas_min_x, canvas_min_y) = ctx.camera.screen_to_canvas(0.0, 0.0);
+    let (canvas_max_x, canvas_max_y) = ctx.camera.screen_to_canvas(ctx.viewport.w, ctx.viewport.h);
+    let grid_x = align_grid_start(canvas_min_x, GRID_SPACING);
+    let grid_y = align_grid_start(canvas_min_y, GRID_SPACING);
+    let grid_w = (canvas_max_x - canvas_min_x).abs() + GRID_SPACING * 4.0;
+    let grid_h = (canvas_max_y - canvas_min_y).abs() + GRID_SPACING * 4.0;
     let tiles = item_specs()
         .iter()
         .map(|spec| sample_tile(spec, ctx.theme, ctx.state, ctx.image));
@@ -34,27 +46,29 @@ pub(crate) fn build_developer_page(ctx: DeveloperModeBuildContext<'_>) -> Desc {
     ui::container(ids::PLAYGROUND_PAGE_ID)
         .fixed_width(ctx.viewport.w)
         .fixed_height(ctx.viewport.h)
-        .overflow(Overflow::Scroll)
         .background(ctx.theme.colors.canvas_bg)
         .child(
             ui::container(ids::PLAYGROUND_CANVAS_ID)
-                .relative()
-                .fixed_width(map_width)
-                .fixed_height(map_height)
-                .overflow(Overflow::Hidden)
-                .background(ctx.theme.colors.canvas_bg)
+                .absolute_xy(0.0, 0.0)
+                .fixed_width(ctx.viewport.w)
+                .fixed_height(ctx.viewport.h)
+                .transform(TransformSpec::translate_scale(
+                    [ctx.camera.x, ctx.camera.y],
+                    ctx.camera.zoom,
+                ))
                 .child(
                     ui::leaf(
                         ids::PLAYGROUND_GRID_ID,
                         LeafKind::Grid {
-                            spacing: 24.0,
+                            spacing: GRID_SPACING,
                             dot_color: ctx.theme.colors.canvas_grid,
-                            dot_size: 1.2,
+                            dot_size: GRID_DOT_SIZE,
                         },
                     )
-                    .absolute_xy(0.0, 0.0)
-                    .fixed_width(map_width)
-                    .fixed_height(map_height)
+                    .absolute_xy(grid_x, grid_y)
+                    .fixed_width(grid_w.max(map_width))
+                    .fixed_height(grid_h.max(map_height))
+                    .z_index(-20)
                     .build(),
                 )
                 .children(tiles)
@@ -70,6 +84,7 @@ fn sample_tile(
     image: TextureHandle,
 ) -> Desc {
     let position = state.position(spec.id);
+    let size = state.size(spec.id);
     let body = match spec.group {
         PlaygroundGroup::Foundation | PlaygroundGroup::Family | PlaygroundGroup::Workspace => {
             concept_sample(spec.id, theme)
@@ -79,13 +94,13 @@ fn sample_tile(
         PlaygroundGroup::Control => control_sample(spec.id, theme, state.controls(), image),
         PlaygroundGroup::Overlay => overlay_sample(spec.id),
     };
-    let body_width = (spec.size[0] - 16.0).max(1.0);
-    let body_height = (spec.size[1] - 58.0).max(48.0);
+    let body_width = (size.width - 16.0).max(1.0);
+    let body_height = (size.height - 58.0).max(48.0);
 
     ui::column(ids::tile_id(spec.id))
         .absolute_xy(position.x, position.y)
-        .fixed_width(spec.size[0])
-        .fixed_height(spec.size[1])
+        .fixed_width(size.width)
+        .fixed_height(size.height)
         .padding_all(8.0)
         .gap(5.0)
         .hittable(true)
@@ -127,6 +142,55 @@ fn sample_tile(
             body_width,
             16.0,
         ))
+        .child(resize_handle(spec, size.width, size.height, theme))
+        .build()
+}
+
+fn resize_handle(
+    spec: &PlaygroundItemSpec,
+    tile_width: f32,
+    tile_height: f32,
+    theme: &Theme,
+) -> Desc {
+    ui::container(ids::tile_resize_handle_id(spec.id))
+        .absolute_xy(
+            (tile_width - RESIZE_HANDLE_SIZE - 2.0).max(0.0),
+            (tile_height - RESIZE_HANDLE_SIZE - 2.0).max(0.0),
+        )
+        .fixed_width(RESIZE_HANDLE_SIZE)
+        .fixed_height(RESIZE_HANDLE_SIZE)
+        .hittable(true)
+        .gesture(Gesture::Drag)
+        .background(theme.colors.surface_hover)
+        .border(Border {
+            width: 1.0,
+            color: theme.colors.border,
+        })
+        .radius_all(5.0)
+        .child(
+            ui::line(
+                format!("{}::mark_a", ids::tile_resize_handle_id(spec.id)),
+                gui::renderer::Point { x: 6.0, y: 13.0 },
+                gui::renderer::Point { x: 13.0, y: 6.0 },
+                gui::renderer::Stroke::new(1.5, theme.colors.text_muted),
+            )
+            .absolute_xy(0.0, 0.0)
+            .fixed_width(RESIZE_HANDLE_SIZE)
+            .fixed_height(RESIZE_HANDLE_SIZE)
+            .build(),
+        )
+        .child(
+            ui::line(
+                format!("{}::mark_b", ids::tile_resize_handle_id(spec.id)),
+                gui::renderer::Point { x: 9.0, y: 14.0 },
+                gui::renderer::Point { x: 14.0, y: 9.0 },
+                gui::renderer::Stroke::new(1.5, theme.colors.text_muted),
+            )
+            .absolute_xy(0.0, 0.0)
+            .fixed_width(RESIZE_HANDLE_SIZE)
+            .fixed_height(RESIZE_HANDLE_SIZE)
+            .build(),
+        )
         .build()
 }
 
@@ -143,4 +207,8 @@ fn tile_text(id: String, text: &'static str, style: TextStyle, width: f32, heigh
     .fixed_width(width)
     .fixed_height(height)
     .build()
+}
+
+pub(crate) fn align_grid_start(min_canvas: f32, spacing: f32) -> f32 {
+    (min_canvas / spacing).floor() * spacing - spacing * 2.0
 }
