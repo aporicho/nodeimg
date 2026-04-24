@@ -84,6 +84,14 @@ Prefer extending existing fixtures before adding new systems:
 - `gui/src/tree/paint` recording tests for low-level primitive assertions.
 - `gui/src/tree/hit` and `gui/src/tree/hit_shape` tests for paint/hit alignment.
 
+## Progress Log
+
+- 2026-04-24: Added a `Visual Audit` panel backed by `app/src/demo_gallery.rs`.
+  The first deterministic primitive fixture covers rect/radius/shadow, text
+  clip/ellipsis/alignment, image fit/tint/source rect, SVG icon, circle, line,
+  curve, path, grid, connection, and transform samples. Manual visual review is
+  still required before marking the primitive rows DONE.
+
 ## Acceptance
 
 This audit is complete when:

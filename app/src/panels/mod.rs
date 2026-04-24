@@ -55,5 +55,6 @@ mod tests {
         assert!(ids.contains(&"preview"));
         assert!(ids.contains(&"toolbar"));
         assert!(ids.contains(&"engine"));
+        assert!(ids.contains(&"gallery"));
     }
 }
