@@ -21,11 +21,20 @@
 
 ```bash
 # 构建
-cargo build --release
+cargo build -p app --release
 
 # 运行
-cargo run --release
+cargo run -p app --bin nodeimg --release
 ```
+
+也可以使用 `scripts/` 下的细分启动脚本。`*_build_run.sh` 会通过 `cargo run` 编译并启动；`*_no_build_run.sh` 只运行已有二进制，不触发编译。
+
+| 平台 | 用户模式（编译并启动） | 用户模式（不编译） | 开发模式（编译并启动） | 开发模式（不编译） |
+| --- | --- | --- | --- | --- |
+| macOS | `scripts/mac_user_build_run.sh` | `scripts/mac_user_no_build_run.sh` | `scripts/mac_dev_build_run.sh` | `scripts/mac_dev_no_build_run.sh` |
+| Windows | `scripts/windows_user_build_run.sh` | `scripts/windows_user_no_build_run.sh` | `scripts/windows_dev_build_run.sh` | `scripts/windows_dev_no_build_run.sh` |
+
+兼容入口仍可使用：`scripts/mac_run.sh`、`scripts/windows_run.sh` 默认进入用户模式；加 `--dev` 或 `--debug` 进入开发模式。
 
 AI 后端会在需要时自动启动（首次运行会安装 Python 依赖）。也可以手动启动：
 
