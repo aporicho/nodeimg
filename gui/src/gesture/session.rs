@@ -2,10 +2,10 @@ use std::time::Instant;
 
 use crate::animation::AnimationStore;
 use crate::shell::{AppEvent, MouseButton};
-use crate::tree::{hit_test_with_animations, HitChain, Tree};
+use crate::tree::{hit_test_with_animations, resize_hit_at_screen_point, HitChain, Tree};
 
 use super::arena::GestureArena;
-use super::factory::arena_from_hit_chain;
+use super::factory::{arena_from_hit_chain, arena_from_resize_hit};
 use super::signal::GestureSignal;
 
 #[derive(Debug, Default)]
@@ -53,6 +53,15 @@ impl GestureSession {
             AppEvent::MousePress { x, y, button }
                 if button == MouseButton::Left && self.arena.is_none() =>
             {
+                if let Some(root) = tree.root() {
+                    if let Some(hit) = resize_hit_at_screen_point(tree, root, x, y, animations) {
+                        if let Some(arena) = arena_from_resize_hit(tree, hit, x, y) {
+                            self.arena = Some(arena);
+                            return GestureSessionUpdate::consumed();
+                        }
+                    }
+                }
+
                 let chain = hit_chain(tree, animations, x, y);
                 if let Some(arena) = arena_from_hit_chain(tree, &chain, x, y, self.last_tap_time) {
                     self.arena = Some(arena);

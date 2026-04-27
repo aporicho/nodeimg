@@ -26,9 +26,43 @@ const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 #[derive(Debug)]
 enum AppMessage {
     WidgetClicked(String),
-    WidgetDragStart { id: String, x: f32, y: f32 },
-    WidgetDragMove { id: String, x: f32, y: f32 },
-    WidgetDragEnd { id: String, x: f32, y: f32 },
+    WidgetDragStart {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    WidgetDragMove {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    WidgetDragEnd {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    WidgetResizeStart {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    WidgetResizeMove {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    WidgetResizeEnd {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    WidgetTextChanged {
+        id: String,
+        value: String,
+    },
     LongPress(String),
 }
 
@@ -223,7 +257,9 @@ impl AppShell {
             engine: &self.workspace.engine_panel_state(),
         });
         let panel_root = self.gui.panel_root(viewport, panels);
-        let canvas_nodes = self.workspace.canvas_node_render_views(&mut self.gui);
+        let canvas_nodes = self
+            .workspace
+            .canvas_node_render_views(&mut self.gui, &self.theme);
         let canvas_connections = self.workspace.canvas_connection_views();
         let pending_connection = self.gui.pending_canvas_connection();
 
@@ -352,9 +388,18 @@ impl AppShell {
             WidgetEvent::DragStart { id, x, y } => AppMessage::WidgetDragStart { id, x, y },
             WidgetEvent::DragMove { id, x, y } => AppMessage::WidgetDragMove { id, x, y },
             WidgetEvent::DragEnd { id, x, y } => AppMessage::WidgetDragEnd { id, x, y },
+            WidgetEvent::ResizeStart { id, edge, x, y } => {
+                AppMessage::WidgetResizeStart { id, edge, x, y }
+            }
+            WidgetEvent::ResizeMove { id, edge, x, y } => {
+                AppMessage::WidgetResizeMove { id, edge, x, y }
+            }
+            WidgetEvent::ResizeEnd { id, edge, x, y } => {
+                AppMessage::WidgetResizeEnd { id, edge, x, y }
+            }
+            WidgetEvent::TextChanged { id, value } => AppMessage::WidgetTextChanged { id, value },
             WidgetEvent::LongPress { id } => AppMessage::LongPress(id),
             WidgetEvent::DoubleClick { .. }
-            | WidgetEvent::TextChanged { .. }
             | WidgetEvent::NumberChanged { .. }
             | WidgetEvent::SelectionChanged { .. } => return None,
         })
@@ -418,6 +463,34 @@ impl AppShell {
                     .workspace
                     .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
             }
+            AppMessage::WidgetResizeStart { id, edge, x, y } => {
+                let _ = self.workspace.start_canvas_node_resize(
+                    &mut self.gui,
+                    &self.camera,
+                    &id,
+                    edge,
+                    x,
+                    y,
+                );
+            }
+            AppMessage::WidgetResizeMove { id, edge, x, y } => {
+                let _ =
+                    self.workspace
+                        .resize_canvas_node(&mut self.gui, &self.camera, &id, edge, x, y);
+            }
+            AppMessage::WidgetResizeEnd { id, edge, x, y } => {
+                let _ = self.workspace.end_canvas_node_resize(
+                    &mut self.gui,
+                    &self.camera,
+                    &id,
+                    edge,
+                    x,
+                    y,
+                );
+            }
+            AppMessage::WidgetTextChanged { id, value } => {
+                let _ = self.workspace.update_text_area_showcase_value(&id, value);
+            }
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
             }
@@ -425,49 +498,102 @@ impl AppShell {
     }
 
     fn update_hover_cursor(&self, x: f32, y: f32, ctx: &mut AppContext) {
+        tracing::trace!(
+            target: "gui::canvas::node_resize",
+            x,
+            y,
+            panning = self.navigation.is_panning(),
+            "update hover cursor"
+        );
         if self.navigation.is_panning() {
+            tracing::debug!(
+                target: "gui::canvas::node_resize",
+                x,
+                y,
+                cursor = ?CursorStyle::Move,
+                "hover cursor set while canvas is panning"
+            );
             ctx.cursor.set(CursorStyle::Move);
+            return;
+        }
+
+        if let Some((node_id, edge)) = self.gui.resize_hit_at_screen_point(x, y) {
+            let cursor = cursor_for_resize_edge(edge);
+            tracing::debug!(
+                target: "gui::canvas::node_resize",
+                x,
+                y,
+                node_id = ?self.gui.node_name(node_id),
+                edge = ?edge,
+                cursor = ?cursor,
+                "hover cursor set from resize hit"
+            );
+            ctx.cursor.set(cursor);
             return;
         }
 
         let chain = self.gui.hit_test(x, y);
         if chain.is_empty() {
+            tracing::trace!(
+                target: "gui::canvas::node_resize",
+                x,
+                y,
+                "hover cursor no-op: empty hit chain and no resize hit"
+            );
             return;
         }
+        tracing::trace!(
+            target: "gui::canvas::node_resize",
+            x,
+            y,
+            chain_len = chain.len(),
+            leaf = ?chain.leaf().and_then(|node_id| self.gui.node_name(node_id)),
+            root = ?chain.root().and_then(|node_id| self.gui.node_name(node_id)),
+            "hover cursor falling back to ordinary hit chain"
+        );
 
         for node_id in chain.iter() {
-            let Some(id) = self.gui.node_name(node_id) else {
+            if self.gui.node_name(node_id).is_none() {
                 continue;
-            };
-
-            if self.gui.node_has_gesture(node_id, Gesture::Resize) {
-                if let Some(edge) = self
-                    .gui
-                    .node_rect_by_node(node_id)
-                    .and_then(|rect| detect_resize_edge(rect, x, y))
-                {
-                    ctx.cursor.set(cursor_for_resize_edge(edge));
-                    return;
-                }
             }
 
-            if self.gui.node_is_text_input_field(node_id) {
+            if self.gui.node_is_text_input_field(node_id)
+                || self.gui.node_is_text_area_field(node_id)
+            {
+                tracing::trace!(
+                    target: "gui::canvas::node_resize",
+                    x,
+                    y,
+                    node_id = ?self.gui.node_name(node_id),
+                    cursor = ?CursorStyle::Text,
+                    "hover cursor set from text field hit"
+                );
                 ctx.cursor.set(CursorStyle::Text);
                 return;
             }
 
-            if id.ends_with("::titlebar") && self.gui.node_has_gesture(node_id, Gesture::Drag) {
-                ctx.cursor.set(CursorStyle::Move);
-                return;
-            }
-
-            if id.starts_with("canvas_node::") && self.gui.node_has_gesture(node_id, Gesture::Drag)
-            {
+            if self.gui.node_is_draggable(node_id) {
+                tracing::trace!(
+                    target: "gui::canvas::node_resize",
+                    x,
+                    y,
+                    node_id = ?self.gui.node_name(node_id),
+                    cursor = ?CursorStyle::Move,
+                    "hover cursor set from draggable hit"
+                );
                 ctx.cursor.set(CursorStyle::Move);
                 return;
             }
 
             if self.gui.node_has_gesture(node_id, Gesture::Drag) {
+                tracing::trace!(
+                    target: "gui::canvas::node_resize",
+                    x,
+                    y,
+                    node_id = ?self.gui.node_name(node_id),
+                    cursor = ?CursorStyle::Pointer,
+                    "hover cursor set from drag gesture hit"
+                );
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
@@ -475,6 +601,14 @@ impl AppShell {
             if self.gui.node_has_gesture(node_id, Gesture::Tap)
                 || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
             {
+                tracing::trace!(
+                    target: "gui::canvas::node_resize",
+                    x,
+                    y,
+                    node_id = ?self.gui.node_name(node_id),
+                    cursor = ?CursorStyle::Pointer,
+                    "hover cursor set from tap gesture hit"
+                );
                 ctx.cursor.set(CursorStyle::Pointer);
                 return;
             }
@@ -575,26 +709,6 @@ fn viewport_rect(ctx: &AppContext) -> Rect {
         y: 0.0,
         w: ctx.size.width as f32 / ctx.scale_factor as f32,
         h: ctx.size.height as f32 / ctx.scale_factor as f32,
-    }
-}
-
-fn detect_resize_edge(rect: Rect, x: f32, y: f32) -> Option<ResizeEdge> {
-    const EDGE_THRESHOLD: f32 = 6.0;
-    let near_left = (x - rect.x).abs() < EDGE_THRESHOLD;
-    let near_right = (x - (rect.x + rect.w)).abs() < EDGE_THRESHOLD;
-    let near_top = (y - rect.y).abs() < EDGE_THRESHOLD;
-    let near_bottom = (y - (rect.y + rect.h)).abs() < EDGE_THRESHOLD;
-
-    match (near_left, near_right, near_top, near_bottom) {
-        (true, _, true, _) => Some(ResizeEdge::TopLeft),
-        (true, _, _, true) => Some(ResizeEdge::BottomLeft),
-        (_, true, true, _) => Some(ResizeEdge::TopRight),
-        (_, true, _, true) => Some(ResizeEdge::BottomRight),
-        (true, _, _, _) => Some(ResizeEdge::Left),
-        (_, true, _, _) => Some(ResizeEdge::Right),
-        (_, _, true, _) => Some(ResizeEdge::Top),
-        (_, _, _, true) => Some(ResizeEdge::Bottom),
-        _ => None,
     }
 }
 

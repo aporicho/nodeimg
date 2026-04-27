@@ -1,15 +1,12 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
 use super::signal::GestureSignal;
-use crate::renderer::Rect;
 use crate::widget::resize_edge::ResizeEdge;
 
-const EDGE_THRESHOLD: f32 = 6.0;
 const MOVE_THRESHOLD: f32 = 3.0;
 
 pub struct ResizeRecognizer {
     target_id: String,
-    node_rect: Rect,
-    edge: Option<ResizeEdge>,
+    edge: ResizeEdge,
     down_x: f32,
     down_y: f32,
     current_x: f32,
@@ -20,11 +17,10 @@ pub struct ResizeRecognizer {
 }
 
 impl ResizeRecognizer {
-    pub fn new(target_id: String, node_rect: Rect) -> Self {
+    pub fn new(target_id: String, edge: ResizeEdge) -> Self {
         Self {
             target_id,
-            node_rect,
-            edge: None,
+            edge,
             down_x: 0.0,
             down_y: 0.0,
             current_x: 0.0,
@@ -36,43 +32,18 @@ impl ResizeRecognizer {
     }
 }
 
-/// 在 rect 的 8 个边/角附近（6px 阈值）内检测具体命中的是哪个。
-/// 返回 None 表示点击在内部（非边缘）。
-fn detect_edge(rect: &Rect, x: f32, y: f32) -> Option<ResizeEdge> {
-    let near_left = (x - rect.x).abs() < EDGE_THRESHOLD;
-    let near_right = (x - (rect.x + rect.w)).abs() < EDGE_THRESHOLD;
-    let near_top = (y - rect.y).abs() < EDGE_THRESHOLD;
-    let near_bottom = (y - (rect.y + rect.h)).abs() < EDGE_THRESHOLD;
-
-    match (near_left, near_right, near_top, near_bottom) {
-        (true, _, true, _) => Some(ResizeEdge::TopLeft),
-        (true, _, _, true) => Some(ResizeEdge::BottomLeft),
-        (_, true, true, _) => Some(ResizeEdge::TopRight),
-        (_, true, _, true) => Some(ResizeEdge::BottomRight),
-        (true, _, _, _) => Some(ResizeEdge::Left),
-        (_, true, _, _) => Some(ResizeEdge::Right),
-        (_, _, true, _) => Some(ResizeEdge::Top),
-        (_, _, _, true) => Some(ResizeEdge::Bottom),
-        _ => None,
-    }
-}
-
 impl GestureRecognizer for ResizeRecognizer {
     fn on_pointer_down(&mut self, x: f32, y: f32) -> bool {
         self.down_x = x;
         self.down_y = y;
         self.current_x = x;
         self.current_y = y;
-        self.edge = detect_edge(&self.node_rect, x, y);
-        self.edge.is_some()
+        true
     }
 
     fn on_pointer_move(&mut self, x: f32, y: f32) -> GestureDisposition {
         self.current_x = x;
         self.current_y = y;
-        if self.edge.is_none() {
-            return GestureDisposition::Rejected;
-        }
         if self.resizing {
             return GestureDisposition::Accepted;
         }
@@ -98,20 +69,17 @@ impl GestureRecognizer for ResizeRecognizer {
     }
 
     fn accept(&mut self) -> GestureSignal {
-        let edge = self
-            .edge
-            .expect("accept called before on_pointer_down succeeded");
         if self.done {
             GestureSignal::ResizeEnd {
                 id: self.target_id.clone(),
-                edge,
+                edge: self.edge,
                 x: self.current_x,
                 y: self.current_y,
             }
         } else if self.started {
             GestureSignal::ResizeMove {
                 id: self.target_id.clone(),
-                edge,
+                edge: self.edge,
                 x: self.current_x,
                 y: self.current_y,
             }
@@ -119,7 +87,7 @@ impl GestureRecognizer for ResizeRecognizer {
             self.started = true;
             GestureSignal::ResizeStart {
                 id: self.target_id.clone(),
-                edge,
+                edge: self.edge,
                 x: self.current_x,
                 y: self.current_y,
             }
@@ -132,6 +100,8 @@ impl GestureRecognizer for ResizeRecognizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::Rect;
+    use crate::widget::resize_edge::{detect_resize_edge, DEFAULT_RESIZE_EDGE_THRESHOLD};
 
     fn rect_100() -> Rect {
         Rect {
@@ -145,37 +115,67 @@ mod tests {
     #[test]
     fn detect_edge_corners() {
         let r = rect_100();
-        assert_eq!(detect_edge(&r, 2.0, 2.0), Some(ResizeEdge::TopLeft));
-        assert_eq!(detect_edge(&r, 98.0, 2.0), Some(ResizeEdge::TopRight));
-        assert_eq!(detect_edge(&r, 2.0, 98.0), Some(ResizeEdge::BottomLeft));
-        assert_eq!(detect_edge(&r, 98.0, 98.0), Some(ResizeEdge::BottomRight));
+        assert_eq!(
+            detect_resize_edge(r, 2.0, 2.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::TopLeft)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 98.0, 2.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::TopRight)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 2.0, 98.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::BottomLeft)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 98.0, 98.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::BottomRight)
+        );
     }
 
     #[test]
     fn detect_edge_sides() {
         let r = rect_100();
-        assert_eq!(detect_edge(&r, 50.0, 2.0), Some(ResizeEdge::Top));
-        assert_eq!(detect_edge(&r, 50.0, 98.0), Some(ResizeEdge::Bottom));
-        assert_eq!(detect_edge(&r, 2.0, 50.0), Some(ResizeEdge::Left));
-        assert_eq!(detect_edge(&r, 98.0, 50.0), Some(ResizeEdge::Right));
+        assert_eq!(
+            detect_resize_edge(r, 50.0, 2.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::Top)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 50.0, 98.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::Bottom)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 2.0, 50.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::Left)
+        );
+        assert_eq!(
+            detect_resize_edge(r, 98.0, 50.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            Some(ResizeEdge::Right)
+        );
     }
 
     #[test]
     fn detect_edge_inside() {
         let r = rect_100();
-        assert_eq!(detect_edge(&r, 50.0, 50.0), None);
-        assert_eq!(detect_edge(&r, 20.0, 30.0), None);
+        assert_eq!(
+            detect_resize_edge(r, 50.0, 50.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            None
+        );
+        assert_eq!(
+            detect_resize_edge(r, 20.0, 30.0, DEFAULT_RESIZE_EDGE_THRESHOLD),
+            None
+        );
     }
 
     #[test]
-    fn recognizer_rejects_interior_down() {
-        let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
-        assert!(!rec.on_pointer_down(50.0, 50.0));
+    fn recognizer_arms_after_edge_resolution() {
+        let mut rec = ResizeRecognizer::new("test".to_string(), ResizeEdge::Right);
+        assert!(rec.on_pointer_down(50.0, 50.0));
     }
 
     #[test]
-    fn recognizer_accepts_edge_down() {
-        let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
+    fn recognizer_accepts_any_down_after_edge_resolution() {
+        let mut rec = ResizeRecognizer::new("test".to_string(), ResizeEdge::TopLeft);
         assert!(rec.on_pointer_down(2.0, 2.0));
         assert!(rec.on_pointer_down(50.0, 2.0));
         assert!(rec.on_pointer_down(2.0, 50.0));
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn recognizer_pending_until_move_threshold() {
-        let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("test".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         assert_eq!(rec.on_pointer_move(2.0, 2.0), GestureDisposition::Pending);
         assert_eq!(rec.on_pointer_move(3.0, 3.0), GestureDisposition::Pending);
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn recognizer_accept_on_sufficient_move() {
-        let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("test".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         assert_eq!(
             rec.on_pointer_move(12.0, 12.0),
@@ -201,14 +201,14 @@ mod tests {
 
     #[test]
     fn recognizer_reject_on_up_without_move() {
-        let mut rec = ResizeRecognizer::new("test".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("test".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         assert_eq!(rec.on_pointer_up(2.0, 2.0), GestureDisposition::Rejected);
     }
 
     #[test]
     fn resize_start_signal() {
-        let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("panel_1".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         match rec.accept() {
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn resize_move_signal() {
-        let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("panel_1".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         let _ = rec.accept();
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn resize_end_signal() {
-        let mut rec = ResizeRecognizer::new("panel_1".to_string(), rect_100());
+        let mut rec = ResizeRecognizer::new("panel_1".to_string(), ResizeEdge::TopLeft);
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         rec.on_pointer_up(12.0, 12.0);
@@ -265,7 +265,7 @@ mod tests {
             (98.0, 50.0, ResizeEdge::Right),
         ];
         for (x, y, expected_edge) in cases {
-            let mut rec = ResizeRecognizer::new("p".to_string(), rect_100());
+            let mut rec = ResizeRecognizer::new("p".to_string(), expected_edge);
             assert!(
                 rec.on_pointer_down(x, y),
                 "down at ({}, {}) should succeed",

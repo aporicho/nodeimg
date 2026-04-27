@@ -1,7 +1,9 @@
 pub(crate) mod dropdown;
-mod text_input;
+mod text_box;
 
 pub use crate::interaction::{
     InteractionState, InteractionState as InteractionStore, WidgetVisualState,
 };
-pub use text_input::{TextFieldKind, TextInputStore};
+pub(crate) use text_box::{
+    is_text_box_props, text_box_spec, TextBoxRuntime, TextBoxStore, TextBoxValueKind,
+};

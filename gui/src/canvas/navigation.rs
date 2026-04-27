@@ -43,8 +43,8 @@ impl CanvasNavigationController {
             AppEvent::ScrollPixel {
                 delta_x, delta_y, ..
             } => {
-                // 触控板双指滑动：采用“拖动画布”语义，方向与内容滚动相反。
-                camera.pan(-delta_x, -delta_y);
+                // macOS trackpad natural scrolling: keep canvas content moving with the fingers.
+                camera.pan(delta_x, delta_y);
                 true
             }
             AppEvent::PinchZoom { x, y, delta } => {
@@ -63,5 +63,29 @@ impl CanvasNavigationController {
 impl Default for CanvasNavigationController {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pixel_scroll_pans_canvas_content_with_trackpad_delta() {
+        let mut navigation = CanvasNavigationController::new();
+        let mut camera = Camera::new();
+
+        assert!(navigation.handle_event(
+            &AppEvent::ScrollPixel {
+                x: 0.0,
+                y: 0.0,
+                delta_x: 20.0,
+                delta_y: 10.0,
+            },
+            &mut camera,
+        ));
+
+        assert_eq!(camera.x, 20.0);
+        assert_eq!(camera.y, 10.0);
     }
 }

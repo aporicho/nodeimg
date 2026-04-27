@@ -143,6 +143,18 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.hittable = Some(hittable))
     }
 
+    fn draggable(self, draggable: bool) -> Self {
+        self.map_style(|style| style.draggable = draggable)
+    }
+
+    fn resizable(self, resizable: bool) -> Self {
+        self.map_style(|style| style.resizable = resizable)
+    }
+
+    fn resize_edge_threshold(self, threshold: f32) -> Self {
+        self.map_style(|style| style.resize_edge_threshold = threshold)
+    }
+
     fn gesture(self, gesture: Gesture) -> Self {
         self.map_style(|style| style.gestures.push(gesture))
     }

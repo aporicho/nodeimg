@@ -6,6 +6,10 @@ pub enum ParamControlSpec {
     Text {
         value: String,
     },
+    TextArea {
+        value: String,
+        min_rows: usize,
+    },
     Number {
         value: f32,
         min: f32,

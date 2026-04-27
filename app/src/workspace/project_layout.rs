@@ -4,7 +4,7 @@ use gui::context::Context;
 use gui::panel::PanelLayout as GuiPanelLayout;
 use gui::renderer::Rect;
 
-pub(crate) const PROJECT_LAYOUT_VERSION: u32 = 1;
+pub(crate) const PROJECT_LAYOUT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ProjectLayout {
@@ -42,6 +42,7 @@ pub(crate) struct CanvasNodeLayout {
     pub(crate) h: f32,
     pub(crate) z_index: i32,
     pub(crate) collapsed: bool,
+    pub(crate) user_min_height: Option<f32>,
 }
 
 pub(crate) fn export_project_layout(gui: &Context, camera: &Camera) -> ProjectLayout {
@@ -133,6 +134,7 @@ impl CanvasNodeLayout {
             h: layout.rect.h,
             z_index: layout.z_index,
             collapsed: layout.collapsed,
+            user_min_height: layout.user_min_height,
         }
     }
 
@@ -147,6 +149,7 @@ impl CanvasNodeLayout {
             },
             z_index: self.z_index,
             collapsed: self.collapsed,
+            user_min_height: self.user_min_height,
         }
     }
 }
@@ -218,6 +221,7 @@ mod tests {
             },
             z_index: 9,
             collapsed: true,
+            user_min_height: Some(180.0),
         };
 
         let layout = CanvasNodeLayout::from_gui(gui_layout);
@@ -232,6 +236,7 @@ mod tests {
                 h: 96.0,
                 z_index: 9,
                 collapsed: true,
+                user_min_height: Some(180.0),
             }
         );
     }

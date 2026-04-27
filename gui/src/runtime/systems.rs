@@ -5,11 +5,12 @@ use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
 use crate::overlay::OverlaySystem;
 use crate::renderer::{Rect, TextMeasurer};
+use crate::runtime::ControlIntrinsic;
 use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::{Desc, NodeId, Tree};
-use crate::widget::state::TextInputStore;
-use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextInputSystem};
+use crate::widget::state::TextBoxStore;
+use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextBoxSystem};
 
 pub(crate) struct RuntimeSyncCx<'a> {
     pub(crate) tree: &'a mut Tree,
@@ -33,7 +34,7 @@ pub(crate) struct RuntimeEventResult {
 pub(crate) struct RuntimeSystems {
     overlay: OverlaySystem,
     dropdown: DropdownSystem,
-    text_input: TextInputSystem,
+    text_box: TextBoxSystem,
 }
 
 impl RuntimeSystems {
@@ -41,7 +42,7 @@ impl RuntimeSystems {
         Self {
             overlay: OverlaySystem::new(),
             dropdown: DropdownSystem::new(),
-            text_input: TextInputSystem::new(),
+            text_box: TextBoxSystem::new(),
         }
     }
 
@@ -50,7 +51,7 @@ impl RuntimeSystems {
     }
 
     pub(crate) fn sync_with_tree(&mut self, cx: RuntimeSyncCx<'_>) {
-        self.text_input.sync_with_tree(
+        self.text_box.sync_with_tree(
             cx.tree,
             cx.measurer,
             cx.theme,
@@ -84,7 +85,7 @@ impl RuntimeSystems {
         };
         let text_output = {
             let text_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction);
-            self.text_input.handle_event(text_cx, event)
+            self.text_box.handle_event(text_cx, event)
         };
 
         let cancel_gesture = output_has_pre_gesture_work(&dropdown_output)
@@ -109,7 +110,7 @@ impl RuntimeSystems {
     }
 
     pub(crate) fn ime_request(&self, tree: &Tree, focused: Option<NodeId>) -> ImeRequest {
-        self.text_input.ime_request(tree, focused)
+        self.text_box.ime_request(tree, focused)
     }
 
     pub(crate) fn paste_focused_text(
@@ -118,11 +119,15 @@ impl RuntimeSystems {
         focused: Option<NodeId>,
         text: &str,
     ) -> FrameworkOutput {
-        self.text_input.paste_focused_text(tree, focused, text)
+        self.text_box.paste_focused_text(tree, focused, text)
     }
 
-    pub(crate) fn text_input_store(&self) -> &TextInputStore {
-        self.text_input.store()
+    pub(crate) fn text_box_store(&self) -> &TextBoxStore {
+        self.text_box.store()
+    }
+
+    pub(crate) fn control_intrinsics(&self) -> Vec<ControlIntrinsic> {
+        self.text_box.store().control_intrinsics()
     }
 }
 

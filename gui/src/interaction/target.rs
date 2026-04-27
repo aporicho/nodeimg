@@ -5,6 +5,7 @@ use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::atoms::number_input::NumberInputProps;
 use crate::widget::atoms::radio::RadioProps;
 use crate::widget::atoms::slider::SliderProps;
+use crate::widget::atoms::text_area::TextAreaProps;
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::atoms::toggle::ToggleProps;
 use crate::widget::frameworks::collapsible::CollapsibleProps;
@@ -98,6 +99,7 @@ fn is_focusable_widget_type(widget_type: &str) -> bool {
             | "NumberInput"
             | "Radio"
             | "Slider"
+            | "TextArea"
             | "TextInput"
             | "Toggle"
     )
@@ -136,6 +138,12 @@ fn is_disabled(props: &dyn crate::widget::props::WidgetProps) -> bool {
             props
                 .as_any()
                 .downcast_ref::<RadioProps>()
+                .map(|p| p.disabled)
+        })
+        .or_else(|| {
+            props
+                .as_any()
+                .downcast_ref::<TextAreaProps>()
                 .map(|p| p.disabled)
         })
         .or_else(|| {

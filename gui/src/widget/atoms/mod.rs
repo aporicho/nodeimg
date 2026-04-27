@@ -11,6 +11,8 @@ pub mod radio;
 pub mod separator;
 pub mod slider;
 pub mod surface;
+pub mod text_area;
+pub mod text_box;
 pub mod text_input;
 pub mod toggle;
 pub mod truncated_text;

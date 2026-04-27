@@ -190,11 +190,7 @@ fn arrange_in_containing_block<T: LayoutTree>(
     let mut total_grow: f32 = 0.0;
     for (i, child_style) in child_styles.iter().enumerate() {
         let child_main = base_main_sizes[i];
-        let is_fill = if is_column {
-            matches!(child_style.height, Size::Fill)
-        } else {
-            matches!(child_style.width, Size::Fill)
-        };
+        let is_fill = is_main_fill(*child_style, is_column);
 
         if !should_shrink && (child_style.grow > 0.0 || is_fill) {
             total_grow += if child_style.grow > 0.0 {
@@ -241,11 +237,7 @@ fn arrange_in_containing_block<T: LayoutTree>(
     for (i, &child) in flow_children.iter().enumerate() {
         let child_desired = &child_sizes[i];
         let child_style = child_styles[i];
-        let is_fill = if is_column {
-            matches!(child_style.height, Size::Fill)
-        } else {
-            matches!(child_style.width, Size::Fill)
-        };
+        let is_fill = is_main_fill(child_style, is_column);
         let effective_grow = if should_shrink {
             0.0
         } else if child_style.grow > 0.0 {
@@ -361,7 +353,7 @@ fn resolve_shrink_main_sizes(
     let shrink_factors: Vec<f32> = base_sizes
         .iter()
         .zip(styles.iter())
-        .map(|(base, style)| (style.shrink.max(0.0)) * *base)
+        .map(|(base, style)| effective_shrink_factor(*style, is_column) * *base)
         .collect();
     let total_shrink_factor = shrink_factors.iter().sum::<f32>();
     if total_shrink_factor <= 0.0 {
@@ -387,6 +379,29 @@ fn resolve_shrink_main_sizes(
             (*base - shrink).clamp(min_main, max_main)
         })
         .collect()
+}
+
+fn main_axis_size(style: FlexChildStyle, is_column: bool) -> Size {
+    if is_column {
+        style.height
+    } else {
+        style.width
+    }
+}
+
+fn is_main_fill(style: FlexChildStyle, is_column: bool) -> bool {
+    matches!(main_axis_size(style, is_column), Size::Fill)
+}
+
+fn effective_shrink_factor(style: FlexChildStyle, is_column: bool) -> f32 {
+    let explicit = style.shrink.max(0.0);
+    if explicit > 0.0 {
+        explicit
+    } else if is_main_fill(style, is_column) {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]
@@ -732,6 +747,51 @@ mod tests {
 
         assert_eq!(tree.get(shrink_id).unwrap().rect.w, 60.0);
         assert_eq!(tree.get(fixed_id).unwrap().rect.w, 40.0);
+    }
+
+    #[test]
+    fn row_shrinks_fill_child_when_content_overflows() {
+        let mut tree = Tree::new();
+        let fill_id = auto_wrapper_with_fixed_child(
+            &mut tree,
+            120.0,
+            10.0,
+            BoxStyle {
+                width: Size::Fill,
+                height: Size::Fixed(10.0),
+                ..Default::default()
+            },
+        );
+        let fixed_id = tree.insert(container(BoxStyle {
+            width: Size::Fixed(40.0),
+            height: Size::Fixed(10.0),
+            ..Default::default()
+        }));
+        let mut root = container(BoxStyle {
+            width: Size::Fixed(100.0),
+            height: Size::Fixed(20.0),
+            direction: Direction::Row,
+            ..Default::default()
+        });
+        root.children = vec![fill_id, fixed_id];
+        let root_id = tree.insert(root);
+        tree.set_root(root_id);
+
+        let mut measure = no_measure;
+        arrange(
+            &mut tree,
+            root_id,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 20.0,
+            },
+            &mut measure,
+        );
+
+        assert_eq!(tree.get(fill_id).unwrap().rect.w, 60.0);
+        assert_eq!(tree.get(fixed_id).unwrap().rect.x, 60.0);
     }
 
     #[test]

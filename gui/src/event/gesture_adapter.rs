@@ -92,6 +92,39 @@ fn resize_event(
     phase: ResizePhase,
 ) -> GuiEvent {
     let owner_id = resolver.owner_id(id);
+    tracing::debug!(
+        target: "gui::gesture",
+        raw_id = %id,
+        owner_id = %owner_id,
+        edge = ?edge,
+        x,
+        y,
+        is_panel = resolver.widget_type(&owner_id) == Some("Panel"),
+        "map resize gesture signal"
+    );
+    if resolver.widget_type(&owner_id) != Some("Panel") {
+        return GuiEvent::Widget(match phase {
+            ResizePhase::Start => WidgetEvent::ResizeStart {
+                id: owner_id,
+                edge,
+                x,
+                y,
+            },
+            ResizePhase::Move => WidgetEvent::ResizeMove {
+                id: owner_id,
+                edge,
+                x,
+                y,
+            },
+            ResizePhase::End => WidgetEvent::ResizeEnd {
+                id: owner_id,
+                edge,
+                x,
+                y,
+            },
+        });
+    }
+
     GuiEvent::Panel(match phase {
         ResizePhase::Start => PanelEvent::ResizeStart {
             id: owner_id,

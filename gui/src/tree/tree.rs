@@ -10,11 +10,14 @@ use crate::panel::{
     PanelConfig, PanelLayout, PanelPointerSession, PanelResizeSession, PanelRootRuntime,
     PanelRuntime,
 };
+use crate::renderer::Rect;
 use crate::widget::resize_edge::ResizeEdge;
 use std::collections::{HashMap, HashSet};
 
 const PANEL_ROOT_ID: &str = "panel_root";
 const CANVAS_INTERACTION_ID: &str = "canvas_interaction";
+const CANVAS_NODE_MIN_WIDTH: f32 = 304.0;
+const CANVAS_NODE_MIN_HEIGHT: f32 = 132.0;
 
 /// 全局控件树存储。用 Vec<Option<>> 做 arena，索引访问。
 pub struct Tree {
@@ -246,6 +249,7 @@ impl Tree {
             runtime.rect = layout.rect;
             runtime.z_index = layout.z_index;
             runtime.collapsed = layout.collapsed;
+            runtime.user_min_height = layout.user_min_height;
         }
     }
 
@@ -258,6 +262,147 @@ impl Tree {
         runtime.rect.x += dx;
         runtime.rect.y += dy;
         true
+    }
+
+    pub(crate) fn resize_canvas_node_by(
+        &mut self,
+        owner_id: &str,
+        edge: ResizeEdge,
+        dx: f32,
+        dy: f32,
+    ) -> bool {
+        let stable_id = canvas_node_stable_id(owner_id);
+        let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
+        else {
+            tracing::debug!(
+                target: "gui::canvas::node_resize",
+                owner_id,
+                edge = ?edge,
+                dx,
+                dy,
+                "ignore canvas node resize: runtime missing"
+            );
+            return false;
+        };
+
+        let before = runtime.rect;
+        let requested_w = requested_resize_width(before, edge, dx);
+        let requested_h = requested_resize_height(before, edge, dy);
+        resize_rect_by_edge(
+            &mut runtime.rect,
+            edge,
+            dx,
+            dy,
+            CANVAS_NODE_MIN_WIDTH,
+            CANVAS_NODE_MIN_HEIGHT,
+        );
+        if is_vertical_resize_edge(edge) && runtime.rect.h != before.h {
+            runtime.user_min_height = Some(runtime.rect.h);
+        }
+        tracing::debug!(
+            target: "gui::canvas::node_resize",
+            owner_id,
+            edge = ?edge,
+            dx,
+            dy,
+            before_x = before.x,
+            before_y = before.y,
+            before_w = before.w,
+            before_h = before.h,
+            after_x = runtime.rect.x,
+            after_y = runtime.rect.y,
+            after_w = runtime.rect.w,
+            after_h = runtime.rect.h,
+            requested_w,
+            requested_h,
+            min_w = CANVAS_NODE_MIN_WIDTH,
+            min_h = CANVAS_NODE_MIN_HEIGHT,
+            clamped_w = requested_w < CANVAS_NODE_MIN_WIDTH,
+            clamped_h = requested_h < CANVAS_NODE_MIN_HEIGHT,
+            applied_dx = runtime.rect.x - before.x,
+            applied_dy = runtime.rect.y - before.y,
+            applied_dw = runtime.rect.w - before.w,
+            applied_dh = runtime.rect.h - before.h,
+            user_min_height = runtime.user_min_height,
+            "resize canvas node runtime rect"
+        );
+        true
+    }
+
+    pub(crate) fn ensure_canvas_node_min_size(
+        &mut self,
+        owner_id: &str,
+        min_width: f32,
+        min_height: f32,
+    ) -> bool {
+        let stable_id = canvas_node_stable_id(owner_id);
+        let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
+        else {
+            return false;
+        };
+
+        let next_width = runtime.rect.w.max(min_width.max(CANVAS_NODE_MIN_WIDTH));
+        let next_height = runtime.rect.h.max(min_height.max(CANVAS_NODE_MIN_HEIGHT));
+        let changed = next_width != runtime.rect.w || next_height != runtime.rect.h;
+        let before = runtime.rect;
+        runtime.rect.w = next_width;
+        runtime.rect.h = next_height;
+        tracing::debug!(
+            target: "gui::canvas::node_resize",
+            owner_id,
+            requested_min_w = min_width,
+            requested_min_h = min_height,
+            engine_min_w = CANVAS_NODE_MIN_WIDTH,
+            engine_min_h = CANVAS_NODE_MIN_HEIGHT,
+            before_w = before.w,
+            before_h = before.h,
+            after_w = runtime.rect.w,
+            after_h = runtime.rect.h,
+            changed,
+            "ensure canvas node min size"
+        );
+        changed
+    }
+
+    pub(crate) fn apply_canvas_node_sizing(
+        &mut self,
+        owner_id: &str,
+        request: crate::canvas::CanvasNodeSizingRequest,
+    ) -> bool {
+        let stable_id = canvas_node_stable_id(owner_id);
+        let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
+        else {
+            return false;
+        };
+
+        let before = runtime.rect;
+        runtime.rect.w = request
+            .target_width
+            .max(request.min_width)
+            .max(CANVAS_NODE_MIN_WIDTH);
+        runtime.rect.h = request
+            .target_height
+            .max(request.min_height)
+            .max(CANVAS_NODE_MIN_HEIGHT);
+        let changed = runtime.rect.w != before.w || runtime.rect.h != before.h;
+        tracing::debug!(
+            target: "gui::canvas::node_resize",
+            owner_id,
+            target_w = request.target_width,
+            target_h = request.target_height,
+            request_min_w = request.min_width,
+            request_min_h = request.min_height,
+            engine_min_w = CANVAS_NODE_MIN_WIDTH,
+            engine_min_h = CANVAS_NODE_MIN_HEIGHT,
+            before_w = before.w,
+            before_h = before.h,
+            after_w = runtime.rect.w,
+            after_h = runtime.rect.h,
+            user_min_height = runtime.user_min_height,
+            changed,
+            "apply canvas node absolute sizing"
+        );
+        changed
     }
 
     pub(crate) fn canvas_port_group_view(
@@ -528,6 +673,73 @@ impl Tree {
     }
 }
 
+fn resize_rect_by_edge(
+    rect: &mut Rect,
+    edge: ResizeEdge,
+    dx: f32,
+    dy: f32,
+    min_width: f32,
+    min_height: f32,
+) {
+    let right = rect.x + rect.w;
+    let bottom = rect.y + rect.h;
+
+    match edge {
+        ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => {
+            let next_x = (rect.x + dx).min(right - min_width);
+            rect.x = next_x;
+            rect.w = right - next_x;
+        }
+        ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => {
+            rect.w = (rect.w + dx).max(min_width);
+        }
+        _ => {}
+    }
+
+    match edge {
+        ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => {
+            let next_y = (rect.y + dy).min(bottom - min_height);
+            rect.y = next_y;
+            rect.h = bottom - next_y;
+        }
+        ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => {
+            rect.h = (rect.h + dy).max(min_height);
+        }
+        _ => {}
+    }
+
+    rect.w = rect.w.max(min_width);
+    rect.h = rect.h.max(min_height);
+}
+
+fn requested_resize_width(rect: Rect, edge: ResizeEdge, dx: f32) -> f32 {
+    match edge {
+        ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => rect.w - dx,
+        ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => rect.w + dx,
+        ResizeEdge::Top | ResizeEdge::Bottom => rect.w,
+    }
+}
+
+fn requested_resize_height(rect: Rect, edge: ResizeEdge, dy: f32) -> f32 {
+    match edge {
+        ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => rect.h - dy,
+        ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => rect.h + dy,
+        ResizeEdge::Left | ResizeEdge::Right => rect.h,
+    }
+}
+
+fn is_vertical_resize_edge(edge: ResizeEdge) -> bool {
+    matches!(
+        edge,
+        ResizeEdge::Top
+            | ResizeEdge::TopLeft
+            | ResizeEdge::TopRight
+            | ResizeEdge::Bottom
+            | ResizeEdge::BottomLeft
+            | ResizeEdge::BottomRight
+    )
+}
+
 impl Default for Tree {
     fn default() -> Self {
         Self::new()
@@ -666,6 +878,7 @@ mod tests {
             },
             z_index: 7,
             collapsed: true,
+            user_min_height: Some(120.0),
         }]);
 
         let layouts = tree.sync_canvas_node_layouts(&[first]);
@@ -673,11 +886,17 @@ mod tests {
         assert_eq!(layouts[0].rect.y, 90.0);
         assert_eq!(layouts[0].z_index, 7);
         assert!(layouts[0].collapsed);
+        assert_eq!(layouts[0].user_min_height, Some(120.0));
 
         assert!(tree.move_canvas_node_by("engine_node::1", 10.0, -5.0));
         let layouts = tree.export_canvas_node_layouts();
         assert_eq!(layouts[0].rect.x, 90.0);
         assert_eq!(layouts[0].rect.y, 85.0);
+
+        assert!(tree.resize_canvas_node_by("engine_node::1", ResizeEdge::Right, 80.0, 20.0));
+        let layouts = tree.export_canvas_node_layouts();
+        assert_eq!(layouts[0].rect.w, 340.0);
+        assert_eq!(layouts[0].rect.h, 132.0);
 
         let stale = tree.sync_canvas_node_layouts(&[]);
         assert!(stale.is_empty());

@@ -3,6 +3,7 @@ pub mod connection;
 mod layout;
 pub mod navigation;
 pub mod node_card;
+pub(crate) mod node_sizing;
 pub(crate) mod node_spec;
 pub(crate) mod node_style;
 pub mod node_template;
@@ -12,7 +13,11 @@ pub(crate) mod runtime;
 
 pub use connection::{connection_layer, CanvasConnectionView};
 pub use layout::{
-    canvas_node_owner_id, canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout,
+    canvas_node_event_owner_id, canvas_node_owner_id, canvas_node_stable_id, CanvasNodeIdentity,
+    CanvasNodeLayout,
+};
+pub use node_sizing::{
+    canvas_node_sizing_request, canvas_node_template_min_size, CanvasNodeSizingRequest,
 };
 pub use port::{
     canvas_port_event_target_id, canvas_port_group_stable_id, canvas_port_group_trigger_id,

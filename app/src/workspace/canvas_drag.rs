@@ -1,5 +1,5 @@
 use gui::canvas::camera::Camera;
-use gui::canvas::canvas_node_owner_id;
+use gui::canvas::canvas_node_event_owner_id;
 use gui::context::Context;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,7 +23,7 @@ impl CanvasNodeDragController {
         x: f32,
         y: f32,
     ) -> bool {
-        let Some(owner_id) = canvas_node_owner_id(stable_id) else {
+        let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
             return false;
         };
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
@@ -43,7 +43,7 @@ impl CanvasNodeDragController {
         x: f32,
         y: f32,
     ) -> bool {
-        let Some(owner_id) = canvas_node_owner_id(stable_id) else {
+        let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
             return false;
         };
         let Some(active) = self.active.as_mut() else {
@@ -69,7 +69,7 @@ impl CanvasNodeDragController {
         x: f32,
         y: f32,
     ) -> bool {
-        let Some(owner_id) = canvas_node_owner_id(stable_id) else {
+        let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
             return false;
         };
         let Some(active) = self.active.as_mut() else {

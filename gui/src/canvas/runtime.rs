@@ -11,6 +11,7 @@ pub(crate) struct CanvasNodeRuntime {
     pub(crate) rect: Rect,
     pub(crate) z_index: i32,
     pub(crate) collapsed: bool,
+    pub(crate) user_min_height: Option<f32>,
 }
 
 impl CanvasNodeRuntime {
@@ -20,6 +21,7 @@ impl CanvasNodeRuntime {
             rect: identity.default_rect,
             z_index,
             collapsed: false,
+            user_min_height: None,
         }
     }
 
@@ -29,6 +31,7 @@ impl CanvasNodeRuntime {
             rect: self.rect,
             z_index: self.z_index,
             collapsed: self.collapsed,
+            user_min_height: self.user_min_height,
         }
     }
 }
@@ -45,6 +48,7 @@ impl Default for CanvasNodeRuntime {
             },
             z_index: 0,
             collapsed: false,
+            user_min_height: None,
         }
     }
 }

@@ -1,4 +1,3 @@
-use crate::gesture::Gesture;
 use crate::icon::names;
 use crate::renderer::{Border, Color, Rect, Shadow, TextStyle};
 use crate::tree::layout::{Align, LeafKind, Overflow, Size};
@@ -131,9 +130,7 @@ impl WidgetProps for PanelProps {
                 .background(visual.titlebar_background)
                 .radius([tokens.radius, tokens.radius, 0.0, 0.0])
                 .children(titlebar_children);
-            if self.draggable {
-                titlebar = titlebar.gesture(Gesture::Drag);
-            }
+            titlebar = titlebar.draggable(self.draggable);
             titlebar.build()
         });
 
@@ -173,9 +170,7 @@ impl WidgetProps for PanelProps {
                 spread: 1.0,
             })
             .children(titlebar.into_iter().chain(std::iter::once(content_area)));
-        if self.resizable {
-            root = root.gesture(Gesture::Resize);
-        }
+        root = root.resizable(self.resizable);
         root.build()
     }
 }
@@ -187,7 +182,6 @@ fn rect_eq(a: Rect, b: Rect) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gesture::Gesture;
     use crate::renderer::{Color, Rect, TextStyle};
     use crate::theme::{dark_theme, Theme};
     use crate::tree::layout::{LeafKind, Position, Size};
@@ -286,10 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn build_outer_has_resize_gesture() {
+    fn build_outer_declares_resizable() {
         let theme = dark_theme();
         let build = sample_props().build("test", &build_cx(&theme));
-        assert_eq!(build.style.gestures, vec![Gesture::Resize]);
+        assert!(build.style.resizable);
+        assert!(build.style.gestures.is_empty());
     }
 
     #[test]
@@ -331,12 +326,13 @@ mod tests {
     }
 
     #[test]
-    fn build_titlebar_has_drag_gesture() {
+    fn build_titlebar_declares_draggable() {
         let theme = dark_theme();
         let build = sample_props().build("test", &build_cx(&theme));
         match &build.children[0] {
             Desc::Container { style, .. } => {
-                assert_eq!(style.gestures, vec![Gesture::Drag]);
+                assert!(style.draggable);
+                assert!(style.gestures.is_empty());
                 match style.height {
                     Size::Fixed(h) => assert_eq!(h, theme.components.panel.title_bar_height),
                     other => panic!("expected Fixed titlebar height, got {:?}", other),
@@ -499,15 +495,10 @@ mod tests {
         let (tree, root) = build_tree_for_hit(sample_props());
         let chain = hit_test(&tree, root, 100.0, 30.0);
         assert!(!chain.is_empty(), "hit chain should not be empty");
-        let has_drag = chain.iter().any(|id| {
-            tree.get(id)
-                .map(|n| n.style.gestures.contains(&Gesture::Drag))
-                .unwrap_or(false)
-        });
-        assert!(
-            has_drag,
-            "hit chain should contain a node with Drag gesture"
-        );
+        let has_drag = chain
+            .iter()
+            .any(|id| tree.get(id).map(|n| n.style.draggable).unwrap_or(false));
+        assert!(has_drag, "hit chain should contain a draggable node");
     }
 
     #[test]
@@ -516,14 +507,9 @@ mod tests {
         let (tree, root) = build_tree_for_hit(sample_props());
         let chain = hit_test(&tree, root, 310.0, 220.0);
         assert!(!chain.is_empty(), "hit chain should not be empty");
-        let has_resize = chain.iter().any(|id| {
-            tree.get(id)
-                .map(|n| n.style.gestures.contains(&Gesture::Resize))
-                .unwrap_or(false)
-        });
-        assert!(
-            has_resize,
-            "hit chain should contain a node with Resize gesture"
-        );
+        let has_resize = chain
+            .iter()
+            .any(|id| tree.get(id).map(|n| n.style.resizable).unwrap_or(false));
+        assert!(has_resize, "hit chain should contain a resizable node");
     }
 }

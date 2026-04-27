@@ -5,6 +5,7 @@ mod diff;
 mod hit;
 mod hit_shape;
 mod id;
+mod interaction_hit;
 pub mod layout;
 mod layout_adapter;
 mod node;
@@ -16,6 +17,7 @@ mod props;
 mod runtime_policy;
 mod runtime_slots;
 mod scroll;
+mod shape;
 mod stacking;
 pub(crate) mod text_layout;
 #[allow(clippy::module_inception)]
@@ -23,8 +25,10 @@ mod tree;
 
 pub use desc::Desc;
 pub use diff::reconcile;
+pub(crate) use hit::screen_to_node_layout_point;
 pub use hit::{hit_test, hit_test_with_animations, HitChain};
 pub use id::{NodeId, StableId, TreeNodeId};
+pub(crate) use interaction_hit::{resize_hit_at_screen_point, ResizeHit};
 pub use layout::layout;
 pub use node::{AnimationRuntime, LayoutRuntime, NodeKind, NodeLocalRuntime, TreeNode};
 pub(crate) use paint::{build_display_list, PaintCx};

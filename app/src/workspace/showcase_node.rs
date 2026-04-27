@@ -10,6 +10,7 @@ use gui::widget::mapping::ParamControlSpec;
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
 pub(crate) const SOLO_OWNER_ID: &str = "showcase_node::solo_control";
+pub(crate) const TEXT_AREA_OWNER_ID: &str = "showcase_node::text_area_control";
 
 pub(crate) fn showcase_node_identity() -> CanvasNodeIdentity {
     CanvasNodeIdentity {
@@ -35,16 +36,30 @@ pub(crate) fn solo_node_identity() -> CanvasNodeIdentity {
     }
 }
 
-pub(crate) fn is_showcase_node(owner_id: &str) -> bool {
-    owner_id == SHOWCASE_OWNER_ID || owner_id == SOLO_OWNER_ID
+pub(crate) fn text_area_node_identity() -> CanvasNodeIdentity {
+    CanvasNodeIdentity {
+        owner_id: TEXT_AREA_OWNER_ID.to_string(),
+        default_rect: Rect {
+            x: -1040.0,
+            y: 180.0,
+            w: 304.0,
+            h: 180.0,
+        },
+    }
 }
 
-pub(crate) fn showcase_render_view_for_layout(
+pub(crate) fn is_showcase_node(owner_id: &str) -> bool {
+    owner_id == SHOWCASE_OWNER_ID || owner_id == SOLO_OWNER_ID || owner_id == TEXT_AREA_OWNER_ID
+}
+
+pub(crate) fn showcase_render_view_for_layout_with_text(
     layout: CanvasNodeLayout,
+    text_area_value: &str,
 ) -> Option<CanvasNodeRenderView> {
     let template = match layout.owner_id.as_str() {
         SHOWCASE_OWNER_ID => showcase_node_template(),
         SOLO_OWNER_ID => solo_node_template(),
+        TEXT_AREA_OWNER_ID => text_area_node_template(text_area_value),
         _ => return None,
     };
     let state = showcase_instance_state(&template, layout);
@@ -173,6 +188,27 @@ pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
     }
 }
 
+pub(crate) fn text_area_node_template(value: &str) -> CanvasNodeTemplate {
+    CanvasNodeTemplate {
+        type_id: "showcase_node::text_area_control".to_string(),
+        title: "Text Area".to_string(),
+        subtitle: "single text area control".to_string(),
+        category: "ui/showcase".to_string(),
+        params: vec![CanvasNodeParamTemplate::new(
+            "Prompt",
+            "",
+            "",
+            "",
+            ParamControlSpec::TextArea {
+                value: value.to_string(),
+                min_rows: 5,
+            },
+        )],
+        inputs: Vec::new(),
+        outputs: Vec::new(),
+    }
+}
+
 fn showcase_ports(side: CanvasPortSide, names: &[&str]) -> Vec<CanvasNodePortTemplate> {
     names
         .iter()
@@ -248,12 +284,16 @@ mod tests {
     #[test]
     fn solo_node_contains_one_tunable_control() {
         let identity = solo_node_identity();
-        let view = showcase_render_view_for_layout(CanvasNodeLayout {
-            owner_id: identity.owner_id,
-            rect: identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-        })
+        let view = showcase_render_view_for_layout_with_text(
+            CanvasNodeLayout {
+                owner_id: identity.owner_id,
+                rect: identity.default_rect,
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            },
+            "A compact text field",
+        )
         .expect("solo render view");
 
         assert_eq!(view.state.owner_id, SOLO_OWNER_ID);
@@ -264,5 +304,32 @@ mod tests {
         ));
         assert_eq!(view.template.inputs.len(), 1);
         assert_eq!(view.template.outputs.len(), 1);
+    }
+
+    #[test]
+    fn text_area_node_contains_only_one_text_area_control() {
+        let identity = text_area_node_identity();
+        let view = showcase_render_view_for_layout_with_text(
+            CanvasNodeLayout {
+                owner_id: identity.owner_id,
+                rect: identity.default_rect,
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            },
+            "A compact text field",
+        )
+        .expect("text area render view");
+
+        assert_eq!(view.state.owner_id, TEXT_AREA_OWNER_ID);
+        assert_eq!(view.template.params.len(), 1);
+        assert!(matches!(
+            view.template.params[0].control,
+            ParamControlSpec::TextArea { min_rows: 5, .. }
+        ));
+        assert!(view.template.params[0].name.is_empty());
+        assert!(view.template.params[0].default_value.is_empty());
+        assert!(view.template.inputs.is_empty());
+        assert!(view.template.outputs.is_empty());
     }
 }

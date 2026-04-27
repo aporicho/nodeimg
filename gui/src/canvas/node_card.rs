@@ -22,6 +22,19 @@ pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) ->
 
 pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc {
     let metrics = spec.metrics;
+    tracing::debug!(
+        target: "gui::canvas::node_resize",
+        owner_id = %spec.layout.owner_id,
+        card_id = %spec.card_id,
+        layout_x = spec.layout.rect.x,
+        layout_y = spec.layout.rect.y,
+        layout_w = spec.layout.rect.w,
+        layout_h = spec.layout.rect.h,
+        metrics_w = metrics.card_width,
+        metrics_h = metrics.card_height,
+        resizable = true,
+        "build canvas node card"
+    );
     let children = vec![
         pin_column(
             &spec.input_column_id,
@@ -34,13 +47,14 @@ pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc 
         ui::column(Cow::Owned(spec.card_id.clone()))
             .relative()
             .fixed_width(metrics.card_width)
-            .auto_height()
+            .fixed_height(metrics.card_height)
             .padding_all(metrics.card_padding)
             .justify_content(Justify::Start)
             .align_items(Align::Start)
             .gap(metrics.row_gap)
             .overflow(Overflow::Visible)
             .hittable(true)
+            .resizable(true)
             .background(theme.colors.surface)
             .border(Border {
                 width: if spec.selected { 2.0 } else { 1.0 },
@@ -78,7 +92,7 @@ pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc 
         .overflow(Overflow::Visible)
         .hittable(true)
         .gesture(Gesture::Tap)
-        .gesture(Gesture::Drag)
+        .draggable(true)
         .children(children)
         .build()
 }
@@ -242,7 +256,8 @@ fn node_body(
 ) -> Desc {
     ui::column(Cow::Owned(body.id.clone()))
         .fill_width()
-        .auto_height()
+        .fill_height()
+        .flex_grow(1.0)
         .gap(metrics.row_gap)
         .children(
             body.rows
@@ -255,62 +270,43 @@ fn node_body(
 
 fn body_row_from_spec(row: &NodeBodyRowSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     match row {
-        NodeBodyRowSpec::Summary { id, text_id, text } => body_row(id.clone(), theme, metrics)
-            .child(
-                ui::leaf(
-                    text_id.clone(),
-                    LeafKind::Text {
-                        content: text.clone(),
-                        style: theme.text_style_label_sm(),
-                        layout: ellipsis_text_layout(),
-                    },
+        NodeBodyRowSpec::Summary { id, text_id, text } => {
+            body_row(id.clone(), theme, metrics, false)
+                .child(
+                    ui::leaf(
+                        text_id.clone(),
+                        LeafKind::Text {
+                            content: text.clone(),
+                            style: theme.text_style_label_sm(),
+                            layout: ellipsis_text_layout(),
+                        },
+                    )
+                    .fill_width()
+                    .auto_height()
+                    .flex_shrink(1.0),
                 )
-                .fill_width()
-                .auto_height()
-                .flex_shrink(1.0),
-            )
-            .build(),
+                .build()
+        }
         NodeBodyRowSpec::Param {
             id,
-            name_id,
-            value_id,
             control_id,
-            name,
-            value,
             control,
-        } => body_row(id.clone(), theme, metrics)
-            .children(vec![
-                ui::leaf(
-                    name_id.clone(),
-                    LeafKind::Text {
-                        content: name.clone(),
-                        style: theme.text_style_label_sm(),
-                        layout: ellipsis_text_layout(),
-                    },
-                )
-                .fill_width()
-                .auto_height()
-                .flex_shrink(1.0)
-                .build(),
-                ui::leaf(
-                    value_id.clone(),
-                    LeafKind::Text {
-                        content: value.clone(),
-                        style: theme.text_style_label_sm(),
-                        layout: ellipsis_text_layout(),
-                    },
-                )
-                .auto_width()
-                .auto_height()
-                .build(),
-                param_control(
-                    Cow::Owned(control_id.clone()),
-                    control,
-                    theme,
-                    metrics.control,
-                ),
-            ])
-            .build(),
+        } => body_row(
+            id.clone(),
+            theme,
+            metrics,
+            matches!(
+                control,
+                crate::widget::mapping::ParamControlSpec::TextArea { .. }
+            ),
+        )
+        .child(param_control(
+            Cow::Owned(control_id.clone()),
+            control,
+            theme,
+            metrics.control,
+        ))
+        .build(),
     }
 }
 
@@ -355,15 +351,20 @@ fn body_row(
     id: impl Into<Cow<'static, str>>,
     theme: &Theme,
     metrics: NodeCardMetrics,
+    auto_height: bool,
 ) -> ui::ContainerBuilder {
-    ui::row(id)
+    let row = ui::row(id)
         .fill_width()
-        .fixed_height(metrics.param_row_height)
         .justify_content(Justify::Start)
         .align_items(Align::Center)
         .gap(metrics.param_label_gap)
         .background(theme.colors.canvas_bg)
-        .radius_all(metrics.row_radius)
+        .radius_all(metrics.row_radius);
+    if auto_height {
+        row.fill_height().flex_grow(1.0)
+    } else {
+        row.fixed_height(metrics.param_row_height)
+    }
 }
 
 fn ellipsis_text_layout() -> TextLayout {
@@ -419,10 +420,14 @@ mod tests {
         CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodePortState,
         CanvasNodePortTemplate, CanvasNodeTemplate,
     };
-    use crate::renderer::Rect;
+    use crate::gesture::arena_from_resize_hit;
+    use crate::gesture::GestureSignal;
+    use crate::renderer::{Rect, TextMeasurer};
     use crate::theme::light_theme;
     use crate::tree::layout::{Direction, Edges, Position, Size};
+    use crate::tree::{hit_test, layout, reconcile, resize_hit_at_screen_point, Tree};
     use crate::widget::mapping::ParamControlSpec;
+    use crate::widget::props::WidgetBuildCx;
 
     #[test]
     fn node_card_uses_canvas_node_stable_id() {
@@ -433,13 +438,13 @@ mod tests {
     }
 
     #[test]
-    fn node_card_declares_drag_gesture() {
+    fn node_card_declares_draggable_root() {
         let Desc::Container { style, .. } =
             node_card_from_render_view(&node_render_view(false, false), &light_theme())
         else {
             panic!("node card should build a container");
         };
-        assert!(style.gestures.contains(&Gesture::Drag));
+        assert!(style.draggable);
     }
 
     #[test]
@@ -531,11 +536,12 @@ mod tests {
         };
         assert_eq!(card_style.position, Position::relative());
         assert_eq!(card_style.width, Size::Fixed(metrics.card_width));
-        assert_eq!(card_style.height, Size::Auto);
+        assert_eq!(card_style.height, Size::Fixed(metrics.card_height));
         assert_eq!(card_style.padding, Edges::all(metrics.card_padding));
         assert_eq!(card_style.direction, Direction::Column);
         assert_eq!(card_style.gap, metrics.row_gap);
         assert_eq!(card_style.overflow, Overflow::Visible);
+        assert!(card_style.resizable);
         assert_eq!(
             decoration.as_ref().unwrap().radius,
             [metrics.card_radius; 4]
@@ -738,6 +744,72 @@ mod tests {
     }
 
     #[test]
+    fn node_card_param_rows_render_only_the_control() {
+        let theme = light_theme();
+        let Desc::Container { children, .. } =
+            node_card_from_render_view(&node_render_view(false, true), &theme)
+        else {
+            panic!("node card should build a container");
+        };
+        let param = find_desc(&children[1], "canvas_node::engine_node::7::body::param::0")
+            .expect("card body should contain the first param row");
+        let Desc::Container {
+            children: row_children,
+            ..
+        } = param
+        else {
+            panic!("param row should be a container");
+        };
+
+        assert_eq!(row_children.len(), 1);
+        assert_eq!(
+            row_children[0].id(),
+            "canvas_node::engine_node::7::body::param::0::control"
+        );
+        assert!(find_desc(param, "canvas_node::engine_node::7::body::param::0::name").is_none());
+        assert!(find_desc(param, "canvas_node::engine_node::7::body::param::0::value").is_none());
+    }
+
+    #[test]
+    fn node_card_text_area_rows_fill_card_body_height() {
+        let theme = light_theme();
+        let mut view = node_render_view(false, false);
+        view.template.params = vec![CanvasNodeParamTemplate::new(
+            "prompt",
+            "prompt",
+            "string",
+            "text",
+            ParamControlSpec::TextArea {
+                value: "line".to_string(),
+                min_rows: 5,
+            },
+        )];
+        view.state.layout.rect.h = 240.0;
+
+        let Desc::Container { children, .. } = node_card_from_render_view(&view, &theme) else {
+            panic!("node card should build a container");
+        };
+        let body = find_desc(&children[1], "canvas_node::engine_node::7::body")
+            .expect("card should contain a body");
+        let Desc::Container {
+            style: body_style, ..
+        } = body
+        else {
+            panic!("body should be a container");
+        };
+        assert_eq!(body_style.height, Size::Fill);
+        assert_eq!(body_style.flex_grow, 1.0);
+
+        let param = find_desc(&children[1], "canvas_node::engine_node::7::body::param::0")
+            .expect("card body should contain the text area param row");
+        let Desc::Container { style, .. } = param else {
+            panic!("param row should be a container");
+        };
+        assert_eq!(style.height, Size::Fill);
+        assert_eq!(style.flex_grow, 1.0);
+    }
+
+    #[test]
     fn node_card_from_render_view_matches_explicit_spec_builder() {
         let theme = light_theme();
         let view = node_render_view(true, true);
@@ -770,6 +842,60 @@ mod tests {
             .map(|child| child.id().to_string())
             .collect::<Vec<_>>();
         assert_eq!(facade_ids, explicit_ids);
+    }
+
+    #[test]
+    fn node_card_edge_resize_survives_internal_widget_hit_chain() {
+        let theme = light_theme();
+        let desc = node_card_from_render_view(&node_render_view(false, true), &theme);
+        let mut tree = Tree::new();
+        reconcile(
+            &mut tree,
+            desc,
+            WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+        let root = tree.root().expect("root");
+        let mut measurer = TextMeasurer::new();
+        layout(
+            &mut tree,
+            root,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 1000.0,
+                h: 1000.0,
+            },
+            &mut |text, style| measurer.measure_with_style(text, style),
+        );
+        let card = tree
+            .iter()
+            .find_map(|(_, node)| {
+                (node.id.as_ref() == "canvas_node::engine_node::7::card").then_some(node.rect)
+            })
+            .expect("card rect");
+        let x = card.x + card.w - 2.0;
+        let y = card.y + card.h - 2.0;
+        let chain = hit_test(&tree, root, x, y);
+        assert!(chain.iter().any(|id| {
+            tree.get(id)
+                .is_some_and(|node| node.id.as_ref() == "canvas_node::engine_node::7::card")
+        }));
+
+        let hit = resize_hit_at_screen_point(&tree, root, x, y, None).expect("resize hit");
+        let mut arena = arena_from_resize_hit(&tree, hit, x, y).expect("resize arena");
+        let signal = arena
+            .pointer_move(x + 12.0, y + 12.0)
+            .expect("resize start");
+
+        match signal {
+            GestureSignal::ResizeStart { id, .. } => {
+                assert_eq!(id, "canvas_node::engine_node::7::card");
+            }
+            other => panic!("expected resize start, got {:?}", other),
+        }
     }
 
     fn node_render_view(include_ports: bool, include_params: bool) -> CanvasNodeRenderView {
@@ -834,6 +960,7 @@ mod tests {
                     },
                     z_index: 0,
                     collapsed: false,
+                    user_min_height: None,
                 },
                 selected: false,
                 input_group: Default::default(),

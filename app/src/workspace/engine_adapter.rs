@@ -681,6 +681,7 @@ mod tests {
                 },
                 z_index: 7,
                 collapsed: false,
+                user_min_height: None,
             }],
             &mut template_cache,
         );
@@ -732,6 +733,7 @@ mod tests {
                 },
                 z_index: 0,
                 collapsed: false,
+                user_min_height: None,
             },
             1,
             5,

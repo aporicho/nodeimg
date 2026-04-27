@@ -7,6 +7,7 @@ use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
 use crate::renderer::Color;
 use crate::theme::Theme;
 use crate::widget::mapping::ParamControlSpec;
+use crate::widget::param_control::param_control_min_height;
 
 #[derive(Debug, Clone)]
 pub(crate) struct NodeRenderSpec {
@@ -56,11 +57,7 @@ pub(crate) enum NodeBodyRowSpec {
     },
     Param {
         id: String,
-        name_id: String,
-        value_id: String,
         control_id: String,
-        name: String,
-        value: String,
         control: ParamControlSpec,
     },
 }
@@ -80,9 +77,13 @@ pub(crate) fn node_render_spec(
     state: &CanvasNodeInstanceState,
     theme: &Theme,
 ) -> NodeRenderSpec {
-    let metrics = NodeCardMetrics::from_theme(theme);
+    let mut metrics = NodeCardMetrics::for_layout(theme, state.layout.rect);
     let id = canvas_node_stable_id(&state.owner_id);
     let body_id = format!("{id}::body");
+    let rows = body_rows(&body_id, template);
+    metrics.card_height = metrics
+        .card_height
+        .max(node_content_min_height(&rows, metrics, theme));
 
     NodeRenderSpec {
         id: id.clone(),
@@ -103,7 +104,7 @@ pub(crate) fn node_render_spec(
         },
         body: NodeBodySpec {
             id: body_id.clone(),
-            rows: body_rows(&body_id, template),
+            rows,
         },
         inputs: template
             .inputs
@@ -129,6 +130,28 @@ pub(crate) fn node_render_spec(
                 )
             })
             .collect(),
+    }
+}
+
+fn node_content_min_height(
+    rows: &[NodeBodyRowSpec],
+    metrics: NodeCardMetrics,
+    theme: &Theme,
+) -> f32 {
+    let body_height = rows
+        .iter()
+        .map(|row| row_min_height(row, metrics, theme))
+        .sum::<f32>()
+        + metrics.row_gap * rows.len().saturating_sub(1) as f32;
+    body_height + metrics.card_padding * 2.0
+}
+
+fn row_min_height(row: &NodeBodyRowSpec, metrics: NodeCardMetrics, theme: &Theme) -> f32 {
+    match row {
+        NodeBodyRowSpec::Param { control, .. } => {
+            param_control_min_height(control, theme, metrics.control).max(metrics.param_row_height)
+        }
+        _ => metrics.param_row_height,
     }
 }
 
@@ -179,16 +202,8 @@ fn body_rows(body_id: &str, template: &CanvasNodeTemplate) -> Vec<NodeBodyRowSpe
         .map(|(index, param)| {
             let id = format!("{body_id}::param::{index}");
             NodeBodyRowSpec::Param {
-                name_id: format!("{id}::name"),
-                value_id: format!("{id}::value"),
                 control_id: format!("{id}::control"),
                 id,
-                name: param.name.clone(),
-                value: if param.default_value.is_empty() {
-                    param.kind.clone()
-                } else {
-                    param.default_value.clone()
-                },
                 control: param.control.clone(),
             }
         })
@@ -267,16 +282,28 @@ mod tests {
     }
 
     #[test]
-    fn param_value_falls_back_to_kind_when_empty() {
+    fn param_row_spec_only_carries_the_control_binding() {
         let (mut template, state) = template_and_state_with_ports();
+        template.params[0].name = "Prompt".to_string();
+        template.params[0].kind = "string".to_string();
         template.params[0].default_value.clear();
 
         let spec = node_render_spec(&template, &state, &light_theme());
 
-        let NodeBodyRowSpec::Param { value, .. } = &spec.body.rows[0] else {
+        let NodeBodyRowSpec::Param {
+            id,
+            control_id,
+            control,
+        } = &spec.body.rows[0]
+        else {
             panic!("expected param row");
         };
-        assert_eq!(value, "string");
+        assert_eq!(id, "canvas_node::engine_node::7::body::param::0");
+        assert_eq!(
+            control_id,
+            "canvas_node::engine_node::7::body::param::0::control"
+        );
+        assert!(matches!(control, ParamControlSpec::ReadOnly { .. }));
     }
 
     #[test]
@@ -347,6 +374,7 @@ mod tests {
                 },
                 z_index: 0,
                 collapsed: false,
+                user_min_height: None,
             },
             input_group: Default::default(),
             output_group: Default::default(),

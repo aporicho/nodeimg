@@ -1,7 +1,8 @@
 use crate::animation::AnimationStore;
 use crate::interaction::InteractionState;
 use crate::overlay::{OverlayRequest, OverlaySystem};
-use crate::tree::{hit_test_with_animations, HitChain, NodeId, NodeKind, Tree};
+use crate::renderer::Point;
+use crate::tree::{hit_test_with_animations, HitChain, NodeId, Tree};
 use crate::widget::state::dropdown::DropdownRuntime;
 
 pub(crate) struct SystemCx<'a> {
@@ -46,16 +47,20 @@ impl<'a> SystemCx<'a> {
         self.tree.get(node_id).map(|node| node.id.as_ref())
     }
 
-    pub(crate) fn widget_type(&self, node_id: NodeId) -> Option<&'static str> {
-        let node = self.tree.get(node_id)?;
-        let NodeKind::Widget(props) = &node.kind else {
-            return None;
-        };
-        Some(props.widget_type())
+    pub(crate) fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
+        self.tree
+            .iter()
+            .find_map(|(node_id, node)| (node.id.as_ref() == id).then_some(node_id))
     }
 
-    pub(crate) fn is_widget_type(&self, node_id: NodeId, widget_type: &str) -> bool {
-        self.widget_type(node_id) == Some(widget_type)
+    pub(crate) fn screen_to_node_layout_point(
+        &self,
+        node_id: NodeId,
+        x: f32,
+        y: f32,
+    ) -> Option<Point> {
+        let root = self.tree.root()?;
+        crate::tree::screen_to_node_layout_point(self.tree, root, node_id, x, y, self.animations)
     }
 
     pub(crate) fn blur(&mut self) {

@@ -55,6 +55,9 @@ mod tests {
             .absolute_xy(7.0, 8.0)
             .z_index(9)
             .hittable(true)
+            .draggable(true)
+            .resizable(true)
+            .resize_edge_threshold(14.0)
             .build()
         else {
             panic!("expected container");
@@ -77,6 +80,9 @@ mod tests {
         assert_eq!(style.position, Position::absolute_xy(7.0, 8.0));
         assert_eq!(style.z_index, 9);
         assert_eq!(style.hittable, Some(true));
+        assert!(style.draggable);
+        assert!(style.resizable);
+        assert_eq!(style.resize_edge_threshold, 14.0);
     }
 
     #[test]

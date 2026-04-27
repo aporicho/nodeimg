@@ -16,15 +16,60 @@ pub enum GuiEvent {
 
 #[derive(Debug, Clone)]
 pub enum WidgetEvent {
-    Click { id: String },
-    DoubleClick { id: String },
-    LongPress { id: String },
-    TextChanged { id: String, value: String },
-    NumberChanged { id: String, value: f32 },
-    SelectionChanged { id: String, selected: usize },
-    DragStart { id: String, x: f32, y: f32 },
-    DragMove { id: String, x: f32, y: f32 },
-    DragEnd { id: String, x: f32, y: f32 },
+    Click {
+        id: String,
+    },
+    DoubleClick {
+        id: String,
+    },
+    LongPress {
+        id: String,
+    },
+    TextChanged {
+        id: String,
+        value: String,
+    },
+    NumberChanged {
+        id: String,
+        value: f32,
+    },
+    SelectionChanged {
+        id: String,
+        selected: usize,
+    },
+    DragStart {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    DragMove {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    DragEnd {
+        id: String,
+        x: f32,
+        y: f32,
+    },
+    ResizeStart {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    ResizeMove {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    ResizeEnd {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -16,10 +16,11 @@ use crate::shell::AppEvent;
 use crate::theme::Theme;
 use crate::tree::layout::TextureHandle;
 use crate::tree::{
-    build_display_list, hit_test_with_animations, layout, reconcile, Desc, HitChain, NodeId,
-    NodeKind, Tree,
+    build_display_list, hit_test_with_animations, layout, reconcile, resize_hit_at_screen_point,
+    Desc, HitChain, NodeId, NodeKind, Tree,
 };
 use crate::widget::props::WidgetBuildCx;
+use crate::widget::resize_edge::ResizeEdge;
 
 pub use crate::output::{
     FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
@@ -102,7 +103,7 @@ impl Context {
                 root,
                 crate::tree::PaintCx {
                     interaction: Some(&self.interaction),
-                    text_inputs: Some(self.systems.text_input_store()),
+                    text_boxes: Some(self.systems.text_box_store()),
                     animations: Some(&self.animations),
                     theme,
                 },
@@ -214,6 +215,38 @@ impl Context {
 
     pub fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
         self.tree.move_canvas_node_by(owner_id, dx, dy)
+    }
+
+    pub fn resize_canvas_node_by(
+        &mut self,
+        owner_id: &str,
+        edge: crate::widget::resize_edge::ResizeEdge,
+        dx: f32,
+        dy: f32,
+    ) -> bool {
+        self.tree.resize_canvas_node_by(owner_id, edge, dx, dy)
+    }
+
+    pub fn ensure_canvas_node_min_size(
+        &mut self,
+        owner_id: &str,
+        min_width: f32,
+        min_height: f32,
+    ) -> bool {
+        self.tree
+            .ensure_canvas_node_min_size(owner_id, min_width, min_height)
+    }
+
+    pub fn apply_canvas_node_sizing(
+        &mut self,
+        owner_id: &str,
+        request: crate::canvas::CanvasNodeSizingRequest,
+    ) -> bool {
+        self.tree.apply_canvas_node_sizing(owner_id, request)
+    }
+
+    pub fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.systems.control_intrinsics()
     }
 
     pub fn canvas_port_group_view(
@@ -335,21 +368,73 @@ impl Context {
             .unwrap_or(false)
     }
 
-    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&'static str> {
-        let node_name = self.node_name(node_id)?;
-        let root_name = node_name.split("::").next()?;
-        let root_id = self.node_id_by_name(root_name)?;
-        let root_node = self.tree.get(root_id)?;
-        let NodeKind::Widget(props) = &root_node.kind else {
+    pub fn node_is_draggable(&self, node_id: NodeId) -> bool {
+        self.tree
+            .get(node_id)
+            .map(|node| node.style.draggable)
+            .unwrap_or(false)
+    }
+
+    pub fn node_is_resizable(&self, node_id: NodeId) -> bool {
+        self.tree
+            .get(node_id)
+            .map(|node| node.style.resizable)
+            .unwrap_or(false)
+    }
+
+    pub fn resize_hit_at_screen_point(&self, x: f32, y: f32) -> Option<(NodeId, ResizeEdge)> {
+        let Some(root) = self.tree.root() else {
+            tracing::debug!(
+                target: "gui::canvas::node_resize",
+                x,
+                y,
+                "query resize edge at screen point: root missing"
+            );
             return None;
         };
-        Some(props.widget_type())
+        let hit = resize_hit_at_screen_point(&self.tree, root, x, y, Some(&self.animations));
+        let root_node = self.tree.get(root).map(|node| node.id.to_string());
+        let hit_node =
+            hit.and_then(|hit| self.tree.get(hit.node_id).map(|node| node.id.to_string()));
+        tracing::debug!(
+            target: "gui::canvas::node_resize",
+            x,
+            y,
+            root_node = root_node.as_deref(),
+            hit_node = hit_node.as_deref(),
+            edge = ?hit.map(|hit| hit.edge),
+            "query resize edge at screen point"
+        );
+        hit.map(|hit| (hit.node_id, hit.edge))
+    }
+
+    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&'static str> {
+        let mut candidate = self.node_name(node_id)?;
+
+        loop {
+            if let Some(root_id) = self.node_id_by_name(candidate) {
+                if let Some(root_node) = self.tree.get(root_id) {
+                    if let NodeKind::Widget(props) = &root_node.kind {
+                        return Some(props.widget_type());
+                    }
+                }
+            }
+
+            let (prefix, _) = candidate.rsplit_once("::")?;
+            candidate = prefix;
+        }
     }
 
     pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
         self.node_name(node_id)
             .is_some_and(|id| id.ends_with("::field"))
             && self.node_root_widget_type(node_id) == Some("TextInput")
+    }
+
+    pub fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
+        self.node_name(node_id)
+            .is_some_and(|id| id.ends_with("::field"))
+            && self.node_root_widget_type(node_id) == Some("TextArea")
     }
 
     pub fn focused_node(&self) -> Option<NodeId> {
@@ -441,13 +526,14 @@ mod tests {
     use super::*;
     use crate::renderer::TextMeasurer;
     use crate::shell::{Key, Modifiers, MouseButton};
-    use crate::theme::dark_theme;
+    use crate::theme::{dark_theme, Theme};
     use crate::ui::{self, StyleBuilder};
     use crate::widget::atoms::button::ButtonProps;
     use crate::widget::atoms::dropdown::DropdownProps;
     use crate::widget::atoms::label::{LabelProps, LabelVariant};
     use crate::widget::atoms::number_input::NumberInputProps;
     use crate::widget::atoms::slider::SliderProps;
+    use crate::widget::atoms::text_area::TextAreaProps;
     use crate::widget::atoms::text_input::TextInputProps;
     use crate::widget::atoms::toggle::ToggleProps;
     use crate::widget::frameworks::panel::PanelProps;
@@ -482,6 +568,128 @@ mod tests {
                 },
             ),
         )
+    }
+
+    fn nested_text_input_desc(value: &str) -> Desc {
+        root_desc(
+            120.0,
+            widget(
+                "canvas_node::engine_node::7::body::param::0::control::widget",
+                TextInputProps {
+                    label: None,
+                    value: Cow::Owned(value.to_string()),
+                    disabled: false,
+                    size: Default::default(),
+                    density: Default::default(),
+                },
+            ),
+        )
+    }
+
+    fn canvas_node_text_area_desc(value: &str) -> Desc {
+        root_desc(
+            180.0,
+            ui::container("canvas_node")
+                .fixed_width(300.0)
+                .fixed_height(160.0)
+                .hittable(true)
+                .draggable(true)
+                .resizable(true)
+                .child(widget(
+                    "canvas_node::body::control",
+                    TextAreaProps {
+                        label: None,
+                        value: Cow::Owned(value.to_string()),
+                        disabled: false,
+                        size: Default::default(),
+                        density: Default::default(),
+                        min_rows: 5,
+                    },
+                ))
+                .build(),
+        )
+    }
+
+    fn real_node_card_text_area_desc(value: &str, theme: &Theme) -> Desc {
+        real_node_card_text_area_canvas_desc(value, theme, None)
+    }
+
+    fn transformed_real_node_card_text_area_desc(value: &str, theme: &Theme) -> Desc {
+        use crate::geometry::TransformSpec;
+
+        real_node_card_text_area_canvas_desc(
+            value,
+            theme,
+            Some(TransformSpec::translate_scale([100.0, -40.0], 2.0)),
+        )
+    }
+
+    fn real_node_card_text_area_canvas_desc(
+        value: &str,
+        theme: &Theme,
+        canvas_transform: Option<crate::geometry::TransformSpec>,
+    ) -> Desc {
+        use crate::canvas::node_card::node_card_from_render_view;
+        use crate::canvas::node_template::{
+            CanvasNodeInstanceState, CanvasNodeParamTemplate, CanvasNodeRenderView,
+            CanvasNodeTemplate,
+        };
+        use crate::canvas::{CanvasNodeLayout, CanvasPortGroupView};
+        use crate::widget::mapping::ParamControlSpec;
+
+        let owner_id = "showcase_node::text_area_control".to_string();
+        let template = CanvasNodeTemplate {
+            type_id: owner_id.clone(),
+            title: "Text Area".to_string(),
+            subtitle: "single text area control".to_string(),
+            category: "ui/showcase".to_string(),
+            params: vec![CanvasNodeParamTemplate::new(
+                "Prompt",
+                "",
+                "",
+                "",
+                ParamControlSpec::TextArea {
+                    value: value.to_string(),
+                    min_rows: 5,
+                },
+            )],
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+        };
+        let state = CanvasNodeInstanceState {
+            owner_id: owner_id.clone(),
+            layout: CanvasNodeLayout {
+                owner_id,
+                rect: Rect {
+                    x: 20.0,
+                    y: 20.0,
+                    w: 304.0,
+                    h: 180.0,
+                },
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            },
+            selected: false,
+            input_group: CanvasPortGroupView::default(),
+            output_group: CanvasPortGroupView::default(),
+            port_states: Vec::new(),
+        };
+
+        let card = node_card_from_render_view(&CanvasNodeRenderView { template, state }, theme);
+        let mut canvas_root = ui::container("canvas_root")
+            .absolute_xy(0.0, 0.0)
+            .fixed_width(520.0)
+            .fixed_height(320.0);
+        if let Some(transform) = canvas_transform {
+            canvas_root = canvas_root.transform(transform);
+        }
+
+        ui::container("root")
+            .fixed_width(720.0)
+            .fixed_height(520.0)
+            .child(canvas_root.child(card).build())
+            .build()
     }
 
     fn button_desc() -> Desc {
@@ -757,6 +965,538 @@ mod tests {
         assert_eq!(ctx.node_root_widget_type(field_id), Some("TextInput"));
         assert!(ctx.node_is_text_input_field(field_id));
         assert!(ctx.node_rect("missing").is_none());
+    }
+
+    #[test]
+    fn context_query_api_uses_node_resize_threshold() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        ctx.update(
+            ui::container("resize_box")
+                .fixed_width(100.0)
+                .fixed_height(60.0)
+                .hittable(true)
+                .resizable(true)
+                .resize_edge_threshold(14.0)
+                .build(),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let node_id = ctx.node_id_by_name("resize_box").expect("resize node");
+        let rect = ctx.node_rect_by_node(node_id).expect("resize rect");
+
+        assert_eq!(
+            ctx.resize_hit_at_screen_point(rect.x + rect.w - 12.0, rect.y + 30.0),
+            Some((node_id, ResizeEdge::Right))
+        );
+        assert_eq!(
+            ctx.resize_hit_at_screen_point(rect.x + rect.w - 16.0, rect.y + 30.0),
+            None
+        );
+    }
+
+    #[test]
+    fn context_query_api_resolves_nested_text_input_root() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id = "canvas_node::engine_node::7::body::param::0::control::widget";
+        let field_id = "canvas_node::engine_node::7::body::param::0::control::widget::field";
+        ctx.update(
+            nested_text_input_desc("hello"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let field_node = ctx.node_id_by_name(field_id).expect("nested field id");
+
+        assert_eq!(ctx.node_root_widget_type(field_node), Some("TextInput"));
+        assert!(ctx.node_is_text_input_field(field_node));
+        assert!(ctx.node_exists(widget_id));
+    }
+
+    #[test]
+    fn nested_text_input_accepts_pointer_focus_and_text_input() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id = "canvas_node::engine_node::7::body::param::0::control::widget";
+        let field_id = "canvas_node::engine_node::7::body::param::0::control::widget::field";
+        ctx.update(
+            nested_text_input_desc("hello"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let field = node_rect(&ctx, field_id);
+        let x = field.x + field.w * 0.5;
+        let y = field.y + field.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::End,
+            modifiers: Modifiers::default(),
+        });
+        let output = ctx.handle_event(&AppEvent::TextInput {
+            text: "!".to_string(),
+        });
+
+        assert_eq!(ctx.focused_widget_id(), Some(widget_id));
+        assert!(matches!(
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::TextChanged { id, value })]
+                if id == widget_id && value == "hello!"
+        ));
+    }
+
+    #[test]
+    fn canvas_node_text_area_accepts_pointer_focus_and_text_input() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id = "canvas_node::body::control";
+        let field_id = "canvas_node::body::control::field";
+        ctx.update(
+            canvas_node_text_area_desc("hello"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 180.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let field = node_rect(&ctx, field_id);
+        let x = field.x + 8.0;
+        let y = field.y + field.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::End,
+            modifiers: Modifiers::default(),
+        });
+        let output = ctx.handle_event(&AppEvent::TextInput {
+            text: "!".to_string(),
+        });
+
+        assert_eq!(ctx.focused_widget_id(), Some(widget_id));
+        assert!(matches!(
+            output.events.as_slice(),
+            [GuiEvent::Widget(WidgetEvent::TextChanged { id, value })]
+                if id == widget_id && value == "hello!"
+        ));
+    }
+
+    #[test]
+    fn canvas_node_text_area_drag_selection_can_be_copied_and_painted() {
+        use crate::paint::PaintCommand;
+
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id = "canvas_node::body::control";
+        let field_id = "canvas_node::body::control::field";
+        ctx.update(
+            canvas_node_text_area_desc("hello world"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 180.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let field = node_rect(&ctx, field_id);
+        let y = field.y + 8.0;
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: field.x + 4.0,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseMove {
+            x: field.x + 64.0,
+            y,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x: field.x + 64.0,
+            y,
+            button: MouseButton::Left,
+        });
+
+        assert_eq!(ctx.focused_widget_id(), Some(widget_id));
+        let copy_output = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::Char('C'),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        });
+        assert!(matches!(
+            copy_output.effects.as_slice(),
+            [PlatformEffect::WriteClipboard(text)] if !text.is_empty()
+        ));
+
+        let list = build_display_list(
+            &ctx.tree,
+            ctx.root().expect("root"),
+            crate::tree::PaintCx {
+                interaction: Some(&ctx.interaction),
+                text_boxes: Some(ctx.systems.text_box_store()),
+                animations: None,
+                theme: &theme,
+            },
+            |text, style| {
+                (
+                    text.chars().count() as f32 * style.size * 0.5,
+                    style.size * style.line_height,
+                )
+            },
+        )
+        .expect("display list");
+
+        assert!(list.commands.iter().any(|command| matches!(
+            &command.command,
+            PaintCommand::Rect(rect) if rect.style.color == theme.selection_color()
+        )));
+    }
+
+    #[test]
+    fn real_node_card_text_area_drag_selection_beats_card_drag() {
+        use crate::paint::PaintCommand;
+
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget";
+        let field_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+        ctx.update(
+            real_node_card_text_area_desc("hello world", &theme),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 520.0,
+                h: 320.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let field = node_rect(&ctx, field_id);
+        let y = field.y + 8.0;
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: field.x + 4.0,
+            y,
+            button: MouseButton::Left,
+        });
+        let move_output = ctx.handle_event(&AppEvent::MouseMove {
+            x: field.x + 64.0,
+            y,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x: field.x + 64.0,
+            y,
+            button: MouseButton::Left,
+        });
+
+        assert!(move_output.consumed);
+        assert_eq!(ctx.focused_widget_id(), Some(widget_id));
+        let copy_output = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::Char('C'),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        });
+        assert!(matches!(
+            copy_output.effects.as_slice(),
+            [PlatformEffect::WriteClipboard(text)] if !text.is_empty()
+        ));
+
+        let list = build_display_list(
+            &ctx.tree,
+            ctx.root().expect("root"),
+            crate::tree::PaintCx {
+                interaction: Some(&ctx.interaction),
+                text_boxes: Some(ctx.systems.text_box_store()),
+                animations: None,
+                theme: &theme,
+            },
+            |text, style| {
+                (
+                    text.chars().count() as f32 * style.size * 0.5,
+                    style.size * style.line_height,
+                )
+            },
+        )
+        .expect("display list");
+        assert!(list.commands.iter().any(|command| matches!(
+            &command.command,
+            PaintCommand::Rect(rect) if rect.style.color == theme.selection_color()
+        )));
+    }
+
+    #[test]
+    fn real_node_card_text_area_wraps_to_card_width() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget";
+        let field_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+        let card_id = "canvas_node::showcase_node::text_area_control::card";
+        let value = "A compact text field".repeat(8);
+        ctx.update(
+            real_node_card_text_area_desc(&value, &theme),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 720.0,
+                h: 520.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let card = node_rect(&ctx, card_id);
+        let field = node_rect(&ctx, field_id);
+        assert!(field.x >= card.x);
+        assert!(field.x + field.w <= card.x + card.w + 0.001);
+
+        let runtime = ctx
+            .systems
+            .text_box_store()
+            .runtime(widget_id)
+            .expect("text area runtime");
+        assert!(runtime.layout().lines.len() > 1);
+        assert!(runtime.clip_rect().w <= field.w);
+    }
+
+    #[test]
+    fn real_node_card_text_area_paints_wrapped_lines() {
+        use crate::paint::PaintCommand;
+
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let value = "A compact text field".repeat(8);
+        ctx.update(
+            real_node_card_text_area_desc(&value, &theme),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 720.0,
+                h: 520.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let list = build_display_list(
+            &ctx.tree,
+            ctx.root().expect("root"),
+            crate::tree::PaintCx {
+                interaction: Some(&ctx.interaction),
+                text_boxes: Some(ctx.systems.text_box_store()),
+                animations: None,
+                theme: &theme,
+            },
+            |text, style| {
+                (
+                    text.chars().count() as f32 * style.size * 0.5,
+                    style.size * style.line_height,
+                )
+            },
+        )
+        .expect("display list");
+
+        let text_y = list
+            .commands
+            .iter()
+            .filter_map(|command| match &command.command {
+                PaintCommand::Text(text)
+                    if !text.text.is_empty() && value.contains(text.text.as_str()) =>
+                {
+                    Some(text.pos.y)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(text_y.len() > 1);
+        assert!(text_y.windows(2).all(|pair| pair[1] > pair[0]));
+    }
+
+    #[test]
+    fn transformed_canvas_text_area_selection_uses_screen_to_layout_coordinates() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget";
+        let field_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+        ctx.update(
+            transformed_real_node_card_text_area_desc("hello world", &theme),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 720.0,
+                h: 520.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let field = node_rect(&ctx, field_id);
+        let to_screen = |x: f32, y: f32| (x * 2.0 + 100.0, y * 2.0 - 40.0);
+        let (press_x, press_y) = to_screen(field.x + 4.0, field.y + 8.0);
+        let (move_x, move_y) = to_screen(field.x + 64.0, field.y + 8.0);
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x: press_x,
+            y: press_y,
+            button: MouseButton::Left,
+        });
+        let move_output = ctx.handle_event(&AppEvent::MouseMove {
+            x: move_x,
+            y: move_y,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x: move_x,
+            y: move_y,
+            button: MouseButton::Left,
+        });
+
+        assert!(move_output.consumed);
+        assert_eq!(ctx.focused_widget_id(), Some(widget_id));
+        let copy_output = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::Char('C'),
+            modifiers: Modifiers {
+                ctrl: true,
+                ..Modifiers::default()
+            },
+        });
+        assert!(matches!(
+            copy_output.effects.as_slice(),
+            [PlatformEffect::WriteClipboard(text)] if !text.is_empty()
+        ));
+    }
+
+    #[test]
+    fn nested_text_input_paints_runtime_text_before_external_sync() {
+        use crate::paint::PaintCommand;
+
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let field_id = "canvas_node::engine_node::7::body::param::0::control::widget::field";
+        ctx.update(
+            nested_text_input_desc("A compact text field"),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 320.0,
+                h: 120.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+        let field = node_rect(&ctx, field_id);
+        let x = field.x + field.w * 0.5;
+        let y = field.y + field.h * 0.5;
+
+        let _ = ctx.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::MouseRelease {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = ctx.handle_event(&AppEvent::KeyPress {
+            key: Key::End,
+            modifiers: Modifiers::default(),
+        });
+        let _ = ctx.handle_event(&AppEvent::TextInput {
+            text: " extended".to_string(),
+        });
+        let _ = ctx.handle_event(&AppEvent::ImePreedit {
+            text: "中".to_string(),
+            caret: None,
+        });
+
+        let list = build_display_list(
+            &ctx.tree,
+            ctx.root().expect("root"),
+            crate::tree::PaintCx {
+                interaction: Some(&ctx.interaction),
+                text_boxes: Some(ctx.systems.text_box_store()),
+                animations: None,
+                theme: &theme,
+            },
+            |text, style| {
+                (
+                    text.chars().count() as f32 * style.size * 0.5,
+                    style.size * style.line_height,
+                )
+            },
+        )
+        .expect("display list");
+        let texts = list
+            .commands
+            .iter()
+            .filter_map(|command| match &command.command {
+                PaintCommand::Text(text) => Some(text.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(texts.contains(&"A compact text field extended"));
+        assert!(texts.contains(&"中"));
     }
 
     #[test]
@@ -1642,7 +2382,7 @@ mod tests {
         assert!(output.events.is_empty());
         assert_eq!(
             ctx.systems
-                .text_input_store()
+                .text_box_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1663,7 +2403,7 @@ mod tests {
 
         assert_eq!(
             ctx.systems
-                .text_input_store()
+                .text_box_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1729,7 +2469,7 @@ mod tests {
 
         assert_eq!(
             ctx.systems
-                .text_input_store()
+                .text_box_store()
                 .runtime("number")
                 .unwrap()
                 .editor()
@@ -1738,7 +2478,7 @@ mod tests {
         );
         assert_eq!(
             ctx.systems
-                .text_input_store()
+                .text_box_store()
                 .runtime("number")
                 .unwrap()
                 .external_text(),

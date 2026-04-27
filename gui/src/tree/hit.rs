@@ -72,6 +72,69 @@ pub fn hit_test_with_animations(
     HitChain::new(nodes)
 }
 
+pub(crate) fn screen_to_node_layout_point(
+    tree: &Tree,
+    root: NodeId,
+    target: NodeId,
+    x: f32,
+    y: f32,
+    animations: Option<&AnimationStore>,
+) -> Option<Point> {
+    screen_to_node_layout_point_recursive(
+        tree,
+        root,
+        target,
+        Point { x, y },
+        PaintSpace::root(),
+        animations,
+    )
+}
+
+fn screen_to_node_layout_point_recursive(
+    tree: &Tree,
+    node_id: NodeId,
+    target: NodeId,
+    screen: Point,
+    current_space: PaintSpace,
+    animations: Option<&AnimationStore>,
+) -> Option<Point> {
+    let node = tree.get(node_id)?;
+    let visual = animations.and_then(|store| store.visual_for(node.id.as_ref()));
+    let current_space = visual
+        .and_then(|visual| visual_affine(node.rect, visual))
+        .map(|transform| current_space.transformed(transform))
+        .unwrap_or(current_space);
+
+    if node_id == target {
+        return current_space
+            .to_screen
+            .inverse()
+            .map(|inverse| inverse.transform_point(screen));
+    }
+
+    let node_space = current_space.node_space(node.rect, node.style.transform);
+    let child_space = if node_space.children_are_local {
+        node_space.child_space()
+    } else {
+        current_space
+    };
+
+    for child_id in &node.children {
+        if let Some(point) = screen_to_node_layout_point_recursive(
+            tree,
+            *child_id,
+            target,
+            screen,
+            child_space,
+            animations,
+        ) {
+            return Some(point);
+        }
+    }
+
+    None
+}
+
 fn hit_recursive(
     tree: &Tree,
     node_id: NodeId,
@@ -146,11 +209,13 @@ fn node_self_hit(
     }
 }
 
-/// 混合判据：hittable 强制覆盖优先，否则 gestures 非空或 decoration 非空
+/// 混合判据：hittable 强制覆盖优先，否则交互能力、gestures 或 decoration 可命中。
 fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
     match style.hittable {
         Some(h) => h,
-        None => !style.gestures.is_empty() || decoration.is_some(),
+        None => {
+            style.draggable || style.resizable || !style.gestures.is_empty() || decoration.is_some()
+        }
     }
 }
 
@@ -466,6 +531,29 @@ mod tests {
 
         let chain = hit_test(&tree, root, 50.0, 50.0);
         assert_eq!(chain.leaf(), Some(root), "有 gestures 应该可命中");
+    }
+
+    #[test]
+    fn hit_interaction_capabilities_make_hittable() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_with_rect(
+            BoxStyle {
+                draggable: true,
+                resizable: true,
+                ..Default::default()
+            },
+            None,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+        ));
+        tree.set_root(root);
+
+        let chain = hit_test(&tree, root, 50.0, 50.0);
+        assert_eq!(chain.leaf(), Some(root), "交互能力应该可命中");
     }
 
     #[test]
@@ -1048,6 +1136,59 @@ mod tests {
         // 屏幕 (30, 30) → 逆变换 (30/2, 30/2) = (15, 15) → 命中 child local (10,10,10,10)
         let chain = hit_test(&tree, root_id, 30.0, 30.0);
         assert_eq!(chain.leaf(), Some(child_id));
+    }
+
+    #[test]
+    fn screen_to_node_layout_point_inverts_transformed_parent_space() {
+        let mut tree = Tree::new();
+        let field_id = tree.insert(container_with_rect(
+            BoxStyle::default(),
+            Some(decor()),
+            Rect {
+                x: 20.0,
+                y: 30.0,
+                w: 100.0,
+                h: 40.0,
+            },
+        ));
+        let canvas_id = {
+            let mut node = container_with_rect(
+                BoxStyle {
+                    transform: Some(TransformSpec::translate_scale([100.0, -40.0], 2.0)),
+                    ..Default::default()
+                },
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 300.0,
+                    h: 200.0,
+                },
+            );
+            node.children = vec![field_id];
+            tree.insert(node)
+        };
+        let root_id = {
+            let mut node = container_with_rect(
+                BoxStyle::default(),
+                None,
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 500.0,
+                    h: 400.0,
+                },
+            );
+            node.children = vec![canvas_id];
+            tree.insert(node)
+        };
+        tree.set_root(root_id);
+
+        let point = screen_to_node_layout_point(&tree, root_id, field_id, 150.0, 30.0, None)
+            .expect("screen point should map to target layout space");
+
+        assert!((point.x - 25.0).abs() < 0.0001, "point={point:?}");
+        assert!((point.y - 35.0).abs() < 0.0001, "point={point:?}");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use super::canvas_drag::CanvasNodeDragController;
+use super::canvas_resize::CanvasNodeResizeController;
 use super::engine_adapter;
 use super::node_palette::NodePaletteState;
 use super::project_layout;
@@ -15,17 +16,22 @@ use gui::action::GuiAction;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{
-    canvas_node_owner_id, canvas_port_event_target_id, canvas_port_stable_id,
-    parse_canvas_port_group_trigger_id, parse_canvas_port_id, CanvasConnectionView,
-    CanvasPortConnectionState, CanvasPortRef, CanvasPortSide,
+    canvas_node_event_owner_id, canvas_node_sizing_request, canvas_port_event_target_id,
+    canvas_port_stable_id, parse_canvas_port_group_trigger_id, parse_canvas_port_id,
+    CanvasConnectionView, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortRef,
+    CanvasPortSide,
 };
 use gui::context::Context;
+use gui::theme::Theme;
+use gui::widget::resize_edge::ResizeEdge;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
     image_demo: ImageDemoController,
     canvas_node_drag: CanvasNodeDragController,
+    canvas_node_resize: CanvasNodeResizeController,
     canvas_node_templates: engine_adapter::CanvasNodeTemplateCache,
+    text_area_showcase_value: String,
     last_engine_action: String,
 }
 
@@ -41,7 +47,9 @@ impl WorkspaceController {
             engine: Engine::new(None),
             image_demo: ImageDemoController::default(),
             canvas_node_drag: CanvasNodeDragController::default(),
+            canvas_node_resize: CanvasNodeResizeController::default(),
             canvas_node_templates: engine_adapter::CanvasNodeTemplateCache::default(),
+            text_area_showcase_value: "A compact text field".to_string(),
             last_engine_action: "Ready".to_string(),
         }
     }
@@ -93,11 +101,54 @@ impl WorkspaceController {
     pub(crate) fn canvas_node_render_views(
         &mut self,
         gui: &mut Context,
+        theme: &Theme,
     ) -> Vec<CanvasNodeRenderView> {
         let mut identities = engine_adapter::canvas_node_identities(&self.engine);
         identities.push(showcase_node::showcase_node_identity());
         identities.push(showcase_node::solo_node_identity());
-        let layouts = gui.sync_canvas_node_layouts(&identities);
+        identities.push(showcase_node::text_area_node_identity());
+        let mut layouts = gui.sync_canvas_node_layouts(&identities);
+
+        let mut views = self.canvas_node_render_views_for_layouts(layouts.clone());
+        let mut resized_to_fit = false;
+        let control_intrinsics = gui.control_intrinsics();
+        for view in &views {
+            let owner_id = &view.state.owner_id;
+            let request = canvas_node_sizing_request(
+                &view.template,
+                &view.state.layout,
+                &control_intrinsics,
+                theme,
+            );
+            let sizing_changed = gui.apply_canvas_node_sizing(owner_id, request);
+            tracing::trace!(
+                target: "gui::canvas::node_resize",
+                owner_id = %owner_id,
+                min_w = request.min_width,
+                min_h = request.min_height,
+                target_w = request.target_width,
+                target_h = request.target_height,
+                sizing_changed,
+                "apply canvas node sizing request while building render views"
+            );
+            resized_to_fit = resized_to_fit || sizing_changed;
+        }
+        if resized_to_fit {
+            tracing::debug!(
+                target: "gui::canvas::node_resize",
+                "resync canvas node layouts after sizing request"
+            );
+            layouts = gui.sync_canvas_node_layouts(&identities);
+            views = self.canvas_node_render_views_for_layouts(layouts);
+        }
+        self.decorate_canvas_node_render_views(gui, &mut views);
+        views
+    }
+
+    fn canvas_node_render_views_for_layouts(
+        &mut self,
+        layouts: Vec<CanvasNodeLayout>,
+    ) -> Vec<CanvasNodeRenderView> {
         let showcase_layouts = layouts
             .iter()
             .filter(|layout| showcase_node::is_showcase_node(&layout.owner_id))
@@ -112,15 +163,19 @@ impl WorkspaceController {
             engine_layouts,
             &mut self.canvas_node_templates,
         );
-        views.extend(
-            showcase_layouts
-                .into_iter()
-                .filter_map(showcase_node::showcase_render_view_for_layout),
-        );
+        views.extend(showcase_layouts.into_iter().filter_map(|layout| {
+            showcase_node::showcase_render_view_for_layout_with_text(
+                layout,
+                &self.text_area_showcase_value,
+            )
+        }));
+        views
+    }
 
+    fn decorate_canvas_node_render_views(&self, gui: &Context, views: &mut [CanvasNodeRenderView]) {
         let pending_connection = gui.pending_canvas_connection();
         let hovered_port_id = gui.hovered_canvas_port_id();
-        for view in &mut views {
+        for view in views {
             view.state.selected = gui.is_canvas_node_selected(&view.state.owner_id);
             view.state.input_group =
                 gui.canvas_port_group_view(&view.state.owner_id, CanvasPortSide::Input);
@@ -150,7 +205,6 @@ impl WorkspaceController {
                 }
             }
         }
-        views
     }
 
     pub(crate) fn canvas_connection_views(&self) -> Vec<CanvasConnectionView> {
@@ -190,6 +244,53 @@ impl WorkspaceController {
         self.canvas_node_drag.end(gui, camera, id, x, y)
     }
 
+    pub(crate) fn start_canvas_node_resize(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_resize.start(gui, camera, id, edge, x, y)
+    }
+
+    pub(crate) fn resize_canvas_node(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_resize.resize(gui, camera, id, edge, x, y)
+    }
+
+    pub(crate) fn end_canvas_node_resize(
+        &mut self,
+        gui: &mut Context,
+        camera: &Camera,
+        id: &str,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    ) -> bool {
+        self.canvas_node_resize.end(gui, camera, id, edge, x, y)
+    }
+
+    pub(crate) fn update_text_area_showcase_value(&mut self, id: &str, value: String) -> bool {
+        let Some(owner_id) = canvas_node_event_owner_id(id) else {
+            return false;
+        };
+        if owner_id != showcase_node::TEXT_AREA_OWNER_ID {
+            return false;
+        }
+        self.text_area_showcase_value = value;
+        true
+    }
+
     pub(crate) fn toggle_canvas_port_group(&mut self, gui: &mut Context, id: &str) -> bool {
         let Some((owner_id, side)) = parse_canvas_port_group_trigger_id(id) else {
             return false;
@@ -199,7 +300,7 @@ impl WorkspaceController {
     }
 
     pub(crate) fn select_canvas_node(&mut self, gui: &mut Context, id: &str) -> bool {
-        let Some(owner_id) = canvas_node_owner_id(id) else {
+        let Some(owner_id) = canvas_node_event_owner_id(id) else {
             return false;
         };
         gui.select_canvas_node(owner_id)
@@ -457,6 +558,7 @@ impl Default for WorkspaceController {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gui::theme::light_theme;
 
     #[test]
     fn add_node_action_updates_engine_state_and_requests_overlay_close() {
@@ -493,19 +595,20 @@ mod tests {
     fn canvas_node_render_views_include_gui_interaction_state() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
+        let theme = light_theme();
 
         controller.add_node_from_library("image_gen");
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
         let owner_id = views[0].state.owner_id.clone();
         assert!(!views[0].state.selected);
 
         assert!(controller.select_canvas_node(&mut gui, &format!("canvas_node::{owner_id}")));
 
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
         assert!(views[0].state.selected);
 
         controller.clear_canvas_selection(&mut gui);
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
         assert!(!views[0].state.selected);
     }
 
@@ -513,8 +616,9 @@ mod tests {
     fn canvas_node_render_views_include_showcase_node() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
+        let theme = light_theme();
 
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
 
         assert!(views
             .iter()
@@ -522,6 +626,9 @@ mod tests {
         assert!(views
             .iter()
             .any(|view| view.state.owner_id == showcase_node::SOLO_OWNER_ID));
+        assert!(views
+            .iter()
+            .any(|view| view.state.owner_id == showcase_node::TEXT_AREA_OWNER_ID));
     }
 
     #[test]
@@ -591,6 +698,7 @@ mod tests {
     fn canvas_node_render_views_mark_pending_connection_targets() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
+        let theme = light_theme();
 
         controller.add_node_from_library("image_gen");
         controller.add_node_from_library("color_adjust");
@@ -599,7 +707,7 @@ mod tests {
             [0.0, 0.0],
         ));
 
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
         let source = views
             .iter()
             .find(|view| view.state.owner_id == "engine_node::0")
@@ -617,6 +725,7 @@ mod tests {
     fn canvas_node_render_views_mark_hovered_pending_connection_drop_target() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
+        let theme = light_theme();
 
         controller.add_node_from_library("image_gen");
         controller.add_node_from_library("color_adjust");
@@ -628,7 +737,7 @@ mod tests {
             gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
         );
 
-        let views = controller.canvas_node_render_views(&mut gui);
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
         let target = views
             .iter()
             .find(|view| view.state.owner_id == "engine_node::1")

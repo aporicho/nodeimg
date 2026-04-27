@@ -3,6 +3,7 @@ use crate::icon::IconSpec;
 pub use crate::paint::TextureHandle;
 use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
 use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
+use crate::widget::resize_edge::DEFAULT_RESIZE_EDGE_THRESHOLD;
 use std::sync::Arc;
 
 /// 自定义绘制回调。与 Flutter CustomPainter 对齐。
@@ -63,6 +64,12 @@ pub struct BoxStyle {
     // ── 交互（新增）──
     /// 是否参与命中测试。None 表示沿用 "有 Decoration 则可命中" 的旧判据。
     pub hittable: Option<bool>,
+    /// 容器是否声明为可拖拽。这里只注册手势并发出事件，不自动持久化位置。
+    pub draggable: bool,
+    /// 容器是否声明为可调整大小。这里只注册手势并发出事件，不自动持久化尺寸。
+    pub resizable: bool,
+    /// resize 边缘热区半径，单位为屏幕/布局逻辑像素。
+    pub resize_edge_threshold: f32,
     /// 命中后注册哪些手势识别器。
     pub gestures: Vec<crate::gesture::Gesture>,
 }
@@ -90,6 +97,9 @@ impl Default for BoxStyle {
             z_index: 0,
             transform: None,
             hittable: None,
+            draggable: false,
+            resizable: false,
+            resize_edge_threshold: DEFAULT_RESIZE_EDGE_THRESHOLD,
             gestures: Vec::new(),
         }
     }

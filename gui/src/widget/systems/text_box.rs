@@ -3,26 +3,25 @@ use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent}
 use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
 use crate::theme::Theme;
-use crate::tree::{NodeId, NodeKind, Tree};
-use crate::widget::atoms::number_input::{format_number, NumberInputProps};
-use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::state::{TextFieldKind, TextInputStore};
+use crate::tree::{NodeId, Tree};
+use crate::widget::atoms::number_input::format_number;
+use crate::widget::state::{TextBoxStore, TextBoxValueKind};
 use crate::widget::systems::SystemCx;
 
-pub struct TextInputSystem {
-    store: TextInputStore,
-    active_drag_text_input: Option<String>,
+pub(crate) struct TextBoxSystem {
+    store: TextBoxStore,
+    active_drag_text_box: Option<String>,
 }
 
-impl TextInputSystem {
-    pub fn new() -> Self {
+impl TextBoxSystem {
+    pub(crate) fn new() -> Self {
         Self {
-            store: TextInputStore::new(),
-            active_drag_text_input: None,
+            store: TextBoxStore::new(),
+            active_drag_text_box: None,
         }
     }
 
-    pub fn sync_with_tree(
+    pub(crate) fn sync_with_tree(
         &mut self,
         tree: &Tree,
         measurer: &mut TextMeasurer,
@@ -36,25 +35,31 @@ impl TextInputSystem {
         self.sync_sessions(tree, focused, captured);
     }
 
-    pub fn handle_event(&mut self, mut cx: SystemCx<'_>, event: &AppEvent) -> FrameworkOutput {
+    pub(crate) fn handle_event(
+        &mut self,
+        mut cx: SystemCx<'_>,
+        event: &AppEvent,
+    ) -> FrameworkOutput {
         let outcome = match event {
             AppEvent::MousePress { x, y, button } if *button == MouseButton::Left => {
-                self.active_drag_text_input = None;
-                if let Some(widget_id) = self.text_input_id_at(&cx, *x, *y) {
+                self.active_drag_text_box = None;
+                if let Some(widget_id) = self.text_box_id_at(&cx, *x, *y) {
+                    let point = self.text_box_pointer_point(&cx, &widget_id, *x, *y);
                     if let Some(runtime) = self.store.runtime_mut(&widget_id) {
                         runtime.clear_preedit();
-                        runtime.set_caret_from_x(*x);
-                        self.active_drag_text_input = Some(widget_id);
+                        runtime.set_caret_from_point(point.x, point.y);
+                        self.active_drag_text_box = Some(widget_id);
                         return FrameworkOutput::consumed();
                     }
                 }
                 FrameworkOutput::default()
             }
-            AppEvent::MouseMove { x, .. } => {
-                if let Some(widget_id) = self.active_drag_text_input.clone() {
+            AppEvent::MouseMove { x, y } => {
+                if let Some(widget_id) = self.active_drag_text_box.clone() {
                     if self.captured_widget_id_for(&cx).as_deref() == Some(widget_id.as_str()) {
+                        let point = self.text_box_pointer_point(&cx, &widget_id, *x, *y);
                         if let Some(runtime) = self.store.runtime_mut(&widget_id) {
-                            runtime.select_to_x(*x);
+                            runtime.select_to_point(point.x, point.y);
                             return FrameworkOutput::consumed();
                         }
                     }
@@ -62,8 +67,8 @@ impl TextInputSystem {
                 FrameworkOutput::default()
             }
             AppEvent::MouseRelease { button, .. } if *button == MouseButton::Left => {
-                let consumed = self.active_drag_text_input.is_some();
-                self.active_drag_text_input = None;
+                let consumed = self.active_drag_text_box.is_some();
+                self.active_drag_text_box = None;
                 FrameworkOutput::default().with_consumed(consumed)
             }
             AppEvent::ImePreedit { text, caret } => self.handle_ime_preedit(&cx, text, *caret),
@@ -72,7 +77,7 @@ impl TextInputSystem {
                 self.handle_key_press(&mut cx, *key, *modifiers)
             }
             AppEvent::Unfocused => {
-                self.active_drag_text_input = None;
+                self.active_drag_text_box = None;
                 FrameworkOutput::default()
             }
             _ => FrameworkOutput::default(),
@@ -82,19 +87,17 @@ impl TextInputSystem {
         outcome
     }
 
-    pub fn ime_request(&self, tree: &Tree, focused: Option<NodeId>) -> ImeRequest {
+    pub(crate) fn ime_request(&self, tree: &Tree, focused: Option<NodeId>) -> ImeRequest {
         let focused = self.focused_widget_id(tree, focused);
         ImeRequest {
             allowed: focused.is_some(),
-            cursor_area: focused.as_deref().and_then(|widget_id| {
-                self.store
-                    .runtime(widget_id)
-                    .map(|runtime| runtime.caret_rect())
-            }),
+            cursor_area: focused
+                .as_deref()
+                .and_then(|widget_id| self.store.runtime(widget_id).map(|r| r.caret_rect())),
         }
     }
 
-    pub fn paste_focused_text(
+    pub(crate) fn paste_focused_text(
         &mut self,
         tree: &Tree,
         focused: Option<NodeId>,
@@ -103,20 +106,18 @@ impl TextInputSystem {
         if text.is_empty() {
             return FrameworkOutput::default();
         }
-
         let Some(widget_id) = self.focused_widget_id(tree, focused) else {
             return FrameworkOutput::default();
         };
         let Some(runtime) = self.store.runtime_mut(&widget_id) else {
             return FrameworkOutput::default();
         };
-
         runtime.clear_preedit();
         runtime.editor_mut().paste(text);
-        self.output_for_editor(tree, &widget_id)
+        self.output_for_editor(tree, &widget_id).with_consumed(true)
     }
 
-    pub fn store(&self) -> &TextInputStore {
+    pub(crate) fn store(&self) -> &TextBoxStore {
         &self.store
     }
 
@@ -124,14 +125,12 @@ impl TextInputSystem {
         if text.is_empty() {
             return FrameworkOutput::default();
         }
-
         let Some(widget_id) = self.focused_widget_id_for(cx) else {
             return FrameworkOutput::default();
         };
         let Some(runtime) = self.store.runtime_mut(&widget_id) else {
             return FrameworkOutput::default();
         };
-
         runtime.clear_preedit();
         runtime.editor_mut().insert_str(text);
         self.output_for_editor_for(cx, &widget_id)
@@ -150,7 +149,6 @@ impl TextInputSystem {
         let Some(runtime) = self.store.runtime_mut(&widget_id) else {
             return FrameworkOutput::default();
         };
-
         runtime.set_preedit(text, caret);
         FrameworkOutput::consumed()
     }
@@ -168,13 +166,13 @@ impl TextInputSystem {
                         runtime.clear_preedit();
                         return FrameworkOutput::consumed();
                     }
-                    if runtime.kind() == TextFieldKind::NumberInput {
+                    if runtime.is_number() {
                         runtime.revert_to_external();
                     }
                 }
             }
             cx.blur();
-            self.active_drag_text_input = None;
+            self.active_drag_text_box = None;
             return FrameworkOutput::consumed();
         }
 
@@ -195,6 +193,15 @@ impl TextInputSystem {
         }
 
         match key {
+            Key::Enter => {
+                if runtime.is_multiline() {
+                    runtime.editor_mut().insert_char('\n');
+                    return self
+                        .output_for_editor_for(cx, &widget_id)
+                        .with_consumed(true);
+                }
+                self.finalize_number_input(&widget_id)
+            }
             Key::Backspace => {
                 runtime.editor_mut().backspace();
                 self.output_for_editor_for(cx, &widget_id)
@@ -206,41 +213,41 @@ impl TextInputSystem {
                     .with_consumed(true)
             }
             Key::Left => {
-                if modifiers.shift {
-                    runtime.editor_mut().select_left();
-                } else {
-                    runtime.editor_mut().move_left();
-                }
+                runtime.move_left(modifiers.shift);
                 FrameworkOutput::consumed()
             }
             Key::Right => {
-                if modifiers.shift {
-                    runtime.editor_mut().select_right();
-                } else {
-                    runtime.editor_mut().move_right();
-                }
+                runtime.move_right(modifiers.shift);
                 FrameworkOutput::consumed()
             }
-            Key::Home => {
-                if modifiers.shift {
-                    runtime.editor_mut().select_to(0);
+            Key::Up => {
+                if runtime.is_number() {
+                    self.step_number_input(&widget_id, 1.0)
+                } else if runtime.is_multiline() {
+                    runtime.move_vertical(-1, modifiers.shift);
+                    FrameworkOutput::consumed()
                 } else {
-                    runtime.editor_mut().move_home();
+                    FrameworkOutput::default()
                 }
+            }
+            Key::Down => {
+                if runtime.is_number() {
+                    self.step_number_input(&widget_id, -1.0)
+                } else if runtime.is_multiline() {
+                    runtime.move_vertical(1, modifiers.shift);
+                    FrameworkOutput::consumed()
+                } else {
+                    FrameworkOutput::default()
+                }
+            }
+            Key::Home => {
+                runtime.move_home(modifiers.shift);
                 FrameworkOutput::consumed()
             }
             Key::End => {
-                let text_end = runtime.editor().text().len();
-                if modifiers.shift {
-                    runtime.editor_mut().select_to(text_end);
-                } else {
-                    runtime.editor_mut().move_end();
-                }
+                runtime.move_end(modifiers.shift);
                 FrameworkOutput::consumed()
             }
-            Key::Up => self.step_number_input(cx, &widget_id, 1.0),
-            Key::Down => self.step_number_input(cx, &widget_id, -1.0),
-            Key::Enter => self.finalize_number_input(cx, &widget_id),
             Key::Char('A') if modifiers.ctrl || modifiers.meta => {
                 runtime.editor_mut().select_all();
                 FrameworkOutput::consumed()
@@ -287,14 +294,25 @@ impl TextInputSystem {
         self.captured_widget_id(cx.tree(), cx.captured_node())
     }
 
-    fn text_input_id_at(&self, cx: &SystemCx<'_>, x: f32, y: f32) -> Option<String> {
+    fn text_box_id_at(&self, cx: &SystemCx<'_>, x: f32, y: f32) -> Option<String> {
         cx.hit_chain(x, y).iter().find_map(|node_id| {
-            if cx.is_widget_type(node_id, "TextInput") || cx.is_widget_type(node_id, "NumberInput")
-            {
-                return cx.node_name(node_id).map(str::to_string);
-            }
-            None
+            let name = cx.node_name(node_id)?;
+            self.store.runtime(name).is_some().then(|| name.to_string())
         })
+    }
+
+    fn text_box_pointer_point(
+        &self,
+        cx: &SystemCx<'_>,
+        widget_id: &str,
+        x: f32,
+        y: f32,
+    ) -> crate::renderer::Point {
+        let field_id = format!("{widget_id}::field");
+        cx.node_id_by_name(&field_id)
+            .or_else(|| cx.node_id_by_name(widget_id))
+            .and_then(|node_id| cx.screen_to_node_layout_point(node_id, x, y))
+            .unwrap_or(crate::renderer::Point { x, y })
     }
 
     fn sync_sessions_for(&mut self, cx: &SystemCx<'_>) {
@@ -306,33 +324,26 @@ impl TextInputSystem {
         self.store.clear_unfocused_preedit(focused.as_deref());
         self.store.revert_unfocused_numbers(focused.as_deref());
 
-        let keep_drag = self
-            .active_drag_text_input
-            .as_ref()
-            .is_some_and(|widget_id| {
-                Some(widget_id.as_str()) == focused.as_deref()
-                    && Some(widget_id.as_str())
-                        == self.captured_widget_id(tree, captured).as_deref()
-                    && self.store.runtime(widget_id).is_some()
-            });
+        let keep_drag = self.active_drag_text_box.as_ref().is_some_and(|widget_id| {
+            Some(widget_id.as_str()) == focused.as_deref()
+                && Some(widget_id.as_str()) == self.captured_widget_id(tree, captured).as_deref()
+                && self.store.runtime(widget_id).is_some()
+        });
         if !keep_drag {
-            self.active_drag_text_input = None;
+            self.active_drag_text_box = None;
         }
     }
 
-    fn output_for_editor(&self, tree: &Tree, widget_id: &str) -> FrameworkOutput {
+    fn output_for_editor(&self, _tree: &Tree, widget_id: &str) -> FrameworkOutput {
         let Some(runtime) = self.store.runtime(widget_id) else {
             return FrameworkOutput::default();
         };
 
-        match text_field_props(tree, widget_id) {
-            Some(TextFieldProps::TextInput) => {
-                changed_text_output(widget_id, runtime.editor().text())
-            }
-            Some(TextFieldProps::NumberInput(props)) => {
-                live_number_output(widget_id, runtime.editor().text(), props)
-            }
-            None => FrameworkOutput::default(),
+        match runtime.value_kind() {
+            TextBoxValueKind::Text => changed_text_output(widget_id, runtime.editor().text()),
+            TextBoxValueKind::Number {
+                value, min, max, ..
+            } => live_number_output(widget_id, runtime.editor().text(), value, min, max),
         }
     }
 
@@ -340,39 +351,44 @@ impl TextInputSystem {
         self.output_for_editor(cx.tree(), widget_id)
     }
 
-    fn step_number_input(
-        &mut self,
-        cx: &SystemCx<'_>,
-        widget_id: &str,
-        direction: f32,
-    ) -> FrameworkOutput {
-        let Some(TextFieldProps::NumberInput(props)) = text_field_props_for(cx, widget_id) else {
-            return FrameworkOutput::default();
-        };
+    fn step_number_input(&mut self, widget_id: &str, direction: f32) -> FrameworkOutput {
         let Some(runtime) = self.store.runtime_mut(widget_id) else {
             return FrameworkOutput::default();
         };
+        let TextBoxValueKind::Number {
+            value,
+            min,
+            max,
+            step,
+            precision,
+        } = runtime.value_kind()
+        else {
+            return FrameworkOutput::default();
+        };
 
-        let current = parse_number_text(runtime.editor().text()).unwrap_or(props.value);
-        let next = (current + props.step * direction).clamp(props.min, props.max);
+        let current = parse_number_text(runtime.editor().text()).unwrap_or(value);
+        let next = (current + step * direction).clamp(min, max);
         runtime.clear_preedit();
         runtime
             .editor_mut()
-            .set_text(&format_number(next, props.precision));
-        changed_number_output(widget_id, next, props.value).with_consumed(true)
+            .set_text(&format_number(next, precision));
+        changed_number_output(widget_id, next, value).with_consumed(true)
     }
 
-    fn finalize_number_input(&mut self, cx: &SystemCx<'_>, widget_id: &str) -> FrameworkOutput {
-        let Some(TextFieldProps::NumberInput(props)) = text_field_props_for(cx, widget_id) else {
+    fn finalize_number_input(&mut self, widget_id: &str) -> FrameworkOutput {
+        let Some(runtime) = self.store.runtime_mut(widget_id) else {
             return FrameworkOutput::default();
         };
-        let Some(runtime) = self.store.runtime_mut(widget_id) else {
+        let TextBoxValueKind::Number {
+            value, min, max, ..
+        } = runtime.value_kind()
+        else {
             return FrameworkOutput::default();
         };
 
         match parse_number_text(runtime.editor().text()) {
-            Some(parsed) if parsed >= props.min && parsed <= props.max => {
-                let output = changed_number_output(widget_id, parsed, props.value);
+            Some(parsed) if parsed >= min && parsed <= max => {
+                let output = changed_number_output(widget_id, parsed, value);
                 if output.events.is_empty() {
                     runtime.revert_to_external();
                 }
@@ -386,39 +402,10 @@ impl TextInputSystem {
     }
 }
 
-impl Default for TextInputSystem {
+impl Default for TextBoxSystem {
     fn default() -> Self {
         Self::new()
     }
-}
-
-enum TextFieldProps<'a> {
-    TextInput,
-    NumberInput(&'a NumberInputProps),
-}
-
-fn text_field_props<'a>(tree: &'a Tree, widget_id: &str) -> Option<TextFieldProps<'a>> {
-    let (_, node) = tree
-        .iter()
-        .find(|(_, node)| node.id.as_ref() == widget_id)?;
-    let NodeKind::Widget(props) = &node.kind else {
-        return None;
-    };
-
-    props
-        .as_any()
-        .downcast_ref::<TextInputProps>()
-        .map(|_| TextFieldProps::TextInput)
-        .or_else(|| {
-            props
-                .as_any()
-                .downcast_ref::<NumberInputProps>()
-                .map(TextFieldProps::NumberInput)
-        })
-}
-
-fn text_field_props_for<'a>(cx: &'a SystemCx<'_>, widget_id: &str) -> Option<TextFieldProps<'a>> {
-    text_field_props(cx.tree(), widget_id)
 }
 
 fn changed_text_output(widget_id: &str, value: &str) -> FrameworkOutput {
@@ -443,10 +430,16 @@ fn changed_number_output(widget_id: &str, value: f32, external_value: f32) -> Fr
     }
 }
 
-fn live_number_output(widget_id: &str, text: &str, props: &NumberInputProps) -> FrameworkOutput {
+fn live_number_output(
+    widget_id: &str,
+    text: &str,
+    external_value: f32,
+    min: f32,
+    max: f32,
+) -> FrameworkOutput {
     parse_number_text(text)
-        .filter(|value| *value >= props.min && *value <= props.max)
-        .map(|value| changed_number_output(widget_id, value, props.value))
+        .filter(|value| *value >= min && *value <= max)
+        .map(|value| changed_number_output(widget_id, value, external_value))
         .unwrap_or_default()
 }
 

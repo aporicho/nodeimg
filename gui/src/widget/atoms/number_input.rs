@@ -1,8 +1,5 @@
-use crate::renderer::TextStyle;
 use crate::theme::{ControlSize, Density};
-use crate::ui::{self, DecorationBuilder, StyleBuilder};
-use crate::widget::anatomy::Anatomy;
-use crate::widget::build;
+use crate::widget::atoms::text_box::{TextBoxFont, TextBoxMode, TextBoxProps};
 use crate::widget::props::{WidgetBuild, WidgetBuildCx, WidgetProps};
 use std::any::Any;
 use std::borrow::Cow;
@@ -43,62 +40,16 @@ impl WidgetProps for NumberInputProps {
     }
 
     fn build(&self, id: &str, cx: &WidgetBuildCx<'_>) -> WidgetBuild {
-        use crate::renderer::Border;
-        use crate::tree::layout::Align;
-
-        let theme = cx.theme;
-        let tokens = theme.text_field_metrics(self.size, self.density);
-        let visual = theme.text_input_visual(if self.disabled {
-            crate::interaction::WidgetVisualState::Disabled
-        } else {
-            crate::interaction::WidgetVisualState::Normal
-        });
-        let anatomy = Anatomy::new(id);
-
-        let mut children = Vec::new();
-        if let Some(label) = &self.label {
-            children.push(
-                ui::text(
-                    anatomy.label(),
-                    label.to_string(),
-                    TextStyle {
-                        color: theme.colors.text_muted,
-                        size: tokens.label_size,
-                        ..theme.text_style_label_sm()
-                    },
-                )
-                .build(),
-            );
+        TextBoxProps {
+            label: self.label.clone(),
+            value: Cow::Owned(format_number(self.value, self.precision)),
+            disabled: self.disabled,
+            size: self.size,
+            density: self.density,
+            mode: TextBoxMode::SingleLine,
+            font: TextBoxFont::Mono,
         }
-        children.push(
-            ui::row(anatomy.field())
-                .fixed_height(tokens.field_height)
-                .padding_symmetric(tokens.padding_y, tokens.padding_x)
-                .align_items(Align::Center)
-                .hittable(true)
-                .background(visual.background)
-                .border(Border {
-                    width: tokens.border_width,
-                    color: visual.border.unwrap_or(theme.colors.border),
-                })
-                .radius_all(tokens.radius)
-                .child(ui::text(
-                    anatomy.part("value"),
-                    format_number(self.value, self.precision),
-                    TextStyle {
-                        color: visual.text,
-                        size: tokens.value_size,
-                        ..theme.text_style_mono_md()
-                    },
-                ))
-                .build(),
-        );
-
-        build::column()
-            .gap(tokens.gap)
-            .auto_height()
-            .children(children)
-            .build()
+        .build_text_box(id, cx)
     }
 }
 
@@ -140,7 +91,7 @@ mod tests {
                 Desc::Leaf {
                     kind: crate::tree::layout::LeafKind::Text { content, .. },
                     ..
-                } => assert_eq!(content, "1.25"),
+                } => assert!(content.is_empty()),
                 _ => panic!("expected value leaf"),
             },
             _ => panic!("expected field container"),
