@@ -133,9 +133,9 @@ impl TextBoxRuntime {
         &mut self.editor
     }
 
-    pub(crate) fn sync_external_text(&mut self, text: &str, allow_override: bool) {
+    pub(crate) fn sync_external_text(&mut self, text: &str, allow_override: bool) -> bool {
         if text == self.last_external_text {
-            return;
+            return false;
         }
 
         let current_matches_external = self.editor.text() == self.last_external_text;
@@ -144,6 +144,7 @@ impl TextBoxRuntime {
             self.editor.set_text(text);
         }
         self.last_external_text = text.to_string();
+        true
     }
 
     pub(crate) fn revert_to_external(&mut self) {
@@ -551,7 +552,8 @@ impl TextBoxStore {
 
             runtime.sync_spec(&spec);
             let allow_override = Some(widget_id.as_str()) != focused_widget_id;
-            runtime.sync_external_text(&spec.external_text, allow_override);
+            let external_text_changed =
+                runtime.sync_external_text(&spec.external_text, allow_override);
 
             let field_rect = find_rect(tree, &format!("{widget_id}::field")).unwrap_or(Rect {
                 x: node.rect.x,
@@ -562,6 +564,14 @@ impl TextBoxStore {
             let value_rect = find_rect(tree, &format!("{widget_id}::value"));
             let value_style = text_box_value_style(theme, spec.tokens, spec.font);
             runtime.sync_layout_with_style(field_rect, value_rect, measurer, &spec, value_style);
+            log_text_box_sizing(
+                widget_id.as_str(),
+                &runtime,
+                &spec,
+                Some(widget_id.as_str()) == focused_widget_id,
+                external_text_changed,
+                value_rect,
+            );
             next.insert(widget_id, runtime);
         }
 
@@ -605,7 +615,8 @@ impl TextBoxStore {
     }
 
     pub(crate) fn control_intrinsics(&self) -> Vec<ControlIntrinsic> {
-        self.runtimes
+        let intrinsics = self
+            .runtimes
             .iter()
             .filter(|(_, runtime)| runtime.is_multiline())
             .map(|(widget_id, runtime)| ControlIntrinsic {
@@ -616,7 +627,42 @@ impl TextBoxStore {
                 affects_parent_width: false,
                 affects_parent_height: true,
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        for intrinsic in &intrinsics {
+            let height_delta = intrinsic.desired_size[1] - intrinsic.current_size[1];
+            let log_at_debug = height_delta.abs() > 0.5;
+            if log_at_debug {
+                tracing::debug!(
+                    target: "gui::widget::text_box_sizing",
+                    widget_id = %intrinsic.widget_id,
+                    current_w = intrinsic.current_size[0],
+                    current_h = intrinsic.current_size[1],
+                    min_w = intrinsic.min_size[0],
+                    min_h = intrinsic.min_size[1],
+                    desired_w = intrinsic.desired_size[0],
+                    desired_h = intrinsic.desired_size[1],
+                    height_delta,
+                    affects_parent_height = intrinsic.affects_parent_height,
+                    "emit text box control intrinsic with height delta"
+                );
+            } else {
+                tracing::trace!(
+                    target: "gui::widget::text_box_sizing",
+                    widget_id = %intrinsic.widget_id,
+                    current_w = intrinsic.current_size[0],
+                    current_h = intrinsic.current_size[1],
+                    min_w = intrinsic.min_size[0],
+                    min_h = intrinsic.min_size[1],
+                    desired_w = intrinsic.desired_size[0],
+                    desired_h = intrinsic.desired_size[1],
+                    affects_parent_height = intrinsic.affects_parent_height,
+                    "emit text box control intrinsic"
+                );
+            }
+        }
+
+        intrinsics
     }
 }
 
@@ -711,6 +757,73 @@ fn min_height_for_mode(mode: TextBoxMode, line_height: f32, tokens: TextInputThe
         TextBoxMode::MultiLine { min_rows } => {
             min_rows.max(1) as f32 * line_height + tokens.padding_y * 2.0
         }
+    }
+}
+
+fn log_text_box_sizing(
+    widget_id: &str,
+    runtime: &TextBoxRuntime,
+    spec: &TextBoxSpec,
+    focused: bool,
+    external_text_changed: bool,
+    value_rect: Option<Rect>,
+) {
+    let TextBoxMode::MultiLine { min_rows } = spec.mode else {
+        return;
+    };
+
+    let line_count = runtime.layout.lines.len();
+    let height_delta = runtime.desired_height - runtime.field_rect.h;
+    let editor_dirty = runtime.editor.text() != runtime.last_external_text;
+    let should_debug = external_text_changed || editor_dirty || height_delta.abs() > 0.5;
+
+    if should_debug {
+        tracing::debug!(
+            target: "gui::widget::text_box_sizing",
+            widget_id,
+            focused,
+            external_text_changed,
+            editor_dirty,
+            text_bytes = runtime.editor.text().len(),
+            text_chars = runtime.editor.text().chars().count(),
+            min_rows,
+            line_count,
+            line_height = runtime.layout.line_height,
+            layout_w = runtime.layout.width,
+            layout_h = runtime.layout.height,
+            field_x = runtime.field_rect.x,
+            field_y = runtime.field_rect.y,
+            field_w = runtime.field_rect.w,
+            field_h = runtime.field_rect.h,
+            content_w = runtime.content_rect.w,
+            content_h = runtime.content_rect.h,
+            min_h = runtime.min_height,
+            desired_h = runtime.desired_height,
+            height_delta,
+            value_rect_w = value_rect.map(|rect| rect.w),
+            value_rect_h = value_rect.map(|rect| rect.h),
+            "sync multiline text box layout"
+        );
+    } else {
+        tracing::trace!(
+            target: "gui::widget::text_box_sizing",
+            widget_id,
+            focused,
+            text_bytes = runtime.editor.text().len(),
+            text_chars = runtime.editor.text().chars().count(),
+            min_rows,
+            line_count,
+            line_height = runtime.layout.line_height,
+            layout_w = runtime.layout.width,
+            layout_h = runtime.layout.height,
+            field_w = runtime.field_rect.w,
+            field_h = runtime.field_rect.h,
+            content_w = runtime.content_rect.w,
+            content_h = runtime.content_rect.h,
+            min_h = runtime.min_height,
+            desired_h = runtime.desired_height,
+            "sync multiline text box layout"
+        );
     }
 }
 

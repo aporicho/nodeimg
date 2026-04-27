@@ -611,7 +611,15 @@ mod tests {
     }
 
     fn real_node_card_text_area_desc(value: &str, theme: &Theme) -> Desc {
-        real_node_card_text_area_canvas_desc(value, theme, None)
+        real_node_card_text_area_canvas_desc(value, theme, None, 180.0)
+    }
+
+    fn real_node_card_text_area_desc_with_height(
+        value: &str,
+        theme: &Theme,
+        card_height: f32,
+    ) -> Desc {
+        real_node_card_text_area_canvas_desc(value, theme, None, card_height)
     }
 
     fn transformed_real_node_card_text_area_desc(value: &str, theme: &Theme) -> Desc {
@@ -621,6 +629,7 @@ mod tests {
             value,
             theme,
             Some(TransformSpec::translate_scale([100.0, -40.0], 2.0)),
+            180.0,
         )
     }
 
@@ -628,6 +637,7 @@ mod tests {
         value: &str,
         theme: &Theme,
         canvas_transform: Option<crate::geometry::TransformSpec>,
+        card_height: f32,
     ) -> Desc {
         use crate::canvas::node_card::node_card_from_render_view;
         use crate::canvas::node_template::{
@@ -664,7 +674,7 @@ mod tests {
                     x: 20.0,
                     y: 20.0,
                     w: 304.0,
-                    h: 180.0,
+                    h: card_height,
                 },
                 z_index: 0,
                 collapsed: false,
@@ -1311,6 +1321,38 @@ mod tests {
             .expect("text area runtime");
         assert!(runtime.layout().lines.len() > 1);
         assert!(runtime.clip_rect().w <= field.w);
+    }
+
+    #[test]
+    fn real_node_card_text_area_field_stretches_to_card_height() {
+        let mut ctx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let theme = dark_theme();
+        let widget_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget";
+        let field_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+        let value = "A compact text field".repeat(8);
+        ctx.update(
+            real_node_card_text_area_desc_with_height(&value, &theme, 300.0),
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 720.0,
+                h: 520.0,
+            },
+            &mut measurer,
+            &theme,
+        );
+
+        let field = node_rect(&ctx, field_id);
+        let runtime = ctx
+            .systems
+            .text_box_store()
+            .runtime(widget_id)
+            .expect("text area runtime");
+        assert_eq!(runtime.current_size()[1], field.h);
+        assert!(field.h > runtime.min_size()[1]);
     }
 
     #[test]

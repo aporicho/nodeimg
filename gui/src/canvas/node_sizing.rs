@@ -4,7 +4,9 @@ use super::{canvas_node_stable_id, CanvasNodeLayout};
 use crate::runtime::ControlIntrinsic;
 use crate::theme::Theme;
 use crate::widget::mapping::ParamControlSpec;
-use crate::widget::param_control::param_control_min_height;
+use crate::widget::param_control::{
+    param_control_kind, param_control_layout_policy, param_control_min_height,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CanvasNodeSizingRequest {
@@ -33,6 +35,32 @@ pub fn canvas_node_sizing_request(
     let target_height = min_height
         .max(desired_card_height)
         .max(layout.user_min_height.unwrap_or(0.0));
+    let stable_id = canvas_node_stable_id(&layout.owner_id);
+    let owner_intrinsic_count = control_intrinsics
+        .iter()
+        .filter(|intrinsic| intrinsic.widget_id.starts_with(stable_id.as_str()))
+        .count();
+    let height_delta = target_height - layout.rect.h;
+    if owner_intrinsic_count > 0 || height_delta.abs() > 0.5 {
+        tracing::debug!(
+            target: "gui::canvas::node_sizing",
+            owner_id = %layout.owner_id,
+            stable_id = %stable_id,
+            current_w = layout.rect.w,
+            current_h = layout.rect.h,
+            min_w = min_width,
+            min_h = min_height,
+            desired_body_h = desired_body_height,
+            desired_card_h = desired_card_height,
+            target_w = layout.rect.w.max(min_width),
+            target_h = target_height,
+            height_delta,
+            user_min_height = layout.user_min_height,
+            total_intrinsic_count = control_intrinsics.len(),
+            owner_intrinsic_count,
+            "calculate canvas node sizing request"
+        );
+    }
 
     CanvasNodeSizingRequest {
         min_width,
@@ -108,19 +136,55 @@ fn row_desired_height(
     theme: &Theme,
 ) -> f32 {
     let min_height = row_min_height(control, metrics, theme);
+    let policy = param_control_layout_policy(control, theme, metrics.control);
+    let control_kind = param_control_kind(control);
     let widget_id = format!(
         "{}::body::param::{index}::control::widget",
         canvas_node_stable_id(owner_id)
     );
-    control_intrinsics
+    let intrinsic = control_intrinsics
         .iter()
-        .find(|intrinsic| intrinsic.widget_id == widget_id && intrinsic.affects_parent_height)
-        .map(|intrinsic| {
-            intrinsic.desired_size[1]
+        .find(|intrinsic| intrinsic.widget_id == widget_id && intrinsic.affects_parent_height);
+    match intrinsic {
+        Some(intrinsic) => {
+            let desired_height = intrinsic.desired_size[1]
                 .max(intrinsic.min_size[1])
-                .max(min_height)
-        })
-        .unwrap_or(min_height)
+                .max(min_height);
+            if (desired_height - min_height).abs() > 0.5
+                || (desired_height - intrinsic.current_size[1]).abs() > 0.5
+            {
+                tracing::debug!(
+                    target: "gui::canvas::node_sizing",
+                    owner_id,
+                    index,
+                    widget_id = %intrinsic.widget_id,
+                    control_kind = ?control_kind,
+                    row_min_h = min_height,
+                    current_h = intrinsic.current_size[1],
+                    intrinsic_min_h = intrinsic.min_size[1],
+                    intrinsic_desired_h = intrinsic.desired_size[1],
+                    row_desired_h = desired_height,
+                    "use control intrinsic for canvas node row height"
+                );
+            }
+            desired_height
+        }
+        None => {
+            if policy.affects_parent_height {
+                tracing::debug!(
+                    target: "gui::canvas::node_sizing",
+                    owner_id,
+                    index,
+                    expected_widget_id = %widget_id,
+                    control_kind = ?control_kind,
+                    total_intrinsic_count = control_intrinsics.len(),
+                    row_min_h = min_height,
+                    "missing auto-height control intrinsic for canvas node row"
+                );
+            }
+            min_height
+        }
+    }
 }
 
 #[cfg(test)]

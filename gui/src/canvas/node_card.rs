@@ -12,7 +12,9 @@ use crate::theme::Theme;
 use crate::tree::layout::{Align, Justify, LeafKind, Overflow, TextLayout, TextOverflow};
 use crate::tree::Desc;
 use crate::ui::{self, DecorationBuilder, StyleBuilder};
-use crate::widget::param_control::param_control;
+use crate::widget::param_control::{
+    param_control, param_control_layout_policy, ParamControlLayoutPolicy,
+};
 use std::borrow::Cow;
 
 pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
@@ -271,7 +273,7 @@ fn node_body(
 fn body_row_from_spec(row: &NodeBodyRowSpec, theme: &Theme, metrics: NodeCardMetrics) -> Desc {
     match row {
         NodeBodyRowSpec::Summary { id, text_id, text } => {
-            body_row(id.clone(), theme, metrics, false)
+            fixed_body_row(id.clone(), theme, metrics)
                 .child(
                     ui::leaf(
                         text_id.clone(),
@@ -291,22 +293,17 @@ fn body_row_from_spec(row: &NodeBodyRowSpec, theme: &Theme, metrics: NodeCardMet
             id,
             control_id,
             control,
-        } => body_row(
-            id.clone(),
-            theme,
-            metrics,
-            matches!(
-                control,
-                crate::widget::mapping::ParamControlSpec::TextArea { .. }
-            ),
-        )
-        .child(param_control(
-            Cow::Owned(control_id.clone()),
-            control,
-            theme,
-            metrics.control,
-        ))
-        .build(),
+        } => {
+            let policy = param_control_layout_policy(control, theme, metrics.control);
+            control_body_row(id.clone(), theme, metrics, policy)
+                .child(param_control(
+                    Cow::Owned(control_id.clone()),
+                    control,
+                    theme,
+                    metrics.control,
+                ))
+                .build()
+        }
     }
 }
 
@@ -347,24 +344,44 @@ fn node_header(header: &NodeHeaderSpec, theme: &Theme, metrics: NodeCardMetrics)
         .build()
 }
 
-fn body_row(
+fn fixed_body_row(
     id: impl Into<Cow<'static, str>>,
     theme: &Theme,
     metrics: NodeCardMetrics,
-    auto_height: bool,
+) -> ui::ContainerBuilder {
+    base_body_row(id, theme, metrics, Align::Center).fixed_height(metrics.param_row_height)
+}
+
+fn control_body_row(
+    id: impl Into<Cow<'static, str>>,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+    policy: ParamControlLayoutPolicy,
+) -> ui::ContainerBuilder {
+    let row = base_body_row(id, theme, metrics, policy.row_align);
+    if policy.fills_parent_height() {
+        row.fill_height()
+            .min_height(policy.min_height().max(metrics.param_row_height))
+            .flex_grow(1.0)
+    } else {
+        row.fixed_height(metrics.param_row_height.max(policy.min_height()))
+    }
+}
+
+fn base_body_row(
+    id: impl Into<Cow<'static, str>>,
+    theme: &Theme,
+    metrics: NodeCardMetrics,
+    align_items: Align,
 ) -> ui::ContainerBuilder {
     let row = ui::row(id)
         .fill_width()
         .justify_content(Justify::Start)
-        .align_items(Align::Center)
+        .align_items(align_items)
         .gap(metrics.param_label_gap)
         .background(theme.colors.canvas_bg)
         .radius_all(metrics.row_radius);
-    if auto_height {
-        row.fill_height().flex_grow(1.0)
-    } else {
-        row.fixed_height(metrics.param_row_height)
-    }
+    row
 }
 
 fn ellipsis_text_layout() -> TextLayout {
@@ -807,6 +824,7 @@ mod tests {
         };
         assert_eq!(style.height, Size::Fill);
         assert_eq!(style.flex_grow, 1.0);
+        assert_eq!(style.align_items, Align::Stretch);
     }
 
     #[test]

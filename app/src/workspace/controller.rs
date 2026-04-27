@@ -112,6 +112,14 @@ impl WorkspaceController {
         let mut views = self.canvas_node_render_views_for_layouts(layouts.clone());
         let mut resized_to_fit = false;
         let control_intrinsics = gui.control_intrinsics();
+        if !control_intrinsics.is_empty() {
+            tracing::debug!(
+                target: "gui::canvas::node_sizing",
+                intrinsic_count = control_intrinsics.len(),
+                view_count = views.len(),
+                "collect control intrinsics before canvas node sizing"
+            );
+        }
         for view in &views {
             let owner_id = &view.state.owner_id;
             let request = canvas_node_sizing_request(
@@ -121,21 +129,38 @@ impl WorkspaceController {
                 theme,
             );
             let sizing_changed = gui.apply_canvas_node_sizing(owner_id, request);
-            tracing::trace!(
-                target: "gui::canvas::node_resize",
-                owner_id = %owner_id,
-                min_w = request.min_width,
-                min_h = request.min_height,
-                target_w = request.target_width,
-                target_h = request.target_height,
-                sizing_changed,
-                "apply canvas node sizing request while building render views"
-            );
+            let height_delta = request.target_height - view.state.layout.rect.h;
+            if sizing_changed || height_delta.abs() > 0.5 {
+                tracing::debug!(
+                    target: "gui::canvas::node_sizing",
+                    owner_id = %owner_id,
+                    current_w = view.state.layout.rect.w,
+                    current_h = view.state.layout.rect.h,
+                    min_w = request.min_width,
+                    min_h = request.min_height,
+                    target_w = request.target_width,
+                    target_h = request.target_height,
+                    height_delta,
+                    sizing_changed,
+                    "apply canvas node sizing request while building render views"
+                );
+            } else {
+                tracing::trace!(
+                    target: "gui::canvas::node_sizing",
+                    owner_id = %owner_id,
+                    min_w = request.min_width,
+                    min_h = request.min_height,
+                    target_w = request.target_width,
+                    target_h = request.target_height,
+                    sizing_changed,
+                    "apply canvas node sizing request while building render views"
+                );
+            }
             resized_to_fit = resized_to_fit || sizing_changed;
         }
         if resized_to_fit {
             tracing::debug!(
-                target: "gui::canvas::node_resize",
+                target: "gui::canvas::node_sizing",
                 "resync canvas node layouts after sizing request"
             );
             layouts = gui.sync_canvas_node_layouts(&identities);

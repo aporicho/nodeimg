@@ -1,5 +1,6 @@
-use crate::theme::{ControlSize, Density, Theme};
-use crate::tree::layout::{Align, Justify, Size, TextAlign, TextOverflow};
+use super::{param_control_layout_policy, ParamControlHeight, ParamControlMetrics};
+use crate::theme::Theme;
+use crate::tree::layout::{Justify, Size, TextAlign, TextOverflow};
 use crate::tree::Desc;
 use crate::ui::{self, StyleBuilder};
 use crate::widget::atoms::color_swatch::ColorSwatchProps;
@@ -15,38 +16,6 @@ use crate::widget::atoms::truncated_text::TruncatedTextProps;
 use crate::widget::mapping::ParamControlSpec;
 use std::borrow::Cow;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ParamControlMetrics {
-    pub control_height: f32,
-    pub control_width: f32,
-    pub size: ControlSize,
-    pub density: Density,
-}
-
-impl ParamControlMetrics {
-    pub fn from_theme(_theme: &Theme) -> Self {
-        Self {
-            control_height: 24.0,
-            control_width: 128.0,
-            size: ControlSize::Small,
-            density: Density::Compact,
-        }
-    }
-}
-
-pub fn param_control_min_height(
-    control: &ParamControlSpec,
-    theme: &Theme,
-    metrics: ParamControlMetrics,
-) -> f32 {
-    match control {
-        ParamControlSpec::TextArea { min_rows, .. } => {
-            text_area_min_height(*min_rows, theme, metrics)
-        }
-        _ => metrics.control_height,
-    }
-}
-
 pub fn param_control(
     id: impl Into<Cow<'static, str>>,
     control: &ParamControlSpec,
@@ -56,7 +25,30 @@ pub fn param_control(
     let id = id.into();
     let base = id.to_string();
     let child_id = format!("{base}::widget");
-    let child = match control {
+    let child = control_widget(child_id, control, metrics);
+    let policy = param_control_layout_policy(control, theme, metrics);
+
+    let wrapper = ui::row(id)
+        .fixed_width(metrics.control_width)
+        .justify_content(Justify::Start)
+        .align_items(policy.wrapper_align)
+        .child(child);
+
+    match policy.height {
+        ParamControlHeight::Fixed(height) => wrapper.fixed_height(height),
+        ParamControlHeight::Fill { min_height } => {
+            wrapper.fill_height().min_height(min_height).flex_grow(1.0)
+        }
+    }
+    .build()
+}
+
+fn control_widget(
+    child_id: String,
+    control: &ParamControlSpec,
+    metrics: ParamControlMetrics,
+) -> Desc {
+    match control {
         ParamControlSpec::ReadOnly { value } => ui::widget(
             child_id,
             TruncatedTextProps {
@@ -179,32 +171,14 @@ pub fn param_control(
             },
         )
         .build(),
-    };
-
-    let mut wrapper = ui::row(id)
-        .fixed_width(metrics.control_width)
-        .justify_content(Justify::Start)
-        .align_items(Align::Center)
-        .child(child);
-    wrapper = if matches!(control, ParamControlSpec::TextArea { .. }) {
-        let min_height = param_control_min_height(control, theme, metrics);
-        wrapper.fill_height().min_height(min_height).flex_grow(1.0)
-    } else {
-        wrapper.fixed_height(metrics.control_height)
-    };
-    wrapper.build()
-}
-
-fn text_area_min_height(min_rows: usize, theme: &Theme, metrics: ParamControlMetrics) -> f32 {
-    let tokens = theme.text_field_metrics(metrics.size, metrics.density);
-    let line_height = tokens.value_size * 1.2;
-    min_rows.max(1) as f32 * line_height + tokens.padding_y * 2.0
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::theme::light_theme;
+    use crate::tree::layout::{Align, Size};
 
     #[test]
     fn slider_param_control_adapts_to_widget() {
@@ -255,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn text_area_param_control_fills_available_height_from_min_rows() {
+    fn text_area_param_control_fills_available_height_from_policy() {
         let theme = light_theme();
         let metrics = ParamControlMetrics::from_theme(&theme);
 
@@ -277,6 +251,7 @@ mod tests {
         assert_eq!(style.width, Size::Fixed(metrics.control_width));
         assert_eq!(style.height, Size::Fill);
         assert_eq!(style.flex_grow, 1.0);
+        assert_eq!(style.align_items, Align::Stretch);
         assert!(style.min_height > metrics.control_height);
         match &children[0] {
             Desc::Widget(widget) => assert_eq!(widget.props().widget_type(), "TextArea"),
