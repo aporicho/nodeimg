@@ -8,15 +8,17 @@ use lyon::tessellation::{
 
 use crate::geometry::Affine2D;
 
+use super::geometry_cache::GeometryCacheStats;
 use super::path::{PathCommand, PathRequest};
 use super::path_geometry::{build_lyon_path, lyon_fill_rule};
 use super::pipeline::vector::VectorVertex;
 use super::style::{Fill, FillRule, LineCap, LineJoin, Stroke};
-use super::types::{Color, Point};
+use super::types::Point;
 
 #[derive(Default)]
 pub struct VectorTessellator {
     cache: HashMap<PathCacheKey, CachedTessellation>,
+    stats: GeometryCacheStats,
 }
 
 impl VectorTessellator {
@@ -45,7 +47,7 @@ impl VectorTessellator {
             });
             VectorVertex {
                 position: [transformed.x, transformed.y],
-                color: vertex.color,
+                color: color_for_part(req, vertex.part),
             }
         }));
         indices.extend(cached.indices.iter().map(|idx| idx + vertex_offset));
@@ -57,15 +59,41 @@ impl VectorTessellator {
         self.cache.len()
     }
 
+    pub(crate) fn take_frame_stats(&mut self) -> GeometryCacheStats {
+        let stats = self.stats;
+        self.stats.clear();
+        stats
+    }
+
     fn cached(&mut self, req: &PathRequest) -> &CachedTessellation {
         let key = PathCacheKey::from_request(req);
-        self.cache.entry(key).or_insert_with(|| tessellate(req))
+        if self.cache.contains_key(&key) {
+            self.stats.record_hit();
+        } else {
+            let tessellation = tessellate(req);
+            self.stats.record_miss(tessellation.vertices.len());
+            self.cache.insert(key.clone(), tessellation);
+        }
+        self.cache
+            .get(&key)
+            .expect("path tessellation cache entry was just inserted")
     }
 }
 
 struct CachedTessellation {
-    vertices: Vec<VectorVertex>,
+    vertices: Vec<CachedVectorVertex>,
     indices: Vec<u32>,
+}
+
+#[derive(Clone, Copy)]
+enum CachedGeometryPart {
+    Fill,
+    Stroke,
+}
+
+struct CachedVectorVertex {
+    position: [f32; 2],
+    part: CachedGeometryPart,
 }
 
 #[derive(Hash, PartialEq, Eq, Clone)]
@@ -127,23 +155,18 @@ impl From<Point> for PointKey {
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 struct FillKey {
-    color: ColorKey,
     rule: FillRule,
 }
 
 impl From<Fill> for FillKey {
     fn from(fill: Fill) -> Self {
-        Self {
-            color: ColorKey::from(fill.color),
-            rule: fill.rule,
-        }
+        Self { rule: fill.rule }
     }
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]
 struct StrokeKey {
     width: u32,
-    color: ColorKey,
     cap: LineCap,
     join: LineJoin,
     miter_limit: u32,
@@ -153,7 +176,6 @@ impl From<Stroke> for StrokeKey {
     fn from(stroke: Stroke) -> Self {
         Self {
             width: stroke.width.to_bits(),
-            color: ColorKey::from(stroke.color),
             cap: stroke.cap,
             join: stroke.join,
             miter_limit: stroke.miter_limit.to_bits(),
@@ -161,27 +183,9 @@ impl From<Stroke> for StrokeKey {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-struct ColorKey {
-    rgba: [u32; 4],
-}
-
-impl From<Color> for ColorKey {
-    fn from(color: Color) -> Self {
-        Self {
-            rgba: [
-                color.r.to_bits(),
-                color.g.to_bits(),
-                color.b.to_bits(),
-                color.a.to_bits(),
-            ],
-        }
-    }
-}
-
 fn tessellate(req: &PathRequest) -> CachedTessellation {
     let path = build_lyon_path(&req.data);
-    let mut geometry: VertexBuffers<VectorVertex, u32> = VertexBuffers::new();
+    let mut geometry: VertexBuffers<CachedVectorVertex, u32> = VertexBuffers::new();
 
     if let Some(fill) = req.style.fill {
         tessellate_fill(&path, fill, &mut geometry);
@@ -199,15 +203,18 @@ fn tessellate(req: &PathRequest) -> CachedTessellation {
     }
 }
 
-fn tessellate_fill(path: &LyonPath, fill: Fill, geometry: &mut VertexBuffers<VectorVertex, u32>) {
-    let color = fill.color.to_array();
+fn tessellate_fill(
+    path: &LyonPath,
+    fill: Fill,
+    geometry: &mut VertexBuffers<CachedVectorVertex, u32>,
+) {
     FillTessellator::new()
         .tessellate_path(
             path,
             &FillOptions::default().with_fill_rule(lyon_fill_rule(fill.rule)),
-            &mut BuffersBuilder::new(geometry, |vertex: FillVertex| VectorVertex {
+            &mut BuffersBuilder::new(geometry, |vertex: FillVertex| CachedVectorVertex {
                 position: vertex.position().to_array(),
-                color,
+                part: CachedGeometryPart::Fill,
             }),
         )
         .expect("failed to tessellate vector fill");
@@ -216,19 +223,33 @@ fn tessellate_fill(path: &LyonPath, fill: Fill, geometry: &mut VertexBuffers<Vec
 fn tessellate_stroke(
     path: &LyonPath,
     stroke: Stroke,
-    geometry: &mut VertexBuffers<VectorVertex, u32>,
+    geometry: &mut VertexBuffers<CachedVectorVertex, u32>,
 ) {
-    let color = stroke.color.to_array();
     StrokeTessellator::new()
         .tessellate_path(
             path,
             &stroke_options(stroke),
-            &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| VectorVertex {
+            &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| CachedVectorVertex {
                 position: vertex.position().to_array(),
-                color,
+                part: CachedGeometryPart::Stroke,
             }),
         )
         .expect("failed to tessellate vector stroke");
+}
+
+fn color_for_part(req: &PathRequest, part: CachedGeometryPart) -> [f32; 4] {
+    match part {
+        CachedGeometryPart::Fill => req
+            .style
+            .fill
+            .map(|fill| fill.color.to_array())
+            .unwrap_or([0.0; 4]),
+        CachedGeometryPart::Stroke => req
+            .style
+            .stroke
+            .map(|stroke| stroke.color.to_array())
+            .unwrap_or([0.0; 4]),
+    }
 }
 
 fn stroke_options(stroke: Stroke) -> StrokeOptions {
@@ -339,6 +360,37 @@ mod tests {
         );
 
         assert_eq!(tessellator.cache_len(), 2);
+    }
+
+    #[test]
+    fn fill_color_is_not_part_of_geometry_cache_key() {
+        let mut tessellator = VectorTessellator::new();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let white = triangle(PathStyle::fill(Fill::non_zero(Color::WHITE)));
+        let black = triangle(PathStyle::fill(Fill::non_zero(Color::BLACK)));
+
+        tessellator.append_path_transformed(
+            &white,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
+        let first_len = vertices.len();
+        tessellator.append_path_transformed(
+            &black,
+            Affine2D::IDENTITY,
+            &mut vertices,
+            &mut indices,
+        );
+
+        assert_eq!(tessellator.cache_len(), 1);
+        assert!(vertices[..first_len]
+            .iter()
+            .all(|vertex| vertex.color == Color::WHITE.to_array()));
+        assert!(vertices[first_len..]
+            .iter()
+            .all(|vertex| vertex.color == Color::BLACK.to_array()));
     }
 
     #[test]

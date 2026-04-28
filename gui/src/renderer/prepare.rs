@@ -11,8 +11,9 @@ use crate::paint::ClipShape;
 
 use super::affine::{similarity_scale, translate_uniform_scale};
 use super::command::{
-    AffineCircleRequest, AffineClipRequest, AffinePathRequest, AffineRectRequest,
-    AffineShadowRequest, AffineSvgRasterRequest, AffineTextRequest, BackendCommand,
+    AffineCircleRequest, AffineClipRequest, AffineGridRequest, AffinePathRequest,
+    AffineRectRequest, AffineShadowRequest, AffineSvgRasterRequest, AffineTextRequest,
+    BackendCommand,
 };
 use super::image::resolve_image_draw;
 use super::path::{PathRequest, PathStyle};
@@ -21,11 +22,13 @@ use super::path_geometry::{
     DEFAULT_CORNER_SMOOTHING,
 };
 use super::pipeline::circle::{CircleRequest, CircleVertex};
+use super::pipeline::grid::GridVertex;
 use super::pipeline::image::PreparedImageDraw;
 use super::pipeline::quad::QuadVertex;
 use super::pipeline::stencil::StencilVertex;
 use super::pipeline::text::TextRequest;
 use super::pipeline::vector::VectorVertex;
+use super::scene_prepare::RendererPrepareStats;
 use super::style::Fill;
 use super::vector_tessellator::VectorTessellator;
 
@@ -35,6 +38,10 @@ pub enum DrawOp {
         index_count: u32,
     },
     Circle {
+        index_start: u32,
+        index_count: u32,
+    },
+    Grid {
         index_start: u32,
         index_count: u32,
     },
@@ -64,6 +71,7 @@ pub enum DrawOp {
 }
 
 pub struct PreparedFrame {
+    pub stats: RendererPrepareStats,
     pub ops: Vec<DrawOp>,
     pub text_requests: Vec<TextRequest>,
 
@@ -76,6 +84,9 @@ pub struct PreparedFrame {
     pub circle_vertices: Vec<CircleVertex>,
     pub circle_indices: Vec<u32>,
 
+    pub grid_vertices: Vec<GridVertex>,
+    pub grid_indices: Vec<u32>,
+
     pub stencil_vertices: Vec<StencilVertex>,
     pub stencil_indices: Vec<u32>,
 }
@@ -85,6 +96,10 @@ pub fn prepare_frame(
     vector_tessellator: &mut VectorTessellator,
 ) -> PreparedFrame {
     let mut frame = PreparedFrame {
+        stats: RendererPrepareStats {
+            backend_commands: commands.len(),
+            ..RendererPrepareStats::default()
+        },
         ops: Vec::new(),
         text_requests: Vec::new(),
         quad_vertices: Vec::new(),
@@ -93,6 +108,8 @@ pub fn prepare_frame(
         vector_indices: Vec::new(),
         circle_vertices: Vec::new(),
         circle_indices: Vec::new(),
+        grid_vertices: Vec::new(),
+        grid_indices: Vec::new(),
         stencil_vertices: Vec::new(),
         stencil_indices: Vec::new(),
     };
@@ -132,6 +149,16 @@ pub fn prepare_frame(
                     flush_circle_batch(&mut circle_batch, &mut frame);
                     append_circle_vector_fallback(req, &mut frame, vector_tessellator);
                 }
+            }
+            BackendCommand::Grid(req) => {
+                flush_all_batches(
+                    &mut quad_batch,
+                    &mut circle_batch,
+                    &mut vector_batch,
+                    &mut frame,
+                    vector_tessellator,
+                );
+                append_grid_request(req, &mut frame);
             }
             BackendCommand::Text(req) => {
                 flush_all_batches(
@@ -205,6 +232,11 @@ pub fn prepare_frame(
         &mut frame,
         vector_tessellator,
     );
+
+    let geometry_stats = vector_tessellator.take_frame_stats();
+    frame.stats.geometry_cache_hits = geometry_stats.hits;
+    frame.stats.geometry_cache_misses = geometry_stats.misses;
+    frame.stats.tessellated_vertices = geometry_stats.tessellated_vertices;
 
     frame
 }
@@ -358,6 +390,7 @@ fn append_circle_requests(req: &AffineCircleRequest, scale: f32, batch: &mut Vec
 
 fn push_text_op(req: &AffineTextRequest, frame: &mut PreparedFrame) {
     let Some(legacy) = translate_uniform_scale(req.transform) else {
+        frame.stats.affine_text_fallbacks += 1;
         frame.ops.push(DrawOp::AffineText(req.clone()));
         return;
     };
@@ -370,6 +403,57 @@ fn push_text_op(req: &AffineTextRequest, frame: &mut PreparedFrame) {
         bounds: req.bounds.map(|bounds| legacy.rect(bounds)),
     });
     frame.ops.push(DrawOp::Text { index });
+}
+
+fn append_grid_request(req: &AffineGridRequest, frame: &mut PreparedFrame) {
+    let paint = req.paint;
+    if paint.rect.w <= 0.0 || paint.rect.h <= 0.0 || paint.spacing <= 0.0 || paint.dot_size <= 0.0 {
+        return;
+    }
+
+    let index_start = frame.grid_indices.len() as u32;
+    let vertex_offset = frame.grid_vertices.len() as u32;
+    let color = paint.dot_color.to_array();
+    let radius = paint.dot_size;
+    let r = radius + 1.0;
+    let left = paint.rect.x - r;
+    let top = paint.rect.y - r;
+    let right = paint.rect.x + paint.rect.w + r;
+    let bottom = paint.rect.y + paint.rect.h + r;
+    let pattern_left = -r;
+    let pattern_top = -r;
+    let pattern_right = paint.rect.w + r;
+    let pattern_bottom = paint.rect.h + r;
+
+    let corners = [
+        (left, top, pattern_left, pattern_top),
+        (right, top, pattern_right, pattern_top),
+        (right, bottom, pattern_right, pattern_bottom),
+        (left, bottom, pattern_left, pattern_bottom),
+    ];
+
+    frame
+        .grid_vertices
+        .extend(corners.into_iter().map(|(x, y, px, py)| GridVertex {
+            position: transform_position(req.transform, [x, y]),
+            pattern_pos: [px, py],
+            spacing: paint.spacing,
+            radius,
+            color,
+        }));
+    frame.grid_indices.extend_from_slice(&[
+        vertex_offset,
+        vertex_offset + 1,
+        vertex_offset + 2,
+        vertex_offset,
+        vertex_offset + 2,
+        vertex_offset + 3,
+    ]);
+    frame.stats.grid_commands += 1;
+    frame.ops.push(DrawOp::Grid {
+        index_start,
+        index_count: 6,
+    });
 }
 
 fn scale_text_style(mut style: crate::paint::TextStyle, scale: f32) -> crate::paint::TextStyle {
@@ -599,6 +683,7 @@ fn transform_position(transform: Affine2D, position: [f32; 2]) -> [f32; 2] {
 mod tests {
     use super::*;
     use crate::geometry::Rect;
+    use crate::paint::GridPaint;
     use crate::renderer::{Color, FillRule, PathData, RectStyle, Stroke, TextStyle};
 
     fn rect_command(x: f32) -> BackendCommand {
@@ -637,6 +722,23 @@ mod tests {
                 .line_to(Point { x: 10.0, y: 10.0 })
                 .close(),
             style,
+            transform: Affine2D::IDENTITY,
+        })
+    }
+
+    fn grid_command() -> BackendCommand {
+        BackendCommand::Grid(AffineGridRequest {
+            paint: GridPaint {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 50.0,
+                },
+                spacing: 10.0,
+                dot_color: Color::WHITE,
+                dot_size: 1.0,
+            },
             transform: Affine2D::IDENTITY,
         })
     }
@@ -726,6 +828,19 @@ mod tests {
         assert!(!frame.vector_vertices.is_empty());
         assert!(!frame.vector_indices.is_empty());
         assert!(matches!(frame.ops[0], DrawOp::Vector { .. }));
+    }
+
+    #[test]
+    fn prepare_frame_keeps_grid_as_high_level_quad() {
+        let mut vector_tessellator = VectorTessellator::new();
+        let frame = prepare_frame(&[grid_command()], &mut vector_tessellator);
+
+        assert!(matches!(frame.ops[0], DrawOp::Grid { .. }));
+        assert_eq!(frame.stats.grid_commands, 1);
+        assert_eq!(frame.stats.grid_dot_expansions, 0);
+        assert_eq!(frame.grid_vertices.len(), 4);
+        assert_eq!(frame.grid_indices.len(), 6);
+        assert!(frame.circle_vertices.is_empty());
     }
 
     #[test]

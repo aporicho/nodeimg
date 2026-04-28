@@ -9,6 +9,7 @@ use super::display_backend::{lower_display_list, DisplayRenderReport};
 use super::display_resources::DisplayResourceResolver;
 use super::pipeline::blit::{self, BlitPipeline};
 use super::pipeline::circle::CirclePipeline;
+use super::pipeline::grid::GridPipeline;
 use super::pipeline::image::ImagePipeline;
 use super::pipeline::quad::QuadPipeline;
 use super::pipeline::shadow::ShadowPipeline;
@@ -19,6 +20,7 @@ use super::svg::{SvgRasterCache, SvgVectorCache};
 use super::text_measurer::TextMeasurer;
 use super::types::Color;
 use super::vector_tessellator::VectorTessellator;
+use super::RendererPrepareStats;
 
 pub const MSAA_SAMPLE_COUNT: u32 = 4;
 const DEFAULT_RENDER_SCALE: f32 = 2.0;
@@ -30,6 +32,7 @@ pub struct Renderer {
     text_pipeline: TextPipeline,
     image_pipeline: ImagePipeline,
     circle_pipeline: CirclePipeline,
+    grid_pipeline: GridPipeline,
     vector_pipeline: VectorPipeline,
     vector_tessellator: VectorTessellator,
     svg_vector_cache: SvgVectorCache,
@@ -43,6 +46,7 @@ pub struct Renderer {
     render_scale: f32,
     clear_color: Color,
     backend_commands: Vec<BackendCommand>,
+    last_prepare_stats: RendererPrepareStats,
     frame: Option<FrameState>,
 }
 
@@ -114,6 +118,7 @@ impl Renderer {
             text_measurer,
             image_pipeline: ImagePipeline::new(device, format, ms),
             circle_pipeline: CirclePipeline::new(device, format, ms),
+            grid_pipeline: GridPipeline::new(device, format, ms),
             vector_pipeline: VectorPipeline::new(device, format, ms),
             vector_tessellator: VectorTessellator::new(),
             svg_vector_cache: SvgVectorCache::new(),
@@ -127,6 +132,7 @@ impl Renderer {
             render_scale,
             clear_color: Color::BLACK,
             backend_commands: Vec::new(),
+            last_prepare_stats: RendererPrepareStats::default(),
             frame: None,
         }
     }
@@ -175,6 +181,10 @@ impl Renderer {
         output.report
     }
 
+    pub fn last_prepare_stats(&self) -> &RendererPrepareStats {
+        &self.last_prepare_stats
+    }
+
     pub fn end_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let Some(frame) = self.frame.take() else {
             return;
@@ -182,7 +192,7 @@ impl Renderer {
 
         let internal = scale_size(frame.size, self.render_scale);
 
-        dispatch::dispatch(
+        self.last_prepare_stats = dispatch::dispatch(
             &self.backend_commands,
             dispatch::DispatchFrame {
                 frame_view: &frame.view,
@@ -203,6 +213,7 @@ impl Renderer {
                 text_pipeline: &mut self.text_pipeline,
                 image_pipeline: &mut self.image_pipeline,
                 circle_pipeline: &mut self.circle_pipeline,
+                grid_pipeline: &mut self.grid_pipeline,
                 vector_pipeline: &mut self.vector_pipeline,
                 vector_tessellator: &mut self.vector_tessellator,
                 svg_raster_cache: &mut self.svg_raster_cache,

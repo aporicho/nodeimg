@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::workspace::view::build_workspace_tree;
 use gui::canvas::camera::Camera;
 use gui::canvas::node_template::CanvasNodeRenderView;

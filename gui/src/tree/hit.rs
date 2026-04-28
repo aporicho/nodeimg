@@ -2,7 +2,6 @@ use super::hit_shape::leaf_shape_hit;
 use super::layout::{BoxStyle, Decoration, Overflow};
 use super::node::{NodeId, NodeKind, TreeNode};
 use super::paint_space::{NodePaintSpace, PaintSpace};
-use super::stacking::children_in_hit_order;
 use super::tree::Tree;
 use crate::animation::{visual_affine, AnimationStore};
 use crate::geometry::Point;
@@ -162,7 +161,7 @@ fn hit_recursive(
         return false;
     }
 
-    let children = children_in_hit_order(tree, &node.children);
+    let children = tree.children_in_hit_order_cached(node_id, &node.children);
     let style = node.style.clone();
     let decoration = node.decoration.clone();
     let child_space = if node_space.children_are_local {
@@ -247,6 +246,8 @@ mod tests {
             rect,
             children: Vec::new(),
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

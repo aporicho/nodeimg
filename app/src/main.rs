@@ -1,6 +1,7 @@
 mod app_shell;
 mod image_demo;
 mod panels;
+#[cfg(test)]
 mod user_mode;
 mod workspace;
 

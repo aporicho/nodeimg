@@ -1,13 +1,9 @@
-use crate::user_mode::{build_user_page, UserModeBuildContext};
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
-use crate::workspace::node_palette;
+use crate::workspace::scene_controller::{WorkspaceSceneController, WorkspaceSceneInput};
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
-use gui::context::{
-    Context, FrameworkOutput, GuiEvent, OverlayPlacement, OverlayRequest, PlatformEffect,
-    WidgetEvent,
-};
+use gui::context::{Context, FrameworkOutput, GuiEvent, PlatformEffect, WidgetEvent};
 use gui::gesture::Gesture;
 use gui::renderer::{Rect, Renderer, TextureSize};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
@@ -97,6 +93,7 @@ pub struct AppShell {
     camera: Camera,
     navigation: CanvasNavigationController,
     workspace: WorkspaceController,
+    scene_controller: WorkspaceSceneController,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
     mouse_y: f32,
@@ -121,6 +118,7 @@ impl App for AppShell {
             camera: Camera::new(),
             navigation: CanvasNavigationController::new(),
             workspace: WorkspaceController::new(),
+            scene_controller: WorkspaceSceneController::default(),
             last_canvas_click: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -157,9 +155,34 @@ impl App for AppShell {
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         self.gui.tick_animations(Instant::now());
         let viewport = viewport_rect(ctx);
-        let desc = self.build_user_desc(viewport);
+        let canvas_nodes = self
+            .workspace
+            .canvas_node_render_views(&mut self.gui, &self.theme);
+        let canvas_connections = self.workspace.canvas_connection_views();
+        let engine_panel = self.workspace.engine_panel_state();
+        let pending_connection = self.gui.pending_canvas_connection();
+        if let Err(error) = self.scene_controller.sync(
+            &mut self.gui,
+            WorkspaceSceneInput {
+                viewport,
+                camera: &self.camera,
+                canvas_nodes: &canvas_nodes,
+                canvas_connections: &canvas_connections,
+                pending_connection: pending_connection.as_ref(),
+                theme: &self.theme,
+                preview_image: SAMPLE_IMAGE_HANDLE,
+                engine_panel: &engine_panel,
+            },
+        ) {
+            tracing::warn!(?error, "failed to sync retained workspace scene");
+        }
         self.gui
-            .update(desc, viewport, renderer.text_measurer(), &self.theme);
+            .flush_layout_dirty(viewport, renderer.text_measurer());
+        self.gui.sync_retained_canvas_text_boxes(
+            &canvas_nodes,
+            renderer.text_measurer(),
+            &self.theme,
+        );
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
         if self.gui.animations_active() {
@@ -169,6 +192,7 @@ impl App for AppShell {
 
     fn render(&mut self, renderer: &mut Renderer, ctx: &AppContext) {
         let viewport = viewport_rect(ctx);
+        renderer.set_clear_color(self.theme.colors.canvas_bg);
         self.gui
             .render(renderer, viewport.w, viewport.h, &self.theme);
     }
@@ -250,35 +274,15 @@ impl AppShell {
         true
     }
 
-    fn build_user_desc(&mut self, viewport: Rect) -> gui::tree::Desc {
-        let panels = crate::panels::collect_panels(&crate::panels::PanelBuildContext {
-            theme: &self.theme,
-            preview_image: SAMPLE_IMAGE_HANDLE,
-            engine: &self.workspace.engine_panel_state(),
-        });
-        let panel_root = self.gui.panel_root(viewport, panels);
-        let canvas_nodes = self
-            .workspace
-            .canvas_node_render_views(&mut self.gui, &self.theme);
-        let canvas_connections = self.workspace.canvas_connection_views();
-        let pending_connection = self.gui.pending_canvas_connection();
-
-        build_user_page(UserModeBuildContext {
-            viewport,
-            camera: &self.camera,
-            theme: &self.theme,
-            canvas_nodes: &canvas_nodes,
-            canvas_connections: &canvas_connections,
-            pending_connection: pending_connection.as_ref(),
-            panel_root,
-        })
-    }
-
     fn handle_user_event(&mut self, event: AppEvent, consumed: bool, ctx: &mut AppContext) {
         match event {
             AppEvent::KeyPress {
                 key: Key::Escape, ..
             } if !consumed => {
+                if self.scene_controller.node_palette_open() {
+                    self.scene_controller.close_overlay();
+                    return;
+                }
                 let _ = self.workspace.cancel_canvas_port_connection(&mut self.gui);
             }
             AppEvent::MouseMove { x, y } => {
@@ -318,6 +322,7 @@ impl AppShell {
         for action in output.actions {
             let result = self.handle_gui_action(action);
             if result.close_overlay {
+                self.scene_controller.close_overlay();
                 self.gui.close_overlay();
             }
             if let Some(type_id) = result.handled_node_add {
@@ -421,6 +426,7 @@ impl AppShell {
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);
                     if result.close_overlay {
+                        self.scene_controller.close_overlay();
                         self.gui.close_overlay();
                     }
                     return;
@@ -653,19 +659,7 @@ impl AppShell {
 
     fn open_node_library(&mut self, x: f32, y: f32) {
         let state = self.node_palette_state();
-        self.gui.open_overlay(OverlayRequest {
-            id: "node_palette".to_string(),
-            anchor_id: "canvas_root".to_string(),
-            restore_focus_id: None,
-            placement: OverlayPlacement::AtPoint { x, y },
-            content: node_palette::overlay_content(&state, &self.theme),
-            offset_x: 0.0,
-            offset_y: 0.0,
-            match_anchor_width: false,
-            dismiss_on_escape: true,
-            dismiss_on_outside_click: true,
-            restore_focus_to_anchor: false,
-        });
+        self.scene_controller.open_node_palette(x, y, state);
         self.workspace.note_node_library_opened();
     }
 

@@ -111,11 +111,13 @@ impl WorkspaceController {
 
         let mut views = self.canvas_node_render_views_for_layouts(layouts.clone());
         let mut resized_to_fit = false;
-        let control_intrinsics = gui.control_intrinsics();
-        if !control_intrinsics.is_empty() {
+        let dirty_intrinsics = gui.take_dirty_control_intrinsics();
+        let control_intrinsics = gui.retained_control_intrinsics_snapshot();
+        if !dirty_intrinsics.is_empty() || !control_intrinsics.is_empty() {
             tracing::debug!(
                 target: "gui::canvas::node_sizing",
                 intrinsic_count = control_intrinsics.len(),
+                dirty_intrinsic_count = dirty_intrinsics.len(),
                 view_count = views.len(),
                 "collect control intrinsics before canvas node sizing"
             );

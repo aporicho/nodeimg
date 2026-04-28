@@ -14,6 +14,7 @@ pub mod panel;
 pub mod renderer;
 pub(crate) mod runtime;
 pub mod shell;
+pub mod template;
 pub(crate) mod text;
 pub mod theme;
 pub mod tree;

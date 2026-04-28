@@ -2,6 +2,8 @@
 ///
 /// 数据 <= 当前容量时直接 `queue.write_buffer`；
 /// 超出时重新创建 2 倍大小的 buffer。
+use super::upload_arena::UploadStats;
+
 pub struct DynamicBuffer {
     buffer: wgpu::Buffer,
     capacity: u64,
@@ -31,8 +33,17 @@ impl DynamicBuffer {
     }
 
     /// 写入数据。容量不够时重建 buffer（2 倍增长）。
-    pub fn write(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, data: &[u8]) {
+    pub fn write(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        data: &[u8],
+    ) -> UploadStats {
         let size = data.len() as u64;
+        let mut stats = UploadStats {
+            bytes: data.len(),
+            buffer_grows: 0,
+        };
         if size > self.capacity {
             let new_capacity = (size * 2).max(self.capacity * 2);
             self.buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -42,8 +53,10 @@ impl DynamicBuffer {
                 mapped_at_creation: false,
             });
             self.capacity = new_capacity;
+            stats.buffer_grows = 1;
         }
         queue.write_buffer(&self.buffer, 0, data);
+        stats
     }
 
     pub fn buffer(&self) -> &wgpu::Buffer {
@@ -80,12 +93,17 @@ impl SharedViewport {
     }
 
     /// 每帧调用一次，写入主视口尺寸。
-    pub fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, viewport_size: [f32; 2]) {
+    pub fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        viewport_size: [f32; 2],
+    ) -> UploadStats {
         let uniform = ViewportUniform {
             size: viewport_size,
             _padding: [0.0; 2],
         };
-        self.buf.write(device, queue, bytemuck::bytes_of(&uniform));
+        self.buf.write(device, queue, bytemuck::bytes_of(&uniform))
     }
 
     pub fn buffer(&self) -> &wgpu::Buffer {

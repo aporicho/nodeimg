@@ -1,17 +1,23 @@
 use crate::animation::AnimationStore;
+use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
 use crate::overlay::OverlaySystem;
+#[cfg(test)]
 use crate::renderer::{Rect, TextMeasurer};
 use crate::runtime::ControlIntrinsic;
 use crate::shell::AppEvent;
+#[cfg(test)]
 use crate::theme::Theme;
-use crate::tree::{Desc, NodeId, Tree};
+#[cfg(test)]
+use crate::tree::Desc;
+use crate::tree::{NodeId, Tree};
 use crate::widget::state::TextBoxStore;
 use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextBoxSystem};
 
+#[cfg(test)]
 pub(crate) struct RuntimeSyncCx<'a> {
     pub(crate) tree: &'a mut Tree,
     pub(crate) interaction: &'a InteractionState,
@@ -46,10 +52,12 @@ impl RuntimeSystems {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn compose_desc(&mut self, tree: &Tree, desc: Desc, root_rect: Rect) -> Desc {
         self.overlay.compose_desc(tree, desc, root_rect)
     }
 
+    #[cfg(test)]
     pub(crate) fn sync_with_tree(&mut self, cx: RuntimeSyncCx<'_>) {
         self.text_box.sync_with_tree(
             cx.tree,
@@ -128,6 +136,30 @@ impl RuntimeSystems {
 
     pub(crate) fn control_intrinsics(&self) -> Vec<ControlIntrinsic> {
         self.text_box.store().control_intrinsics()
+    }
+
+    pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
+        self.text_box.store_mut().take_dirty_control_intrinsics()
+    }
+
+    pub(crate) fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
+        self.text_box.store_mut().take_dirty_intrinsics()
+    }
+
+    pub(crate) fn text_box_dirty_intrinsics(&self) -> Vec<String> {
+        self.text_box.store().dirty_intrinsic_ids()
+    }
+
+    pub(crate) fn sync_retained_canvas_text_boxes(
+        &mut self,
+        tree: &Tree,
+        views: &[CanvasNodeRenderView],
+        measurer: &mut crate::renderer::TextMeasurer,
+        theme: &crate::theme::Theme,
+        focused: Option<NodeId>,
+    ) {
+        self.text_box
+            .sync_retained_canvas_text_boxes(tree, views, measurer, theme, focused);
     }
 }
 

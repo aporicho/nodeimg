@@ -1,11 +1,16 @@
+use crate::canvas::canvas_node_stable_id;
+use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
 use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent};
+#[cfg(test)]
 use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
-use crate::theme::Theme;
+use crate::theme::{ControlSize, Density, Theme};
 use crate::tree::{NodeId, Tree};
 use crate::widget::atoms::number_input::format_number;
-use crate::widget::state::{TextBoxStore, TextBoxValueKind};
+use crate::widget::atoms::text_box::{TextBoxFont, TextBoxMode};
+use crate::widget::mapping::ParamControlSpec;
+use crate::widget::state::{TextBoxSpec, TextBoxStore, TextBoxValueKind};
 use crate::widget::systems::SystemCx;
 
 pub(crate) struct TextBoxSystem {
@@ -21,6 +26,7 @@ impl TextBoxSystem {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn sync_with_tree(
         &mut self,
         tree: &Tree,
@@ -119,6 +125,39 @@ impl TextBoxSystem {
 
     pub(crate) fn store(&self) -> &TextBoxStore {
         &self.store
+    }
+
+    pub(crate) fn store_mut(&mut self) -> &mut TextBoxStore {
+        &mut self.store
+    }
+
+    pub(crate) fn sync_retained_canvas_text_boxes(
+        &mut self,
+        tree: &Tree,
+        views: &[CanvasNodeRenderView],
+        measurer: &mut crate::renderer::TextMeasurer,
+        theme: &Theme,
+        focused: Option<NodeId>,
+    ) {
+        let focused_widget_id = self.focused_widget_id(tree, focused);
+        for view in views {
+            let stable_id = canvas_node_stable_id(&view.state.owner_id);
+            for (index, param) in view.template.params.iter().enumerate() {
+                let widget_id = format!("{stable_id}::body::param::{index}::control::widget");
+                let Some(spec) = retained_param_text_box_spec(&param.control, theme) else {
+                    continue;
+                };
+                self.store.sync_retained_text_box(
+                    tree,
+                    measurer,
+                    theme,
+                    widget_id,
+                    spec,
+                    focused_widget_id.as_deref(),
+                );
+            }
+        }
+        self.sync_sessions(tree, focused, None);
     }
 
     fn commit_text_input(&mut self, cx: &SystemCx<'_>, text: &str) -> FrameworkOutput {
@@ -297,7 +336,15 @@ impl TextBoxSystem {
     fn text_box_id_at(&self, cx: &SystemCx<'_>, x: f32, y: f32) -> Option<String> {
         cx.hit_chain(x, y).iter().find_map(|node_id| {
             let name = cx.node_name(node_id)?;
-            self.store.runtime(name).is_some().then(|| name.to_string())
+            if self.store.runtime(name).is_some() {
+                return Some(name.to_string());
+            }
+            retained_prefixes(name).find_map(|prefix| {
+                self.store
+                    .runtime(prefix)
+                    .is_some()
+                    .then(|| prefix.to_string())
+            })
         })
     }
 
@@ -449,4 +496,57 @@ fn parse_number_text(text: &str) -> Option<f32> {
         return None;
     }
     trimmed.parse::<f32>().ok()
+}
+
+fn retained_param_text_box_spec(control: &ParamControlSpec, theme: &Theme) -> Option<TextBoxSpec> {
+    let tokens = theme.text_field_metrics(ControlSize::Small, Density::Compact);
+    match control {
+        ParamControlSpec::Text { value } => Some(TextBoxSpec {
+            external_text: value.clone(),
+            mode: TextBoxMode::SingleLine,
+            value_kind: TextBoxValueKind::Text,
+            tokens,
+            font: TextBoxFont::Body,
+            disabled: false,
+        }),
+        ParamControlSpec::TextArea { value, min_rows } => Some(TextBoxSpec {
+            external_text: value.clone(),
+            mode: TextBoxMode::MultiLine {
+                min_rows: *min_rows,
+            },
+            value_kind: TextBoxValueKind::Text,
+            tokens,
+            font: TextBoxFont::Body,
+            disabled: false,
+        }),
+        ParamControlSpec::Number {
+            value,
+            min,
+            max,
+            step,
+            precision,
+        } => Some(TextBoxSpec {
+            external_text: format_number(*value, *precision),
+            mode: TextBoxMode::SingleLine,
+            value_kind: TextBoxValueKind::Number {
+                value: *value,
+                min: *min,
+                max: *max,
+                step: *step,
+                precision: *precision,
+            },
+            tokens,
+            font: TextBoxFont::Mono,
+            disabled: false,
+        }),
+        _ => None,
+    }
+}
+
+fn retained_prefixes(id: &str) -> impl Iterator<Item = &str> {
+    id.match_indices("::")
+        .map(|(index, _)| &id[..index])
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
 }

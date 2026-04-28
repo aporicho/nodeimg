@@ -1,9 +1,12 @@
 use super::desc::Desc;
+use super::layout::LeafKind;
 use super::node::{NodeId, NodeKind, NodeLocalRuntime, TreeNode};
+use super::repaint::{NodePaintMeta, RepaintBoundaryReason};
 use super::tree::Tree;
 use super::NodeProps;
 use crate::renderer::Rect;
 use crate::widget::props::WidgetBuildCx;
+use std::collections::{HashMap, HashSet};
 
 pub fn reconcile(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) {
     if let Some(root_id) = tree.root() {
@@ -43,6 +46,7 @@ fn reconcile_node(tree: &mut Tree, node_id: NodeId, desc: Desc, cx: WidgetBuildC
         }
         Desc::Widget(widget) => {
             let (id, props, children) = widget.into_parts();
+            tree.record_widget_build_call();
             let mut wb = props.build(&id, &cx);
             wb.children.extend(children);
             let props_changed = tree
@@ -77,16 +81,27 @@ fn reconcile_children(
         .map(|n| n.children.clone())
         .unwrap_or_default();
 
-    let mut new_children = Vec::new();
-    let mut old_map: Vec<(NodeId, String)> = old_children
+    let mut new_children = Vec::with_capacity(desc_children.len());
+    let mut old_map: HashMap<String, NodeId> = HashMap::with_capacity(old_children.len());
+    for (old_id, stable_id) in old_children
         .iter()
         .filter_map(|&id| tree.get(id).map(|n| (id, n.id.as_ref().to_owned())))
-        .collect();
+    {
+        debug_assert!(
+            old_map.insert(stable_id.clone(), old_id).is_none(),
+            "duplicate sibling stable id during legacy reconcile: {stable_id}"
+        );
+    }
 
+    let mut next_ids = HashSet::with_capacity(desc_children.len());
     for child_desc in desc_children {
         let child_id_str = child_desc.id();
-        if let Some(pos) = old_map.iter().position(|(_, id)| id == child_id_str) {
-            let (existing_id, _) = old_map.remove(pos);
+        debug_assert!(
+            next_ids.insert(child_id_str.to_string()),
+            "duplicate new sibling stable id during legacy reconcile: {child_id_str}"
+        );
+        if let Some(existing_id) = old_map.remove(child_id_str) {
+            tree.record_reconcile_child_match();
             reconcile_node(tree, existing_id, child_desc, cx);
             new_children.push(existing_id);
         } else {
@@ -95,13 +110,11 @@ fn reconcile_children(
         }
     }
 
-    for (old_id, _) in old_map {
+    for (_, old_id) in old_map {
         tree.remove(old_id);
     }
 
-    if let Some(node) = tree.get_mut(node_id) {
-        node.children = new_children;
-    }
+    tree.set_children(node_id, new_children);
 }
 
 fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeId {
@@ -117,6 +130,7 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
         }
         Desc::Widget(widget) => {
             let (id, props, children) = widget.into_parts();
+            tree.record_widget_build_call();
             let mut wb = props.build(&id, &cx);
             wb.children.extend(children);
             (
@@ -133,6 +147,7 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
     let runtime_slots = tree
         .take_retained_runtime_slots(&id_string)
         .unwrap_or_default();
+    let paint_meta = legacy_paint_meta(&id_string, &kind);
 
     let node_id = tree.insert(TreeNode {
         id: id.into(),
@@ -148,6 +163,8 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
         },
         children: Vec::new(),
         local_runtime: NodeLocalRuntime::default(),
+        layout_meta: Default::default(),
+        paint_meta,
         runtime_slots,
     });
 
@@ -156,11 +173,22 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
         .map(|d| create_from_desc(tree, d, cx))
         .collect();
 
-    if let Some(node) = tree.get_mut(node_id) {
-        node.children = child_ids;
-    }
+    tree.set_children(node_id, child_ids);
 
     node_id
+}
+
+fn legacy_paint_meta(id: &str, kind: &NodeKind) -> NodePaintMeta {
+    if id == "canvas_connections" {
+        return NodePaintMeta::boundary(RepaintBoundaryReason::CanvasConnectionLayer);
+    }
+    if id.contains("canvas_node::") && id.ends_with("::card") {
+        return NodePaintMeta::boundary(RepaintBoundaryReason::CanvasNodeCard);
+    }
+    if matches!(kind, NodeKind::Leaf(LeafKind::Grid { .. })) {
+        return NodePaintMeta::boundary(RepaintBoundaryReason::CanvasGridLayer);
+    }
+    NodePaintMeta::default()
 }
 
 #[cfg(test)]
@@ -215,5 +243,85 @@ mod tests {
         assert_eq!(root.children.len(), 1);
         let child = tree.get(root.children[0]).expect("child node");
         assert_eq!(child.id.as_ref(), "wrapper::child");
+    }
+
+    #[test]
+    fn reconcile_children_matches_by_key_in_linear_time() {
+        let theme = light_theme();
+        let mut tree = Tree::new();
+        let first = Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle::default(),
+            decoration: None,
+            children: vec![
+                Desc::Leaf {
+                    id: Cow::Borrowed("a"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "a".to_string(),
+                        style: theme.text_style_label_sm(),
+                        layout: Default::default(),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("b"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "b".to_string(),
+                        style: theme.text_style_label_sm(),
+                        layout: Default::default(),
+                    },
+                },
+            ],
+        };
+        reconcile(
+            &mut tree,
+            first,
+            WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+        let a = tree.node_by_str("a").expect("a");
+        let b = tree.node_by_str("b").expect("b");
+        tree.clear_frame_stats();
+
+        let second = Desc::Container {
+            id: Cow::Borrowed("root"),
+            style: BoxStyle::default(),
+            decoration: None,
+            children: vec![
+                Desc::Leaf {
+                    id: Cow::Borrowed("b"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "b2".to_string(),
+                        style: theme.text_style_label_sm(),
+                        layout: Default::default(),
+                    },
+                },
+                Desc::Leaf {
+                    id: Cow::Borrowed("a"),
+                    style: BoxStyle::default(),
+                    kind: LeafKind::Text {
+                        content: "a2".to_string(),
+                        style: theme.text_style_label_sm(),
+                        layout: Default::default(),
+                    },
+                },
+            ],
+        };
+        reconcile(
+            &mut tree,
+            second,
+            WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+
+        assert_eq!(tree.node_by_str("a"), Some(a));
+        assert_eq!(tree.node_by_str("b"), Some(b));
+        assert_eq!(tree.frame_stats_snapshot().reconcile_child_matches, 2);
     }
 }

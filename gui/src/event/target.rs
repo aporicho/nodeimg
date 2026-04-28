@@ -10,29 +10,39 @@ impl<'a> TargetResolver<'a> {
     }
 
     pub(crate) fn owner_id(&self, id: &str) -> String {
-        let exact_widget = self
+        let exact = self
             .tree
-            .iter()
-            .find(|(_, node)| node.id.as_ref() == id && matches!(&node.kind, NodeKind::Widget(_)))
-            .map(|(_, node)| node.id.to_string());
-        if let Some(widget_id) = exact_widget {
-            return widget_id;
+            .node_by_str(id)
+            .and_then(|node_id| self.tree.get(node_id));
+        if let Some(node_id) = self.tree.node_by_str(id) {
+            if let Some(node) = self.tree.get(node_id) {
+                if let Some(owner_id) = node.props.owner_id.as_ref() {
+                    return owner_id.to_string();
+                }
+                if matches!(&node.kind, NodeKind::Widget(_)) || node.props.semantic_role.is_some() {
+                    return node.id.to_string();
+                }
+            }
         }
 
-        self.tree
-            .iter()
-            .filter_map(|(_, node)| {
-                if !matches!(&node.kind, NodeKind::Widget(_)) {
-                    return None;
+        for prefix in stable_id_prefixes(id) {
+            if let Some(owner) = self
+                .tree
+                .node_by_str(prefix)
+                .and_then(|node_id| self.tree.get(node_id))
+            {
+                if matches!(&owner.kind, NodeKind::Widget(_)) || owner.props.semantic_role.is_some()
+                {
+                    return owner.id.to_string();
                 }
-                let candidate = node.id.as_ref();
-                id.strip_prefix(candidate)
-                    .filter(|suffix| suffix.starts_with("::"))
-                    .map(|_| candidate)
-            })
-            .max_by_key(|candidate| candidate.len())
-            .map(str::to_string)
-            .unwrap_or_else(|| id.to_string())
+            }
+        }
+
+        if exact.is_some_and(is_retained_interaction_target) {
+            return id.to_string();
+        }
+
+        id.to_string()
     }
 
     #[allow(dead_code)]
@@ -43,37 +53,46 @@ impl<'a> TargetResolver<'a> {
         }
 
         let owner_id = self.owner_id(node.id.as_ref());
-        self.tree.iter().find_map(|(candidate_id, candidate)| {
-            (candidate.id.as_ref() == owner_id && matches!(&candidate.kind, NodeKind::Widget(_)))
-                .then_some(candidate_id)
-        })
+        self.tree.node_by_str(&owner_id)
     }
 
     #[allow(dead_code)]
-    pub(crate) fn widget_type_for_node(&self, node_id: NodeId) -> Option<&'static str> {
+    pub(crate) fn widget_type_for_node(&self, node_id: NodeId) -> Option<&str> {
         let owner_id = self.owner_node(node_id)?;
         let node = self.tree.get(owner_id)?;
-        let NodeKind::Widget(props) = &node.kind else {
-            return None;
-        };
-        Some(props.widget_type())
+        match &node.kind {
+            NodeKind::Widget(props) => Some(props.widget_type()),
+            _ => node.props.semantic_role.as_deref(),
+        }
     }
 
-    pub(crate) fn widget_type(&self, id: &str) -> Option<&'static str> {
+    pub(crate) fn widget_type(&self, id: &str) -> Option<&str> {
         self.widget_type_for_name(id)
     }
 
-    pub(crate) fn widget_type_for_name(&self, id: &str) -> Option<&'static str> {
-        self.tree.iter().find_map(|(_, node)| {
-            if node.id.as_ref() != id {
-                return None;
-            }
-            let NodeKind::Widget(props) = &node.kind else {
-                return None;
-            };
-            Some(props.widget_type())
-        })
+    pub(crate) fn widget_type_for_name(&self, id: &str) -> Option<&str> {
+        let node = self.tree.get(self.tree.node_by_str(id)?)?;
+        match &node.kind {
+            NodeKind::Widget(props) => Some(props.widget_type()),
+            _ => node.props.semantic_role.as_deref(),
+        }
     }
+}
+
+fn is_retained_interaction_target(node: &crate::tree::TreeNode) -> bool {
+    node.style.hittable == Some(true)
+        || node.style.draggable
+        || node.style.resizable
+        || !node.style.gestures.is_empty()
+        || node.props.action_id.is_some()
+}
+
+fn stable_id_prefixes(id: &str) -> impl Iterator<Item = &str> {
+    id.match_indices("::")
+        .map(|(index, _)| &id[..index])
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
 }
 
 #[cfg(test)]

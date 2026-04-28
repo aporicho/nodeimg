@@ -10,6 +10,7 @@ use super::core::MSAA_SAMPLE_COUNT;
 use super::offscreen::{transformed_rect_pixel_size, OffscreenTarget};
 use super::pipeline::blit::BlitPipeline;
 use super::pipeline::circle::CirclePipeline;
+use super::pipeline::grid::GridPipeline;
 use super::pipeline::image::{ImagePipeline, PreparedImageDraw};
 use super::pipeline::quad::QuadPipeline;
 use super::pipeline::shadow::{ShadowPipeline, ShadowRequest};
@@ -17,6 +18,7 @@ use super::pipeline::stencil::StencilState;
 use super::pipeline::text::TextPipeline;
 use super::pipeline::vector::VectorPipeline;
 use super::prepare::{prepare_frame, DrawOp};
+use super::scene_prepare::RendererPrepareStats;
 use super::svg::{SvgRasterCache, SvgRasterRequest};
 use super::text_measurer::TextMeasurer;
 use super::vector_tessellator::VectorTessellator;
@@ -42,6 +44,7 @@ pub(super) struct DispatchPipelines<'a> {
     pub(super) text_pipeline: &'a mut TextPipeline,
     pub(super) image_pipeline: &'a mut ImagePipeline,
     pub(super) circle_pipeline: &'a mut CirclePipeline,
+    pub(super) grid_pipeline: &'a mut GridPipeline,
     pub(super) vector_pipeline: &'a mut VectorPipeline,
     pub(super) vector_tessellator: &'a mut VectorTessellator,
     pub(super) svg_raster_cache: &'a mut SvgRasterCache,
@@ -54,7 +57,7 @@ pub(super) fn dispatch(
     commands: &[BackendCommand],
     frame: DispatchFrame<'_>,
     pipelines: DispatchPipelines<'_>,
-) {
+) -> RendererPrepareStats {
     let logical_w =
         frame.internal_size.width as f64 / frame.scale_factor / frame.render_scale as f64;
     let logical_h =
@@ -80,6 +83,7 @@ pub(super) fn dispatch(
         text_pipeline,
         image_pipeline,
         circle_pipeline,
+        grid_pipeline,
         vector_pipeline,
         vector_tessellator,
         svg_raster_cache,
@@ -88,7 +92,7 @@ pub(super) fn dispatch(
         text_measurer,
     } = pipelines;
 
-    shared_viewport.upload(device, queue, viewport_size);
+    let mut upload_stats = shared_viewport.upload(device, queue, viewport_size);
     let viewport_buf = shared_viewport.buffer();
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -98,6 +102,7 @@ pub(super) fn dispatch(
     let mut prepared = prepare_frame(commands, vector_tessellator);
     let mut runtime_textures = Vec::new();
     text_pipeline.begin_frame();
+    text_measurer.mark_all_unused();
     resolve_deferred_ops(ResolveDeferredOps {
         ops: &mut prepared.ops,
         encoder: &mut encoder,
@@ -113,39 +118,50 @@ pub(super) fn dispatch(
         runtime_textures: &mut runtime_textures,
     });
 
-    quad_pipeline.upload(
+    upload_stats.add(quad_pipeline.upload(
         device,
         queue,
         &prepared.quad_vertices,
         &prepared.quad_indices,
-    );
-    circle_pipeline.upload(
+    ));
+    upload_stats.add(circle_pipeline.upload(
         device,
         queue,
         &prepared.circle_vertices,
         &prepared.circle_indices,
-    );
-    vector_pipeline.upload(
+    ));
+    upload_stats.add(grid_pipeline.upload(
+        device,
+        queue,
+        &prepared.grid_vertices,
+        &prepared.grid_indices,
+    ));
+    upload_stats.add(vector_pipeline.upload(
         device,
         queue,
         &prepared.vector_vertices,
         &prepared.vector_indices,
-    );
-    stencil.upload(
+    ));
+    upload_stats.add(stencil.upload(
         device,
         queue,
         &prepared.stencil_vertices,
         &prepared.stencil_indices,
-    );
+    ));
+    prepared.stats.upload_bytes = upload_stats.bytes;
+    prepared.stats.upload_buffer_grows = upload_stats.buffer_grows;
 
     quad_pipeline.update_bind_group(device, viewport_buf);
     circle_pipeline.update_bind_group(device, viewport_buf);
+    grid_pipeline.update_bind_group(device, viewport_buf);
     vector_pipeline.update_bind_group(device, viewport_buf);
     stencil.update_bind_group(device, viewport_buf);
 
     let has_quads = !prepared.quad_vertices.is_empty();
+    let has_grids = !prepared.grid_vertices.is_empty();
     let has_stencils = !prepared.stencil_vertices.is_empty();
     let render_steps = plan_render_steps(&prepared.ops);
+    prepared.stats.render_passes = render_steps.len();
 
     {
         let total_steps = render_steps.len();
@@ -210,6 +226,17 @@ pub(super) fn dispatch(
                                 }
                                 pass.set_stencil_reference(clip_depth);
                                 CirclePipeline::draw_batch(&mut pass, *index_start, *index_count);
+                            }
+                            DrawOp::Grid {
+                                index_start,
+                                index_count,
+                            } => {
+                                if has_grids && last_bound != PipelineKind::Grid {
+                                    grid_pipeline.bind(&mut pass);
+                                    last_bound = PipelineKind::Grid;
+                                }
+                                pass.set_stencil_reference(clip_depth);
+                                GridPipeline::draw_batch(&mut pass, *index_start, *index_count);
                             }
                             DrawOp::Vector {
                                 index_start,
@@ -288,15 +315,23 @@ pub(super) fn dispatch(
                         }
                     }
                 }
-                RenderStep::Text { index, clip_depth } => {
+                RenderStep::TextBatch {
+                    indices,
+                    clip_depth,
+                } => {
+                    let text_requests = indices
+                        .iter()
+                        .map(|index| prepared.text_requests[*index].clone())
+                        .collect::<Vec<_>>();
                     let batch_index = text_pipeline.prepare(
                         device,
                         queue,
-                        std::slice::from_ref(&prepared.text_requests[*index]),
+                        &text_requests,
                         internal_size,
                         scale_factor * render_scale as f64,
                         text_measurer,
                     );
+                    prepared.stats.text_batches += 1;
 
                     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("main_text"),
@@ -327,6 +362,8 @@ pub(super) fn dispatch(
             first_pass = false;
         }
     }
+
+    text_measurer.evict_unused();
 
     {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -365,6 +402,7 @@ pub(super) fn dispatch(
     }
 
     queue.submit(std::iter::once(encoder.finish()));
+    prepared.stats
 }
 
 struct ResolveDeferredOps<'a> {
@@ -596,8 +634,8 @@ enum RenderStep {
         range: Range<usize>,
         starting_clip_depth: u32,
     },
-    Text {
-        index: usize,
+    TextBatch {
+        indices: Vec<usize>,
         clip_depth: u32,
     },
 }
@@ -617,10 +655,18 @@ fn plan_render_steps(ops: &[DrawOp]) -> Vec<RenderStep> {
                         starting_clip_depth: ops_clip_depth,
                     });
                 }
-                steps.push(RenderStep::Text {
-                    index: *index,
-                    clip_depth,
-                });
+                match steps.last_mut() {
+                    Some(RenderStep::TextBatch {
+                        indices,
+                        clip_depth: existing_clip_depth,
+                    }) if *existing_clip_depth == clip_depth => {
+                        indices.push(*index);
+                    }
+                    _ => steps.push(RenderStep::TextBatch {
+                        indices: vec![*index],
+                        clip_depth,
+                    }),
+                }
             }
             DrawOp::StencilWrite { .. } => {
                 if ops_start.is_none() {
@@ -696,6 +742,7 @@ enum PipelineKind {
     None,
     Quad,
     Circle,
+    Grid,
     Vector,
     Stencil,
     Other,
@@ -728,17 +775,49 @@ mod tests {
                     range: Range { start: 0, end: 1 },
                     starting_clip_depth: 0,
                 },
-                RenderStep::Text {
-                    index: 0,
+                RenderStep::TextBatch {
+                    indices: vec![0],
                     clip_depth: 1,
                 },
                 RenderStep::Ops {
                     range: Range { start: 2, end: 3 },
                     starting_clip_depth: 1,
                 },
-                RenderStep::Text {
-                    index: 1,
+                RenderStep::TextBatch {
+                    indices: vec![1],
                     clip_depth: 0,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn plan_render_steps_batches_adjacent_text_ops_at_same_clip_depth() {
+        let steps = plan_render_steps(&[
+            DrawOp::Text { index: 0 },
+            DrawOp::Text { index: 1 },
+            DrawOp::StencilWrite {
+                index_start: 0,
+                index_count: 6,
+            },
+            DrawOp::Text { index: 2 },
+            DrawOp::Text { index: 3 },
+        ]);
+
+        assert_eq!(
+            steps,
+            vec![
+                RenderStep::TextBatch {
+                    indices: vec![0, 1],
+                    clip_depth: 0,
+                },
+                RenderStep::Ops {
+                    range: Range { start: 2, end: 3 },
+                    starting_clip_depth: 0,
+                },
+                RenderStep::TextBatch {
+                    indices: vec![2, 3],
+                    clip_depth: 1,
                 },
             ]
         );

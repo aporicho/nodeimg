@@ -314,6 +314,12 @@ pub trait LayoutTree {
     /// 读取节点的布局样式（纯数据，已预计算）
     fn style(&self, node: Self::NodeId) -> &BoxStyle;
 
+    /// Retained mutation can pin a node rect directly. Layout must preserve
+    /// those explicit rects instead of recomputing them from box style.
+    fn explicit_rect(&self, _node: Self::NodeId) -> Option<Rect> {
+        None
+    }
+
     /// 获取子节点列表（返回 Vec 以避免借用冲突）
     fn children(&self, node: Self::NodeId) -> Vec<Self::NodeId>;
 

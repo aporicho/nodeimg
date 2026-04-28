@@ -218,6 +218,8 @@ mod tests {
             rect,
             children: Vec::new(),
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

@@ -7,19 +7,20 @@ use super::stacking::children_in_paint_order;
 use super::tree::Tree;
 
 pub(crate) fn node_screen_center(tree: &Tree, id: &str) -> Option<Point> {
-    node_screen_center_recursive(tree, tree.root()?, id, PaintSpace::root())
+    let target = tree.node_by_str(id)?;
+    node_screen_center_recursive(tree, tree.root()?, target, PaintSpace::root())
 }
 
 fn node_screen_center_recursive(
     tree: &Tree,
     node_id: NodeId,
-    target_id: &str,
+    target: NodeId,
     current_space: PaintSpace,
 ) -> Option<Point> {
     let node = tree.get(node_id)?;
     let node_space = current_space.node_space(node.rect, node.style.transform);
 
-    if node.id.as_ref() == target_id {
+    if node_id == target {
         return Some(
             node_space
                 .local_to_screen
@@ -33,7 +34,7 @@ fn node_screen_center_recursive(
         current_space
     };
     for child_id in children_in_paint_order(tree, &node.children) {
-        if let Some(point) = node_screen_center_recursive(tree, child_id, target_id, child_space) {
+        if let Some(point) = node_screen_center_recursive(tree, child_id, target, child_space) {
             return Some(point);
         }
     }
@@ -71,6 +72,8 @@ mod tests {
             kind: NodeKind::Container,
             children,
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

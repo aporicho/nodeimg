@@ -1,6 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
 use super::super::buffer::DynamicBuffer;
+use super::super::upload_arena::UploadStats;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -119,14 +120,20 @@ impl VectorPipeline {
         queue: &wgpu::Queue,
         vertices: &[VectorVertex],
         indices: &[u32],
-    ) {
+    ) -> UploadStats {
         if vertices.is_empty() {
-            return;
+            return UploadStats::default();
         }
-        self.vertex_buf
-            .write(device, queue, bytemuck::cast_slice(vertices));
-        self.index_buf
-            .write(device, queue, bytemuck::cast_slice(indices));
+        let mut stats = UploadStats::default();
+        stats.add(
+            self.vertex_buf
+                .write(device, queue, bytemuck::cast_slice(vertices)),
+        );
+        stats.add(
+            self.index_buf
+                .write(device, queue, bytemuck::cast_slice(indices)),
+        );
+        stats
     }
 
     pub fn update_bind_group(&mut self, device: &wgpu::Device, viewport_buf: &wgpu::Buffer) {

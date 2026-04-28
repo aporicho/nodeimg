@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::fmt;
 
 pub type TreeNodeId = usize;
@@ -23,6 +23,12 @@ impl StableId {
 
 impl AsRef<str> for StableId {
     fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Borrow<str> for StableId {
+    fn borrow(&self) -> &str {
         self.as_str()
     }
 }

@@ -3,6 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
+    // Panel collection generation only. This is not a template/codegen system;
+    // retained panel templates must register `CompiledTemplate` through
+    // `TemplateRegistry` when the panel migration reaches production.
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let panels_dir = manifest_dir.join("src").join("panels");
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));

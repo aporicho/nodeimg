@@ -10,6 +10,10 @@ pub struct PanelDeclaration {
     pub content: Vec<Desc>,
 }
 
+/// Legacy `Desc` panel root composer.
+///
+/// Owner: panel retained migration. Delete after panel frames and panel content
+/// mount through `PanelFrameTemplate` plus retained content templates.
 pub fn panel_root(tree: &mut Tree, viewport: Rect, panels: Vec<PanelDeclaration>) -> Desc {
     for panel in &panels {
         tree.ensure_panel(&panel.config);

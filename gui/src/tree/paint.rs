@@ -1,20 +1,21 @@
 use super::connection_endpoint::node_screen_center;
 use super::layout::{LeafKind, Overflow};
 use super::node::{NodeId, NodeKind};
-use super::paint_helpers::{connection_path, grid_cells, CONNECTION_WIDTH};
+use super::paint_helpers::{connection_path, CONNECTION_WIDTH};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::paint_target::{CustomPaintCx, PaintTarget};
-use super::stacking::children_in_paint_order;
 use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
+use super::{RepaintBoundaryId, Revision};
 use crate::animation::{visual_affine, AnimationStore};
 use crate::geometry::{Affine2D, Point, Rect};
 use crate::icon::{IconFit, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::interaction::InteractionState;
 use crate::paint::{
-    CirclePaint, ClipShape, Color, DisplayList, LayerPaint, PaintBuildError, PaintCommand,
-    PathData, PathStyle, RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride,
-    SvgSourceKey, SvgStrokeWidth, SvgStyle, TextStyle,
+    BoundaryPaintRecorder, CirclePaint, ClipShape, Color, DisplayList, FragmentChildRef, GridPaint,
+    LayerPaint, PaintBuildError, PaintCommand, PaintFragment, PathData, PathStyle,
+    RecordingPaintTarget, RectStyle, Stroke, SvgFit, SvgPaintOverride, SvgSourceKey,
+    SvgStrokeWidth, SvgStyle, TextStyle,
 };
 use crate::theme::Theme;
 use crate::widget::painters::{
@@ -30,13 +31,16 @@ pub(crate) struct PaintCx<'a> {
     pub(crate) theme: &'a Theme,
 }
 
+#[cfg(test)]
 pub(crate) fn build_display_list(
     tree: &Tree,
     root: NodeId,
     cx: PaintCx<'_>,
     measure_text: impl FnMut(&str, &TextStyle) -> (f32, f32),
 ) -> Result<DisplayList, PaintBuildError> {
+    tree.record_full_root_paint_call();
     let mut target = RecordingPaintTarget::with_measure(measure_text);
+    let mut traversal = PaintTraversal::Full;
     paint_to_target(
         tree,
         root,
@@ -45,8 +49,53 @@ pub(crate) fn build_display_list(
         cx.text_boxes,
         cx.animations,
         cx.theme,
+        &mut traversal,
     );
     target.display_list()
+}
+
+pub(crate) fn build_paint_fragment(
+    tree: &Tree,
+    boundary: RepaintBoundaryId,
+    cx: PaintCx<'_>,
+    measure_text: impl FnMut(&str, &TextStyle) -> (f32, f32),
+) -> Result<PaintFragment, PaintBuildError> {
+    let Some(node) = tree.get(boundary.0) else {
+        return Ok(empty_fragment(boundary));
+    };
+    let origin = Point {
+        x: node.rect.x,
+        y: node.rect.y,
+    };
+    let local_bounds = Rect {
+        x: 0.0,
+        y: 0.0,
+        w: node.rect.w,
+        h: node.rect.h,
+    };
+    let revision = node.paint_meta.fragment_revision;
+    let mut recorder = BoundaryPaintRecorder::with_measure(measure_text);
+    recorder
+        .target()
+        .push_transform(Affine2D::translation(-origin.x, -origin.y));
+    let mut child_boundaries = Vec::new();
+    let mut traversal = PaintTraversal::Boundary {
+        root: boundary.0,
+        origin,
+        child_boundaries: &mut child_boundaries,
+    };
+    paint_to_target(
+        tree,
+        boundary.0,
+        recorder.target(),
+        cx.interaction,
+        cx.text_boxes,
+        cx.animations,
+        cx.theme,
+        &mut traversal,
+    );
+    recorder.target().pop_transform();
+    recorder.finish(boundary, revision, local_bounds, child_boundaries)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -58,6 +107,7 @@ pub(crate) fn paint_to_target(
     text_boxes: Option<&TextBoxStore>,
     animations: Option<&AnimationStore>,
     theme: &Theme,
+    traversal: &mut PaintTraversal<'_>,
 ) {
     paint_node(
         tree,
@@ -69,7 +119,33 @@ pub(crate) fn paint_to_target(
         animations,
         theme,
         None,
+        traversal,
     );
+}
+
+pub(crate) enum PaintTraversal<'a> {
+    Full,
+    Boundary {
+        root: NodeId,
+        origin: Point,
+        child_boundaries: &'a mut Vec<FragmentChildRef>,
+    },
+}
+
+fn empty_fragment(boundary: RepaintBoundaryId) -> PaintFragment {
+    PaintFragment {
+        boundary,
+        revision: Revision::ZERO,
+        local_bounds: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+            h: 0.0,
+        },
+        clips: Vec::new(),
+        commands: Vec::new(),
+        child_boundaries: Vec::new(),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -83,10 +159,33 @@ fn paint_node(
     animations: Option<&AnimationStore>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
+    traversal: &mut PaintTraversal<'_>,
 ) {
     let Some(node) = tree.get(node_id) else {
         return;
     };
+    tree.record_paint_node_visited();
+
+    if let PaintTraversal::Boundary {
+        root,
+        origin,
+        child_boundaries,
+    } = traversal
+    {
+        if node_id != *root && node.paint_meta.boundary.is_some() {
+            child_boundaries.push(FragmentChildRef {
+                boundary: RepaintBoundaryId(node_id),
+                local_transform: Affine2D::translation(
+                    node.rect.x - origin.x,
+                    node.rect.y - origin.y,
+                ),
+                clip_stack: Vec::new(),
+                z_index: node.style.z_index,
+            });
+            return;
+        }
+    }
+
     if let Some(visual) = animations.and_then(|store| store.visual_for(node.id.as_ref())) {
         if visual.opacity <= 0.0 {
             return;
@@ -105,6 +204,7 @@ fn paint_node(
                 animations,
                 theme,
                 inherited_text_color,
+                traversal,
             );
             match layer_target.display_list() {
                 Ok(layer) => layer,
@@ -140,6 +240,7 @@ fn paint_node(
         animations,
         theme,
         inherited_text_color,
+        traversal,
     );
 }
 
@@ -154,6 +255,7 @@ fn paint_node_inner(
     animations: Option<&AnimationStore>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
+    traversal: &mut PaintTraversal<'_>,
 ) {
     let Some(node) = tree.get(node_id) else {
         return;
@@ -168,7 +270,7 @@ fn paint_node_inner(
         .as_ref()
         .map(|decoration| decoration.radius)
         .unwrap_or([0.0; 4]);
-    let children = children_in_paint_order(tree, &node.children);
+    let children = tree.children_in_paint_order_cached(node_id, &node.children);
     let mut child_text_color = inherited_text_color;
 
     target.push_transform(Affine2D::translation(node.rect.x, node.rect.y));
@@ -227,6 +329,7 @@ fn paint_node_inner(
                 animations,
                 theme,
                 child_text_color,
+                traversal,
             );
         }
         target.pop_transform();
@@ -247,6 +350,7 @@ fn paint_node_inner(
                 animations,
                 theme,
                 child_text_color,
+                traversal,
             );
         }
         if should_clip_children {
@@ -305,9 +409,12 @@ fn paint_leaf(
             dot_color,
             dot_size,
         } => {
-            for point in grid_cells(local_rect, *spacing) {
-                target.draw_circle(point, *dot_size, *dot_color);
-            }
+            target.draw_grid(GridPaint {
+                rect: local_rect,
+                spacing: *spacing,
+                dot_color: *dot_color,
+                dot_size: *dot_size,
+            });
         }
         LeafKind::Image { texture, style } => {
             target.draw_image(local_rect, *texture, *style);
@@ -440,7 +547,17 @@ fn build_display_list_for_test(
     theme: &Theme,
 ) -> Result<DisplayList, PaintBuildError> {
     let mut target = RecordingPaintTarget::new();
-    paint_to_target(tree, root, &mut target, None, None, None, theme);
+    let mut traversal = PaintTraversal::Full;
+    paint_to_target(
+        tree,
+        root,
+        &mut target,
+        None,
+        None,
+        None,
+        theme,
+        &mut traversal,
+    );
     target.display_list()
 }
 
@@ -459,6 +576,7 @@ mod tests {
         TextureHandle,
     };
     use crate::tree::node::{NodeLocalRuntime, TreeNode};
+    use crate::tree::RepaintBoundaryReason;
     use crate::tree::{NodeProps, RuntimeSlots};
     use std::borrow::Cow;
     use std::sync::{Arc, Mutex};
@@ -501,6 +619,8 @@ mod tests {
             rect,
             children: Vec::new(),
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }
@@ -515,6 +635,8 @@ mod tests {
             rect,
             children,
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }
@@ -529,6 +651,7 @@ mod tests {
         animations: &AnimationStore,
     ) -> DisplayList {
         let mut target = RecordingPaintTarget::new();
+        let mut traversal = PaintTraversal::Full;
         paint_to_target(
             tree,
             root,
@@ -537,6 +660,7 @@ mod tests {
             None,
             Some(animations),
             &Theme::default(),
+            &mut traversal,
         );
         target.display_list().unwrap()
     }
@@ -546,6 +670,15 @@ mod tests {
         let root = tree.insert(leaf_node("leaf", kind, rect));
         tree.set_root(root);
         paint_tree(&tree, root)
+    }
+
+    fn paint_cx<'a>(theme: &'a Theme) -> PaintCx<'a> {
+        PaintCx {
+            interaction: None,
+            text_boxes: None,
+            animations: None,
+            theme,
+        }
     }
 
     fn only_command(list: &DisplayList) -> &ResolvedPaintCommand {
@@ -558,6 +691,33 @@ mod tests {
         &list.clips[0]
     }
 
+    #[test]
+    fn grid_leaf_records_single_grid_command() {
+        let list = paint_single_leaf(
+            LeafKind::Grid {
+                spacing: 10.0,
+                dot_color: Color::WHITE,
+                dot_size: 1.5,
+            },
+            rect(10.0, 20.0, 100.0, 50.0),
+        );
+
+        let command = only_command(&list);
+        assert_eq!(
+            command.command,
+            PaintCommand::Grid(GridPaint {
+                rect: rect(0.0, 0.0, 100.0, 50.0),
+                spacing: 10.0,
+                dot_color: Color::WHITE,
+                dot_size: 1.5,
+            })
+        );
+        assert_eq!(
+            command.transform.transform_point(point(0.0, 0.0)),
+            point(10.0, 20.0)
+        );
+    }
+
     fn first_path(list: &DisplayList) -> &crate::paint::PathPaint {
         list.commands
             .iter()
@@ -566,6 +726,81 @@ mod tests {
                 _ => None,
             })
             .expect("expected path command")
+    }
+
+    #[test]
+    fn fragment_records_boundary_local_coordinates() {
+        let stroke = Stroke::new(2.0, Color::WHITE);
+        let mut tree = Tree::new();
+        let root = tree.insert(leaf_node(
+            "leaf",
+            LeafKind::Line {
+                start: point(1.0, 2.0),
+                end: point(3.0, 4.0),
+                stroke,
+            },
+            rect(10.0, 20.0, 100.0, 50.0),
+        ));
+        tree.set_root(root);
+
+        let fragment = build_paint_fragment(
+            &tree,
+            RepaintBoundaryId(root),
+            paint_cx(&Theme::default()),
+            |_, _| (0.0, 0.0),
+        )
+        .expect("fragment");
+
+        assert_eq!(fragment.commands.len(), 1);
+        assert_eq!(
+            fragment.commands[0]
+                .transform
+                .transform_point(point(0.0, 0.0)),
+            point(0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn fragment_records_child_repaint_boundary_ref_without_painting_child() {
+        let stroke = Stroke::new(2.0, Color::WHITE);
+        let mut tree = Tree::new();
+        let child = tree.insert(leaf_node(
+            "child",
+            LeafKind::Line {
+                start: point(1.0, 2.0),
+                end: point(3.0, 4.0),
+                stroke,
+            },
+            rect(20.0, 30.0, 20.0, 20.0),
+        ));
+        tree.set_repaint_boundary(child, RepaintBoundaryReason::CanvasNodeCard);
+        let root = tree.insert(container_node(
+            "root",
+            rect(10.0, 10.0, 100.0, 80.0),
+            vec![child],
+        ));
+        tree.set_root(root);
+
+        let fragment = build_paint_fragment(
+            &tree,
+            RepaintBoundaryId(root),
+            paint_cx(&Theme::default()),
+            |_, _| (0.0, 0.0),
+        )
+        .expect("fragment");
+
+        assert!(fragment.commands.is_empty());
+        assert_eq!(fragment.child_boundaries.len(), 1);
+        assert_eq!(
+            fragment.child_boundaries[0].boundary,
+            RepaintBoundaryId(child)
+        );
+        assert_eq!(
+            fragment.child_boundaries[0]
+                .local_transform
+                .transform_point(point(0.0, 0.0)),
+            point(10.0, 20.0)
+        );
     }
 
     #[test]

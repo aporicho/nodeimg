@@ -17,7 +17,11 @@ use crate::widget::param_control::{
 };
 use std::borrow::Cow;
 
-pub fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
+/// Legacy `Desc` node-card builder.
+///
+/// Owner: canvas retained migration. Delete after all production canvas nodes
+/// are mounted through `CanvasSceneModel` and `CanvasNodeCardTemplate`.
+pub(crate) fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Theme) -> Desc {
     let spec = node_render_spec(&view.template, &view.state, theme);
     node_card_from_spec(&spec, theme)
 }

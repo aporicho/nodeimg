@@ -1,16 +1,16 @@
 use crate::geometry::Affine2D;
 use crate::icon::{IconFit, IconOpacity, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::paint::{
-    CirclePaint, ClipId, Color, DisplayList, ImageOpacity, ImagePaint, LayerPaint, PaintCommand,
-    PathPaint, RectPaint, RectStyle, ResolvedClip, ResolvedPaintCommand, ShadowPaint, SvgFit,
-    SvgPaint, SvgPaintOverride, SvgRasterPaint, SvgSourceKey, SvgStrokeWidth, SvgStyle, TextPaint,
-    TextureHandle,
+    CirclePaint, ClipId, Color, DisplayList, GridPaint, ImageOpacity, ImagePaint, LayerPaint,
+    PaintCommand, PathPaint, RectPaint, RectStyle, ResolvedClip, ResolvedPaintCommand, ShadowPaint,
+    SvgFit, SvgPaint, SvgPaintOverride, SvgRasterPaint, SvgSourceKey, SvgStrokeWidth, SvgStyle,
+    TextPaint, TextureHandle,
 };
 
 use super::command::{
-    AffineCircleRequest, AffineClipRequest, AffineImageRequest, AffinePathRequest,
-    AffineRectRequest, AffineShadowRequest, AffineSvgRasterRequest, AffineTextRequest,
-    BackendCommand,
+    AffineCircleRequest, AffineClipRequest, AffineGridRequest, AffineImageRequest,
+    AffinePathRequest, AffineRectRequest, AffineShadowRequest, AffineSvgRasterRequest,
+    AffineTextRequest, BackendCommand,
 };
 use super::display_resources::DisplayResourceResolver;
 use super::svg::{resolve_svg_icon_paths, SvgVectorCache};
@@ -81,6 +81,7 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
             PaintCommand::Rect(paint) => self.lower_rect(index, resolved.transform, paint),
             PaintCommand::Path(paint) => self.lower_path(index, resolved.transform, paint),
             PaintCommand::Circle(paint) => self.lower_circle(index, resolved.transform, *paint),
+            PaintCommand::Grid(paint) => self.lower_grid(index, resolved.transform, *paint),
             PaintCommand::Image(paint) => self.lower_image(index, resolved.transform, *paint),
             PaintCommand::Text(paint) => self.lower_text(index, resolved.transform, paint),
             PaintCommand::Shadow(paint) => self.lower_shadow(index, resolved.transform, *paint),
@@ -123,6 +124,14 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
                 paint,
                 transform,
             }));
+    }
+
+    fn lower_grid(&mut self, _index: usize, transform: Affine2D, paint: GridPaint) {
+        if paint.spacing <= 0.0 || paint.dot_size <= 0.0 {
+            return;
+        }
+        self.commands
+            .push(BackendCommand::Grid(AffineGridRequest { paint, transform }));
     }
 
     fn lower_image(&mut self, index: usize, transform: Affine2D, paint: ImagePaint) {
@@ -342,6 +351,9 @@ fn compose_command_transform(command: &mut BackendCommand, transform: Affine2D) 
         BackendCommand::Circle(req) => {
             req.transform = Affine2D::compose(transform, req.transform);
         }
+        BackendCommand::Grid(req) => {
+            req.transform = Affine2D::compose(transform, req.transform);
+        }
         BackendCommand::Text(req) => {
             req.transform = Affine2D::compose(transform, req.transform);
         }
@@ -378,6 +390,9 @@ fn apply_command_opacity(command: &mut BackendCommand, opacity: f32) {
                 stroke.color = color_with_opacity(stroke.color, opacity);
                 stroke
             });
+        }
+        BackendCommand::Grid(req) => {
+            req.paint.dot_color = color_with_opacity(req.paint.dot_color, opacity);
         }
         BackendCommand::Text(req) => {
             req.style.color = color_with_opacity(req.style.color, opacity);
@@ -465,8 +480,8 @@ mod tests {
     use super::*;
     use crate::geometry::Point;
     use crate::paint::{
-        ClipShape, DisplayListBuilder, Fill, ImagePaint, PathData, RectPaint, ShadowPaint,
-        SvgPaint, SvgRasterPaint, SvgSourceKey, TextPaint, TextureHandle,
+        ClipShape, DisplayListBuilder, Fill, GridPaint, ImagePaint, PathData, RectPaint,
+        ShadowPaint, SvgPaint, SvgRasterPaint, SvgSourceKey, TextPaint, TextureHandle,
     };
     use crate::renderer::display_resources::{DisplayResourceResolver, EmptyDisplayResources};
     use crate::renderer::svg::SvgSource;
@@ -531,6 +546,33 @@ mod tests {
                 assert_eq!(req.transform, transform);
             }
             _ => panic!("expected rect command"),
+        }
+    }
+
+    #[test]
+    fn lowers_grid_to_single_backend_command() {
+        let mut builder = DisplayListBuilder::new();
+        let transform = Affine2D::translation(10.0, 20.0);
+        let paint = GridPaint {
+            rect: rect(),
+            spacing: 8.0,
+            dot_color: Color::WHITE,
+            dot_size: 1.0,
+        };
+        builder.push_transform(transform);
+        builder.draw(PaintCommand::Grid(paint));
+        builder.pop_transform();
+        let list = builder.finish().unwrap();
+
+        let output = lower(&list);
+
+        assert_eq!(output.commands.len(), 1);
+        match &output.commands[0] {
+            BackendCommand::Grid(req) => {
+                assert_eq!(req.paint, paint);
+                assert_eq!(req.transform, transform);
+            }
+            _ => panic!("expected grid command"),
         }
     }
 

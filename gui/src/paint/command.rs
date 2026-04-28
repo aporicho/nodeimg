@@ -11,6 +11,7 @@ pub enum PaintCommand {
     Rect(RectPaint),
     Path(PathPaint),
     Circle(CirclePaint),
+    Grid(GridPaint),
     Image(ImagePaint),
     Text(TextPaint),
     Shadow(ShadowPaint),
@@ -38,6 +39,14 @@ pub struct CirclePaint {
     pub radius: f32,
     pub fill: Option<Color>,
     pub stroke: Option<Stroke>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridPaint {
+    pub rect: Rect,
+    pub spacing: f32,
+    pub dot_color: Color,
+    pub dot_size: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

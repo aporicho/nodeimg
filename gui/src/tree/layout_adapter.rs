@@ -1,6 +1,7 @@
 use super::layout::{BoxStyle, LayoutTree, LeafKind};
 use super::node::{NodeId, NodeKind};
 use super::tree::Tree;
+use super::Revision;
 use crate::renderer::Rect;
 
 impl LayoutTree for Tree {
@@ -10,6 +11,12 @@ impl LayoutTree for Tree {
         &self.get(node).unwrap().style
     }
 
+    fn explicit_rect(&self, node: NodeId) -> Option<Rect> {
+        self.get(node).and_then(|node| {
+            (node.layout_meta.explicit_rect_revision != Revision::ZERO).then_some(node.rect)
+        })
+    }
+
     fn children(&self, node: NodeId) -> Vec<NodeId> {
         self.get(node)
             .map(|n| n.children.clone())
@@ -17,6 +24,7 @@ impl LayoutTree for Tree {
     }
 
     fn set_rect(&mut self, node: NodeId, rect: Rect) {
+        self.record_layout_node_visited();
         if let Some(n) = self.get_mut(node) {
             n.rect = rect;
         }

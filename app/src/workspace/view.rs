@@ -1,6 +1,6 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::connection_layer;
-use gui::canvas::node_card::node_card_from_render_view;
+use gui::canvas::legacy_desc::node_card_from_render_view;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::{CanvasConnectionView, CanvasPendingConnectionView};
 use gui::geometry::TransformSpec;
@@ -24,6 +24,9 @@ pub(crate) fn build_workspace_tree(
     pending_connection: Option<&CanvasPendingConnectionView>,
     panel_root: Desc,
 ) -> Desc {
+    // Legacy Desc workspace builder.
+    // Owner: UI engine migration. Delete after WorkspaceSceneController drives
+    // canvas nodes through CanvasSceneModel + TreeMutation.
     let (canvas_min_x, canvas_min_y) = camera.screen_to_canvas(0.0, 0.0);
     let (canvas_max_x, canvas_max_y) = camera.screen_to_canvas(viewport.w, viewport.h);
     let grid_x = align_grid_start(canvas_min_x, GRID_SPACING);

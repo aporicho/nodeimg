@@ -1,6 +1,9 @@
+#[cfg(test)]
 use gui::theme::Theme;
+#[cfg(test)]
 use gui::tree::layout::TextureHandle;
 
+#[cfg(test)]
 #[allow(dead_code)]
 pub(crate) struct PanelBuildContext<'a> {
     pub(crate) theme: &'a Theme,
@@ -19,6 +22,7 @@ pub(crate) struct EnginePanelState {
     pub(crate) last_action: String,
 }
 
+#[cfg(test)]
 include!(concat!(env!("OUT_DIR"), "/panels_generated.rs"));
 
 #[cfg(test)]

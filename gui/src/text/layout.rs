@@ -1,6 +1,9 @@
 use crate::renderer::{Point, Rect, TextMeasurer, TextStyle};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use super::line_break::grapheme_spans;
+use super::metrics::TextMetrics;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum TextLayoutPolicy {
     NoWrap,
     Wrap,
@@ -77,10 +80,14 @@ impl TextLayoutResult {
 impl TextLine {
     pub(crate) fn x_for_index(&self, index: usize) -> f32 {
         let index = index.clamp(self.start, self.end);
-        self.stops
-            .iter()
-            .find_map(|(stop, x)| (*stop == index).then_some(*x))
-            .unwrap_or_else(|| self.stops.last().map(|(_, x)| *x).unwrap_or(0.0))
+        let mut last_x = 0.0;
+        for (stop, x) in &self.stops {
+            if *stop > index {
+                break;
+            }
+            last_x = *x;
+        }
+        last_x
     }
 
     fn nearest_index(&self, x: f32) -> usize {
@@ -103,20 +110,20 @@ pub(crate) fn layout_text(
     measurer: &mut TextMeasurer,
     style: &TextStyle,
 ) -> TextLayoutResult {
+    let mut metrics = TextMetrics::new(measurer, style);
     match policy {
-        TextLayoutPolicy::NoWrap => layout_no_wrap_text(text, max_width, measurer, style),
-        TextLayoutPolicy::Wrap => layout_wrapped_text(text, max_width, measurer, style),
+        TextLayoutPolicy::NoWrap => layout_no_wrap_text(text, max_width, &mut metrics),
+        TextLayoutPolicy::Wrap => layout_wrapped_text(text, max_width, &mut metrics),
     }
 }
 
 fn layout_no_wrap_text(
     text: &str,
     max_width: f32,
-    measurer: &mut TextMeasurer,
-    style: &TextStyle,
+    metrics: &mut TextMetrics<'_>,
 ) -> TextLayoutResult {
-    let line_height = text_line_height(measurer, style);
-    let content_width = measurer.measure_with_style(text, style).0;
+    let line_height = metrics.line_height();
+    let content_width = metrics.measure(text).0;
     let mut lines = Vec::new();
     push_line(
         &mut lines,
@@ -125,8 +132,7 @@ fn layout_no_wrap_text(
         text.len(),
         content_width,
         line_height,
-        measurer,
-        style,
+        metrics,
     );
 
     TextLayoutResult {
@@ -140,38 +146,34 @@ fn layout_no_wrap_text(
 fn layout_wrapped_text(
     text: &str,
     max_width: f32,
-    measurer: &mut TextMeasurer,
-    style: &TextStyle,
+    metrics: &mut TextMetrics<'_>,
 ) -> TextLayoutResult {
-    let line_height = text_line_height(measurer, style);
+    let line_height = metrics.line_height();
     let width = max_width.max(1.0);
     let mut lines = Vec::new();
     let mut line_start = 0usize;
     let mut current_end = 0usize;
     let mut current_width = 0.0f32;
 
-    for (index, ch) in text.char_indices() {
-        if ch == '\n' {
+    for span in grapheme_spans(text) {
+        if span.text == "\n" || span.text == "\r\n" {
             push_line(
                 &mut lines,
                 text,
                 line_start,
-                index,
+                span.start,
                 current_width,
                 line_height,
-                measurer,
-                style,
+                metrics,
             );
-            line_start = index + ch.len_utf8();
+            line_start = span.end;
             current_end = line_start;
             current_width = 0.0;
             continue;
         }
 
-        let next_end = index + ch.len_utf8();
-        let next_width = measurer
-            .measure_with_style(&text[line_start..next_end], style)
-            .0;
+        let grapheme_width = metrics.measure(span.text).0;
+        let next_width = current_width + grapheme_width;
         if next_width > width && current_end > line_start {
             push_line(
                 &mut lines,
@@ -180,16 +182,13 @@ fn layout_wrapped_text(
                 current_end,
                 current_width,
                 line_height,
-                measurer,
-                style,
+                metrics,
             );
-            line_start = index;
-            current_end = next_end;
-            current_width = measurer
-                .measure_with_style(&text[line_start..next_end], style)
-                .0;
+            line_start = span.start;
+            current_end = span.end;
+            current_width = grapheme_width;
         } else {
-            current_end = next_end;
+            current_end = span.end;
             current_width = next_width;
         }
     }
@@ -201,8 +200,7 @@ fn layout_wrapped_text(
         text.len(),
         current_width,
         line_height,
-        measurer,
-        style,
+        metrics,
     );
 
     let height = lines.len() as f32 * line_height;
@@ -214,13 +212,6 @@ fn layout_wrapped_text(
     }
 }
 
-fn text_line_height(measurer: &mut TextMeasurer, style: &TextStyle) -> f32 {
-    measurer
-        .measure_with_style("Mg", style)
-        .1
-        .max(style.size * style.line_height)
-}
-
 fn push_line(
     lines: &mut Vec<TextLine>,
     text: &str,
@@ -228,21 +219,21 @@ fn push_line(
     end: usize,
     width: f32,
     line_height: f32,
-    measurer: &mut TextMeasurer,
-    style: &TextStyle,
+    metrics: &mut TextMetrics<'_>,
 ) {
     let y = lines.len() as f32 * line_height;
     let mut stops = Vec::new();
     stops.push((start, 0.0));
-    for (index, _) in text[start..end].char_indices().skip(1) {
-        let byte_index = start + index;
-        let x = measurer
-            .measure_with_style(&text[start..byte_index], style)
-            .0;
-        stops.push((byte_index, x));
+    let mut x = 0.0;
+    for span in grapheme_spans(&text[start..end]) {
+        let byte_end = start + span.end;
+        x += metrics.measure(span.text).0;
+        stops.push((byte_end, x));
     }
     if stops.last().map(|(index, _)| *index) != Some(end) {
         stops.push((end, width));
+    } else if let Some((_, x)) = stops.last_mut() {
+        *x = width;
     }
 
     lines.push(TextLine {
@@ -305,5 +296,26 @@ mod tests {
         assert_eq!(layout.lines.len(), 1);
         assert_eq!(layout.height, layout.line_height);
         assert!(layout.lines[0].width > layout.width);
+    }
+
+    #[test]
+    fn wrap_text_keeps_grapheme_clusters_intact() {
+        let mut measurer = TextMeasurer::new();
+        let style = TextStyle::new(Color::WHITE, 12.0);
+        let text = "a👨‍👩‍👧‍👦e\u{301}b";
+        let boundaries = grapheme_spans(text)
+            .flat_map(|span| [span.start, span.end])
+            .collect::<std::collections::BTreeSet<_>>();
+
+        let layout = layout_text(text, TextLayoutPolicy::Wrap, 1.0, &mut measurer, &style);
+
+        assert!(layout.lines.len() >= 3);
+        for line in layout.lines {
+            assert!(boundaries.contains(&line.start));
+            assert!(boundaries.contains(&line.end));
+            for (stop, _) in line.stops {
+                assert!(boundaries.contains(&stop));
+            }
+        }
     }
 }

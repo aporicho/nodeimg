@@ -1,9 +1,9 @@
 use crate::geometry::{Affine2D, Point, Rect};
 
 use super::{
-    CirclePaint, ClipShape, Color, ImagePaint, ImageStyle, PaintCommand, PathData, PathPaint,
-    PathStyle, RectPaint, RectStyle, Shadow, ShadowPaint, Stroke, SvgPaint, SvgRasterPaint,
-    SvgSourceKey, SvgStyle, TextPaint, TextStyle, TextureHandle,
+    CirclePaint, ClipShape, Color, GridPaint, ImagePaint, ImageStyle, PaintCommand, PathData,
+    PathPaint, PathStyle, RectPaint, RectStyle, Shadow, ShadowPaint, Stroke, SvgPaint,
+    SvgRasterPaint, SvgSourceKey, SvgStyle, TextPaint, TextStyle, TextureHandle,
 };
 
 pub trait PaintTarget {
@@ -36,6 +36,10 @@ pub trait PaintTarget {
 
     fn draw_circle_paint(&mut self, circle: CirclePaint) {
         self.draw(PaintCommand::Circle(circle));
+    }
+
+    fn draw_grid(&mut self, grid: GridPaint) {
+        self.draw(PaintCommand::Grid(grid));
     }
 
     fn draw_image(&mut self, rect: Rect, texture: TextureHandle, style: ImageStyle) {

@@ -1136,6 +1136,7 @@ dependencies = [
  "resvg",
  "tracing",
  "tracing-subscriber",
+ "unicode-segmentation",
  "wgpu",
  "winit",
 ]

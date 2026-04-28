@@ -48,7 +48,7 @@ fn arrange_in_containing_block<T: LayoutTree>(
     let border_available = border_box_from_available(available, style.margin);
 
     // 节点最终 rect（margin 内的区域）
-    let node_rect = Rect {
+    let computed_rect = Rect {
         x: border_available.x,
         y: border_available.y,
         w: match style.width {
@@ -86,6 +86,7 @@ fn arrange_in_containing_block<T: LayoutTree>(
         }
         .clamp(style.min_height, style.max_height),
     };
+    let node_rect = tree.explicit_rect(node).unwrap_or(computed_rect);
 
     tree.set_rect(node, node_rect);
 
@@ -429,6 +430,8 @@ mod tests {
             },
             children: Vec::new(),
             local_runtime: NodeLocalRuntime::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

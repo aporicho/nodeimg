@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::geometry::Affine2D;
 use crate::icon::IconStyle;
-use crate::paint::{CirclePaint, ClipShape, PathData, RectStyle, Shadow, TextStyle};
+use crate::paint::{CirclePaint, ClipShape, GridPaint, PathData, RectStyle, Shadow, TextStyle};
 
 use super::image::{ImageStyle, TextureSize};
 use super::path::PathStyle;
@@ -14,6 +14,7 @@ pub(super) enum BackendCommand {
     Shadow(AffineShadowRequest),
     Rect(AffineRectRequest),
     Circle(AffineCircleRequest),
+    Grid(AffineGridRequest),
     Text(AffineTextRequest),
     Image(AffineImageRequest),
     SvgRaster(AffineSvgRasterRequest),
@@ -39,6 +40,12 @@ pub(super) struct AffinePathRequest {
 #[derive(Clone, Copy)]
 pub(super) struct AffineCircleRequest {
     pub paint: CirclePaint,
+    pub transform: Affine2D,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct AffineGridRequest {
+    pub paint: GridPaint,
     pub transform: Affine2D,
 }
 

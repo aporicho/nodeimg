@@ -7,19 +7,27 @@ use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::icon::{IconId, IconRegistry};
 use crate::interaction::InteractionState;
+use crate::paint::{DisplayList, PaintFlushStats};
+#[cfg(test)]
 use crate::panel::PanelDeclaration;
 use crate::renderer::{Rect, RegistryDisplayResources, Renderer, TextMeasurer, TextureSize};
-use crate::runtime::{
-    ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSyncCx, RuntimeSystems,
-};
+#[cfg(test)]
+use crate::runtime::RuntimeSyncCx;
+use crate::runtime::{ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSystems};
 use crate::shell::AppEvent;
+use crate::template::TemplateRegistry;
+use crate::template::{InstanceId, SlotValue, SlotValues, TemplateId, WORKSPACE_ROOT_TEMPLATE};
 use crate::theme::Theme;
-use crate::tree::layout::TextureHandle;
+#[cfg(test)]
+use crate::tree::build_display_list;
+use crate::tree::layout::{LayoutConstraints, LayoutFlushStats, LayoutOutput, TextureHandle};
+#[cfg(test)]
+use crate::tree::Desc;
 use crate::tree::{
-    build_display_list, hit_test_with_animations, layout, reconcile, resize_hit_at_screen_point,
-    Desc, HitChain, NodeId, NodeKind, Tree,
+    hit_test_with_animations, resize_hit_at_screen_point, FrameStats, HitChain, Invalidation,
+    MutationError, NodeId, NodeKind, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree,
+    TreeMutation,
 };
-use crate::widget::props::WidgetBuildCx;
 use crate::widget::resize_edge::ResizeEdge;
 
 pub use crate::output::{
@@ -30,13 +38,17 @@ pub use crate::overlay::{OverlayPlacement, OverlayRequest};
 /// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
     pub(crate) tree: Tree,
+    pub(crate) template_registry: TemplateRegistry,
     animations: AnimationStore,
     gesture_session: GestureSession,
     interaction: InteractionState,
     pub(crate) systems: RuntimeSystems,
+    #[cfg(test)]
     pub(crate) last_theme_revision: Option<u64>,
     pub(crate) resources: ResourceRegistry,
     icons: IconRegistry,
+    retained_display_list: Option<DisplayList>,
+    last_paint_theme_revision: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -45,21 +57,39 @@ pub struct ImeRequest {
     pub cursor_area: Option<Rect>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedRootIds {
+    pub root: NodeId,
+    pub canvas_root: NodeId,
+    pub canvas_grid: NodeId,
+    pub canvas_connections: NodeId,
+    pub panel_root: NodeId,
+    pub overlay_root: NodeId,
+}
+
 impl Context {
     pub fn new() -> Self {
         Self {
             tree: Tree::new(),
+            template_registry: TemplateRegistry::with_builtin_templates(),
             animations: AnimationStore::new(),
             gesture_session: GestureSession::new(),
             interaction: InteractionState::new(),
             systems: RuntimeSystems::new(),
+            #[cfg(test)]
             last_theme_revision: None,
             resources: ResourceRegistry::new(),
             icons: IconRegistry::with_builtin_icons(),
+            retained_display_list: None,
+            last_paint_theme_revision: None,
         }
     }
 
-    /// 更新整棵树并重新布局。
+    /// Legacy/prototype full-tree `Desc` update.
+    ///
+    /// Test-only compatibility boundary. Production app code must use retained
+    /// templates plus `TreeMutation` through scene controllers.
+    #[cfg(test)]
     pub fn update(
         &mut self,
         desc: Desc,
@@ -69,17 +99,15 @@ impl Context {
     ) {
         let desc = self.systems.compose_desc(&self.tree, desc, root_rect);
         let force_rebuild = self.last_theme_revision != Some(theme.revision);
-        let build_cx = WidgetBuildCx {
+        crate::tree::legacy_desc::update_tree_from_desc(
+            &mut self.tree,
+            desc,
+            root_rect,
+            measurer,
             theme,
             force_rebuild,
-        };
-        reconcile(&mut self.tree, desc, build_cx);
+        );
         self.last_theme_revision = Some(theme.revision);
-        if let Some(root) = self.tree.root() {
-            layout(&mut self.tree, root, root_rect, &mut |text, style| {
-                measurer.measure_with_style(text, style)
-            });
-        }
         self.interaction.sync_with_tree(&self.tree);
         self.systems.sync_with_tree(RuntimeSyncCx {
             tree: &mut self.tree,
@@ -89,31 +117,170 @@ impl Context {
         });
     }
 
+    pub fn flush_layout_dirty(
+        &mut self,
+        root_rect: Rect,
+        measurer: &mut TextMeasurer,
+    ) -> LayoutFlushStats {
+        let dirty = self.tree.take_layout_dirty();
+        let mut boundaries = dirty.boundaries;
+        for text_node in dirty.text_nodes {
+            if let Some(boundary) = self.tree.nearest_relayout_boundary(text_node) {
+                boundaries.insert(boundary);
+            }
+        }
+
+        let mut stats = LayoutFlushStats::default();
+        for boundary in boundaries {
+            let Some(available) = boundary_available_rect(&self.tree, boundary, root_rect) else {
+                continue;
+            };
+            let constraints = LayoutConstraints::from_available(available);
+            let Some(input) = self.tree.layout_input_for(boundary, constraints) else {
+                continue;
+            };
+            if self.tree.layout_cache_get(input).is_some() {
+                self.tree.record_layout_cache_hit();
+                stats.boundaries_skipped_cache_hit += 1;
+                continue;
+            }
+
+            self.tree.record_layout_cache_miss();
+            let visited_before = self.tree.frame_stats_snapshot().layout_nodes_visited;
+            crate::tree::layout(&mut self.tree, boundary, available, &mut |text, style| {
+                measurer.measure_with_style(text, style)
+            });
+            let visited_after = self.tree.frame_stats_snapshot().layout_nodes_visited;
+            self.tree.record_layout_boundary_flushed();
+            stats.boundaries_flushed += 1;
+            stats.nodes_visited += visited_after.saturating_sub(visited_before);
+            if let Some(output) = layout_output_from_tree(&self.tree, boundary) {
+                self.tree.layout_cache_set(input, output);
+            }
+        }
+        stats
+    }
+
+    pub fn ensure_retained_root(
+        &mut self,
+        viewport: Rect,
+    ) -> Result<RetainedRootIds, MutationError> {
+        if self.tree.node_by_str("root").is_none() {
+            self.template_registry.instantiate_root(
+                &mut self.tree,
+                TemplateId::from(WORKSPACE_ROOT_TEMPLATE),
+                InstanceId::from("root"),
+                retained_root_slots(viewport),
+            )?;
+            self.tree.mark_dirty(
+                self.tree.root().expect("retained root must be set"),
+                crate::tree::DirtyFlags::STRUCTURE
+                    | crate::tree::DirtyFlags::LAYOUT
+                    | crate::tree::DirtyFlags::HIT
+                    | crate::tree::DirtyFlags::PAINT,
+            );
+        } else {
+            let root = self.tree.node_by_str("root").expect("root");
+            let canvas = self.tree.node_by_str("canvas_root").expect("canvas root");
+            let grid = self.tree.node_by_str("canvas_grid").expect("canvas grid");
+            let panel = self.tree.node_by_str("panel_root").expect("panel root");
+            let overlay = self
+                .tree
+                .node_by_str("__overlay_root")
+                .expect("overlay root");
+            for mutation in [
+                TreeMutation::SetRect {
+                    node: root,
+                    rect: viewport,
+                },
+                TreeMutation::SetRect {
+                    node: canvas,
+                    rect: viewport,
+                },
+                TreeMutation::SetRect {
+                    node: grid,
+                    rect: viewport,
+                },
+                TreeMutation::SetRect {
+                    node: panel,
+                    rect: viewport,
+                },
+                TreeMutation::SetRect {
+                    node: overlay,
+                    rect: viewport,
+                },
+            ] {
+                self.tree
+                    .apply_mutation(&self.template_registry, mutation)?;
+            }
+        }
+        self.retained_root_ids()
+            .ok_or(MutationError::MissingNode(usize::MAX))
+    }
+
+    pub fn retained_root_ids(&self) -> Option<RetainedRootIds> {
+        Some(RetainedRootIds {
+            root: self.tree.node_by_str("root")?,
+            canvas_root: self.tree.node_by_str("canvas_root")?,
+            canvas_grid: self.tree.node_by_str("canvas_grid")?,
+            canvas_connections: self.tree.node_by_str("canvas_connections")?,
+            panel_root: self.tree.node_by_str("panel_root")?,
+            overlay_root: self.tree.node_by_str("__overlay_root")?,
+        })
+    }
+
+    pub fn apply_mutation(
+        &mut self,
+        mutation: TreeMutation,
+    ) -> Result<Invalidation, MutationError> {
+        self.tree.apply_mutation(&self.template_registry, mutation)
+    }
+
+    pub fn apply_mutations(
+        &mut self,
+        mutations: impl IntoIterator<Item = TreeMutation>,
+    ) -> Result<Vec<Invalidation>, MutationError> {
+        self.tree
+            .apply_mutations(&self.template_registry, mutations)
+    }
+
+    pub fn update_canvas_transform(
+        &mut self,
+        transform: crate::geometry::TransformSpec,
+    ) -> Result<(), MutationError> {
+        let Some(canvas_root) = self.tree.node_by_str("canvas_root") else {
+            return Err(MutationError::MissingNode(usize::MAX));
+        };
+        self.apply_mutation(TreeMutation::SetStyle {
+            node: canvas_root,
+            patch: StylePatch {
+                transform: Some(Some(transform)),
+                ..StylePatch::default()
+            },
+        })?;
+        Ok(())
+    }
+
     /// 渲染整棵树。
     pub fn render(
-        &self,
+        &mut self,
         renderer: &mut Renderer,
         _viewport_w: f32,
         _viewport_h: f32,
         theme: &Theme,
     ) {
-        if let Some(root) = self.tree.root() {
-            let list = match build_display_list(
-                &self.tree,
-                root,
-                crate::tree::PaintCx {
-                    interaction: Some(&self.interaction),
-                    text_boxes: Some(self.systems.text_box_store()),
-                    animations: Some(&self.animations),
-                    theme,
-                },
-                |text, style| renderer.text_measurer().measure_with_style(text, style),
-            ) {
-                Ok(list) => list,
-                Err(err) => {
-                    tracing::warn!("failed to build display list for tree paint: {:?}", err);
-                    return;
-                }
+        if self.tree.root().is_some() {
+            let flush = self.flush_paint_dirty(theme, renderer.text_measurer());
+            if flush.fragments_rebuilt > 0 || flush.fragments_flattened > 0 {
+                tracing::trace!(
+                    fragments_rebuilt = flush.fragments_rebuilt,
+                    fragments_flattened = flush.fragments_flattened,
+                    "retained paint flushed"
+                );
+            }
+            let Some(list) = self.retained_display_list.as_ref() else {
+                tracing::warn!("retained paint did not produce a display list");
+                return;
             };
             let resources = RegistryDisplayResources::new(self.resources.textures(), &self.icons);
             let report = renderer.draw_display_list(&list, &resources);
@@ -124,6 +291,82 @@ impl Context {
                 );
             }
         }
+    }
+
+    pub fn flush_paint_dirty(
+        &mut self,
+        theme: &Theme,
+        measurer: &mut TextMeasurer,
+    ) -> PaintFlushStats {
+        let Some(root) = self.tree.root() else {
+            self.retained_display_list = None;
+            return PaintFlushStats::default();
+        };
+
+        if self.retained_display_list.is_none()
+            || self.last_paint_theme_revision != Some(theme.revision)
+        {
+            self.tree.mark_paint_dirty(root, PaintDirtyReason::Theme);
+            self.last_paint_theme_revision = Some(theme.revision);
+        }
+
+        let root_boundary = self
+            .tree
+            .nearest_repaint_boundary(root)
+            .unwrap_or(RepaintBoundaryId(root));
+        let dirty = self.tree.take_paint_dirty();
+        let mut rebuild = dirty.boundaries;
+        rebuild.extend(dirty.paint_order);
+
+        if self.retained_display_list.is_none() {
+            rebuild.extend(self.tree.repaint_boundaries_in_subtree(root));
+        } else {
+            let dirty_snapshot = rebuild.iter().copied().collect::<Vec<_>>();
+            for boundary in dirty_snapshot {
+                for descendant in self.tree.repaint_boundaries_in_subtree(boundary.0) {
+                    if !self.tree.paint_fragment_cached(descendant) {
+                        rebuild.insert(descendant);
+                    }
+                }
+            }
+        }
+
+        let mut stats = PaintFlushStats {
+            boundaries_dirty: rebuild.len(),
+            ..PaintFlushStats::default()
+        };
+
+        for boundary in rebuild.iter().copied() {
+            let rebuilt = match self.tree.rebuild_paint_fragment(
+                boundary,
+                crate::tree::PaintCx {
+                    interaction: Some(&self.interaction),
+                    text_boxes: Some(self.systems.text_box_store()),
+                    animations: Some(&self.animations),
+                    theme,
+                },
+                |text, style| measurer.measure_with_style(text, style),
+            ) {
+                Ok(stats) => stats,
+                Err(err) => {
+                    tracing::warn!(?boundary, ?err, "failed to rebuild paint fragment");
+                    continue;
+                }
+            };
+            stats.fragments_rebuilt += rebuilt.fragments_rebuilt;
+            stats.commands_recorded += rebuilt.commands_recorded;
+        }
+
+        if stats.fragments_rebuilt == 0 && self.retained_display_list.is_some() {
+            self.tree.record_paint_fragments_reused(1);
+            stats.fragments_reused = 1;
+            return stats;
+        }
+
+        let (display_list, compose_stats) = self.tree.compose_retained_display_list(root_boundary);
+        stats.fragments_flattened += compose_stats.fragments_flattened;
+        self.retained_display_list = Some(display_list);
+        stats
     }
 
     pub fn register_texture(
@@ -190,6 +433,7 @@ impl Context {
             .paste_focused_text(&self.tree, self.interaction.focused(), text)
     }
 
+    #[cfg(test)]
     pub fn panel_root(&mut self, viewport: Rect, panels: Vec<PanelDeclaration>) -> Desc {
         crate::panel::panel_root(&mut self.tree, viewport, panels)
     }
@@ -247,6 +491,37 @@ impl Context {
 
     pub fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
         self.systems.control_intrinsics()
+    }
+
+    pub fn retained_control_intrinsics_snapshot(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.systems.control_intrinsics()
+    }
+
+    pub fn take_dirty_control_intrinsics(&mut self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.systems.take_dirty_control_intrinsics()
+    }
+
+    pub fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
+        self.systems.take_text_box_dirty_intrinsics()
+    }
+
+    pub fn sync_retained_canvas_text_boxes(
+        &mut self,
+        views: &[crate::canvas::node_template::CanvasNodeRenderView],
+        measurer: &mut TextMeasurer,
+        theme: &Theme,
+    ) {
+        self.systems.sync_retained_canvas_text_boxes(
+            &self.tree,
+            views,
+            measurer,
+            theme,
+            self.interaction.focused(),
+        );
+    }
+
+    pub fn text_box_dirty_intrinsics(&self) -> Vec<String> {
+        self.systems.text_box_dirty_intrinsics()
     }
 
     pub fn canvas_port_group_view(
@@ -316,6 +591,18 @@ impl Context {
         self.tree.export_panel_layouts()
     }
 
+    pub fn ensure_panel_runtime(
+        &mut self,
+        config: &crate::panel::PanelConfig,
+    ) -> Option<crate::panel::PanelRuntime> {
+        self.tree.ensure_panel(config);
+        self.tree.panel_state(config.id.as_str()).cloned()
+    }
+
+    pub fn panel_runtime(&self, id: &str) -> Option<crate::panel::PanelRuntime> {
+        self.tree.panel_state(id).cloned()
+    }
+
     pub fn import_panel_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
         self.tree.import_panel_layouts(layouts);
     }
@@ -333,9 +620,7 @@ impl Context {
     }
 
     pub fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
-        self.tree
-            .iter()
-            .find_map(|(node_id, node)| (node.id.as_ref() == id).then_some(node_id))
+        self.tree.node_by_str(id)
     }
 
     pub fn node_exists(&self, id: &str) -> bool {
@@ -408,14 +693,19 @@ impl Context {
         hit.map(|hit| (hit.node_id, hit.edge))
     }
 
-    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&'static str> {
+    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&str> {
         let mut candidate = self.node_name(node_id)?;
 
         loop {
             if let Some(root_id) = self.node_id_by_name(candidate) {
                 if let Some(root_node) = self.tree.get(root_id) {
-                    if let NodeKind::Widget(props) = &root_node.kind {
-                        return Some(props.widget_type());
+                    match &root_node.kind {
+                        NodeKind::Widget(props) => return Some(props.widget_type()),
+                        _ => {
+                            if let Some(role) = root_node.props.semantic_role.as_deref() {
+                                return Some(role);
+                            }
+                        }
                     }
                 }
             }
@@ -513,12 +803,60 @@ impl Context {
     fn node_name_for(&self, node_id: Option<NodeId>) -> Option<&str> {
         node_id.and_then(|id| self.node_name(id))
     }
+
+    pub fn last_frame_stats(&self) -> FrameStats {
+        self.tree.frame_stats_snapshot()
+    }
+
+    pub fn template_registry(&self) -> &TemplateRegistry {
+        &self.template_registry
+    }
 }
 
 impl Default for Context {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn boundary_available_rect(tree: &Tree, boundary: NodeId, root_rect: Rect) -> Option<Rect> {
+    if tree.root() == Some(boundary) {
+        return Some(root_rect);
+    }
+    tree.get(boundary).map(|node| {
+        if node.rect.w > 0.0 || node.rect.h > 0.0 {
+            node.rect
+        } else {
+            root_rect
+        }
+    })
+}
+
+fn retained_root_slots(viewport: Rect) -> SlotValues {
+    SlotValues::new()
+        .with("root_rect", SlotValue::Rect(viewport))
+        .with("canvas_rect", SlotValue::Rect(viewport))
+        .with("grid_rect", SlotValue::Rect(viewport))
+        .with("panel_rect", SlotValue::Rect(viewport))
+        .with("overlay_rect", SlotValue::Rect(viewport))
+}
+
+fn layout_output_from_tree(tree: &Tree, node: NodeId) -> Option<LayoutOutput> {
+    let tree_node = tree.get(node)?;
+    let padding = tree_node.style.padding;
+    let content_rect = Rect {
+        x: tree_node.rect.x + padding.left,
+        y: tree_node.rect.y + padding.top,
+        w: (tree_node.rect.w - padding.horizontal()).max(0.0),
+        h: (tree_node.rect.h - padding.vertical()).max(0.0),
+    };
+    Some(LayoutOutput {
+        rect: tree_node.rect,
+        content_rect,
+        intrinsic_width: tree_node.rect.w,
+        intrinsic_height: tree_node.rect.h,
+        baseline: None,
+    })
 }
 
 #[cfg(test)]
@@ -552,6 +890,44 @@ mod tests {
 
     fn widget(id: impl Into<Cow<'static, str>>, props: impl WidgetProps) -> Desc {
         ui::widget(id, props).build()
+    }
+
+    #[test]
+    fn flush_layout_dirty_reuses_boundary_layout_cache() {
+        let theme = dark_theme();
+        let mut cx = Context::new();
+        let mut measurer = TextMeasurer::new();
+        let root_rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 320.0,
+            h: 120.0,
+        };
+        cx.update(
+            root_desc(
+                120.0,
+                ui::container("child")
+                    .fixed_width(40.0)
+                    .fixed_height(24.0)
+                    .build(),
+            ),
+            root_rect,
+            &mut measurer,
+            &theme,
+        );
+        let root = cx.root().expect("root");
+        cx.tree.clear_frame_stats();
+
+        cx.tree.mark_dirty(root, crate::tree::DirtyFlags::LAYOUT);
+        let first = cx.flush_layout_dirty(root_rect, &mut measurer);
+        cx.tree.mark_dirty(root, crate::tree::DirtyFlags::LAYOUT);
+        let second = cx.flush_layout_dirty(root_rect, &mut measurer);
+
+        assert_eq!(first.boundaries_flushed, 1);
+        assert_eq!(first.boundaries_skipped_cache_hit, 0);
+        assert_eq!(second.boundaries_flushed, 0);
+        assert_eq!(second.boundaries_skipped_cache_hit, 1);
+        assert_eq!(cx.last_frame_stats().layout_cache_hits, 1);
     }
 
     fn test_desc(value: &str) -> Desc {

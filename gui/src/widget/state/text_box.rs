@@ -2,16 +2,18 @@ use std::collections::HashMap;
 
 use crate::renderer::{Point, Rect, TextMeasurer, TextStyle};
 use crate::runtime::ControlIntrinsic;
-use crate::text::layout::{layout_text, TextLayoutPolicy, TextLayoutResult};
+use crate::text::layout::{TextLayoutPolicy, TextLayoutResult};
+use crate::text::TextLayoutCache;
 use crate::theme::{TextInputTheme, Theme};
 use crate::tree::{NodeId, NodeKind, Tree};
 use crate::widget::atoms::number_input::{format_number, NumberInputProps};
 use crate::widget::atoms::text_area::TextAreaProps;
-use crate::widget::atoms::text_box::{
-    text_box_value_style, TextBoxFont, TextBoxMode, TextBoxProps,
-};
+use crate::widget::atoms::text_box::text_box_value_style;
+use crate::widget::atoms::text_box::{TextBoxFont, TextBoxMode, TextBoxProps};
 use crate::widget::atoms::text_input::TextInputProps;
 use crate::widget::TextEditState;
+
+use super::text_box_registry::TextBoxRegistry;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum TextBoxValueKind {
@@ -47,6 +49,12 @@ struct PreeditLayout {
     start_x: f32,
     width: f32,
     caret_x: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TextBoxLayoutSync {
+    cache_hit: bool,
+    desired_height_changed: bool,
 }
 
 pub(crate) struct TextBoxRuntime {
@@ -197,7 +205,10 @@ impl TextBoxRuntime {
         measurer: &mut TextMeasurer,
         spec: &TextBoxSpec,
         value_style: TextStyle,
-    ) {
+        layout_cache: &mut TextLayoutCache,
+    ) -> TextBoxLayoutSync {
+        let previous_desired_height = self.desired_height;
+        let mut sync = TextBoxLayoutSync::default();
         self.field_rect = field_rect;
         match spec.mode {
             TextBoxMode::SingleLine => {
@@ -207,13 +218,15 @@ impl TextBoxRuntime {
                     w: (field_rect.w - spec.tokens.padding_x * 2.0).max(1.0),
                     h: field_rect.h,
                 };
-                self.layout = layout_text(
+                let (layout, cache_hit) = layout_cache.layout_text(
                     self.editor.text(),
                     TextLayoutPolicy::NoWrap,
                     self.content_rect.w,
                     measurer,
                     &value_style,
                 );
+                self.layout = layout;
+                sync.cache_hit = cache_hit;
                 self.text_origin = Point {
                     x: self.content_rect.x,
                     y: value_rect
@@ -240,13 +253,15 @@ impl TextBoxRuntime {
                     x: self.content_rect.x,
                     y: self.content_rect.y,
                 };
-                self.layout = layout_text(
+                let (layout, cache_hit) = layout_cache.layout_text(
                     self.editor.text(),
                     TextLayoutPolicy::Wrap,
                     self.content_rect.w,
                     measurer,
                     &value_style,
                 );
+                self.layout = layout;
+                sync.cache_hit = cache_hit;
                 self.min_height =
                     min_rows.max(1) as f32 * self.layout.line_height + spec.tokens.padding_y * 2.0;
                 self.desired_height =
@@ -255,6 +270,8 @@ impl TextBoxRuntime {
                 self.preedit_layout = None;
             }
         }
+        sync.desired_height_changed = (self.desired_height - previous_desired_height).abs() > 0.5;
+        sync
     }
 
     pub(crate) fn current_size(&self) -> [f32; 2] {
@@ -518,15 +535,20 @@ impl TextBoxRuntime {
 
 pub(crate) struct TextBoxStore {
     runtimes: HashMap<String, TextBoxRuntime>,
+    registry: TextBoxRegistry,
+    layout_cache: TextLayoutCache,
 }
 
 impl TextBoxStore {
     pub(crate) fn new() -> Self {
         Self {
             runtimes: HashMap::new(),
+            registry: TextBoxRegistry::default(),
+            layout_cache: TextLayoutCache::default(),
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn sync_with_tree(
         &mut self,
         tree: &Tree,
@@ -534,7 +556,12 @@ impl TextBoxStore {
         theme: &Theme,
         focused_widget_id: Option<&str>,
     ) {
+        // Legacy Desc synchronization boundary.
+        // Owner: UI engine migration. Delete when retained TextBoxTemplate mounts
+        // register instances directly with TextBoxRegistry and text edits emit
+        // TreeMutation::SetText without scanning the live tree.
         let mut next = HashMap::new();
+        tree.record_full_tree_scan();
 
         for (_, node) in tree.iter() {
             let NodeKind::Widget(props) = &node.kind else {
@@ -545,6 +572,9 @@ impl TextBoxStore {
             };
 
             let widget_id = node.id.to_string();
+            self.registry
+                .register_instance(widget_id.clone(), spec.external_text.clone());
+            let is_new_runtime = !self.runtimes.contains_key(&widget_id);
             let mut runtime = self
                 .runtimes
                 .remove(&widget_id)
@@ -554,6 +584,8 @@ impl TextBoxStore {
             let allow_override = Some(widget_id.as_str()) != focused_widget_id;
             let external_text_changed =
                 runtime.sync_external_text(&spec.external_text, allow_override);
+            self.registry
+                .update_external_value(&widget_id, spec.external_text.clone());
 
             let field_rect = find_rect(tree, &format!("{widget_id}::field")).unwrap_or(Rect {
                 x: node.rect.x,
@@ -563,7 +595,23 @@ impl TextBoxStore {
             });
             let value_rect = find_rect(tree, &format!("{widget_id}::value"));
             let value_style = text_box_value_style(theme, spec.tokens, spec.font);
-            runtime.sync_layout_with_style(field_rect, value_rect, measurer, &spec, value_style);
+            tree.record_text_layout_request();
+            let layout_sync = runtime.sync_layout_with_style(
+                field_rect,
+                value_rect,
+                measurer,
+                &spec,
+                value_style,
+                &mut self.layout_cache,
+            );
+            if layout_sync.cache_hit {
+                tree.record_text_layout_cache_hit();
+            }
+            if runtime.is_multiline() && (is_new_runtime || layout_sync.desired_height_changed) {
+                self.registry
+                    .handle_editor_change(&widget_id, runtime.editor().text().to_string());
+                self.registry.mark_dirty_intrinsic(&widget_id);
+            }
             log_text_box_sizing(
                 widget_id.as_str(),
                 &runtime,
@@ -576,6 +624,83 @@ impl TextBoxStore {
         }
 
         self.runtimes = next;
+    }
+
+    pub(crate) fn take_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
+        self.registry.take_dirty_intrinsics()
+    }
+
+    pub(crate) fn sync_retained_text_box(
+        &mut self,
+        tree: &Tree,
+        measurer: &mut TextMeasurer,
+        theme: &Theme,
+        widget_id: String,
+        spec: TextBoxSpec,
+        focused_widget_id: Option<&str>,
+    ) {
+        self.registry
+            .register_instance(widget_id.clone(), spec.external_text.clone());
+        let is_new_runtime = !self.runtimes.contains_key(&widget_id);
+        let mut runtime = self
+            .runtimes
+            .remove(&widget_id)
+            .unwrap_or_else(|| TextBoxRuntime::new(&spec));
+
+        runtime.sync_spec(&spec);
+        let allow_override = Some(widget_id.as_str()) != focused_widget_id;
+        let external_text_changed = runtime.sync_external_text(&spec.external_text, allow_override);
+        self.registry
+            .update_external_value(&widget_id, spec.external_text.clone());
+
+        let field_rect = find_rect(tree, &format!("{widget_id}::field")).unwrap_or(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: fallback_height(spec.mode, spec.tokens),
+        });
+        let value_rect = find_rect(tree, &format!("{widget_id}::value"));
+        let value_style = text_box_value_style(theme, spec.tokens, spec.font);
+        tree.record_text_layout_request();
+        let layout_sync = runtime.sync_layout_with_style(
+            field_rect,
+            value_rect,
+            measurer,
+            &spec,
+            value_style,
+            &mut self.layout_cache,
+        );
+        if layout_sync.cache_hit {
+            tree.record_text_layout_cache_hit();
+        }
+        if runtime.is_multiline() && (is_new_runtime || layout_sync.desired_height_changed) {
+            self.registry
+                .handle_editor_change(&widget_id, runtime.editor().text().to_string());
+            self.registry.mark_dirty_intrinsic(&widget_id);
+        }
+        log_text_box_sizing(
+            widget_id.as_str(),
+            &runtime,
+            &spec,
+            Some(widget_id.as_str()) == focused_widget_id,
+            external_text_changed,
+            value_rect,
+        );
+        self.runtimes.insert(widget_id, runtime);
+    }
+
+    pub(crate) fn dirty_intrinsic_ids(&self) -> Vec<String> {
+        self.registry
+            .dirty_intrinsics()
+            .map(str::to_string)
+            .collect()
+    }
+
+    pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
+        self.take_dirty_intrinsics()
+            .into_iter()
+            .filter_map(|widget_id| self.control_intrinsic(&widget_id))
+            .collect()
     }
 
     pub(crate) fn runtime(&self, widget_id: &str) -> Option<&TextBoxRuntime> {
@@ -608,10 +733,10 @@ impl TextBoxStore {
     pub(crate) fn focused_widget_id(&self, tree: &Tree, focused: Option<NodeId>) -> Option<String> {
         let focused = focused?;
         let node = tree.get(focused)?;
-        let NodeKind::Widget(props) = &node.kind else {
-            return None;
-        };
-        is_text_box_props(props.as_ref()).then(|| node.id.to_string())
+        if let NodeKind::Widget(props) = &node.kind {
+            return is_text_box_props(props.as_ref()).then(|| node.id.to_string());
+        }
+        text_box_owner_from_retained_node(tree, node.id.as_ref())
     }
 
     pub(crate) fn control_intrinsics(&self) -> Vec<ControlIntrinsic> {
@@ -619,50 +744,22 @@ impl TextBoxStore {
             .runtimes
             .iter()
             .filter(|(_, runtime)| runtime.is_multiline())
-            .map(|(widget_id, runtime)| ControlIntrinsic {
-                widget_id: widget_id.clone(),
-                current_size: runtime.current_size(),
-                min_size: runtime.min_size(),
-                desired_size: runtime.desired_size(),
-                affects_parent_width: false,
-                affects_parent_height: true,
-            })
+            .map(|(widget_id, runtime)| control_intrinsic_for(widget_id, runtime))
             .collect::<Vec<_>>();
 
         for intrinsic in &intrinsics {
-            let height_delta = intrinsic.desired_size[1] - intrinsic.current_size[1];
-            let log_at_debug = height_delta.abs() > 0.5;
-            if log_at_debug {
-                tracing::debug!(
-                    target: "gui::widget::text_box_sizing",
-                    widget_id = %intrinsic.widget_id,
-                    current_w = intrinsic.current_size[0],
-                    current_h = intrinsic.current_size[1],
-                    min_w = intrinsic.min_size[0],
-                    min_h = intrinsic.min_size[1],
-                    desired_w = intrinsic.desired_size[0],
-                    desired_h = intrinsic.desired_size[1],
-                    height_delta,
-                    affects_parent_height = intrinsic.affects_parent_height,
-                    "emit text box control intrinsic with height delta"
-                );
-            } else {
-                tracing::trace!(
-                    target: "gui::widget::text_box_sizing",
-                    widget_id = %intrinsic.widget_id,
-                    current_w = intrinsic.current_size[0],
-                    current_h = intrinsic.current_size[1],
-                    min_w = intrinsic.min_size[0],
-                    min_h = intrinsic.min_size[1],
-                    desired_w = intrinsic.desired_size[0],
-                    desired_h = intrinsic.desired_size[1],
-                    affects_parent_height = intrinsic.affects_parent_height,
-                    "emit text box control intrinsic"
-                );
-            }
+            log_control_intrinsic(intrinsic);
         }
 
         intrinsics
+    }
+
+    pub(crate) fn control_intrinsic(&self, widget_id: &str) -> Option<ControlIntrinsic> {
+        let runtime = self.runtimes.get(widget_id)?;
+        runtime
+            .is_multiline()
+            .then(|| control_intrinsic_for(widget_id, runtime))
+            .inspect(log_control_intrinsic)
     }
 }
 
@@ -737,9 +834,38 @@ pub(crate) fn is_text_box_props(props: &dyn crate::widget::props::WidgetProps) -
         || props.as_any().downcast_ref::<TextBoxProps>().is_some()
 }
 
+fn text_box_owner_from_retained_node(tree: &Tree, id: &str) -> Option<String> {
+    if retained_text_box_role(tree, id).is_some() {
+        return Some(id.to_string());
+    }
+    for prefix in retained_prefixes(id) {
+        if retained_text_box_role(tree, prefix).is_some() {
+            return Some(prefix.to_string());
+        }
+    }
+    None
+}
+
+fn retained_text_box_role<'a>(tree: &'a Tree, id: &str) -> Option<&'a str> {
+    let node = tree.get(tree.node_by_str(id)?)?;
+    match node.props.semantic_role.as_deref()? {
+        "TextInput" | "TextArea" | "NumberInput" => Some(node.props.semantic_role.as_deref()?),
+        _ => None,
+    }
+}
+
+fn retained_prefixes(id: &str) -> impl Iterator<Item = &str> {
+    id.match_indices("::")
+        .map(|(index, _)| &id[..index])
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+}
+
 fn find_rect(tree: &Tree, node_id: &str) -> Option<Rect> {
-    tree.iter()
-        .find_map(|(_, node)| (node.id.as_ref() == node_id).then_some(node.rect))
+    tree.node_by_str(node_id)
+        .and_then(|node_id| tree.get(node_id))
+        .map(|node| node.rect)
 }
 
 fn fallback_height(mode: TextBoxMode, tokens: TextInputTheme) -> f32 {
@@ -827,6 +953,50 @@ fn log_text_box_sizing(
     }
 }
 
+fn control_intrinsic_for(widget_id: &str, runtime: &TextBoxRuntime) -> ControlIntrinsic {
+    ControlIntrinsic {
+        widget_id: widget_id.to_string(),
+        current_size: runtime.current_size(),
+        min_size: runtime.min_size(),
+        desired_size: runtime.desired_size(),
+        affects_parent_width: false,
+        affects_parent_height: true,
+    }
+}
+
+fn log_control_intrinsic(intrinsic: &ControlIntrinsic) {
+    let height_delta = intrinsic.desired_size[1] - intrinsic.current_size[1];
+    let log_at_debug = height_delta.abs() > 0.5;
+    if log_at_debug {
+        tracing::debug!(
+            target: "gui::widget::text_box_sizing",
+            widget_id = %intrinsic.widget_id,
+            current_w = intrinsic.current_size[0],
+            current_h = intrinsic.current_size[1],
+            min_w = intrinsic.min_size[0],
+            min_h = intrinsic.min_size[1],
+            desired_w = intrinsic.desired_size[0],
+            desired_h = intrinsic.desired_size[1],
+            height_delta,
+            affects_parent_height = intrinsic.affects_parent_height,
+            "emit dirty text box control intrinsic with height delta"
+        );
+    } else {
+        tracing::trace!(
+            target: "gui::widget::text_box_sizing",
+            widget_id = %intrinsic.widget_id,
+            current_w = intrinsic.current_size[0],
+            current_h = intrinsic.current_size[1],
+            min_w = intrinsic.min_size[0],
+            min_h = intrinsic.min_size[1],
+            desired_w = intrinsic.desired_size[0],
+            desired_h = intrinsic.desired_size[1],
+            affects_parent_height = intrinsic.affects_parent_height,
+            "emit dirty text box control intrinsic"
+        );
+    }
+}
+
 fn preedit_layout(
     preedit: &PreeditState,
     runtime: &TextBoxRuntime,
@@ -878,6 +1048,7 @@ mod tests {
         let spec = text_box_spec(&props, &theme).unwrap();
         let mut runtime = TextBoxRuntime::new(&spec);
         let mut measurer = TextMeasurer::new();
+        let mut layout_cache = TextLayoutCache::default();
         runtime.sync_layout_with_style(
             Rect {
                 x: 10.0,
@@ -889,6 +1060,7 @@ mod tests {
             &mut measurer,
             &spec,
             text_box_value_style(&theme, spec.tokens, spec.font),
+            &mut layout_cache,
         );
 
         runtime.editor.move_end();
@@ -914,6 +1086,7 @@ mod tests {
         let spec = text_box_spec(&props, &theme).unwrap();
         let mut runtime = TextBoxRuntime::new(&spec);
         let mut measurer = TextMeasurer::new();
+        let mut layout_cache = TextLayoutCache::default();
 
         runtime.sync_layout_with_style(
             Rect {
@@ -926,6 +1099,7 @@ mod tests {
             &mut measurer,
             &spec,
             text_box_value_style(&theme, spec.tokens, spec.font),
+            &mut layout_cache,
         );
         let wide_height = runtime.desired_height;
 
@@ -940,10 +1114,107 @@ mod tests {
             &mut measurer,
             &spec,
             text_box_value_style(&theme, spec.tokens, spec.font),
+            &mut layout_cache,
         );
 
         assert_eq!(wide_height, runtime.min_height);
         assert!(runtime.desired_height > wide_height);
+    }
+
+    #[test]
+    fn cursor_only_change_reuses_text_layout_cache() {
+        let theme = dark_theme();
+        let props = TextBoxProps {
+            label: None,
+            value: std::borrow::Cow::Borrowed("cached multiline text"),
+            disabled: false,
+            size: Default::default(),
+            density: Default::default(),
+            mode: TextBoxMode::MultiLine { min_rows: 1 },
+            font: TextBoxFont::Body,
+        };
+        let spec = text_box_spec(&props, &theme).unwrap();
+        let mut runtime = TextBoxRuntime::new(&spec);
+        let mut measurer = TextMeasurer::new();
+        let mut layout_cache = TextLayoutCache::default();
+        let rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 180.0,
+            h: runtime.min_height,
+        };
+
+        let first = runtime.sync_layout_with_style(
+            rect,
+            None,
+            &mut measurer,
+            &spec,
+            text_box_value_style(&theme, spec.tokens, spec.font),
+            &mut layout_cache,
+        );
+        runtime.editor.move_end();
+        let second = runtime.sync_layout_with_style(
+            rect,
+            None,
+            &mut measurer,
+            &spec,
+            text_box_value_style(&theme, spec.tokens, spec.font),
+            &mut layout_cache,
+        );
+
+        assert!(!first.cache_hit);
+        assert!(second.cache_hit);
+        assert!(!second.desired_height_changed);
+    }
+
+    #[test]
+    fn text_box_store_reports_dirty_intrinsic_only_on_height_change() {
+        let theme = dark_theme();
+        let mut tree = Tree::new();
+        let multi = crate::ui::widget(
+            "multi",
+            TextBoxProps {
+                label: None,
+                value: std::borrow::Cow::Borrowed("one two three four five six seven eight"),
+                disabled: false,
+                size: Default::default(),
+                density: Default::default(),
+                mode: TextBoxMode::MultiLine { min_rows: 1 },
+                font: TextBoxFont::Body,
+            },
+        )
+        .build();
+        let desc = crate::ui::column("root").child(multi).build();
+        crate::tree::reconcile(
+            &mut tree,
+            desc,
+            crate::widget::props::WidgetBuildCx {
+                theme: &theme,
+                force_rebuild: false,
+            },
+        );
+        let root = tree.root().unwrap();
+        let mut measurer = TextMeasurer::new();
+        crate::tree::layout(
+            &mut tree,
+            root,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 64.0,
+                h: 200.0,
+            },
+            &mut |text, style| measurer.measure_with_style(text, style),
+        );
+        let mut store = TextBoxStore::new();
+
+        store.sync_with_tree(&tree, &mut measurer, &theme, None);
+        let first = store.take_dirty_intrinsics();
+        store.sync_with_tree(&tree, &mut measurer, &theme, None);
+        let second = store.take_dirty_intrinsics();
+
+        assert!(first.contains("multi"));
+        assert!(second.is_empty());
     }
 
     #[test]

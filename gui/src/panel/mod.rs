@@ -2,6 +2,7 @@ mod config;
 pub mod event;
 mod layout;
 mod reducer;
+pub mod retained;
 pub mod root;
 mod runtime;
 

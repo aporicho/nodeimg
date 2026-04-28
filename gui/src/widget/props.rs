@@ -17,7 +17,10 @@ pub struct WidgetBuildCx<'a> {
     pub force_rebuild: bool,
 }
 
-/// 控件配置 trait。每种控件实现此 trait。
+/// Legacy `Desc` widget expansion trait.
+///
+/// Retained production code mounts `CompiledTemplate` instances and patches
+/// state through `TreeMutation`; it must not call `build()` as glue.
 pub trait WidgetProps: 'static {
     fn widget_type(&self) -> &'static str;
     fn as_any(&self) -> &dyn Any;

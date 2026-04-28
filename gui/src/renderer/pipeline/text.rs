@@ -8,6 +8,7 @@ use super::super::style::TextStyle;
 use super::super::text_measurer::{TextCacheKey, TextMeasurer};
 use super::super::types::{Color, Point, Rect};
 
+#[derive(Clone)]
 pub struct TextRequest {
     pub pos: Point,
     pub text: String,
@@ -75,8 +76,6 @@ impl TextPipeline {
             },
         );
 
-        text_measurer.mark_all_unused();
-
         for req in texts {
             text_measurer.ensure_buffer(&req.text, &req.style);
         }
@@ -118,8 +117,6 @@ impl TextPipeline {
                 &mut self.swash_cache,
             )
             .expect("failed to prepare text");
-
-        text_measurer.evict_unused();
 
         let batch_index = self.prepared_batches.len();
         self.prepared_batches.push(PreparedTextBatch {
