@@ -42,8 +42,8 @@ pub fn canvas_node_sizing_request(
         .count();
     let height_delta = target_height - layout.rect.h;
     if owner_intrinsic_count > 0 || height_delta.abs() > 0.5 {
-        tracing::debug!(
-            target: "gui::canvas::node_sizing",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             owner_id = %layout.owner_id,
             stable_id = %stable_id,
             current_w = layout.rect.w,
@@ -153,8 +153,8 @@ fn row_desired_height(
             if (desired_height - min_height).abs() > 0.5
                 || (desired_height - intrinsic.current_size[1]).abs() > 0.5
             {
-                tracing::debug!(
-                    target: "gui::canvas::node_sizing",
+                tracing::trace!(
+                    target: "nodeimg::render_trace::node",
                     owner_id,
                     index,
                     widget_id = %intrinsic.widget_id,
@@ -171,8 +171,8 @@ fn row_desired_height(
         }
         None => {
             if policy.affects_parent_height {
-                tracing::debug!(
-                    target: "gui::canvas::node_sizing",
+                tracing::trace!(
+                    target: "nodeimg::render_trace::node",
                     owner_id,
                     index,
                     expected_widget_id = %widget_id,

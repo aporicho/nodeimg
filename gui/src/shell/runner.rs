@@ -10,6 +10,7 @@ use super::context::AppContext;
 use super::event::AppEvent;
 use super::translator::EventTranslator;
 use super::{gpu, surface, window};
+use crate::diagnostics::render_trace::{self, RenderTraceStage, TARGET_RENDER, TARGET_RENDER_GPU};
 use crate::renderer::Renderer;
 
 struct Runner<A: App> {
@@ -116,13 +117,32 @@ impl<A: App> ApplicationHandler for Runner<A> {
 
         // 请求重绘
         if let WindowEvent::RedrawRequested = event {
+            let frame = render_trace::next_render_trace_frame();
+            render_trace::debug_stage(
+                RenderTraceStage::RedrawRequested,
+                RedrawTraceSummary {
+                    window_w: state.ctx.size.width,
+                    window_h: state.ctx.size.height,
+                    scale_factor: state.ctx.scale_factor,
+                    redraw_requested: state.ctx.redraw_requested,
+                },
+            );
             state.ctx.cursor.reset();
             state.app.update(&mut state.renderer, &mut state.ctx);
             state.ctx.cursor.apply(&state.ctx.window);
 
             let output = match state.surface.get_current_texture() {
                 Ok(tex) => tex,
-                Err(_) => return,
+                Err(error) => {
+                    tracing::warn!(
+                        target: TARGET_RENDER_GPU,
+                        frame_id = frame.id,
+                        ?error,
+                        "surface texture acquire failed"
+                    );
+                    render_trace::clear_current_render_trace_frame();
+                    return;
+                }
             };
             let view = output
                 .texture
@@ -137,6 +157,13 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 .end_frame(&state.ctx.device, &state.ctx.queue);
 
             output.present();
+            tracing::debug!(
+                target: TARGET_RENDER,
+                frame_id = frame.id,
+                stage = ?RenderTraceStage::Present,
+                "presented frame"
+            );
+            render_trace::clear_current_render_trace_frame();
         }
     }
 
@@ -148,6 +175,15 @@ impl<A: App> ApplicationHandler for Runner<A> {
             state.ctx.window.request_redraw();
         }
     }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct RedrawTraceSummary {
+    window_w: u32,
+    window_h: u32,
+    scale_factor: f64,
+    redraw_requested: bool,
 }
 
 pub fn run<A: App>() {

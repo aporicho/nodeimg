@@ -1,6 +1,7 @@
 use super::dirty::DirtyFlags;
 use super::layout::{BoxStyle, Decoration, LeafKind, Position, Size};
 use super::{NodeId, NodeKind, Tree};
+use crate::diagnostics::render_trace::{self, RenderTraceStage, TextPayloadSummary};
 use crate::geometry::TransformSpec;
 use crate::renderer::{Point, Rect};
 use crate::template::{InstanceId, TemplateError, TemplateId, TemplatePayload, TemplateRegistry};
@@ -87,7 +88,17 @@ impl Tree {
         registry: &TemplateRegistry,
         mutation: TreeMutation,
     ) -> Result<Invalidation, MutationError> {
-        match mutation {
+        let trace_enabled = render_trace::is_debug_enabled();
+        let mutation_kind = mutation.kind();
+        let target_node = mutation.target_node();
+        let target_stable_id = trace_enabled
+            .then(|| self.get(target_node).map(|node| node.id.to_string()))
+            .flatten();
+        let text_payload = trace_enabled
+            .then(|| mutation.text_payload_summary())
+            .flatten();
+
+        let result = (|| match mutation {
             TreeMutation::MountTemplate {
                 parent,
                 template,
@@ -221,7 +232,19 @@ impl Tree {
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
             }
+        })();
+
+        if trace_enabled {
+            log_mutation_trace(
+                mutation_kind,
+                target_node,
+                target_stable_id.as_deref(),
+                text_payload,
+                &result,
+            );
         }
+
+        result
     }
 
     pub fn apply_mutations(
@@ -234,6 +257,88 @@ impl Tree {
             .map(|mutation| self.apply_mutation(registry, mutation))
             .collect()
     }
+}
+
+impl TreeMutation {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::MountTemplate { .. } => "MountTemplate",
+            Self::Unmount { .. } => "Unmount",
+            Self::SetRect { .. } => "SetRect",
+            Self::SetStyle { .. } => "SetStyle",
+            Self::SetText { .. } => "SetText",
+            Self::SetVisible { .. } => "SetVisible",
+            Self::SetZIndex { .. } => "SetZIndex",
+            Self::SetConnection { .. } => "SetConnection",
+            Self::SetPendingConnection { .. } => "SetPendingConnection",
+        }
+    }
+
+    fn target_node(&self) -> NodeId {
+        match self {
+            Self::MountTemplate { parent, .. } => *parent,
+            Self::Unmount { node }
+            | Self::SetRect { node, .. }
+            | Self::SetStyle { node, .. }
+            | Self::SetText { node, .. }
+            | Self::SetVisible { node, .. }
+            | Self::SetZIndex { node, .. }
+            | Self::SetConnection { node, .. }
+            | Self::SetPendingConnection { node, .. } => *node,
+        }
+    }
+
+    fn text_payload_summary(&self) -> Option<TextPayloadSummary> {
+        match self {
+            Self::SetText { value, .. } => Some(TextPayloadSummary::new(value)),
+            _ => None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct MutationTraceSummary<'a> {
+    kind: &'static str,
+    target_node: NodeId,
+    target_stable_id: Option<&'a str>,
+    text_payload: Option<TextPayloadSummary>,
+    invalidated_node: Option<NodeId>,
+    flags: Option<String>,
+    error: Option<&'a str>,
+}
+
+fn log_mutation_trace(
+    kind: &'static str,
+    target_node: NodeId,
+    target_stable_id: Option<&str>,
+    text_payload: Option<TextPayloadSummary>,
+    result: &Result<Invalidation, MutationError>,
+) {
+    let (invalidated_node, flags, error) = match result {
+        Ok(invalidation) => (
+            Some(invalidation.node),
+            Some(invalidation.flags.to_string()),
+            None,
+        ),
+        Err(MutationError::MissingNode(_)) => (None, None, Some("missing node")),
+        Err(MutationError::Template(_)) => (None, None, Some("template error")),
+        Err(MutationError::UnsupportedNodeKind { .. }) => {
+            (None, None, Some("unsupported node kind"))
+        }
+    };
+    render_trace::debug_stage(
+        RenderTraceStage::TreeMutation,
+        MutationTraceSummary {
+            kind,
+            target_node,
+            target_stable_id,
+            text_payload,
+            invalidated_node,
+            flags,
+            error,
+        },
+    );
 }
 
 fn rect_dirty_flags(old: Rect, new: Rect) -> DirtyFlags {

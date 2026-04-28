@@ -1,3 +1,4 @@
+use crate::diagnostics::render_trace::{self, RenderTraceStage, TARGET_RENDER};
 use crate::geometry::Affine2D;
 use crate::icon::{IconFit, IconOpacity, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::paint::{
@@ -24,6 +25,7 @@ pub(super) struct DisplayBackendOutput {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct DisplayRenderReport {
     pub(crate) unsupported: Vec<UnsupportedDisplayCommand>,
+    pub(crate) stats: DisplayLoweringStats,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,12 +41,38 @@ pub(crate) enum UnsupportedDisplayReason {
     UnsupportedClip(&'static str),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct DisplayLoweringStats {
+    pub(crate) input_commands: usize,
+    pub(crate) input_clips: usize,
+    pub(crate) backend_commands: usize,
+    pub(crate) unsupported: usize,
+    pub(crate) max_clip_depth: usize,
+    pub(crate) command_kinds: DisplayCommandKindCounts,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct DisplayCommandKindCounts {
+    pub(crate) rect: usize,
+    pub(crate) path: usize,
+    pub(crate) circle: usize,
+    pub(crate) grid: usize,
+    pub(crate) image: usize,
+    pub(crate) text: usize,
+    pub(crate) shadow: usize,
+    pub(crate) svg: usize,
+    pub(crate) svg_raster: usize,
+    pub(crate) layer: usize,
+}
+
 struct LoweringContext<'a, R> {
     resources: &'a R,
     svg_vector_cache: &'a mut SvgVectorCache,
     active_clips: Vec<ClipId>,
     commands: Vec<BackendCommand>,
     report: DisplayRenderReport,
+    command_kinds: DisplayCommandKindCounts,
+    max_clip_depth: usize,
 }
 
 pub(super) fn lower_display_list<R: DisplayResourceResolver>(
@@ -58,6 +86,8 @@ pub(super) fn lower_display_list<R: DisplayResourceResolver>(
         active_clips: Vec::new(),
         commands: Vec::new(),
         report: DisplayRenderReport::default(),
+        command_kinds: DisplayCommandKindCounts::default(),
+        max_clip_depth: 0,
     };
 
     for (index, command) in list.commands.iter().enumerate() {
@@ -68,6 +98,16 @@ pub(super) fn lower_display_list<R: DisplayResourceResolver>(
     }
 
     cx.pop_all_clips();
+    cx.report.stats = DisplayLoweringStats {
+        input_commands: list.commands.len(),
+        input_clips: list.clips.len(),
+        backend_commands: cx.commands.len(),
+        unsupported: cx.report.unsupported.len(),
+        max_clip_depth: cx.max_clip_depth,
+        command_kinds: cx.command_kinds,
+    };
+
+    render_trace::debug_stage(RenderTraceStage::DisplayListLowering, cx.report.stats);
 
     DisplayBackendOutput {
         commands: cx.commands,
@@ -78,18 +118,46 @@ pub(super) fn lower_display_list<R: DisplayResourceResolver>(
 impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
     fn lower_command(&mut self, index: usize, resolved: &ResolvedPaintCommand) {
         match &resolved.command {
-            PaintCommand::Rect(paint) => self.lower_rect(index, resolved.transform, paint),
-            PaintCommand::Path(paint) => self.lower_path(index, resolved.transform, paint),
-            PaintCommand::Circle(paint) => self.lower_circle(index, resolved.transform, *paint),
-            PaintCommand::Grid(paint) => self.lower_grid(index, resolved.transform, *paint),
-            PaintCommand::Image(paint) => self.lower_image(index, resolved.transform, *paint),
-            PaintCommand::Text(paint) => self.lower_text(index, resolved.transform, paint),
-            PaintCommand::Shadow(paint) => self.lower_shadow(index, resolved.transform, *paint),
-            PaintCommand::Svg(paint) => self.lower_svg(index, resolved.transform, paint),
+            PaintCommand::Rect(paint) => {
+                self.command_kinds.rect += 1;
+                self.lower_rect(index, resolved.transform, paint);
+            }
+            PaintCommand::Path(paint) => {
+                self.command_kinds.path += 1;
+                self.lower_path(index, resolved.transform, paint);
+            }
+            PaintCommand::Circle(paint) => {
+                self.command_kinds.circle += 1;
+                self.lower_circle(index, resolved.transform, *paint);
+            }
+            PaintCommand::Grid(paint) => {
+                self.command_kinds.grid += 1;
+                self.lower_grid(index, resolved.transform, *paint);
+            }
+            PaintCommand::Image(paint) => {
+                self.command_kinds.image += 1;
+                self.lower_image(index, resolved.transform, *paint);
+            }
+            PaintCommand::Text(paint) => {
+                self.command_kinds.text += 1;
+                self.lower_text(index, resolved.transform, paint);
+            }
+            PaintCommand::Shadow(paint) => {
+                self.command_kinds.shadow += 1;
+                self.lower_shadow(index, resolved.transform, *paint);
+            }
+            PaintCommand::Svg(paint) => {
+                self.command_kinds.svg += 1;
+                self.lower_svg(index, resolved.transform, paint);
+            }
             PaintCommand::SvgRaster(paint) => {
+                self.command_kinds.svg_raster += 1;
                 self.lower_svg_raster(index, resolved.transform, paint);
             }
-            PaintCommand::Layer(paint) => self.lower_layer(index, resolved.transform, paint),
+            PaintCommand::Layer(paint) => {
+                self.command_kinds.layer += 1;
+                self.lower_layer(index, resolved.transform, paint);
+            }
         }
     }
 
@@ -190,6 +258,8 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
             Err(err) => {
                 if !err.is_unsupported() {
                     tracing::warn!(
+                        target: TARGET_RENDER,
+                        frame_id = render_trace::current_render_trace_frame().id,
                         "SVG icon '{}' could not be parsed as vector: {:?}",
                         source.key().id(),
                         err
@@ -230,6 +300,8 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
             active_clips: Vec::new(),
             commands: Vec::new(),
             report: DisplayRenderReport::default(),
+            command_kinds: DisplayCommandKindCounts::default(),
+            max_clip_depth: 0,
         };
 
         for (index, command) in paint.content.commands.iter().enumerate() {
@@ -242,6 +314,8 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
 
         apply_layer_to_commands(&mut nested.commands, transform, paint.opacity);
         self.report.unsupported.extend(nested.report.unsupported);
+        self.command_kinds.add(nested.command_kinds);
+        self.max_clip_depth = self.max_clip_depth.max(nested.max_clip_depth);
         self.commands.extend(nested.commands);
     }
 
@@ -294,6 +368,7 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
             self.commands.push(command);
             self.active_clips.push(clip_id);
         }
+        self.max_clip_depth = self.max_clip_depth.max(self.active_clips.len());
 
         true
     }
@@ -316,11 +391,29 @@ impl<R: DisplayResourceResolver> LoweringContext<'_, R> {
 impl DisplayRenderReport {
     fn record(&mut self, index: usize, reason: UnsupportedDisplayReason) {
         tracing::warn!(
-            "DisplayList command {index} is unsupported by the renderer display backend: {:?}",
-            reason
+            target: TARGET_RENDER,
+            frame_id = render_trace::current_render_trace_frame().id,
+            index,
+            ?reason,
+            "DisplayList command is unsupported by the renderer display backend"
         );
         self.unsupported
             .push(UnsupportedDisplayCommand { index, reason });
+    }
+}
+
+impl DisplayCommandKindCounts {
+    fn add(&mut self, other: Self) {
+        self.rect += other.rect;
+        self.path += other.path;
+        self.circle += other.circle;
+        self.grid += other.grid;
+        self.image += other.image;
+        self.text += other.text;
+        self.shadow += other.shadow;
+        self.svg += other.svg;
+        self.svg_raster += other.svg_raster;
+        self.layer += other.layer;
     }
 }
 
@@ -832,5 +925,29 @@ mod tests {
             }
             _ => panic!("expected svg raster command"),
         }
+    }
+
+    #[test]
+    fn display_lowering_trace_counts_command_kinds() {
+        let mut builder = DisplayListBuilder::new();
+        builder.draw(PaintCommand::Rect(RectPaint {
+            rect: rect(),
+            style: rect_style(),
+        }));
+        builder.draw(PaintCommand::Text(TextPaint {
+            pos: Point { x: 1.0, y: 2.0 },
+            text: "hello".to_string(),
+            style: TextStyle::new(Color::WHITE, 12.0),
+            bounds: Some(rect()),
+        }));
+        let list = builder.finish().unwrap();
+
+        let output = lower(&list);
+
+        assert_eq!(output.report.stats.input_commands, 2);
+        assert_eq!(output.report.stats.backend_commands, 2);
+        assert_eq!(output.report.stats.command_kinds.rect, 1);
+        assert_eq!(output.report.stats.command_kinds.text, 1);
+        assert_eq!(output.report.stats.unsupported, 0);
     }
 }

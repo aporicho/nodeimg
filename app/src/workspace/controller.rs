@@ -114,8 +114,8 @@ impl WorkspaceController {
         let dirty_intrinsics = gui.take_dirty_control_intrinsics();
         let control_intrinsics = gui.retained_control_intrinsics_snapshot();
         if !dirty_intrinsics.is_empty() || !control_intrinsics.is_empty() {
-            tracing::debug!(
-                target: "gui::canvas::node_sizing",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 intrinsic_count = control_intrinsics.len(),
                 dirty_intrinsic_count = dirty_intrinsics.len(),
                 view_count = views.len(),
@@ -133,8 +133,8 @@ impl WorkspaceController {
             let sizing_changed = gui.apply_canvas_node_sizing(owner_id, request);
             let height_delta = request.target_height - view.state.layout.rect.h;
             if sizing_changed || height_delta.abs() > 0.5 {
-                tracing::debug!(
-                    target: "gui::canvas::node_sizing",
+                tracing::trace!(
+                    target: "nodeimg::render_trace::node",
                     owner_id = %owner_id,
                     current_w = view.state.layout.rect.w,
                     current_h = view.state.layout.rect.h,
@@ -148,7 +148,7 @@ impl WorkspaceController {
                 );
             } else {
                 tracing::trace!(
-                    target: "gui::canvas::node_sizing",
+                    target: "nodeimg::render_trace::node",
                     owner_id = %owner_id,
                     min_w = request.min_width,
                     min_h = request.min_height,
@@ -161,8 +161,8 @@ impl WorkspaceController {
             resized_to_fit = resized_to_fit || sizing_changed;
         }
         if resized_to_fit {
-            tracing::debug!(
-                target: "gui::canvas::node_sizing",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 "resync canvas node layouts after sizing request"
             );
             layouts = gui.sync_canvas_node_layouts(&identities);

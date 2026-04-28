@@ -1,6 +1,7 @@
 use std::ops::Range;
 use winit::dpi::PhysicalSize;
 
+use crate::diagnostics::render_trace::{self, RenderTraceStage, TARGET_RENDER_GPU};
 use crate::geometry::{Affine2D, Point, Rect};
 
 use super::buffer::SharedViewport;
@@ -53,6 +54,37 @@ pub(super) struct DispatchPipelines<'a> {
     pub(super) text_measurer: &'a mut TextMeasurer,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DeferredResolveStats {
+    shadows: usize,
+    affine_text: usize,
+    affine_text_rasterized: usize,
+    svg_raster: usize,
+    svg_rasterized: usize,
+    noop: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct DispatchPrepareTraceSummary {
+    backend_commands: usize,
+    logical_w: f32,
+    logical_h: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct DispatchPlanTraceSummary {
+    ops: usize,
+    text_requests: usize,
+    render_steps: usize,
+    quad_vertices: usize,
+    circle_vertices: usize,
+    grid_vertices: usize,
+    vector_vertices: usize,
+    stencil_vertices: usize,
+}
+
 pub(super) fn dispatch(
     commands: &[BackendCommand],
     frame: DispatchFrame<'_>,
@@ -94,16 +126,25 @@ pub(super) fn dispatch(
 
     let mut upload_stats = shared_viewport.upload(device, queue, viewport_size);
     let viewport_buf = shared_viewport.buffer();
+    render_trace::debug_gpu(
+        RenderTraceStage::RendererPrepare,
+        DispatchPrepareTraceSummary {
+            backend_commands: commands.len(),
+            logical_w: viewport_size[0],
+            logical_h: viewport_size[1],
+        },
+    );
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("renderer"),
     });
 
     let mut prepared = prepare_frame(commands, vector_tessellator);
+    render_trace::debug_gpu(RenderTraceStage::RendererPrepare, &prepared.stats);
     let mut runtime_textures = Vec::new();
     text_pipeline.begin_frame();
     text_measurer.mark_all_unused();
-    resolve_deferred_ops(ResolveDeferredOps {
+    let deferred_stats = resolve_deferred_ops(ResolveDeferredOps {
         ops: &mut prepared.ops,
         encoder: &mut encoder,
         device,
@@ -117,6 +158,7 @@ pub(super) fn dispatch(
         text_measurer,
         runtime_textures: &mut runtime_textures,
     });
+    render_trace::debug_gpu(RenderTraceStage::RendererDispatch, deferred_stats);
 
     upload_stats.add(quad_pipeline.upload(
         device,
@@ -162,11 +204,32 @@ pub(super) fn dispatch(
     let has_stencils = !prepared.stencil_vertices.is_empty();
     let render_steps = plan_render_steps(&prepared.ops);
     prepared.stats.render_passes = render_steps.len();
+    render_trace::debug_gpu(
+        RenderTraceStage::RendererDispatch,
+        DispatchPlanTraceSummary {
+            ops: prepared.ops.len(),
+            text_requests: prepared.text_requests.len(),
+            render_steps: render_steps.len(),
+            quad_vertices: prepared.quad_vertices.len(),
+            circle_vertices: prepared.circle_vertices.len(),
+            grid_vertices: prepared.grid_vertices.len(),
+            vector_vertices: prepared.vector_vertices.len(),
+            stencil_vertices: prepared.stencil_vertices.len(),
+        },
+    );
 
     {
         let total_steps = render_steps.len();
         let mut first_pass = true;
         for (step_index, step) in render_steps.iter().enumerate() {
+            render_trace::trace_gpu(
+                RenderTraceStage::RendererDispatch,
+                RenderStepTraceSummary {
+                    step_index,
+                    total_steps,
+                    kind: step.kind(),
+                },
+            );
             let resolve_target =
                 should_resolve_step(step_index, total_steps).then_some(resolve_view);
             match step {
@@ -402,7 +465,35 @@ pub(super) fn dispatch(
     }
 
     queue.submit(std::iter::once(encoder.finish()));
+    render_trace::debug_gpu(
+        RenderTraceStage::RendererDispatch,
+        DispatchSubmitTraceSummary {
+            backend_commands: prepared.stats.backend_commands,
+            render_passes: prepared.stats.render_passes,
+            text_batches: prepared.stats.text_batches,
+            upload_bytes: prepared.stats.upload_bytes,
+            upload_buffer_grows: prepared.stats.upload_buffer_grows,
+        },
+    );
     prepared.stats
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct RenderStepTraceSummary {
+    step_index: usize,
+    total_steps: usize,
+    kind: &'static str,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct DispatchSubmitTraceSummary {
+    backend_commands: usize,
+    render_passes: usize,
+    text_batches: usize,
+    upload_bytes: usize,
+    upload_buffer_grows: usize,
 }
 
 struct ResolveDeferredOps<'a> {
@@ -420,7 +511,7 @@ struct ResolveDeferredOps<'a> {
     runtime_textures: &'a mut Vec<wgpu::Texture>,
 }
 
-fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
+fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) -> DeferredResolveStats {
     let ResolveDeferredOps {
         ops,
         encoder,
@@ -436,13 +527,16 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
         runtime_textures,
     } = ctx;
 
+    let mut stats = DeferredResolveStats::default();
     for op in ops {
         match op {
             DrawOp::Shadow(req) => {
+                stats.shadows += 1;
                 let shadow_req = shadow_request(req);
                 shadow_pipeline.prepare(encoder, device, &shadow_req);
             }
             DrawOp::AffineText(req) => {
+                stats.affine_text += 1;
                 match rasterize_affine_text(RasterText {
                     req,
                     encoder: &mut *encoder,
@@ -456,14 +550,17 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
                     runtime_textures: &mut *runtime_textures,
                 }) {
                     Some((view, draw)) => {
+                        stats.affine_text_rasterized += 1;
                         *op = DrawOp::Image { view, draw };
                     }
                     None => {
+                        stats.noop += 1;
                         *op = DrawOp::Noop;
                     }
                 }
             }
             DrawOp::SvgRaster(req) => {
+                stats.svg_raster += 1;
                 let pixel_size =
                     svg_raster_pixel_size(req.transform, req.rect, scale_factor, render_scale);
                 let request = SvgRasterRequest::new(
@@ -474,6 +571,7 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
                 );
                 match svg_raster_cache.get_or_rasterize(device, queue, request) {
                     Ok(resource) => {
+                        stats.svg_rasterized += 1;
                         let draw =
                             resolve_image_draw(req.rect, resource.size, ImageStyle::default());
                         *op = DrawOp::Image {
@@ -483,10 +581,13 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
                     }
                     Err(err) => {
                         tracing::warn!(
+                            target: TARGET_RENDER_GPU,
+                            frame_id = render_trace::current_render_trace_frame().id,
                             "SVG icon '{}' could not be rasterized: {:?}",
                             req.source.key().id(),
                             err
                         );
+                        stats.noop += 1;
                         *op = DrawOp::Noop;
                     }
                 }
@@ -494,6 +595,7 @@ fn resolve_deferred_ops(ctx: ResolveDeferredOps<'_>) {
             _ => {}
         }
     }
+    stats
 }
 
 struct RasterText<'a> {
@@ -638,6 +740,15 @@ enum RenderStep {
         indices: Vec<usize>,
         clip_depth: u32,
     },
+}
+
+impl RenderStep {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Ops { .. } => "ops",
+            Self::TextBatch { .. } => "text_batch",
+        }
+    }
 }
 
 fn plan_render_steps(ops: &[DrawOp]) -> Vec<RenderStep> {

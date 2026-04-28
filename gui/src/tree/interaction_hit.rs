@@ -100,7 +100,7 @@ fn interaction_hit_recursive(
         }
     } else {
         tracing::trace!(
-            target: "gui::tree::interaction_hit",
+            target: "nodeimg::render_trace::node",
             node_id = %node.id,
             screen_x = screen.x,
             screen_y = screen.y,
@@ -116,7 +116,7 @@ fn interaction_hit_recursive(
     let resize_edge = resize_edge_for_node(node, local_point);
     if resize_enabled(node) {
         tracing::trace!(
-            target: "gui::tree::interaction_hit",
+            target: "nodeimg::render_trace::node",
             node_id = %node.id,
             screen_x = screen.x,
             screen_y = screen.y,
@@ -137,8 +137,8 @@ fn interaction_hit_recursive(
     }
 
     resize_edge.map(|edge| {
-        tracing::debug!(
-            target: "gui::tree::interaction_hit",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             node_id = %node.id,
             edge = ?edge,
             local_x = local_point.x,

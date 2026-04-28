@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBuilder};
+use crate::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
@@ -67,6 +68,53 @@ pub struct RetainedRootIds {
     pub overlay_root: NodeId,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+struct LayoutFlushTraceSummary {
+    root_rect: RectSummary,
+    dirty_boundaries: usize,
+    dirty_text_nodes: usize,
+    boundary_candidates: usize,
+    stats: LayoutFlushStats,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+struct LayoutBoundaryTraceSummary {
+    available: Option<RectSummary>,
+    cache_hit: bool,
+    skipped: &'static str,
+    nodes_visited: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+struct PaintDirtyTraceSummary {
+    root: NodeId,
+    root_boundary: NodeId,
+    dirty_boundaries: usize,
+    dirty_paint_order: usize,
+    dirty_composite: usize,
+    rebuild_boundaries: usize,
+    retained_display_list_present: bool,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+struct PaintComposeTraceSummary {
+    fragments_flattened: usize,
+    display_commands: usize,
+    clips: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+struct TextRuntimeTraceSummary {
+    views: usize,
+    dirty_intrinsics_before: usize,
+    dirty_intrinsics_after: usize,
+}
+
 impl Context {
     pub fn new() -> Self {
         Self {
@@ -123,6 +171,8 @@ impl Context {
         measurer: &mut TextMeasurer,
     ) -> LayoutFlushStats {
         let dirty = self.tree.take_layout_dirty();
+        let dirty_boundaries = dirty.boundaries.len();
+        let dirty_text_nodes = dirty.text_nodes.len();
         let mut boundaries = dirty.boundaries;
         for text_node in dirty.text_nodes {
             if let Some(boundary) = self.tree.nearest_relayout_boundary(text_node) {
@@ -131,17 +181,51 @@ impl Context {
         }
 
         let mut stats = LayoutFlushStats::default();
+        let boundary_candidates = boundaries.len();
         for boundary in boundaries {
             let Some(available) = boundary_available_rect(&self.tree, boundary, root_rect) else {
+                render_trace::trace_node(
+                    RenderTraceStage::LayoutFlush,
+                    boundary,
+                    self.tree.get(boundary).map(|node| node.id.as_ref()),
+                    LayoutBoundaryTraceSummary {
+                        available: None,
+                        cache_hit: false,
+                        skipped: "missing available rect",
+                        nodes_visited: 0,
+                    },
+                );
                 continue;
             };
             let constraints = LayoutConstraints::from_available(available);
             let Some(input) = self.tree.layout_input_for(boundary, constraints) else {
+                render_trace::trace_node(
+                    RenderTraceStage::LayoutFlush,
+                    boundary,
+                    self.tree.get(boundary).map(|node| node.id.as_ref()),
+                    LayoutBoundaryTraceSummary {
+                        available: Some(RectSummary::from(available)),
+                        cache_hit: false,
+                        skipped: "missing layout input",
+                        nodes_visited: 0,
+                    },
+                );
                 continue;
             };
             if self.tree.layout_cache_get(input).is_some() {
                 self.tree.record_layout_cache_hit();
                 stats.boundaries_skipped_cache_hit += 1;
+                render_trace::trace_node(
+                    RenderTraceStage::LayoutFlush,
+                    boundary,
+                    self.tree.get(boundary).map(|node| node.id.as_ref()),
+                    LayoutBoundaryTraceSummary {
+                        available: Some(RectSummary::from(available)),
+                        cache_hit: true,
+                        skipped: "cache hit",
+                        nodes_visited: 0,
+                    },
+                );
                 continue;
             }
 
@@ -153,11 +237,33 @@ impl Context {
             let visited_after = self.tree.frame_stats_snapshot().layout_nodes_visited;
             self.tree.record_layout_boundary_flushed();
             stats.boundaries_flushed += 1;
-            stats.nodes_visited += visited_after.saturating_sub(visited_before);
+            let nodes_visited = visited_after.saturating_sub(visited_before);
+            stats.nodes_visited += nodes_visited;
             if let Some(output) = layout_output_from_tree(&self.tree, boundary) {
                 self.tree.layout_cache_set(input, output);
             }
+            render_trace::trace_node(
+                RenderTraceStage::LayoutFlush,
+                boundary,
+                self.tree.get(boundary).map(|node| node.id.as_ref()),
+                LayoutBoundaryTraceSummary {
+                    available: Some(RectSummary::from(available)),
+                    cache_hit: false,
+                    skipped: "",
+                    nodes_visited,
+                },
+            );
         }
+        render_trace::debug_stage(
+            RenderTraceStage::LayoutFlush,
+            LayoutFlushTraceSummary {
+                root_rect: RectSummary::from(root_rect),
+                dirty_boundaries,
+                dirty_text_nodes,
+                boundary_candidates,
+                stats: stats.clone(),
+            },
+        );
         stats
     }
 
@@ -271,21 +377,21 @@ impl Context {
     ) {
         if self.tree.root().is_some() {
             let flush = self.flush_paint_dirty(theme, renderer.text_measurer());
-            if flush.fragments_rebuilt > 0 || flush.fragments_flattened > 0 {
-                tracing::trace!(
-                    fragments_rebuilt = flush.fragments_rebuilt,
-                    fragments_flattened = flush.fragments_flattened,
-                    "retained paint flushed"
-                );
-            }
+            render_trace::debug_stage(RenderTraceStage::PaintFlush, flush);
             let Some(list) = self.retained_display_list.as_ref() else {
-                tracing::warn!("retained paint did not produce a display list");
+                tracing::warn!(
+                    target: TARGET_RENDER,
+                    frame_id = render_trace::current_render_trace_frame().id,
+                    "retained paint did not produce a display list"
+                );
                 return;
             };
             let resources = RegistryDisplayResources::new(self.resources.textures(), &self.icons);
             let report = renderer.draw_display_list(&list, &resources);
             if !report.unsupported.is_empty() {
                 tracing::debug!(
+                    target: TARGET_RENDER,
+                    frame_id = render_trace::current_render_trace_frame().id,
                     unsupported = report.unsupported.len(),
                     "display list renderer skipped unsupported commands"
                 );
@@ -315,6 +421,9 @@ impl Context {
             .nearest_repaint_boundary(root)
             .unwrap_or(RepaintBoundaryId(root));
         let dirty = self.tree.take_paint_dirty();
+        let dirty_boundaries = dirty.boundaries.len();
+        let dirty_paint_order = dirty.paint_order.len();
+        let dirty_composite = dirty.composite.len();
         let mut rebuild = dirty.boundaries;
         rebuild.extend(dirty.paint_order);
 
@@ -335,6 +444,18 @@ impl Context {
             boundaries_dirty: rebuild.len(),
             ..PaintFlushStats::default()
         };
+        render_trace::debug_stage(
+            RenderTraceStage::PaintFlush,
+            PaintDirtyTraceSummary {
+                root,
+                root_boundary: root_boundary.0,
+                dirty_boundaries,
+                dirty_paint_order,
+                dirty_composite,
+                rebuild_boundaries: rebuild.len(),
+                retained_display_list_present: self.retained_display_list.is_some(),
+            },
+        );
 
         for boundary in rebuild.iter().copied() {
             let rebuilt = match self.tree.rebuild_paint_fragment(
@@ -349,12 +470,24 @@ impl Context {
             ) {
                 Ok(stats) => stats,
                 Err(err) => {
-                    tracing::warn!(?boundary, ?err, "failed to rebuild paint fragment");
+                    tracing::warn!(
+                        target: TARGET_RENDER,
+                        frame_id = render_trace::current_render_trace_frame().id,
+                        ?boundary,
+                        ?err,
+                        "failed to rebuild paint fragment"
+                    );
                     continue;
                 }
             };
             stats.fragments_rebuilt += rebuilt.fragments_rebuilt;
             stats.commands_recorded += rebuilt.commands_recorded;
+            render_trace::trace_node(
+                RenderTraceStage::PaintFragment,
+                boundary.0,
+                self.tree.get(boundary.0).map(|node| node.id.as_ref()),
+                rebuilt,
+            );
         }
 
         if stats.fragments_rebuilt == 0 && self.retained_display_list.is_some() {
@@ -365,6 +498,14 @@ impl Context {
 
         let (display_list, compose_stats) = self.tree.compose_retained_display_list(root_boundary);
         stats.fragments_flattened += compose_stats.fragments_flattened;
+        render_trace::debug_stage(
+            RenderTraceStage::PaintFlush,
+            PaintComposeTraceSummary {
+                fragments_flattened: compose_stats.fragments_flattened,
+                display_commands: display_list.commands.len(),
+                clips: display_list.clips.len(),
+            },
+        );
         self.retained_display_list = Some(display_list);
         stats
     }
@@ -511,12 +652,21 @@ impl Context {
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
+        let before_dirty = self.systems.text_box_dirty_intrinsics().len();
         self.systems.sync_retained_canvas_text_boxes(
             &self.tree,
             views,
             measurer,
             theme,
             self.interaction.focused(),
+        );
+        render_trace::debug_stage(
+            RenderTraceStage::TextRuntimeSync,
+            TextRuntimeTraceSummary {
+                views: views.len(),
+                dirty_intrinsics_before: before_dirty,
+                dirty_intrinsics_after: self.systems.text_box_dirty_intrinsics().len(),
+            },
         );
     }
 
@@ -669,8 +819,8 @@ impl Context {
 
     pub fn resize_hit_at_screen_point(&self, x: f32, y: f32) -> Option<(NodeId, ResizeEdge)> {
         let Some(root) = self.tree.root() else {
-            tracing::debug!(
-                target: "gui::canvas::node_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 x,
                 y,
                 "query resize edge at screen point: root missing"
@@ -681,8 +831,8 @@ impl Context {
         let root_node = self.tree.get(root).map(|node| node.id.to_string());
         let hit_node =
             hit.and_then(|hit| self.tree.get(hit.node_id).map(|node| node.id.to_string()));
-        tracing::debug!(
-            target: "gui::canvas::node_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             x,
             y,
             root_node = root_node.as_deref(),

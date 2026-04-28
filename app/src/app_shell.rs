@@ -4,6 +4,7 @@ use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::context::{Context, FrameworkOutput, GuiEvent, PlatformEffect, WidgetEvent};
+use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
 use gui::renderer::{Rect, Renderer, TextureSize};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
@@ -161,6 +162,17 @@ impl App for AppShell {
         let canvas_connections = self.workspace.canvas_connection_views();
         let engine_panel = self.workspace.engine_panel_state();
         let pending_connection = self.gui.pending_canvas_connection();
+        render_trace::debug_stage(
+            RenderTraceStage::AppUpdate,
+            AppUpdateTraceSummary {
+                viewport: RectSummary::from(viewport),
+                canvas_nodes: canvas_nodes.len(),
+                canvas_connections: canvas_connections.len(),
+                pending_connection: pending_connection.is_some(),
+                animations_active: self.gui.animations_active(),
+                mode: self.mode,
+            },
+        );
         if let Err(error) = self.scene_controller.sync(
             &mut self.gui,
             WorkspaceSceneInput {
@@ -174,7 +186,12 @@ impl App for AppShell {
                 engine_panel: &engine_panel,
             },
         ) {
-            tracing::warn!(?error, "failed to sync retained workspace scene");
+            tracing::warn!(
+                target: TARGET_RENDER,
+                frame_id = render_trace::current_render_trace_frame().id,
+                ?error,
+                "failed to sync retained workspace scene"
+            );
         }
         self.gui
             .flush_layout_dirty(viewport, renderer.text_measurer());
@@ -196,6 +213,17 @@ impl App for AppShell {
         self.gui
             .render(renderer, viewport.w, viewport.h, &self.theme);
     }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct AppUpdateTraceSummary {
+    viewport: RectSummary,
+    canvas_nodes: usize,
+    canvas_connections: usize,
+    pending_connection: bool,
+    animations_active: bool,
+    mode: AppMode,
 }
 
 fn create_sample_texture(
@@ -505,15 +533,15 @@ impl AppShell {
 
     fn update_hover_cursor(&self, x: f32, y: f32, ctx: &mut AppContext) {
         tracing::trace!(
-            target: "gui::canvas::node_resize",
+            target: "nodeimg::render_trace::node",
             x,
             y,
             panning = self.navigation.is_panning(),
             "update hover cursor"
         );
         if self.navigation.is_panning() {
-            tracing::debug!(
-                target: "gui::canvas::node_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 x,
                 y,
                 cursor = ?CursorStyle::Move,
@@ -525,8 +553,8 @@ impl AppShell {
 
         if let Some((node_id, edge)) = self.gui.resize_hit_at_screen_point(x, y) {
             let cursor = cursor_for_resize_edge(edge);
-            tracing::debug!(
-                target: "gui::canvas::node_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 x,
                 y,
                 node_id = ?self.gui.node_name(node_id),
@@ -541,7 +569,7 @@ impl AppShell {
         let chain = self.gui.hit_test(x, y);
         if chain.is_empty() {
             tracing::trace!(
-                target: "gui::canvas::node_resize",
+                target: "nodeimg::render_trace::node",
                 x,
                 y,
                 "hover cursor no-op: empty hit chain and no resize hit"
@@ -549,7 +577,7 @@ impl AppShell {
             return;
         }
         tracing::trace!(
-            target: "gui::canvas::node_resize",
+            target: "nodeimg::render_trace::node",
             x,
             y,
             chain_len = chain.len(),
@@ -567,7 +595,7 @@ impl AppShell {
                 || self.gui.node_is_text_area_field(node_id)
             {
                 tracing::trace!(
-                    target: "gui::canvas::node_resize",
+                    target: "nodeimg::render_trace::node",
                     x,
                     y,
                     node_id = ?self.gui.node_name(node_id),
@@ -580,7 +608,7 @@ impl AppShell {
 
             if self.gui.node_is_draggable(node_id) {
                 tracing::trace!(
-                    target: "gui::canvas::node_resize",
+                    target: "nodeimg::render_trace::node",
                     x,
                     y,
                     node_id = ?self.gui.node_name(node_id),
@@ -593,7 +621,7 @@ impl AppShell {
 
             if self.gui.node_has_gesture(node_id, Gesture::Drag) {
                 tracing::trace!(
-                    target: "gui::canvas::node_resize",
+                    target: "nodeimg::render_trace::node",
                     x,
                     y,
                     node_id = ?self.gui.node_name(node_id),
@@ -608,7 +636,7 @@ impl AppShell {
                 || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
             {
                 tracing::trace!(
-                    target: "gui::canvas::node_resize",
+                    target: "nodeimg::render_trace::node",
                     x,
                     y,
                     node_id = ?self.gui.node_name(node_id),

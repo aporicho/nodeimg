@@ -1,5 +1,6 @@
 use super::NodeId;
 use std::collections::BTreeSet;
+use std::fmt;
 use std::ops::{BitOr, BitOrAssign};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -39,6 +40,33 @@ impl BitOrAssign for DirtyFlags {
     }
 }
 
+impl fmt::Display for DirtyFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_empty() {
+            return f.write_str("NONE");
+        }
+
+        let mut separator = "";
+        for (flag, name) in [
+            (Self::STRUCTURE, "STRUCTURE"),
+            (Self::STYLE, "STYLE"),
+            (Self::LAYOUT, "LAYOUT"),
+            (Self::TEXT_LAYOUT, "TEXT_LAYOUT"),
+            (Self::PAINT, "PAINT"),
+            (Self::HIT, "HIT"),
+            (Self::PAINT_ORDER, "PAINT_ORDER"),
+            (Self::COMPOSITE, "COMPOSITE"),
+        ] {
+            if self.contains(flag) {
+                f.write_str(separator)?;
+                f.write_str(name)?;
+                separator = "|";
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DirtyQueues {
     pub structure: BTreeSet<NodeId>,
@@ -73,5 +101,18 @@ impl DirtyQueues {
         if flags.contains(DirtyFlags::COMPOSITE) {
             self.composite.insert(node);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dirty_flags_display_uses_names() {
+        let flags = DirtyFlags::LAYOUT | DirtyFlags::PAINT | DirtyFlags::HIT;
+
+        assert_eq!(flags.to_string(), "LAYOUT|PAINT|HIT");
+        assert_eq!(DirtyFlags::NONE.to_string(), "NONE");
     }
 }

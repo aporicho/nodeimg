@@ -4,6 +4,7 @@ use gui::canvas::scene_diff::{scene_change_to_mutation, CanvasSceneChange};
 use gui::canvas::scene_model::CanvasSceneModel;
 use gui::canvas::{canvas_node_stable_id, CanvasConnectionView, CanvasPendingConnectionView};
 use gui::context::Context;
+use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::geometry::TransformSpec;
 use gui::panel::retained::{PanelContentTemplate, PanelFrameTemplateData};
 use gui::panel::{PanelConfig, PanelId};
@@ -108,6 +109,17 @@ impl WorkspaceSceneController {
         self.sync_node_palette(input.viewport, gui, &mut mutations);
 
         stats.mutations_applied += mutations.len();
+        render_trace::debug_stage(
+            RenderTraceStage::SceneSync,
+            SceneSyncTraceSummary {
+                viewport: RectSummary::from(input.viewport),
+                desired_nodes: input.canvas_nodes.len(),
+                desired_connections: input.canvas_connections.len(),
+                pending_connection: input.pending_connection.is_some(),
+                mutations_queued: mutations.len(),
+                stats,
+            },
+        );
         gui.apply_mutations(mutations)?;
         for view in input.canvas_nodes {
             let owner_id = view.state.owner_id.as_str();
@@ -496,6 +508,17 @@ impl WorkspaceSceneController {
         }
         self.node_palette_children = desired;
     }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct SceneSyncTraceSummary {
+    viewport: RectSummary,
+    desired_nodes: usize,
+    desired_connections: usize,
+    pending_connection: bool,
+    mutations_queued: usize,
+    stats: SceneSyncStats,
 }
 
 fn canvas_grid_rect(viewport: Rect, camera: &Camera) -> Rect {

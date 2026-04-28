@@ -1,5 +1,6 @@
 use winit::dpi::PhysicalSize;
 
+use crate::diagnostics::render_trace::{self, RenderTraceStage};
 use crate::paint::DisplayList;
 
 use super::buffer::SharedViewport;
@@ -54,6 +55,32 @@ struct FrameState {
     view: wgpu::TextureView,
     size: PhysicalSize<u32>,
     scale_factor: f64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct RendererBeginFrameTraceSummary {
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+    render_scale: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct RendererDrawTraceSummary {
+    display_commands: usize,
+    display_clips: usize,
+    backend_commands_total: usize,
+    unsupported: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct RendererEndFrameTraceSummary {
+    backend_commands: usize,
+    internal_w: u32,
+    internal_h: u32,
 }
 
 fn msaa_multisample_state() -> wgpu::MultisampleState {
@@ -156,6 +183,15 @@ impl Renderer {
     ) {
         self.backend_commands.clear();
         self.stencil.reset();
+        render_trace::debug_gpu(
+            RenderTraceStage::RendererDispatch,
+            RendererBeginFrameTraceSummary {
+                width: size.width,
+                height: size.height,
+                scale_factor,
+                render_scale: self.render_scale,
+            },
+        );
         self.frame = Some(FrameState {
             view,
             size,
@@ -178,6 +214,15 @@ impl Renderer {
     ) -> DisplayRenderReport {
         let output = lower_display_list(list, resources, &mut self.svg_vector_cache);
         self.backend_commands.extend(output.commands);
+        render_trace::debug_gpu(
+            RenderTraceStage::DisplayListLowering,
+            RendererDrawTraceSummary {
+                display_commands: list.commands.len(),
+                display_clips: list.clips.len(),
+                backend_commands_total: self.backend_commands.len(),
+                unsupported: output.report.unsupported.len(),
+            },
+        );
         output.report
     }
 
@@ -191,6 +236,14 @@ impl Renderer {
         };
 
         let internal = scale_size(frame.size, self.render_scale);
+        render_trace::debug_gpu(
+            RenderTraceStage::RendererDispatch,
+            RendererEndFrameTraceSummary {
+                backend_commands: self.backend_commands.len(),
+                internal_w: internal.width,
+                internal_h: internal.height,
+            },
+        );
 
         self.last_prepare_stats = dispatch::dispatch(
             &self.backend_commands,
@@ -222,6 +275,7 @@ impl Renderer {
                 text_measurer: &mut self.text_measurer,
             },
         );
+        render_trace::debug_gpu(RenderTraceStage::RendererDispatch, &self.last_prepare_stats);
         self.shadow_pipeline.evict_cache();
     }
 }

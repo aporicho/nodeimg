@@ -27,8 +27,8 @@ impl CanvasNodeResizeController {
         y: f32,
     ) -> bool {
         let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 edge = ?edge,
                 x,
@@ -45,8 +45,8 @@ impl CanvasNodeResizeController {
             last_canvas_y: canvas_y,
         });
         let resized = gui.resize_canvas_node_by(owner_id, edge, 0.0, 0.0);
-        tracing::debug!(
-            target: "app::workspace::canvas_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             stable_id,
             owner_id,
             edge = ?edge,
@@ -70,8 +70,8 @@ impl CanvasNodeResizeController {
         y: f32,
     ) -> bool {
         let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 edge = ?edge,
                 x,
@@ -81,8 +81,8 @@ impl CanvasNodeResizeController {
             return false;
         };
         let Some(active) = self.active.as_mut() else {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 owner_id,
                 edge = ?edge,
@@ -93,8 +93,8 @@ impl CanvasNodeResizeController {
             return self.start(gui, camera, stable_id, edge, x, y);
         };
         if active.owner_id != owner_id || active.edge != edge {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 owner_id,
                 active_owner_id = %active.owner_id,
@@ -113,8 +113,8 @@ impl CanvasNodeResizeController {
         active.last_canvas_x = canvas_x;
         active.last_canvas_y = canvas_y;
         let resized = gui.resize_canvas_node_by(owner_id, edge, dx, dy);
-        tracing::debug!(
-            target: "app::workspace::canvas_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             stable_id,
             owner_id,
             edge = ?edge,
@@ -142,8 +142,8 @@ impl CanvasNodeResizeController {
         y: f32,
     ) -> bool {
         let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 edge = ?edge,
                 x,
@@ -153,8 +153,8 @@ impl CanvasNodeResizeController {
             return false;
         };
         let Some(active) = self.active.as_mut() else {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 owner_id,
                 edge = ?edge,
@@ -165,8 +165,8 @@ impl CanvasNodeResizeController {
             return false;
         };
         if active.owner_id != owner_id || active.edge != edge {
-            tracing::debug!(
-                target: "app::workspace::canvas_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 stable_id,
                 owner_id,
                 active_owner_id = %active.owner_id,
@@ -184,8 +184,8 @@ impl CanvasNodeResizeController {
         let dy = canvas_y - prev_canvas_y;
         let resized = gui.resize_canvas_node_by(owner_id, edge, dx, dy);
         self.active = None;
-        tracing::debug!(
-            target: "app::workspace::canvas_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             stable_id,
             owner_id,
             edge = ?edge,

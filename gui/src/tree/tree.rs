@@ -19,6 +19,7 @@ use crate::canvas::{
     canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortGroupView,
     CanvasPortSide,
 };
+use crate::diagnostics::render_trace::{self, RenderTraceStage};
 use crate::paint::{compose_fragments, DisplayList, PaintBuildError, PaintFlushStats};
 use crate::panel::{
     PanelConfig, PanelLayout, PanelPointerSession, PanelResizeSession, PanelRootRuntime,
@@ -33,6 +34,59 @@ const PANEL_ROOT_ID: &str = "panel_root";
 const CANVAS_INTERACTION_ID: &str = "canvas_interaction";
 const CANVAS_NODE_MIN_WIDTH: f32 = 304.0;
 const CANVAS_NODE_MIN_HEIGHT: f32 = 132.0;
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct PaintDirtyTraceSummary<'a> {
+    node: NodeId,
+    stable_id: Option<&'a str>,
+    reason: PaintDirtyReason,
+    boundary: Option<NodeId>,
+    dirty_boundaries: usize,
+    dirty_paint_order: usize,
+    dirty_composite: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct LayoutDirtyTraceSummary<'a> {
+    node: NodeId,
+    stable_id: Option<&'a str>,
+    reason: LayoutDirtyReason,
+    boundary: Option<NodeId>,
+    dirty_boundaries: usize,
+    dirty_text_nodes: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct DirtyPropagationTraceSummary<'a> {
+    node: NodeId,
+    stable_id: Option<&'a str>,
+    flags: String,
+    structure: usize,
+    layout: usize,
+    text_layout: usize,
+    paint: usize,
+    hit: usize,
+    paint_order: usize,
+    composite: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct PaintFragmentTraceSummary {
+    commands_recorded: usize,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+struct PaintCompositionTraceSummary {
+    root_boundary: NodeId,
+    display_commands: usize,
+    display_clips: usize,
+    fragments_flattened: usize,
+}
 
 /// 全局控件树存储。用 Vec<Option<>> 做 arena，索引访问。
 pub struct Tree {
@@ -437,10 +491,39 @@ impl Tree {
             self.dirty.paint.insert(boundary.0);
             self.record_paint_boundary_dirty();
         }
+
+        if render_trace::is_debug_enabled() {
+            render_trace::debug_stage(
+                RenderTraceStage::DirtyPropagation,
+                PaintDirtyTraceSummary {
+                    node,
+                    stable_id: self.get(node).map(|tree_node| tree_node.id.as_ref()),
+                    reason,
+                    boundary: boundary.map(|boundary| boundary.0),
+                    dirty_boundaries: self.paint_dirty.boundaries.len(),
+                    dirty_paint_order: self.paint_dirty.paint_order.len(),
+                    dirty_composite: self.paint_dirty.composite.len(),
+                },
+            );
+        }
     }
 
     pub fn mark_composite_dirty(&mut self, node: NodeId) {
         self.paint_dirty.composite.insert(node);
+        if render_trace::is_debug_enabled() {
+            render_trace::debug_stage(
+                RenderTraceStage::DirtyPropagation,
+                PaintDirtyTraceSummary {
+                    node,
+                    stable_id: self.get(node).map(|tree_node| tree_node.id.as_ref()),
+                    reason: PaintDirtyReason::Visual,
+                    boundary: None,
+                    dirty_boundaries: self.paint_dirty.boundaries.len(),
+                    dirty_paint_order: self.paint_dirty.paint_order.len(),
+                    dirty_composite: self.paint_dirty.composite.len(),
+                },
+            );
+        }
     }
 
     pub fn take_paint_dirty(&mut self) -> PaintDirtyQueues {
@@ -484,6 +567,14 @@ impl Tree {
         self.paint_cache.borrow_mut().insert(fragment);
         self.record_paint_fragment_rebuilt(commands);
         self.record_paint_commands(commands);
+        render_trace::trace_node(
+            RenderTraceStage::PaintFragment,
+            boundary.0,
+            self.get(boundary.0).map(|node| node.id.as_ref()),
+            PaintFragmentTraceSummary {
+                commands_recorded: commands,
+            },
+        );
         Ok(PaintFlushStats {
             fragments_rebuilt: 1,
             commands_recorded: commands,
@@ -498,6 +589,15 @@ impl Tree {
         let cache = self.paint_cache.borrow();
         let (list, composition) = compose_fragments(&cache, root);
         self.record_paint_composition_fragments_flattened(composition.fragments_flattened);
+        render_trace::debug_stage(
+            RenderTraceStage::PaintFlush,
+            PaintCompositionTraceSummary {
+                root_boundary: root.0,
+                display_commands: list.commands.len(),
+                display_clips: list.clips.len(),
+                fragments_flattened: composition.fragments_flattened,
+            },
+        );
         (
             list,
             PaintFlushStats {
@@ -508,9 +608,24 @@ impl Tree {
     }
 
     pub fn mark_layout_dirty(&mut self, node: NodeId, _reason: LayoutDirtyReason) {
-        if let Some(boundary) = self.nearest_relayout_boundary(node) {
+        let reason = _reason;
+        let boundary = self.nearest_relayout_boundary(node);
+        if let Some(boundary) = boundary {
             self.layout_dirty.boundaries.insert(boundary);
             self.dirty.layout.insert(boundary);
+        }
+        if render_trace::is_debug_enabled() {
+            render_trace::debug_stage(
+                RenderTraceStage::DirtyPropagation,
+                LayoutDirtyTraceSummary {
+                    node,
+                    stable_id: self.get(node).map(|tree_node| tree_node.id.as_ref()),
+                    reason,
+                    boundary,
+                    dirty_boundaries: self.layout_dirty.boundaries.len(),
+                    dirty_text_nodes: self.layout_dirty.text_nodes.len(),
+                },
+            );
         }
     }
 
@@ -540,6 +655,23 @@ impl Tree {
         }
         if flags.contains(DirtyFlags::COMPOSITE) {
             self.mark_composite_dirty(node);
+        }
+        if render_trace::is_debug_enabled() {
+            render_trace::debug_stage(
+                RenderTraceStage::DirtyPropagation,
+                DirtyPropagationTraceSummary {
+                    node,
+                    stable_id: self.get(node).map(|tree_node| tree_node.id.as_ref()),
+                    flags: flags.to_string(),
+                    structure: self.dirty.structure.len(),
+                    layout: self.dirty.layout.len(),
+                    text_layout: self.dirty.text_layout.len(),
+                    paint: self.dirty.paint.len(),
+                    hit: self.dirty.hit.len(),
+                    paint_order: self.dirty.paint_order.len(),
+                    composite: self.dirty.composite.len(),
+                },
+            );
         }
     }
 
@@ -820,8 +952,8 @@ impl Tree {
         let node_id = self.node_by_str(&stable_id);
         let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
         else {
-            tracing::debug!(
-                target: "gui::canvas::node_resize",
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
                 owner_id,
                 edge = ?edge,
                 dx,
@@ -845,8 +977,8 @@ impl Tree {
         if is_vertical_resize_edge(edge) && runtime.rect.h != before.h {
             runtime.user_min_height = Some(runtime.rect.h);
         }
-        tracing::debug!(
-            target: "gui::canvas::node_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             owner_id,
             edge = ?edge,
             dx,
@@ -905,8 +1037,8 @@ impl Tree {
         let before = runtime.rect;
         runtime.rect.w = next_width;
         runtime.rect.h = next_height;
-        tracing::debug!(
-            target: "gui::canvas::node_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             owner_id,
             requested_min_w = min_width,
             requested_min_h = min_height,
@@ -953,8 +1085,8 @@ impl Tree {
             .max(request.min_height)
             .max(CANVAS_NODE_MIN_HEIGHT);
         let changed = runtime.rect.w != before.w || runtime.rect.h != before.h;
-        tracing::debug!(
-            target: "gui::canvas::node_resize",
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
             owner_id,
             target_w = request.target_width,
             target_h = request.target_height,

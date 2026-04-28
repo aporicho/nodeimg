@@ -28,8 +28,8 @@ pub(crate) fn node_card_from_render_view(view: &CanvasNodeRenderView, theme: &Th
 
 pub(crate) fn node_card_from_spec(spec: &NodeRenderSpec, theme: &Theme) -> Desc {
     let metrics = spec.metrics;
-    tracing::debug!(
-        target: "gui::canvas::node_resize",
+    tracing::trace!(
+        target: "nodeimg::render_trace::node",
         owner_id = %spec.layout.owner_id,
         card_id = %spec.card_id,
         layout_x = spec.layout.rect.x,
