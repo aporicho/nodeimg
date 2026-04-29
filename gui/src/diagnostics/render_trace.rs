@@ -8,6 +8,7 @@ use crate::tree::NodeId;
 pub const TARGET_RENDER: &str = "nodeimg::render_trace";
 pub const TARGET_RENDER_NODE: &str = "nodeimg::render_trace::node";
 pub const TARGET_RENDER_GPU: &str = "nodeimg::render_trace::gpu";
+pub const TARGET_RENDER_TREE: &str = "nodeimg::render_trace::tree";
 
 static NEXT_FRAME_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -109,6 +110,10 @@ pub fn is_gpu_debug_enabled() -> bool {
 
 pub fn is_gpu_trace_enabled() -> bool {
     tracing::enabled!(target: TARGET_RENDER_GPU, tracing::Level::TRACE)
+}
+
+pub fn is_tree_debug_enabled() -> bool {
+    tracing::enabled!(target: TARGET_RENDER_TREE, tracing::Level::DEBUG)
 }
 
 pub fn debug_stage(summary_stage: RenderTraceStage, summary: impl fmt::Debug) {

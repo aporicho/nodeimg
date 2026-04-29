@@ -6,6 +6,7 @@ grouped under stable targets:
 - `nodeimg::render_trace`: one summary per key CPU stage.
 - `nodeimg::render_trace::node`: per-node and high-frequency interaction detail.
 - `nodeimg::render_trace::gpu`: renderer preparation, pass planning, uploads, and submit.
+- `nodeimg::render_trace::tree`: opt-in retained tree dumps.
 
 Common filters:
 
@@ -13,6 +14,7 @@ Common filters:
 RUST_LOG=nodeimg::render_trace=debug
 RUST_LOG=nodeimg::render_trace=debug,nodeimg::render_trace::node=trace
 RUST_LOG=nodeimg::render_trace=debug,nodeimg::render_trace::gpu=trace
+RUST_LOG=nodeimg::render_trace::tree=debug NODEIMG_TREE_DUMP=once
 ```
 
 Each redraw receives a `frame_id` in `gui::diagnostics::render_trace`.
@@ -29,3 +31,16 @@ Logging rules:
   full-tree scans.
 - Retained diagnostics must not call `Desc`, `WidgetProps::build()`, or
   `reconcile`.
+
+Tree dump controls:
+
+- `NODEIMG_TREE_DUMP=off|once|invalid|dirty|frames`
+- `NODEIMG_TREE_DUMP_LEVEL=normal|full`
+- `NODEIMG_TREE_DUMP_MAX_NODES=500|all` (`full` always dumps all nodes)
+- `NODEIMG_TREE_DUMP_STAGES=SceneSync,LayoutFlush,PaintFlush`
+- `NODEIMG_TREE_DUMP_FRAMES=1,2,3`
+
+`normal` prints compact structure, rect, dirty, boundary, revision, and runtime
+slot counts. `full` prints every retained-tree field available at runtime,
+including raw text and runtime slot `Debug` values, so use it only for focused
+bug captures.

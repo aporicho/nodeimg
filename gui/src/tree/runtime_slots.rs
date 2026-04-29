@@ -1,8 +1,9 @@
 use super::runtime_policy::RuntimeSlotPolicy;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::fmt;
 
-pub trait RuntimeSlot: Any + Default {
+pub trait RuntimeSlot: Any + Default + fmt::Debug {
     fn default_policy() -> RuntimeSlotPolicy {
         RuntimeSlotPolicy::default()
     }
@@ -13,9 +14,19 @@ pub struct RuntimeSlots {
     slots: HashMap<TypeId, RuntimeSlotEntry>,
 }
 
+pub struct RuntimeSlotDebugEntry<'a> {
+    pub type_name: &'static str,
+    pub policy: &'a RuntimeSlotPolicy,
+    pub value: String,
+}
+
 impl RuntimeSlots {
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.slots.len()
     }
 
     pub fn get<T: RuntimeSlot>(&self) -> Option<&T> {
@@ -42,8 +53,10 @@ impl RuntimeSlots {
         self.slots
             .entry(TypeId::of::<T>())
             .or_insert_with(|| RuntimeSlotEntry {
+                type_name: std::any::type_name::<T>(),
                 value: Box::new(init()),
                 policy,
+                debug_value: debug_runtime_slot::<T>,
             })
             .value
             .downcast_mut::<T>()
@@ -62,9 +75,32 @@ impl RuntimeSlots {
             .get(&TypeId::of::<T>())
             .map(|entry| &entry.policy)
     }
+
+    pub fn debug_entries(&self) -> Vec<RuntimeSlotDebugEntry<'_>> {
+        let mut entries = self
+            .slots
+            .values()
+            .map(|entry| RuntimeSlotDebugEntry {
+                type_name: entry.type_name,
+                policy: &entry.policy,
+                value: (entry.debug_value)(entry.value.as_ref()),
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.type_name.cmp(b.type_name));
+        entries
+    }
 }
 
 struct RuntimeSlotEntry {
+    type_name: &'static str,
     value: Box<dyn Any>,
     policy: RuntimeSlotPolicy,
+    debug_value: fn(&dyn Any) -> String,
+}
+
+fn debug_runtime_slot<T: RuntimeSlot>(value: &dyn Any) -> String {
+    value
+        .downcast_ref::<T>()
+        .map(|value| format!("{value:?}"))
+        .unwrap_or_else(|| "<runtime slot type mismatch>".to_string())
 }

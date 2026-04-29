@@ -248,6 +248,7 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

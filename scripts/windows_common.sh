@@ -80,6 +80,17 @@ ps_args() {
   done
 }
 
+ps_prefixed_env_assignments() {
+  local prefix="$1"
+  local name
+  local value
+  env | while IFS='=' read -r name value; do
+    if [[ "$name" == "$prefix"* && "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      printf '$env:%s=%s; ' "$name" "$(ps_quote "$value")"
+    fi
+  done
+}
+
 windows_project_path() {
   if ! command -v wslpath >/dev/null 2>&1; then
     echo "wslpath is required by the Windows launcher scripts." >&2
@@ -107,18 +118,20 @@ run_windows_cargo() {
   local pwsh
   local win_project
   local app_args
+  local app_env
 
   cargo_profile_arg="$(profile_flag "$profile")"
   pwsh="$(find_pwsh)"
   win_project="$(windows_project_path)"
   app_args="$(ps_args "$@")"
+  app_env="$(ps_prefixed_env_assignments "NODEIMG_")"
 
   echo "[$name] mode=$mode profile=$profile build=auto log=$log_file"
 
   cleanup_workspace_nodeimg "$pwsh" "$win_project"
   trap 'cleanup_workspace_nodeimg "'"$pwsh"'" "'"$win_project"'"' EXIT INT TERM
 
-  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); \$env:RUST_LOG=$(ps_quote "$rust_log"); \$env:CARGO_INCREMENTAL='0'; cargo run -p $APP_PACKAGE --bin $APP_BIN $cargo_profile_arg -- $app_args" 2>&1 | tee "$log_file"
+  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); \$env:CARGO_INCREMENTAL='0'; cargo run -p $APP_PACKAGE --bin $APP_BIN $cargo_profile_arg -- $app_args" 2>&1 | tee "$log_file"
 }
 
 run_windows_existing() {
@@ -133,16 +146,18 @@ run_windows_existing() {
   local win_project
   local win_bin
   local app_args
+  local app_env
 
   pwsh="$(find_pwsh)"
   win_project="$(windows_project_path)"
   win_bin="${win_project}\\target\\${profile}\\${APP_BIN}.exe"
   app_args="$(ps_args "$@")"
+  app_env="$(ps_prefixed_env_assignments "NODEIMG_")"
 
   echo "[$name] mode=$mode profile=$profile build=none log=$log_file"
 
   cleanup_workspace_nodeimg "$pwsh" "$win_project"
   trap 'cleanup_workspace_nodeimg "'"$pwsh"'" "'"$win_project"'"' EXIT INT TERM
 
-  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); if (!(Test-Path $(ps_quote "$win_bin"))) { Write-Error 'Missing executable: $win_bin. Run scripts/windows_${mode}_build_run.sh first.'; exit 1 }; \$env:RUST_LOG=$(ps_quote "$rust_log"); & $(ps_quote "$win_bin") $app_args" 2>&1 | tee "$log_file"
+  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); if (!(Test-Path $(ps_quote "$win_bin"))) { Write-Error 'Missing executable: $win_bin. Run scripts/windows_${mode}_build_run.sh first.'; exit 1 }; ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); & $(ps_quote "$win_bin") $app_args" 2>&1 | tee "$log_file"
 }

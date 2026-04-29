@@ -1,10 +1,13 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::canvas::scene_diff::{scene_change_to_mutation, CanvasSceneChange};
-use gui::canvas::scene_model::CanvasSceneModel;
+use gui::canvas::scene_model::{
+    CanvasPendingConnectionState, CanvasSceneModel, CanvasSceneNodeState,
+};
 use gui::canvas::{canvas_node_stable_id, CanvasConnectionView, CanvasPendingConnectionView};
 use gui::context::Context;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
+use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
 use gui::panel::retained::{PanelContentTemplate, PanelFrameTemplateData};
 use gui::panel::{PanelConfig, PanelId};
@@ -18,20 +21,21 @@ use gui::theme::Theme;
 use gui::tree::layout::{Decoration, TextureHandle};
 use gui::tree::{MutationError, StylePatch, TreeMutation};
 use gui::widget::mapping::ParamControlSpec;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
 use crate::panels::EnginePanelState;
 
 use super::node_palette::{node_palette_item_id, NodePaletteState};
+use super::scene_state::{PanelAppliedState, WorkspaceSceneState};
 
 const GRID_SPACING: f32 = 20.0;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct WorkspaceSceneController {
     canvas: CanvasSceneModel,
+    workspace_scene: WorkspaceSceneState,
     node_palette: Option<NodePaletteOverlay>,
-    node_palette_children: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -47,7 +51,8 @@ pub(crate) struct SceneSyncStats {
     pub(crate) nodes_removed: usize,
     pub(crate) connections_added: usize,
     pub(crate) connections_removed: usize,
-    pub(crate) mutations_applied: usize,
+    pub(crate) mutations_queued: usize,
+    pub(crate) mutations_effective: usize,
 }
 
 pub(crate) struct WorkspaceSceneInput<'a> {
@@ -68,19 +73,23 @@ impl WorkspaceSceneController {
         input: WorkspaceSceneInput<'_>,
     ) -> Result<SceneSyncStats, MutationError> {
         let roots = gui.ensure_retained_root(input.viewport)?;
-        gui.update_canvas_transform(TransformSpec::translate_scale(
-            [input.camera.x, input.camera.y],
-            input.camera.zoom,
-        ))?;
+        let canvas_transform =
+            TransformSpec::translate_scale([input.camera.x, input.camera.y], input.camera.zoom);
+        if self.canvas.set_canvas_transform(canvas_transform) {
+            gui.update_canvas_transform(canvas_transform)?;
+        }
 
         let mut stats = SceneSyncStats::default();
-        stats.mutations_applied +=
+        stats.mutations_effective +=
             self.ensure_node_palette_root(gui, roots.overlay_root, input.viewport)?;
         let mut mutations = Vec::new();
-        mutations.push(TreeMutation::SetRect {
-            node: roots.canvas_grid,
-            rect: canvas_grid_rect(input.viewport, input.camera),
-        });
+        let grid_rect = canvas_grid_rect(input.viewport, input.camera);
+        if self.canvas.set_grid_rect(grid_rect) {
+            mutations.push(TreeMutation::SetRect {
+                node: roots.canvas_grid,
+                rect: grid_rect,
+            });
+        }
 
         self.sync_nodes(
             roots.canvas_root,
@@ -108,7 +117,12 @@ impl WorkspaceSceneController {
         );
         self.sync_node_palette(input.viewport, gui, &mut mutations);
 
-        stats.mutations_applied += mutations.len();
+        stats.mutations_queued += mutations.len();
+        let invalidations = gui.apply_mutations(mutations)?;
+        stats.mutations_effective += invalidations
+            .iter()
+            .filter(|invalidation| !invalidation.flags.is_empty())
+            .count();
         render_trace::debug_stage(
             RenderTraceStage::SceneSync,
             SceneSyncTraceSummary {
@@ -116,16 +130,24 @@ impl WorkspaceSceneController {
                 desired_nodes: input.canvas_nodes.len(),
                 desired_connections: input.canvas_connections.len(),
                 pending_connection: input.pending_connection.is_some(),
-                mutations_queued: mutations.len(),
+                mutations_queued: stats.mutations_queued,
                 stats,
             },
         );
-        gui.apply_mutations(mutations)?;
+        gui.maybe_dump_tree(
+            RenderTraceStage::SceneSync,
+            TreeDumpPhase::After,
+            "after workspace scene sync mutations",
+        );
         for view in input.canvas_nodes {
             let owner_id = view.state.owner_id.as_str();
             let stable_id = canvas_node_stable_id(owner_id);
             if let Some(root) = gui.node_id_by_name(&stable_id) {
-                self.canvas.insert_node(owner_id.to_string(), root);
+                self.canvas.insert_node_state(
+                    owner_id.to_string(),
+                    root,
+                    canvas_node_state(view, input.theme),
+                );
             }
         }
         Ok(stats)
@@ -144,56 +166,56 @@ impl WorkspaceSceneController {
             let Some(runtime) = gui.ensure_panel_runtime(&panel.config) else {
                 continue;
             };
-            let id = panel.config.id.as_str();
-            let root = gui.node_id_by_name(id);
+            let id = panel.config.id.as_str().to_string();
+            let root = gui.node_id_by_name(&id);
+            let next_state = panel_applied_state(
+                runtime.visible,
+                runtime.rect,
+                runtime.z_index,
+                &panel.content,
+            );
             if !runtime.visible {
                 if let Some(root) = root {
                     mutations.push(TreeMutation::Unmount { node: root });
                 }
+                self.workspace_scene.remove_panel(&id);
                 continue;
             }
             if let Some(root) = root {
-                mutations.push(TreeMutation::SetRect {
-                    node: root,
-                    rect: runtime.rect,
-                });
-                mutations.push(TreeMutation::SetZIndex {
-                    node: root,
-                    z_index: runtime.z_index,
-                });
-                if let PanelContentTemplate::Engine {
-                    status,
-                    catalog,
-                    last_action,
-                    ..
-                } = &panel.content
-                {
-                    if let Some(node) = gui.node_id_by_name("engine_status") {
-                        mutations.push(TreeMutation::SetText {
-                            node,
-                            value: status.clone(),
-                        });
-                    }
-                    if let Some(node) = gui.node_id_by_name("engine_catalog") {
-                        mutations.push(TreeMutation::SetText {
-                            node,
-                            value: catalog.clone(),
-                        });
-                    }
-                    if let Some(node) = gui.node_id_by_name("engine_last_action") {
-                        mutations.push(TreeMutation::SetText {
-                            node,
-                            value: last_action.clone(),
-                        });
+                let previous = self.workspace_scene.panel(&id);
+                if previous.is_none_or(|state| state.rect != runtime.rect) {
+                    mutations.push(TreeMutation::SetRect {
+                        node: root,
+                        rect: runtime.rect,
+                    });
+                }
+                if previous.is_none_or(|state| state.z_index != runtime.z_index) {
+                    mutations.push(TreeMutation::SetZIndex {
+                        node: root,
+                        z_index: runtime.z_index,
+                    });
+                }
+                for (text_id, value) in &next_state.texts {
+                    if previous
+                        .and_then(|state| state.texts.get(text_id))
+                        .is_none_or(|old| old != value)
+                    {
+                        if let Some(node) = gui.node_id_by_name(text_id) {
+                            mutations.push(TreeMutation::SetText {
+                                node,
+                                value: value.clone(),
+                            });
+                        }
                     }
                 }
+                self.workspace_scene.set_panel(id, next_state);
                 continue;
             }
 
             mutations.push(TreeMutation::MountTemplate {
                 parent,
                 template: TemplateId::from(PANEL_FRAME_TEMPLATE),
-                instance: InstanceId::from(id.to_string()),
+                instance: InstanceId::from(id.clone()),
                 payload: TemplatePayload::PanelFrame(PanelFrameTemplateData::new(
                     panel.config,
                     runtime,
@@ -201,6 +223,7 @@ impl WorkspaceSceneController {
                     theme,
                 )),
             });
+            self.workspace_scene.set_panel(id, next_state);
         }
     }
 
@@ -245,6 +268,7 @@ impl WorkspaceSceneController {
         for view in views {
             let owner_id = view.state.owner_id.as_str();
             let stable_id = canvas_node_stable_id(owner_id);
+            let next_state = canvas_node_state(view, theme);
             if self.canvas.node(owner_id).is_none() {
                 mutations.push(scene_change_to_mutation(CanvasSceneChange::AddNodeCard {
                     parent: canvas_root,
@@ -256,43 +280,56 @@ impl WorkspaceSceneController {
             }
 
             if let Some(root) = gui.node_id_by_name(&stable_id) {
-                mutations.push(TreeMutation::SetRect {
-                    node: root,
-                    rect: view.state.layout.rect,
-                });
-                mutations.push(TreeMutation::SetZIndex {
-                    node: root,
-                    z_index: view.state.layout.z_index,
-                });
+                let previous = self.canvas.node_state(owner_id);
+                if previous.and_then(|state| state.rect) != next_state.rect {
+                    mutations.push(TreeMutation::SetRect {
+                        node: root,
+                        rect: view.state.layout.rect,
+                    });
+                }
+                if previous.and_then(|state| state.z_index) != next_state.z_index {
+                    mutations.push(TreeMutation::SetZIndex {
+                        node: root,
+                        z_index: view.state.layout.z_index,
+                    });
+                }
             }
-            if let Some(label) = gui.node_id_by_name(&format!("{stable_id}::label_text")) {
-                mutations.push(TreeMutation::SetText {
-                    node: label,
-                    value: view.template.title.clone(),
-                });
+            if self
+                .canvas
+                .node_state(owner_id)
+                .and_then(|state| state.label.as_deref())
+                != next_state.label.as_deref()
+            {
+                if let Some(label) = gui.node_id_by_name(&format!("{stable_id}::label_text")) {
+                    mutations.push(TreeMutation::SetText {
+                        node: label,
+                        value: view.template.title.clone(),
+                    });
+                }
             }
-            if let Some(card) = gui.node_id_by_name(&format!("{stable_id}::card")) {
-                mutations.push(TreeMutation::SetStyle {
-                    node: card,
-                    patch: StylePatch {
-                        decoration: Some(Some(Decoration {
-                            background: Some(theme.colors.surface),
-                            border: Some(Border {
-                                width: if view.state.selected { 2.0 } else { 1.0 },
-                                color: if view.state.selected {
-                                    theme.colors.text
-                                } else {
-                                    theme.colors.border
-                                },
-                            }),
-                            radius: [theme.radii.md; 4],
-                            shadow: None,
-                        })),
-                        ..StylePatch::default()
-                    },
-                });
+            if self
+                .canvas
+                .node_state(owner_id)
+                .and_then(|state| state.card_decoration.as_ref())
+                != next_state.card_decoration.as_ref()
+            {
+                if let Some(card) = gui.node_id_by_name(&format!("{stable_id}::card")) {
+                    mutations.push(TreeMutation::SetStyle {
+                        node: card,
+                        patch: StylePatch {
+                            decoration: next_state.card_decoration.clone(),
+                            ..StylePatch::default()
+                        },
+                    });
+                }
             }
-            sync_canvas_node_param_texts(&stable_id, view, gui, mutations);
+            sync_canvas_node_param_texts(
+                &stable_id,
+                &next_state,
+                self.canvas.node_state(owner_id),
+                gui,
+                mutations,
+            );
         }
     }
 
@@ -328,22 +365,35 @@ impl WorkspaceSceneController {
 
         for (index, connection) in connections.iter().enumerate() {
             let id = format!("canvas_connection::{index}");
-            if self.canvas.has_connection(&id) {
+            if let Some(previous) = self.canvas.connection(&id) {
                 if let Some(node) = gui.node_id_by_name(&id) {
-                    mutations.push(TreeMutation::SetConnection {
-                        node,
-                        from_port: connection.from_port_id.clone(),
-                        to_port: connection.to_port_id.clone(),
-                    });
+                    if previous.from_port != connection.from_port_id
+                        || previous.to_port != connection.to_port_id
+                    {
+                        mutations.push(TreeMutation::SetConnection {
+                            node,
+                            from_port: connection.from_port_id.clone(),
+                            to_port: connection.to_port_id.clone(),
+                        });
+                    }
                 }
+                self.canvas.insert_connection_state(
+                    id,
+                    connection.from_port_id.clone(),
+                    connection.to_port_id.clone(),
+                );
             } else {
-                self.canvas.insert_connection(id.clone());
                 mutations.push(scene_change_to_mutation(CanvasSceneChange::AddConnection {
                     parent,
-                    id,
+                    id: id.clone(),
                     from_port: connection.from_port_id.clone(),
                     to_port: connection.to_port_id.clone(),
                 }));
+                self.canvas.insert_connection_state(
+                    id,
+                    connection.from_port_id.clone(),
+                    connection.to_port_id.clone(),
+                );
                 stats.connections_added += 1;
             }
         }
@@ -351,35 +401,50 @@ impl WorkspaceSceneController {
         let pending_id = "canvas_connection::pending";
         match (pending, gui.node_id_by_name(pending_id)) {
             (Some(pending), Some(node)) => {
-                mutations.push(scene_change_to_mutation(
-                    CanvasSceneChange::UpdatePendingConnection {
-                        node,
-                        from_port: pending.from_port_id.clone(),
-                        cursor_canvas: Point {
-                            x: pending.cursor_canvas[0],
-                            y: pending.cursor_canvas[1],
-                        },
+                let state = CanvasPendingConnectionState {
+                    from_port: pending.from_port_id.clone(),
+                    cursor_canvas: Point {
+                        x: pending.cursor_canvas[0],
+                        y: pending.cursor_canvas[1],
                     },
-                ));
+                };
+                if self.canvas.set_pending_connection(Some(state.clone())) {
+                    mutations.push(scene_change_to_mutation(
+                        CanvasSceneChange::UpdatePendingConnection {
+                            node,
+                            from_port: state.from_port,
+                            cursor_canvas: state.cursor_canvas,
+                        },
+                    ));
+                }
             }
             (Some(pending), None) => {
+                let state = CanvasPendingConnectionState {
+                    from_port: pending.from_port_id.clone(),
+                    cursor_canvas: Point {
+                        x: pending.cursor_canvas[0],
+                        y: pending.cursor_canvas[1],
+                    },
+                };
+                self.canvas.set_pending_connection(Some(state.clone()));
                 mutations.push(scene_change_to_mutation(
                     CanvasSceneChange::AddPendingConnection {
                         parent,
-                        from_port: pending.from_port_id.clone(),
-                        cursor_canvas: Point {
-                            x: pending.cursor_canvas[0],
-                            y: pending.cursor_canvas[1],
-                        },
+                        from_port: state.from_port,
+                        cursor_canvas: state.cursor_canvas,
                     },
                 ));
             }
             (None, Some(root)) => {
-                mutations.push(scene_change_to_mutation(
-                    CanvasSceneChange::RemovePendingConnection { root },
-                ));
+                if self.canvas.set_pending_connection(None) {
+                    mutations.push(scene_change_to_mutation(
+                        CanvasSceneChange::RemovePendingConnection { root },
+                    ));
+                }
             }
-            (None, None) => {}
+            (None, None) => {
+                self.canvas.set_pending_connection(None);
+            }
         }
     }
 
@@ -395,16 +460,15 @@ impl WorkspaceSceneController {
         if gui.node_id_by_name("node_palette").is_some() {
             return Ok(0);
         }
+        let rect = node_palette_rect(overlay.x, overlay.y, viewport);
 
         gui.apply_mutation(TreeMutation::MountTemplate {
             parent,
             template: TemplateId::from(NODE_PALETTE_TEMPLATE),
             instance: InstanceId::from("node_palette"),
-            payload: TemplatePayload::from(SlotValues::new().with(
-                "rect",
-                SlotValue::Rect(node_palette_rect(overlay.x, overlay.y, viewport)),
-            )),
+            payload: TemplatePayload::from(SlotValues::new().with("rect", SlotValue::Rect(rect))),
         })?;
+        self.workspace_scene.set_palette_root_rect(Some(rect));
         Ok(1)
     }
 
@@ -419,7 +483,7 @@ impl WorkspaceSceneController {
             if let Some(root) = root {
                 mutations.push(TreeMutation::Unmount { node: root });
             }
-            self.node_palette_children.clear();
+            self.workspace_scene.clear_palette();
             return;
         };
         let Some(root) = root else {
@@ -429,15 +493,19 @@ impl WorkspaceSceneController {
             return;
         };
 
-        mutations.push(TreeMutation::SetRect {
-            node: root,
-            rect: node_palette_rect(overlay.x, overlay.y, viewport),
-        });
+        let root_rect = node_palette_rect(overlay.x, overlay.y, viewport);
+        if self.workspace_scene.palette_root_rect() != Some(root_rect) {
+            mutations.push(TreeMutation::SetRect {
+                node: root,
+                rect: root_rect,
+            });
+            self.workspace_scene.set_palette_root_rect(Some(root_rect));
+        }
 
-        let mut desired = BTreeSet::new();
+        let mut desired = BTreeMap::new();
         if overlay.state.items.is_empty() {
             let id = "node_palette_empty".to_string();
-            desired.insert(id.clone());
+            desired.insert(id.clone(), "No nodes available".to_string());
             if gui.node_id_by_name(&id).is_none() {
                 mutations.push(TreeMutation::MountTemplate {
                     parent: items_parent,
@@ -448,65 +516,86 @@ impl WorkspaceSceneController {
                             .with("label", SlotValue::Text("No nodes available".to_string())),
                     ),
                 });
+                self.workspace_scene
+                    .set_palette_child_label("node_palette_empty", "No nodes available");
             }
         } else {
             let mut seen_categories = BTreeSet::new();
             for item in &overlay.state.items {
                 if seen_categories.insert(item.category.as_str()) {
                     let category_id = format!("node_palette::category::{}", item.category);
-                    desired.insert(category_id.clone());
+                    desired.insert(category_id.clone(), item.category.clone());
                     if gui.node_id_by_name(&category_id).is_none() {
                         mutations.push(TreeMutation::MountTemplate {
                             parent: items_parent,
                             template: TemplateId::from(NODE_PALETTE_CATEGORY_TEMPLATE),
-                            instance: InstanceId::from(category_id),
+                            instance: InstanceId::from(category_id.clone()),
                             payload: TemplatePayload::from(
                                 SlotValues::new()
                                     .with("label", SlotValue::Text(item.category.clone())),
                             ),
                         });
+                        self.workspace_scene
+                            .set_palette_child_label(category_id, item.category.clone());
                     } else if let Some(label) =
                         gui.node_id_by_name(&format!("{category_id}::label"))
                     {
-                        mutations.push(TreeMutation::SetText {
-                            node: label,
-                            value: item.category.clone(),
-                        });
+                        if self.workspace_scene.palette_child_label(&category_id)
+                            != Some(item.category.as_str())
+                        {
+                            mutations.push(TreeMutation::SetText {
+                                node: label,
+                                value: item.category.clone(),
+                            });
+                            self.workspace_scene
+                                .set_palette_child_label(category_id, item.category.clone());
+                        }
                     }
                 }
 
                 let item_id = node_palette_item_id(&item.type_id);
-                desired.insert(item_id.clone());
                 let label = format!("{}  [{}]", item.name, item.source);
+                desired.insert(item_id.clone(), label.clone());
                 if gui.node_id_by_name(&item_id).is_none() {
                     mutations.push(TreeMutation::MountTemplate {
                         parent: items_parent,
                         template: TemplateId::from(NODE_PALETTE_ITEM_TEMPLATE),
-                        instance: InstanceId::from(item_id),
+                        instance: InstanceId::from(item_id.clone()),
                         payload: TemplatePayload::from(
                             SlotValues::new().with("label", SlotValue::Text(label)),
                         ),
                     });
+                    self.workspace_scene.set_palette_child_label(
+                        item_id,
+                        format!("{}  [{}]", item.name, item.source),
+                    );
                 } else if let Some(label_node) = gui.node_id_by_name(&format!("{item_id}::label")) {
-                    mutations.push(TreeMutation::SetText {
-                        node: label_node,
-                        value: label,
-                    });
+                    if self.workspace_scene.palette_child_label(&item_id) != Some(label.as_str()) {
+                        mutations.push(TreeMutation::SetText {
+                            node: label_node,
+                            value: label.clone(),
+                        });
+                        self.workspace_scene.set_palette_child_label(item_id, label);
+                    }
                 }
             }
         }
 
         for id in self
-            .node_palette_children
-            .difference(&desired)
-            .cloned()
+            .workspace_scene
+            .palette_child_ids()
+            .filter(|id| !desired.contains_key(*id))
+            .map(str::to_string)
             .collect::<Vec<_>>()
         {
             if let Some(node) = gui.node_id_by_name(&id) {
                 mutations.push(TreeMutation::Unmount { node });
             }
+            self.workspace_scene.remove_palette_child(&id);
         }
-        self.node_palette_children = desired;
+        for (id, label) in desired {
+            self.workspace_scene.set_palette_child_label(id, label);
+        }
     }
 }
 
@@ -550,12 +639,60 @@ fn node_palette_rect(x: f32, y: f32, viewport: Rect) -> Rect {
     }
 }
 
+fn canvas_node_state(view: &CanvasNodeRenderView, theme: &Theme) -> CanvasSceneNodeState {
+    CanvasSceneNodeState {
+        rect: Some(view.state.layout.rect),
+        z_index: Some(view.state.layout.z_index),
+        label: Some(view.template.title.clone()),
+        card_decoration: Some(Some(canvas_node_card_decoration(view, theme))),
+        param_texts: canvas_node_param_texts(&canvas_node_stable_id(&view.state.owner_id), view),
+    }
+}
+
+fn canvas_node_card_decoration(view: &CanvasNodeRenderView, theme: &Theme) -> Decoration {
+    Decoration {
+        background: Some(theme.colors.surface),
+        border: Some(Border {
+            width: if view.state.selected { 2.0 } else { 1.0 },
+            color: if view.state.selected {
+                theme.colors.text
+            } else {
+                theme.colors.border
+            },
+        }),
+        radius: [theme.radii.md; 4],
+        shadow: None,
+    }
+}
+
 fn sync_canvas_node_param_texts(
-    stable_id: &str,
-    view: &CanvasNodeRenderView,
+    _stable_id: &str,
+    next_state: &CanvasSceneNodeState,
+    previous: Option<&CanvasSceneNodeState>,
     gui: &Context,
     mutations: &mut Vec<TreeMutation>,
 ) {
+    for (target_id, value) in &next_state.param_texts {
+        if previous
+            .and_then(|state| state.param_texts.get(target_id))
+            .is_some_and(|old| old == value)
+        {
+            continue;
+        }
+        if let Some(node) = gui.node_id_by_name(target_id) {
+            mutations.push(TreeMutation::SetText {
+                node,
+                value: value.clone(),
+            });
+        }
+    }
+}
+
+fn canvas_node_param_texts(
+    stable_id: &str,
+    view: &CanvasNodeRenderView,
+) -> BTreeMap<String, String> {
+    let mut texts = BTreeMap::new();
     for (index, param) in view.template.params.iter().enumerate() {
         let widget_id = format!("{stable_id}::body::param::{index}::control::widget");
         let (target_id, value) = match &param.control {
@@ -585,9 +722,34 @@ fn sync_canvas_node_param_texts(
             ),
             ParamControlSpec::Slider { .. } | ParamControlSpec::Toggle { .. } => continue,
         };
-        if let Some(node) = gui.node_id_by_name(&target_id) {
-            mutations.push(TreeMutation::SetText { node, value });
-        }
+        texts.insert(target_id, value);
+    }
+    texts
+}
+
+fn panel_applied_state(
+    visible: bool,
+    rect: Rect,
+    z_index: i32,
+    content: &PanelContentTemplate,
+) -> PanelAppliedState {
+    let mut texts = BTreeMap::new();
+    if let PanelContentTemplate::Engine {
+        status,
+        catalog,
+        last_action,
+        ..
+    } = content
+    {
+        texts.insert("engine_status".to_string(), status.clone());
+        texts.insert("engine_catalog".to_string(), catalog.clone());
+        texts.insert("engine_last_action".to_string(), last_action.clone());
+    }
+    PanelAppliedState {
+        visible,
+        rect,
+        z_index,
+        texts,
     }
 }
 
@@ -685,7 +847,11 @@ fn retained_panels(
 mod tests {
     use super::*;
     use crate::workspace::node_palette::NodePaletteItem;
+    use crate::workspace::showcase_node;
+    use gui::canvas::CanvasNodeLayout;
+    use gui::output::{GuiEvent, WidgetEvent};
     use gui::renderer::TextMeasurer;
+    use gui::shell::{AppEvent, Key, Modifiers, MouseButton};
     use gui::theme::light_theme;
     use gui::tree::layout::TextureHandle;
 
@@ -778,6 +944,175 @@ mod tests {
 
         assert!(!gui.node_exists("node_palette"));
         assert!(!gui.node_exists("node_palette_empty"));
+    }
+
+    #[test]
+    fn workspace_scene_second_sync_queues_zero_mutations() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+
+        let first = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &[],
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                },
+            )
+            .expect("first sync");
+        let second = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &[],
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                },
+            )
+            .expect("second sync");
+
+        assert!(first.mutations_queued > 0);
+        assert_eq!(second.mutations_queued, 0);
+        assert_eq!(second.mutations_effective, 0);
+    }
+
+    #[test]
+    fn retained_root_does_not_overwrite_canvas_grid_rect() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let expected_grid = canvas_grid_rect(viewport(), &camera);
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &[],
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                },
+            )
+            .expect("first sync");
+        assert_eq!(gui.node_rect("canvas_grid"), Some(expected_grid));
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &[],
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                },
+            )
+            .expect("second sync");
+
+        assert_eq!(gui.node_rect("canvas_grid"), Some(expected_grid));
+    }
+
+    #[test]
+    fn retained_text_area_under_canvas_transform_hits_field_and_accepts_text() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let mut camera = Camera::new();
+        camera.x = 1_560.0;
+        camera.y = -100.0;
+        camera.zoom = 1.0;
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let identity = showcase_node::text_area_node_identity();
+        let view = showcase_node::showcase_render_view_for_layout_with_text(
+            CanvasNodeLayout {
+                owner_id: identity.owner_id.clone(),
+                rect: identity.default_rect,
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            },
+            "hello",
+        )
+        .expect("text area view");
+        let nodes = vec![view];
+        let mut measurer = TextMeasurer::new();
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                },
+            )
+            .expect("sync");
+        gui.flush_layout_dirty(viewport(), &mut measurer);
+        gui.sync_retained_canvas_text_boxes(&nodes, &mut measurer, &theme);
+
+        let field_id =
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+        let field = gui.node_rect(field_id).expect("field rect");
+        let (x, y) = camera.canvas_to_screen(field.x + 8.0, field.y + 8.0);
+        let chain = gui.hit_test(x, y);
+        assert_eq!(
+            chain.leaf().and_then(|node| gui.node_name(node)),
+            Some(field_id)
+        );
+
+        let click = gui.handle_event(&AppEvent::MousePress {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        assert!(click.consumed);
+        let _ = gui.handle_event(&AppEvent::MouseRelease {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+        let _ = gui.handle_event(&AppEvent::KeyPress {
+            key: Key::End,
+            modifiers: Modifiers::default(),
+        });
+        let input = gui.handle_event(&AppEvent::TextInput {
+            text: "!".to_string(),
+        });
+
+        assert!(input.events.iter().any(|event| matches!(
+            event,
+            GuiEvent::Widget(WidgetEvent::TextChanged { id, value })
+                if id == "canvas_node::showcase_node::text_area_control::body::param::0::control::widget"
+                    && value == "hello!"
+        )));
     }
 
     fn empty_engine_panel() -> EnginePanelState {

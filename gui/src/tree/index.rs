@@ -36,6 +36,10 @@ impl TreeIndex {
         self.stable_to_node.get(stable_id).copied()
     }
 
+    pub fn len(&self) -> usize {
+        self.stable_to_node.len()
+    }
+
     pub fn register(&mut self, stable_id: StableId, node: NodeId) -> Result<(), TreeIndexError> {
         if let Some(existing) = self.stable_to_node.get(&stable_id).copied() {
             if existing != node {

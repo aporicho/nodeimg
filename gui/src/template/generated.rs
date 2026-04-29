@@ -8,7 +8,9 @@ use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Inset, Justify, LeafKind, Overflow, Position,
     RelayoutBoundaryReason, Size, TextLayout,
 };
-use crate::tree::{NodeLayoutMeta, NodePaintMeta, RepaintBoundaryReason};
+use crate::tree::{
+    NodeLayoutMeta, NodeMutationMeta, NodePaintMeta, RectMoveInvalidation, RepaintBoundaryReason,
+};
 
 pub const TEXT_BOX_TEMPLATE: &str = "builtin::text_box";
 pub const CANVAS_ROOT_TEMPLATE: &str = "builtin::canvas_root";
@@ -421,6 +423,9 @@ fn grid_leaf_with_boundary(
         },
     )
     .with_paint_meta(NodePaintMeta::boundary(boundary))
+    .with_mutation_meta(NodeMutationMeta {
+        rect_move: RectMoveInvalidation::Repaint,
+    })
 }
 
 fn connection_leaf(id_suffix: &'static str, kind: LeafKind) -> CompiledNode {
@@ -467,6 +472,7 @@ fn workspace_grid_leaf(id_suffix: &'static str) -> CompiledNode {
     node.style.position = Position::absolute_xy(0.0, 0.0);
     node.style.z_index = -20;
     node.style.hittable = Some(false);
+    node.mutation_meta.rect_move = RectMoveInvalidation::Repaint;
     node
 }
 
@@ -796,6 +802,7 @@ mod tests {
                 local_runtime: NodeLocalRuntime::default(),
                 layout_meta: NodeLayoutMeta::boundary(RelayoutBoundaryReason::Root),
                 paint_meta: NodePaintMeta::boundary(RepaintBoundaryReason::Root),
+                mutation_meta: NodeMutationMeta::default(),
                 runtime_slots: RuntimeSlots::default(),
             })
             .expect("root");

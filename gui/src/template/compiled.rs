@@ -5,8 +5,8 @@ use super::{
 use crate::renderer::Rect;
 use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
 use crate::tree::{
-    NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodePaintMeta, NodeProps, RuntimeSlots,
-    StableId, StylePatch, Tree, TreeNode,
+    NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
+    RuntimeSlots, StableId, StylePatch, Tree, TreeNode,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -38,6 +38,7 @@ pub struct CompiledNode {
     pub local_runtime: NodeLocalRuntime,
     pub layout_meta: NodeLayoutMeta,
     pub paint_meta: NodePaintMeta,
+    pub mutation_meta: NodeMutationMeta,
     pub children: Vec<CompiledNode>,
 }
 
@@ -205,6 +206,7 @@ impl CompiledNode {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: NodeLayoutMeta::default(),
             paint_meta: NodePaintMeta::default(),
+            mutation_meta: NodeMutationMeta::default(),
             children: Vec::new(),
         }
     }
@@ -221,6 +223,11 @@ impl CompiledNode {
 
     pub fn with_paint_meta(mut self, paint_meta: NodePaintMeta) -> Self {
         self.paint_meta = paint_meta;
+        self
+    }
+
+    pub fn with_mutation_meta(mut self, mutation_meta: NodeMutationMeta) -> Self {
+        self.mutation_meta = mutation_meta;
         self
     }
 
@@ -254,6 +261,7 @@ impl CompiledNode {
             local_runtime: self.local_runtime,
             layout_meta: self.layout_meta,
             paint_meta: self.paint_meta,
+            mutation_meta: self.mutation_meta,
             runtime_slots: RuntimeSlots::default(),
         }
     }

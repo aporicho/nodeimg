@@ -22,6 +22,7 @@ pub enum PaintDirtyReason {
     Visual,
     Text,
     PaintOrder,
+    Placement,
     Structure,
     Theme,
     Animation,
@@ -32,6 +33,7 @@ pub struct PaintDirtyQueues {
     pub boundaries: BTreeSet<RepaintBoundaryId>,
     pub paint_order: BTreeSet<RepaintBoundaryId>,
     pub composite: BTreeSet<NodeId>,
+    pub placement: BTreeSet<RepaintBoundaryId>,
 }
 
 impl PaintDirtyQueues {
@@ -40,6 +42,7 @@ impl PaintDirtyQueues {
         self.boundaries.remove(&boundary);
         self.paint_order.remove(&boundary);
         self.composite.remove(&node);
+        self.placement.remove(&boundary);
     }
 }
 

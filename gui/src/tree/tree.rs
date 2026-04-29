@@ -13,6 +13,11 @@ use super::repaint::{
     PaintDirtyQueues, PaintDirtyReason, RepaintBoundaryId, RepaintBoundaryReason,
 };
 use super::runtime_slots::RuntimeSlot;
+use super::snapshot::{
+    index_error_message, repaint_boundary_list, DirtyQueueSummary, LayoutDirtyQueueSummary,
+    PaintDirtyQueueSummary, TreeCacheSummary, TreeDumpLevel, TreeSnapshot, TreeSnapshotIssue,
+    TreeSnapshotMaxNodes, TreeSnapshotNode, TreeSnapshotOptions, TreeSnapshotSummary,
+};
 use super::{RetainedRuntimeStore, RuntimeSlots, StableId};
 use crate::canvas::runtime::{CanvasInteractionRuntime, CanvasNodeRuntime};
 use crate::canvas::{
@@ -45,6 +50,7 @@ struct PaintDirtyTraceSummary<'a> {
     dirty_boundaries: usize,
     dirty_paint_order: usize,
     dirty_composite: usize,
+    dirty_placement: usize,
 }
 
 #[allow(dead_code)]
@@ -71,6 +77,7 @@ struct DirtyPropagationTraceSummary<'a> {
     hit: usize,
     paint_order: usize,
     composite: usize,
+    paint_placement: usize,
 }
 
 #[allow(dead_code)]
@@ -465,6 +472,7 @@ impl Tree {
             match reason {
                 PaintDirtyReason::Text => target.paint_meta.bump_text(),
                 PaintDirtyReason::PaintOrder => target.paint_meta.bump_paint_order(),
+                PaintDirtyReason::Placement => target.paint_meta.bump_fragment(),
                 PaintDirtyReason::Visual
                 | PaintDirtyReason::Structure
                 | PaintDirtyReason::Theme
@@ -503,6 +511,40 @@ impl Tree {
                     dirty_boundaries: self.paint_dirty.boundaries.len(),
                     dirty_paint_order: self.paint_dirty.paint_order.len(),
                     dirty_composite: self.paint_dirty.composite.len(),
+                    dirty_placement: self.paint_dirty.placement.len(),
+                },
+            );
+        }
+    }
+
+    pub fn mark_repaint_boundary_placement_dirty(&mut self, node: NodeId) {
+        let boundary = self
+            .parent_of(node)
+            .and_then(|parent| self.nearest_repaint_boundary(parent))
+            .or_else(|| self.nearest_repaint_boundary(node));
+
+        if let Some(boundary) = boundary {
+            if let Some(boundary_node) = self.get_mut(boundary.0) {
+                boundary_node.paint_meta.bump_fragment();
+            }
+            self.paint_dirty.boundaries.insert(boundary);
+            self.paint_dirty.placement.insert(boundary);
+            self.dirty.paint.insert(boundary.0);
+            self.record_paint_boundary_dirty();
+        }
+
+        if render_trace::is_debug_enabled() {
+            render_trace::debug_stage(
+                RenderTraceStage::DirtyPropagation,
+                PaintDirtyTraceSummary {
+                    node,
+                    stable_id: self.get(node).map(|tree_node| tree_node.id.as_ref()),
+                    reason: PaintDirtyReason::Placement,
+                    boundary: boundary.map(|boundary| boundary.0),
+                    dirty_boundaries: self.paint_dirty.boundaries.len(),
+                    dirty_paint_order: self.paint_dirty.paint_order.len(),
+                    dirty_composite: self.paint_dirty.composite.len(),
+                    dirty_placement: self.paint_dirty.placement.len(),
                 },
             );
         }
@@ -521,6 +563,7 @@ impl Tree {
                     dirty_boundaries: self.paint_dirty.boundaries.len(),
                     dirty_paint_order: self.paint_dirty.paint_order.len(),
                     dirty_composite: self.paint_dirty.composite.len(),
+                    dirty_placement: self.paint_dirty.placement.len(),
                 },
             );
         }
@@ -656,6 +699,9 @@ impl Tree {
         if flags.contains(DirtyFlags::COMPOSITE) {
             self.mark_composite_dirty(node);
         }
+        if flags.contains(DirtyFlags::PAINT_PLACEMENT) {
+            self.mark_repaint_boundary_placement_dirty(node);
+        }
         if render_trace::is_debug_enabled() {
             render_trace::debug_stage(
                 RenderTraceStage::DirtyPropagation,
@@ -670,6 +716,7 @@ impl Tree {
                     hit: self.dirty.hit.len(),
                     paint_order: self.dirty.paint_order.len(),
                     composite: self.dirty.composite.len(),
+                    paint_placement: self.dirty.paint_placement.len(),
                 },
             );
         }
@@ -728,6 +775,235 @@ impl Tree {
 
     pub fn clear_frame_stats(&self) {
         *self.frame_stats.borrow_mut() = FrameStats::default();
+    }
+
+    pub fn debug_snapshot(&self, options: TreeSnapshotOptions) -> TreeSnapshot {
+        let max_nodes = match options.level {
+            TreeDumpLevel::Normal => options.max_nodes,
+            TreeDumpLevel::Full => TreeSnapshotMaxNodes::All,
+        };
+        let mut issues = self.debug_snapshot_issues();
+        let mut visited = HashSet::new();
+        let mut ordered = Vec::<(usize, NodeId)>::new();
+
+        if let Some(root) = self.root {
+            collect_snapshot_order(self, root, 0, &mut visited, &mut ordered);
+        }
+
+        for (node_id, _) in self.iter() {
+            if !visited.contains(&node_id) {
+                issues.push(TreeSnapshotIssue {
+                    message: format!("orphan or unreachable node node={node_id}"),
+                });
+                ordered.push((0, node_id));
+            }
+        }
+
+        let live_nodes = self.iter().count();
+        let limit = match max_nodes {
+            TreeSnapshotMaxNodes::Limit(limit) => Some(limit),
+            TreeSnapshotMaxNodes::All => None,
+        };
+        let included = limit.map_or(ordered.len(), |limit| ordered.len().min(limit));
+        let truncated = included < ordered.len();
+        let omitted_nodes = ordered.len().saturating_sub(included);
+        let nodes = ordered
+            .into_iter()
+            .take(included)
+            .filter_map(|(depth, node_id)| {
+                let node = self.get(node_id)?;
+                Some(TreeSnapshotNode {
+                    node: node_id,
+                    depth,
+                    stable_id: node.id.as_ref().to_string(),
+                    line: self.format_snapshot_node(node_id, depth, options.level),
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let summary = TreeSnapshotSummary {
+            level: options.level,
+            root: self.root,
+            live_nodes,
+            indexed_nodes: self.index.len(),
+            dirty: DirtyQueueSummary::from(&self.dirty),
+            layout_dirty: LayoutDirtyQueueSummary {
+                boundaries: self.layout_dirty.boundaries.len(),
+                text_nodes: self.layout_dirty.text_nodes.len(),
+            },
+            paint_dirty: PaintDirtyQueueSummary::from(&self.paint_dirty),
+            caches: TreeCacheSummary {
+                layout_entries: self.layout_cache.len(),
+                hit_order_entries: self.hit_order_cache.borrow().len(),
+                paint_order_entries: self.paint_order_cache.borrow().len(),
+                paint_fragments: self.paint_cache.borrow().len(),
+            },
+            issues: issues.len(),
+            truncated,
+            omitted_nodes,
+        };
+
+        TreeSnapshot {
+            summary,
+            nodes,
+            issues,
+        }
+    }
+
+    fn debug_snapshot_issues(&self) -> Vec<TreeSnapshotIssue> {
+        let mut issues = Vec::new();
+        match self.root {
+            Some(root) if self.get(root).is_none() => issues.push(TreeSnapshotIssue {
+                message: format!("root points to missing node root={root}"),
+            }),
+            None => issues.push(TreeSnapshotIssue {
+                message: "missing root".to_string(),
+            }),
+            _ => {}
+        }
+
+        if let Err(error) = self.validate_index() {
+            issues.push(TreeSnapshotIssue {
+                message: index_error_message(error),
+            });
+        }
+
+        for (parent_id, node) in self.iter() {
+            let mut seen_children = HashSet::new();
+            for child in node.children.iter().copied() {
+                if !seen_children.insert(child) {
+                    issues.push(TreeSnapshotIssue {
+                        message: format!("duplicate child parent={parent_id} child={child}"),
+                    });
+                }
+                if self.get(child).is_none() {
+                    issues.push(TreeSnapshotIssue {
+                        message: format!("missing child parent={parent_id} child={child}"),
+                    });
+                    continue;
+                }
+                if self.parents.get(&child).copied() != Some(parent_id) {
+                    issues.push(TreeSnapshotIssue {
+                        message: format!(
+                            "parent map mismatch child={child} expected_parent={parent_id} actual_parent={:?}",
+                            self.parents.get(&child).copied()
+                        ),
+                    });
+                }
+            }
+        }
+
+        for (child, parent) in &self.parents {
+            if self.get(*child).is_none() {
+                issues.push(TreeSnapshotIssue {
+                    message: format!(
+                        "parent map contains missing child child={child} parent={parent}"
+                    ),
+                });
+                continue;
+            }
+            let Some(parent_node) = self.get(*parent) else {
+                issues.push(TreeSnapshotIssue {
+                    message: format!(
+                        "parent map contains missing parent child={child} parent={parent}"
+                    ),
+                });
+                continue;
+            };
+            if !parent_node.children.contains(child) {
+                issues.push(TreeSnapshotIssue {
+                    message: format!(
+                        "parent map child not present in parent children child={child} parent={parent}"
+                    ),
+                });
+            }
+        }
+
+        issues
+    }
+
+    fn format_snapshot_node(&self, node_id: NodeId, depth: usize, level: TreeDumpLevel) -> String {
+        let Some(node) = self.get(node_id) else {
+            return format!("{}node={node_id} <missing>", "  ".repeat(depth));
+        };
+        let indent = "  ".repeat(depth);
+        let parent = self.parents.get(&node_id).copied();
+        let dirty = self.snapshot_dirty_flags(node_id);
+        let paint_boundary = RepaintBoundaryId(node_id);
+        let normal = format!(
+            "{indent}node={node_id} stable_id={:?} kind={} parent={parent:?} children={:?} rect={:?} visible={} dirty={} layout_dirty_boundary={} layout_dirty_text={} paint_dirty_boundary={} paint_dirty_order={} composite_dirty={} layout_boundary={:?} paint_boundary={:?} layout_rev=(style:{} text:{} children:{} rect:{}) paint_rev=(visual:{} text:{} order:{} fragment:{}) runtime_slots={}",
+            node.id.as_ref(),
+            normal_kind_summary(&node.kind),
+            node.children,
+            node.rect,
+            node.local_runtime.visible,
+            dirty,
+            self.layout_dirty.boundaries.contains(&node_id),
+            self.layout_dirty.text_nodes.contains(&node_id),
+            self.paint_dirty.boundaries.contains(&paint_boundary),
+            self.paint_dirty.paint_order.contains(&paint_boundary),
+            self.paint_dirty.composite.contains(&node_id),
+            node.layout_meta.boundary,
+            node.paint_meta.boundary,
+            node.layout_meta.style_revision.get(),
+            node.layout_meta.text_revision.get(),
+            node.layout_meta.children_revision.get(),
+            node.layout_meta.explicit_rect_revision.get(),
+            node.paint_meta.visual_revision.get(),
+            node.paint_meta.text_paint_revision.get(),
+            node.paint_meta.paint_order_revision.get(),
+            node.paint_meta.fragment_revision.get(),
+            node.runtime_slots.len(),
+        );
+
+        if level == TreeDumpLevel::Normal {
+            return normal;
+        }
+
+        format!(
+            "{normal} props={:?} style={:?} decoration={:?} local_runtime={:?} layout_meta={:?} paint_meta={:?} kind_full={} runtime_slots_full=[{}] cache=(paint_fragment_cached:{}) retained_runtime_present={} paint_dirty_boundaries={:?} paint_dirty_order={:?} composite_dirty_nodes={:?}",
+            node.props,
+            node.style,
+            node.decoration,
+            node.local_runtime,
+            node.layout_meta,
+            node.paint_meta,
+            full_kind_summary(&node.kind),
+            runtime_slots_full(&node.runtime_slots),
+            node.paint_meta
+                .boundary
+                .is_some_and(|_| self.paint_cache.borrow().contains(paint_boundary)),
+            self.retained_runtime.contains(node.id.as_ref()),
+            repaint_boundary_list(self.paint_dirty.boundaries.iter().copied()),
+            repaint_boundary_list(self.paint_dirty.paint_order.iter().copied()),
+            self.paint_dirty.composite,
+        )
+    }
+
+    fn snapshot_dirty_flags(&self, node: NodeId) -> DirtyFlags {
+        let mut flags = DirtyFlags::NONE;
+        if self.dirty.structure.contains(&node) {
+            flags |= DirtyFlags::STRUCTURE;
+        }
+        if self.dirty.layout.contains(&node) {
+            flags |= DirtyFlags::LAYOUT;
+        }
+        if self.dirty.text_layout.contains(&node) {
+            flags |= DirtyFlags::TEXT_LAYOUT;
+        }
+        if self.dirty.paint.contains(&node) {
+            flags |= DirtyFlags::PAINT;
+        }
+        if self.dirty.hit.contains(&node) {
+            flags |= DirtyFlags::HIT;
+        }
+        if self.dirty.paint_order.contains(&node) {
+            flags |= DirtyFlags::PAINT_ORDER;
+        }
+        if self.dirty.composite.contains(&node) {
+            flags |= DirtyFlags::COMPOSITE;
+        }
+        flags
     }
 
     pub(crate) fn record_widget_build_call(&self) {
@@ -927,16 +1203,12 @@ impl Tree {
 
     pub(crate) fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
         let stable_id = canvas_node_stable_id(owner_id);
-        let node_id = self.node_by_str(&stable_id);
         let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
         else {
             return false;
         };
         runtime.rect.x += dx;
         runtime.rect.y += dy;
-        if let Some(node_id) = node_id {
-            self.mark_dirty(node_id, DirtyFlags::COMPOSITE | DirtyFlags::HIT);
-        }
         self.mark_canvas_connection_layer_dirty();
         true
     }
@@ -949,7 +1221,6 @@ impl Tree {
         dy: f32,
     ) -> bool {
         let stable_id = canvas_node_stable_id(owner_id);
-        let node_id = self.node_by_str(&stable_id);
         let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
         else {
             tracing::trace!(
@@ -1004,16 +1275,6 @@ impl Tree {
             user_min_height = runtime.user_min_height,
             "resize canvas node runtime rect"
         );
-        if let Some(node_id) = node_id {
-            let flags = if runtime.rect.w != before.w || runtime.rect.h != before.h {
-                DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT
-            } else if runtime.rect.x != before.x || runtime.rect.y != before.y {
-                DirtyFlags::COMPOSITE | DirtyFlags::HIT
-            } else {
-                DirtyFlags::NONE
-            };
-            self.mark_dirty(node_id, flags);
-        }
         self.mark_canvas_connection_layer_dirty();
         true
     }
@@ -1025,7 +1286,6 @@ impl Tree {
         min_height: f32,
     ) -> bool {
         let stable_id = canvas_node_stable_id(owner_id);
-        let node_id = self.node_by_str(&stable_id);
         let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
         else {
             return false;
@@ -1052,12 +1312,6 @@ impl Tree {
             "ensure canvas node min size"
         );
         if changed {
-            if let Some(node_id) = node_id {
-                self.mark_dirty(
-                    node_id,
-                    DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT,
-                );
-            }
             self.mark_canvas_connection_layer_dirty();
         }
         changed
@@ -1069,7 +1323,6 @@ impl Tree {
         request: crate::canvas::CanvasNodeSizingRequest,
     ) -> bool {
         let stable_id = canvas_node_stable_id(owner_id);
-        let node_id = self.node_by_str(&stable_id);
         let Some(runtime) = self.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id)
         else {
             return false;
@@ -1103,12 +1356,6 @@ impl Tree {
             "apply canvas node absolute sizing"
         );
         if changed {
-            if let Some(node_id) = node_id {
-                self.mark_dirty(
-                    node_id,
-                    DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT,
-                );
-            }
             self.mark_canvas_connection_layer_dirty();
         }
         changed
@@ -1254,19 +1501,14 @@ impl Tree {
     }
 
     pub fn move_panel_by(&mut self, id: &str, dx: f32, dy: f32) {
-        let node_id = self.node_by_str(id);
         let Some(panel) = self.panel_state_mut(id) else {
             return;
         };
         panel.rect.x += dx;
         panel.rect.y += dy;
-        if let Some(node_id) = node_id {
-            self.mark_dirty(node_id, DirtyFlags::COMPOSITE | DirtyFlags::HIT);
-        }
     }
 
     pub fn resize_panel_by(&mut self, id: &str, edge: ResizeEdge, dx: f32, dy: f32) {
-        let node_id = self.node_by_str(id);
         let Some(panel) = self.panel_state_mut(id) else {
             return;
         };
@@ -1295,12 +1537,6 @@ impl Tree {
 
         panel.rect.w = panel.rect.w.max(panel.min_size[0]);
         panel.rect.h = panel.rect.h.max(panel.min_size[1]);
-        if let Some(node_id) = node_id {
-            self.mark_dirty(
-                node_id,
-                DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT,
-            );
-        }
     }
 
     pub fn show_panel(&mut self, id: &str) {
@@ -1476,6 +1712,71 @@ fn is_vertical_resize_edge(edge: ResizeEdge) -> bool {
     )
 }
 
+fn collect_snapshot_order(
+    tree: &Tree,
+    node: NodeId,
+    depth: usize,
+    visited: &mut HashSet<NodeId>,
+    ordered: &mut Vec<(usize, NodeId)>,
+) {
+    if !visited.insert(node) {
+        return;
+    }
+    ordered.push((depth, node));
+    let Some(tree_node) = tree.get(node) else {
+        return;
+    };
+    for child in tree_node.children.iter().copied() {
+        collect_snapshot_order(tree, child, depth + 1, visited, ordered);
+    }
+}
+
+fn normal_kind_summary(kind: &super::NodeKind) -> String {
+    match kind {
+        super::NodeKind::Container => "Container".to_string(),
+        super::NodeKind::Widget(widget) => format!("Widget({})", widget.widget_type()),
+        super::NodeKind::Leaf(super::layout::LeafKind::Text { content, .. }) => {
+            format!(
+                "Leaf::Text(bytes:{} chars:{})",
+                content.len(),
+                content.chars().count()
+            )
+        }
+        super::NodeKind::Leaf(leaf) => format!("Leaf::{leaf:?}"),
+    }
+}
+
+fn full_kind_summary(kind: &super::NodeKind) -> String {
+    match kind {
+        super::NodeKind::Container => "Container".to_string(),
+        super::NodeKind::Widget(widget) => {
+            format!("Widget(type:{} props:{widget:?})", widget.widget_type())
+        }
+        super::NodeKind::Leaf(super::layout::LeafKind::Text {
+            content,
+            style,
+            layout,
+        }) => {
+            format!("Leaf::Text {{ content: {content:?}, style: {style:?}, layout: {layout:?} }}")
+        }
+        super::NodeKind::Leaf(leaf) => format!("Leaf::{leaf:?}"),
+    }
+}
+
+fn runtime_slots_full(slots: &RuntimeSlots) -> String {
+    slots
+        .debug_entries()
+        .into_iter()
+        .map(|entry| {
+            format!(
+                "{} policy={:?} value={}",
+                entry.type_name, entry.policy, entry.value
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn layout_dirty_reason(flags: DirtyFlags) -> LayoutDirtyReason {
     if flags.contains(DirtyFlags::STRUCTURE) {
         LayoutDirtyReason::Structure
@@ -1527,12 +1828,13 @@ mod tests {
     use crate::theme::light_theme;
     use crate::tree::layout::{BoxStyle, LeafKind, Size, TextLayout};
     use crate::tree::{
-        reconcile, Desc, DirtyFlags, NodeKind, NodeLocalRuntime, NodeProps, TreeMutation,
+        reconcile, Desc, DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps,
+        StylePatch, TreeDumpLevel, TreeMutation, TreeSnapshotOptions,
     };
     use crate::widget::props::WidgetBuildCx;
     use std::borrow::Cow;
 
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     struct TestRuntime {
         value: usize,
     }
@@ -1576,6 +1878,7 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }
@@ -1601,8 +1904,125 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
+    }
+
+    #[test]
+    fn tree_dump_normal_uses_compact_fields() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        let text = tree.insert(text_node("text", "secret text"));
+        tree.set_root(root);
+        tree.set_children(root, vec![text]);
+
+        let snapshot = tree.debug_snapshot(TreeSnapshotOptions::normal(500));
+
+        assert_eq!(snapshot.summary.level, TreeDumpLevel::Normal);
+        assert!(snapshot
+            .nodes
+            .iter()
+            .any(|node| node.line.contains("Leaf::Text(bytes:11")));
+        assert!(!snapshot
+            .nodes
+            .iter()
+            .any(|node| node.line.contains("secret text")));
+    }
+
+    #[test]
+    fn tree_dump_full_prints_all_node_fields_and_raw_text() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        let text = tree.insert(text_node("text", "secret text"));
+        tree.set_root(root);
+        tree.set_children(root, vec![text]);
+
+        let snapshot = tree.debug_snapshot(TreeSnapshotOptions::full());
+        let text_line = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.stable_id == "text")
+            .expect("text node")
+            .line
+            .as_str();
+
+        assert!(text_line.contains("props="));
+        assert!(text_line.contains("style="));
+        assert!(text_line.contains("layout_meta="));
+        assert!(text_line.contains("paint_meta="));
+        assert!(text_line.contains("secret text"));
+    }
+
+    #[test]
+    fn tree_dump_full_prints_runtime_slot_debug_values() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        tree.set_root(root);
+        tree.ensure_runtime_slot::<TestRuntime>(root)
+            .expect("runtime slot")
+            .value = 7;
+
+        let snapshot = tree.debug_snapshot(TreeSnapshotOptions::full());
+        let root_line = &snapshot.nodes[0].line;
+
+        assert!(root_line.contains("TestRuntime"));
+        assert!(root_line.contains("value: 7"));
+    }
+
+    #[test]
+    fn tree_dump_detects_parent_mismatch_duplicate_children_and_stale_index() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        let child = tree.insert(container_node("child"));
+        tree.set_root(root);
+        tree.get_mut(root).expect("root").children = vec![child, child];
+
+        let snapshot = tree.debug_snapshot(TreeSnapshotOptions::full());
+        let issues = snapshot
+            .issues
+            .iter()
+            .map(|issue| issue.message.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(issues.iter().any(|issue| issue.contains("duplicate child")));
+        assert!(issues
+            .iter()
+            .any(|issue| issue.contains("parent map mismatch")));
+    }
+
+    #[test]
+    fn tree_dump_respects_max_nodes_in_normal_mode_but_not_full_mode() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        let first = tree.insert(container_node("first"));
+        let second = tree.insert(container_node("second"));
+        tree.set_root(root);
+        tree.set_children(root, vec![first, second]);
+
+        let normal = tree.debug_snapshot(TreeSnapshotOptions::normal(1));
+        let full = tree.debug_snapshot(TreeSnapshotOptions {
+            level: TreeDumpLevel::Full,
+            max_nodes: crate::tree::TreeSnapshotMaxNodes::Limit(1),
+        });
+
+        assert!(normal.summary.truncated);
+        assert_eq!(normal.nodes.len(), 1);
+        assert!(!full.summary.truncated);
+        assert_eq!(full.nodes.len(), 3);
+    }
+
+    #[test]
+    fn tree_dump_does_not_mutate_frame_stats() {
+        let mut tree = Tree::new();
+        let root = tree.insert(container_node("root"));
+        tree.set_root(root);
+        let before = tree.frame_stats_snapshot();
+
+        let _ = tree.debug_snapshot(TreeSnapshotOptions::full());
+        let after = tree.frame_stats_snapshot();
+
+        assert_eq!(before, after);
     }
 
     #[test]
@@ -1846,7 +2266,38 @@ mod tests {
     }
 
     #[test]
-    fn tree_mutation_set_rect_position_marks_composite_not_layout() {
+    fn tree_mutation_noop_set_text_does_not_dirty_or_bump_revision() {
+        let mut tree = Tree::new();
+        let text = tree.insert_checked(text_node("text", "old")).expect("text");
+        tree.set_root(text);
+        let registry = crate::template::TemplateRegistry::new();
+        let before_layout = tree.get(text).expect("text").layout_meta.text_revision;
+        let before_paint = tree.get(text).expect("text").paint_meta.text_paint_revision;
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetText {
+                    node: text,
+                    value: "old".to_string(),
+                },
+            )
+            .expect("mutation");
+
+        assert_eq!(invalidation.flags, DirtyFlags::NONE);
+        assert_eq!(
+            tree.get(text).expect("text").layout_meta.text_revision,
+            before_layout
+        );
+        assert_eq!(
+            tree.get(text).expect("text").paint_meta.text_paint_revision,
+            before_paint
+        );
+        assert_eq!(tree.take_dirty(), DirtyQueues::default());
+    }
+
+    #[test]
+    fn tree_mutation_set_rect_position_marks_layout_by_default() {
         let mut tree = Tree::new();
         let root = tree.insert_checked(container_node("root")).expect("root");
         tree.set_root(root);
@@ -1867,9 +2318,76 @@ mod tests {
             )
             .expect("mutation");
 
-        assert!(invalidation.flags.contains(DirtyFlags::COMPOSITE));
+        assert!(invalidation.flags.contains(DirtyFlags::LAYOUT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(tree.take_dirty().layout.contains(&root));
+    }
+
+    #[test]
+    fn tree_mutation_set_rect_grid_move_marks_paint_not_layout() {
+        let mut tree = Tree::new();
+        let mut root_node = container_node("grid");
+        root_node.mutation_meta.rect_move = crate::tree::RectMoveInvalidation::Repaint;
+        let root = tree.insert_checked(root_node).expect("grid");
+        tree.set_root(root);
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: root,
+                    rect: Rect {
+                        x: 10.0,
+                        y: 10.0,
+                        w: 0.0,
+                        h: 0.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
         assert!(!invalidation.flags.contains(DirtyFlags::LAYOUT));
-        assert!(tree.take_dirty().layout.is_empty());
+        assert!(tree.take_dirty().paint.contains(&root));
+    }
+
+    #[test]
+    fn tree_mutation_set_rect_boundary_move_marks_placement_not_layout() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut child_node = container_node("child");
+        child_node
+            .paint_meta
+            .set_boundary(RepaintBoundaryReason::CanvasNodeCard);
+        child_node.mutation_meta.rect_move = crate::tree::RectMoveInvalidation::BoundaryPlacement;
+        let child = tree.insert_checked(child_node).expect("child");
+        tree.append_child(root, child);
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: child,
+                    rect: Rect {
+                        x: 10.0,
+                        y: 10.0,
+                        w: 0.0,
+                        h: 0.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT_PLACEMENT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        assert!(!invalidation.flags.contains(DirtyFlags::LAYOUT));
+        let dirty = tree.take_paint_dirty();
+        assert!(dirty.placement.contains(&RepaintBoundaryId(root)));
     }
 
     #[test]
@@ -1897,6 +2415,44 @@ mod tests {
         assert!(invalidation.flags.contains(DirtyFlags::LAYOUT));
         assert!(invalidation.flags.contains(DirtyFlags::HIT));
         assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+    }
+
+    #[test]
+    fn tree_mutation_noop_set_rect_does_not_dirty_or_bump_revision() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let registry = crate::template::TemplateRegistry::new();
+        let before = tree
+            .get(root)
+            .expect("root")
+            .layout_meta
+            .explicit_rect_revision;
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: root,
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w: 0.0,
+                        h: 0.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert_eq!(invalidation.flags, DirtyFlags::NONE);
+        assert_eq!(
+            tree.get(root)
+                .expect("root")
+                .layout_meta
+                .explicit_rect_revision,
+            before
+        );
+        assert_eq!(tree.take_dirty(), DirtyQueues::default());
     }
 
     #[test]
@@ -1960,6 +2516,93 @@ mod tests {
         assert!(invalidation.flags.contains(DirtyFlags::PAINT_ORDER));
         assert!(invalidation.flags.contains(DirtyFlags::HIT));
         assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+    }
+
+    #[test]
+    fn tree_mutation_noop_set_z_index_does_not_dirty_or_bump_revision() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let registry = crate::template::TemplateRegistry::new();
+        let before_layout = tree.get(root).expect("root").layout_meta.style_revision;
+        let before_order = tree
+            .get(root)
+            .expect("root")
+            .paint_meta
+            .paint_order_revision;
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetZIndex {
+                    node: root,
+                    z_index: 0,
+                },
+            )
+            .expect("mutation");
+
+        assert_eq!(invalidation.flags, DirtyFlags::NONE);
+        assert_eq!(
+            tree.get(root).expect("root").layout_meta.style_revision,
+            before_layout
+        );
+        assert_eq!(
+            tree.get(root)
+                .expect("root")
+                .paint_meta
+                .paint_order_revision,
+            before_order
+        );
+        assert_eq!(tree.take_dirty(), DirtyQueues::default());
+    }
+
+    #[test]
+    fn tree_mutation_empty_style_patch_is_noop() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetStyle {
+                    node: root,
+                    patch: StylePatch::default(),
+                },
+            )
+            .expect("mutation");
+
+        assert_eq!(invalidation.flags, DirtyFlags::NONE);
+        assert_eq!(tree.take_dirty(), DirtyQueues::default());
+    }
+
+    #[test]
+    fn tree_mutation_set_transform_marks_paint_not_composite() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetStyle {
+                    node: root,
+                    patch: StylePatch {
+                        transform: Some(Some(crate::geometry::TransformSpec::translate_scale(
+                            [10.0, 20.0],
+                            2.0,
+                        ))),
+                        ..StylePatch::default()
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        assert!(!invalidation.flags.contains(DirtyFlags::COMPOSITE));
     }
 
     #[test]

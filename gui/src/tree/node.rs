@@ -1,4 +1,5 @@
 use super::layout::{BoxStyle, Decoration, LeafKind, RelayoutBoundaryReason};
+use super::mutation_meta::NodeMutationMeta;
 use super::props::NodeProps;
 use super::runtime_slots::RuntimeSlots;
 use super::{Revision, StableId};
@@ -27,6 +28,7 @@ pub struct TreeNode {
     pub local_runtime: NodeLocalRuntime,
     pub layout_meta: NodeLayoutMeta,
     pub paint_meta: NodePaintMeta,
+    pub mutation_meta: NodeMutationMeta,
     pub runtime_slots: RuntimeSlots,
 }
 

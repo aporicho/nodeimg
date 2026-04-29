@@ -3,6 +3,7 @@ use crate::workspace::scene_controller::{WorkspaceSceneController, WorkspaceScen
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
+use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::context::{Context, FrameworkOutput, GuiEvent, PlatformEffect, WidgetEvent};
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
@@ -156,50 +157,20 @@ impl App for AppShell {
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         self.gui.tick_animations(Instant::now());
         let viewport = viewport_rect(ctx);
-        let canvas_nodes = self
-            .workspace
-            .canvas_node_render_views(&mut self.gui, &self.theme);
-        let canvas_connections = self.workspace.canvas_connection_views();
-        let engine_panel = self.workspace.engine_panel_state();
-        let pending_connection = self.gui.pending_canvas_connection();
-        render_trace::debug_stage(
-            RenderTraceStage::AppUpdate,
-            AppUpdateTraceSummary {
-                viewport: RectSummary::from(viewport),
-                canvas_nodes: canvas_nodes.len(),
-                canvas_connections: canvas_connections.len(),
-                pending_connection: pending_connection.is_some(),
-                animations_active: self.gui.animations_active(),
-                mode: self.mode,
-            },
-        );
-        if let Err(error) = self.scene_controller.sync(
-            &mut self.gui,
-            WorkspaceSceneInput {
-                viewport,
-                camera: &self.camera,
-                canvas_nodes: &canvas_nodes,
-                canvas_connections: &canvas_connections,
-                pending_connection: pending_connection.as_ref(),
-                theme: &self.theme,
-                preview_image: SAMPLE_IMAGE_HANDLE,
-                engine_panel: &engine_panel,
-            },
-        ) {
-            tracing::warn!(
-                target: TARGET_RENDER,
-                frame_id = render_trace::current_render_trace_frame().id,
-                ?error,
-                "failed to sync retained workspace scene"
-            );
-        }
-        self.gui
-            .flush_layout_dirty(viewport, renderer.text_measurer());
+        let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
         self.gui.sync_retained_canvas_text_boxes(
             &canvas_nodes,
             renderer.text_measurer(),
             &self.theme,
         );
+        if !self.gui.text_box_dirty_intrinsics().is_empty() {
+            let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
+            self.gui.sync_retained_canvas_text_boxes(
+                &stabilized_nodes,
+                renderer.text_measurer(),
+                &self.theme,
+            );
+        }
         ctx.apply_ime_request(self.gui.ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
         if self.gui.animations_active() {
@@ -288,6 +259,56 @@ fn create_sample_texture(
 }
 
 impl AppShell {
+    fn sync_workspace_scene(
+        &mut self,
+        viewport: Rect,
+        renderer: &mut Renderer,
+        trace_app_update: bool,
+    ) -> Vec<CanvasNodeRenderView> {
+        let canvas_nodes = self
+            .workspace
+            .canvas_node_render_views(&mut self.gui, &self.theme);
+        let canvas_connections = self.workspace.canvas_connection_views();
+        let engine_panel = self.workspace.engine_panel_state();
+        let pending_connection = self.gui.pending_canvas_connection();
+        if trace_app_update {
+            render_trace::debug_stage(
+                RenderTraceStage::AppUpdate,
+                AppUpdateTraceSummary {
+                    viewport: RectSummary::from(viewport),
+                    canvas_nodes: canvas_nodes.len(),
+                    canvas_connections: canvas_connections.len(),
+                    pending_connection: pending_connection.is_some(),
+                    animations_active: self.gui.animations_active(),
+                    mode: self.mode,
+                },
+            );
+        }
+        if let Err(error) = self.scene_controller.sync(
+            &mut self.gui,
+            WorkspaceSceneInput {
+                viewport,
+                camera: &self.camera,
+                canvas_nodes: &canvas_nodes,
+                canvas_connections: &canvas_connections,
+                pending_connection: pending_connection.as_ref(),
+                theme: &self.theme,
+                preview_image: SAMPLE_IMAGE_HANDLE,
+                engine_panel: &engine_panel,
+            },
+        ) {
+            tracing::warn!(
+                target: TARGET_RENDER,
+                frame_id = render_trace::current_render_trace_frame().id,
+                ?error,
+                "failed to sync retained workspace scene"
+            );
+        }
+        self.gui
+            .flush_layout_dirty(viewport, renderer.text_measurer());
+        canvas_nodes
+    }
+
     fn handle_global_shortcut(&mut self, event: &AppEvent) -> bool {
         if !DEVELOPER_MODE_ENABLED || !is_developer_mode_shortcut(event) {
             return false;

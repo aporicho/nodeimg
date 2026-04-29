@@ -165,6 +165,7 @@ fn create_from_desc(tree: &mut Tree, desc: Desc, cx: WidgetBuildCx<'_>) -> NodeI
         local_runtime: NodeLocalRuntime::default(),
         layout_meta: Default::default(),
         paint_meta,
+        mutation_meta: Default::default(),
         runtime_slots,
     });
 

@@ -14,6 +14,7 @@ pub mod layout;
 mod layout_adapter;
 pub(crate) mod legacy_desc;
 mod mutation;
+mod mutation_meta;
 mod node;
 mod paint;
 mod paint_cache;
@@ -22,6 +23,7 @@ mod paint_order;
 mod paint_space;
 pub mod paint_target;
 mod props;
+mod rect_invalidation;
 mod repaint;
 mod retained_runtime;
 mod revision;
@@ -29,6 +31,7 @@ mod runtime_policy;
 mod runtime_slots;
 mod scroll;
 mod shape;
+mod snapshot;
 mod stacking;
 pub(crate) mod text_layout;
 #[allow(clippy::module_inception)]
@@ -46,6 +49,7 @@ pub use layout::layout;
 #[cfg(test)]
 pub use legacy_desc::reconcile;
 pub use mutation::{Invalidation, MutationError, StylePatch, TreeMutation};
+pub use mutation_meta::{NodeMutationMeta, RectMoveInvalidation};
 pub use node::{
     AnimationRuntime, LayoutRuntime, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodePaintMeta,
     TreeNode,
@@ -60,4 +64,7 @@ pub(crate) use retained_runtime::RetainedRuntimeStore;
 pub use revision::Revision;
 pub use runtime_policy::{PersistenceClass, RuntimeRetention, RuntimeSlotPolicy, UndoClass};
 pub use runtime_slots::{RuntimeSlot, RuntimeSlots};
+pub use snapshot::{
+    TreeDumpLevel, TreeSnapshot, TreeSnapshotMaxNodes, TreeSnapshotOptions, TreeSnapshotSummary,
+};
 pub use tree::Tree;

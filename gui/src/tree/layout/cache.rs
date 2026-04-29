@@ -15,6 +15,10 @@ impl LayoutCache {
         self.entries.insert(key, output);
     }
 
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub fn remove(&mut self, key: &LayoutCacheKey) {
         self.entries.remove(key);
     }

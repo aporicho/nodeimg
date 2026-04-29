@@ -17,6 +17,10 @@ impl RetainedRuntimeStore {
         self.slots.remove(stable_id)
     }
 
+    pub fn contains(&self, stable_id: &str) -> bool {
+        self.slots.contains_key(stable_id)
+    }
+
     pub fn get<T: RuntimeSlot>(&self, stable_id: &str) -> Option<&T> {
         self.slots.get(stable_id)?.get::<T>()
     }

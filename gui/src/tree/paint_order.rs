@@ -48,6 +48,10 @@ impl PaintOrderCache {
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

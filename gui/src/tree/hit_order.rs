@@ -50,6 +50,10 @@ impl HitOrderCache {
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -131,6 +135,7 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }

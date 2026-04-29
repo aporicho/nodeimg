@@ -16,6 +16,7 @@ impl DirtyFlags {
     pub const HIT: Self = Self(1 << 5);
     pub const PAINT_ORDER: Self = Self(1 << 6);
     pub const COMPOSITE: Self = Self(1 << 7);
+    pub const PAINT_PLACEMENT: Self = Self(1 << 8);
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
@@ -56,6 +57,7 @@ impl fmt::Display for DirtyFlags {
             (Self::HIT, "HIT"),
             (Self::PAINT_ORDER, "PAINT_ORDER"),
             (Self::COMPOSITE, "COMPOSITE"),
+            (Self::PAINT_PLACEMENT, "PAINT_PLACEMENT"),
         ] {
             if self.contains(flag) {
                 f.write_str(separator)?;
@@ -76,6 +78,7 @@ pub struct DirtyQueues {
     pub hit: BTreeSet<NodeId>,
     pub paint_order: BTreeSet<NodeId>,
     pub composite: BTreeSet<NodeId>,
+    pub paint_placement: BTreeSet<NodeId>,
 }
 
 impl DirtyQueues {
@@ -100,6 +103,9 @@ impl DirtyQueues {
         }
         if flags.contains(DirtyFlags::COMPOSITE) {
             self.composite.insert(node);
+        }
+        if flags.contains(DirtyFlags::PAINT_PLACEMENT) {
+            self.paint_placement.insert(node);
         }
     }
 }

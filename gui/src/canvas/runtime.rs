@@ -138,6 +138,9 @@ impl CanvasInteractionRuntime {
         let Some(pending) = &mut self.pending_connection else {
             return false;
         };
+        if pending.cursor_canvas == cursor_canvas {
+            return false;
+        }
         pending.cursor_canvas = cursor_canvas;
         true
     }
@@ -167,6 +170,9 @@ impl CanvasInteractionRuntime {
             if parse_canvas_port_id(port_id).is_none() {
                 return false;
             }
+        }
+        if self.hovered_port_id.as_deref() == port_id {
+            return false;
         }
         self.hovered_port_id = port_id.map(str::to_string);
         true
@@ -210,5 +216,31 @@ impl RuntimeSlot for CanvasInteractionRuntime {
             persistence: PersistenceClass::SessionOnly,
             undo: UndoClass::NonUndoable,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OUTPUT_PORT: &str = "canvas_node::node::1::port::output::image";
+
+    #[test]
+    fn hovered_port_update_is_idempotent() {
+        let mut runtime = CanvasInteractionRuntime::default();
+
+        assert!(runtime.set_hovered_port(Some(OUTPUT_PORT)));
+        assert!(!runtime.set_hovered_port(Some(OUTPUT_PORT)));
+        assert!(runtime.set_hovered_port(None));
+        assert!(!runtime.set_hovered_port(None));
+    }
+
+    #[test]
+    fn pending_connection_update_is_idempotent() {
+        let mut runtime = CanvasInteractionRuntime::default();
+
+        assert!(runtime.begin_pending_connection(OUTPUT_PORT, [1.0, 2.0]));
+        assert!(!runtime.update_pending_connection([1.0, 2.0]));
+        assert!(runtime.update_pending_connection([2.0, 3.0]));
     }
 }

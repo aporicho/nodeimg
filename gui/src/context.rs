@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBuilder};
 use crate::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
+use crate::diagnostics::tree_dump::{self, TreeDumpController, TreeDumpPhase, TreeDumpPoint};
 use crate::event::gesture_adapter;
 use crate::event::router;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
@@ -27,7 +28,7 @@ use crate::tree::Desc;
 use crate::tree::{
     hit_test_with_animations, resize_hit_at_screen_point, FrameStats, HitChain, Invalidation,
     MutationError, NodeId, NodeKind, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree,
-    TreeMutation,
+    TreeMutation, TreeSnapshotOptions,
 };
 use crate::widget::resize_edge::ResizeEdge;
 
@@ -50,6 +51,7 @@ pub struct Context {
     icons: IconRegistry,
     retained_display_list: Option<DisplayList>,
     last_paint_theme_revision: Option<u64>,
+    tree_dump: TreeDumpController,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -95,6 +97,7 @@ struct PaintDirtyTraceSummary {
     dirty_boundaries: usize,
     dirty_paint_order: usize,
     dirty_composite: usize,
+    dirty_placement: usize,
     rebuild_boundaries: usize,
     retained_display_list_present: bool,
 }
@@ -130,7 +133,24 @@ impl Context {
             icons: IconRegistry::with_builtin_icons(),
             retained_display_list: None,
             last_paint_theme_revision: None,
+            tree_dump: TreeDumpController::from_env(),
         }
+    }
+
+    pub fn maybe_dump_tree(&mut self, stage: RenderTraceStage, phase: TreeDumpPhase, reason: &str) {
+        self.tree_dump
+            .maybe_dump(&self.tree, TreeDumpPoint::new(stage, phase), reason);
+    }
+
+    pub fn dump_tree_now(
+        &self,
+        stage: RenderTraceStage,
+        phase: TreeDumpPhase,
+        reason: &str,
+        options: TreeSnapshotOptions,
+    ) {
+        let snapshot = self.tree.debug_snapshot(options);
+        tree_dump::emit_snapshot(&snapshot, TreeDumpPoint::new(stage, phase), reason);
     }
 
     /// Legacy/prototype full-tree `Desc` update.
@@ -170,6 +190,11 @@ impl Context {
         root_rect: Rect,
         measurer: &mut TextMeasurer,
     ) -> LayoutFlushStats {
+        self.maybe_dump_tree(
+            RenderTraceStage::LayoutFlush,
+            TreeDumpPhase::Before,
+            "before layout dirty flush",
+        );
         let dirty = self.tree.take_layout_dirty();
         let dirty_boundaries = dirty.boundaries.len();
         let dirty_text_nodes = dirty.text_nodes.len();
@@ -264,6 +289,11 @@ impl Context {
                 stats: stats.clone(),
             },
         );
+        self.maybe_dump_tree(
+            RenderTraceStage::LayoutFlush,
+            TreeDumpPhase::After,
+            "after layout dirty flush",
+        );
         stats
     }
 
@@ -288,7 +318,6 @@ impl Context {
         } else {
             let root = self.tree.node_by_str("root").expect("root");
             let canvas = self.tree.node_by_str("canvas_root").expect("canvas root");
-            let grid = self.tree.node_by_str("canvas_grid").expect("canvas grid");
             let panel = self.tree.node_by_str("panel_root").expect("panel root");
             let overlay = self
                 .tree
@@ -301,10 +330,6 @@ impl Context {
                 },
                 TreeMutation::SetRect {
                     node: canvas,
-                    rect: viewport,
-                },
-                TreeMutation::SetRect {
-                    node: grid,
                     rect: viewport,
                 },
                 TreeMutation::SetRect {
@@ -416,6 +441,12 @@ impl Context {
             self.last_paint_theme_revision = Some(theme.revision);
         }
 
+        self.maybe_dump_tree(
+            RenderTraceStage::PaintFlush,
+            TreeDumpPhase::Before,
+            "before paint dirty flush",
+        );
+
         let root_boundary = self
             .tree
             .nearest_repaint_boundary(root)
@@ -424,8 +455,10 @@ impl Context {
         let dirty_boundaries = dirty.boundaries.len();
         let dirty_paint_order = dirty.paint_order.len();
         let dirty_composite = dirty.composite.len();
+        let dirty_placement = dirty.placement.len();
         let mut rebuild = dirty.boundaries;
         rebuild.extend(dirty.paint_order);
+        rebuild.extend(dirty.placement);
 
         if self.retained_display_list.is_none() {
             rebuild.extend(self.tree.repaint_boundaries_in_subtree(root));
@@ -452,6 +485,7 @@ impl Context {
                 dirty_boundaries,
                 dirty_paint_order,
                 dirty_composite,
+                dirty_placement,
                 rebuild_boundaries: rebuild.len(),
                 retained_display_list_present: self.retained_display_list.is_some(),
             },
@@ -537,7 +571,26 @@ impl Context {
     }
 
     pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        router::handle_event(self, event)
+        let focused_before = self.focused_widget_id().map(str::to_string);
+        let output = router::handle_event(self, event);
+        if matches!(
+            event,
+            AppEvent::MousePress { .. }
+                | AppEvent::KeyPress { .. }
+                | AppEvent::TextInput { .. }
+                | AppEvent::ImePreedit { .. }
+        ) {
+            tracing::trace!(
+                target: "nodeimg::render_trace::input",
+                ?event,
+                focused_before = focused_before.as_deref(),
+                focused_after = self.focused_widget_id(),
+                events = output.events.len(),
+                consumed = output.consumed,
+                "gui input event handled"
+            );
+        }
+        output
     }
 
     pub fn animate(&mut self, id: impl Into<String>) -> AnimationBuilder<'_> {

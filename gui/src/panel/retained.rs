@@ -9,12 +9,12 @@ use crate::template::{
 };
 use crate::theme::Theme;
 use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position, Size, TextLayout,
-    TextOverflow, TextureHandle,
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Overflow, Position,
+    RelayoutBoundaryReason, Size, TextLayout, TextOverflow, TextureHandle,
 };
 use crate::tree::{
-    NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodePaintMeta, NodeProps, RuntimeSlots,
-    StableId, Tree, TreeNode,
+    NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
+    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, Tree, TreeNode,
 };
 
 const REVISION: TemplateRevision = TemplateRevision::new(2);
@@ -164,7 +164,10 @@ fn mount_panel(
                 shadow: None,
             }),
         )
-        .with_semantic_role("Panel"),
+        .with_semantic_role("Panel")
+        .with_layout_boundary(RelayoutBoundaryReason::Panel)
+        .with_paint_boundary(RepaintBoundaryReason::PanelFrame)
+        .with_rect_move_invalidation(RectMoveInvalidation::Layout),
     )?;
 
     if data.config.titlebar_visible {
@@ -467,6 +470,7 @@ fn container(id: String, style: BoxStyle, decoration: Option<Decoration>) -> Tre
         local_runtime: NodeLocalRuntime::default(),
         layout_meta: NodeLayoutMeta::default(),
         paint_meta: NodePaintMeta::default(),
+        mutation_meta: NodeMutationMeta::default(),
         runtime_slots: RuntimeSlots::default(),
     }
 }
@@ -483,6 +487,7 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
         local_runtime: NodeLocalRuntime::default(),
         layout_meta: NodeLayoutMeta::default(),
         paint_meta: NodePaintMeta::default(),
+        mutation_meta: NodeMutationMeta::default(),
         runtime_slots: RuntimeSlots::default(),
     }
 }
@@ -490,6 +495,9 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 trait TreeNodeExt {
     fn with_semantic_role(self, role: &'static str) -> Self;
     fn with_owner(self, owner: String) -> Self;
+    fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
+    fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
+    fn with_rect_move_invalidation(self, invalidation: RectMoveInvalidation) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
@@ -500,6 +508,21 @@ impl TreeNodeExt for TreeNode {
 
     fn with_owner(mut self, owner: String) -> Self {
         self.props.owner_id = Some(Cow::Owned(owner));
+        self
+    }
+
+    fn with_layout_boundary(mut self, reason: RelayoutBoundaryReason) -> Self {
+        self.layout_meta.set_boundary(reason);
+        self
+    }
+
+    fn with_paint_boundary(mut self, reason: RepaintBoundaryReason) -> Self {
+        self.paint_meta.set_boundary(reason);
+        self
+    }
+
+    fn with_rect_move_invalidation(mut self, invalidation: RectMoveInvalidation) -> Self {
+        self.mutation_meta.rect_move = invalidation;
         self
     }
 }

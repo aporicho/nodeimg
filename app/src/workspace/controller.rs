@@ -130,7 +130,8 @@ impl WorkspaceController {
                 &control_intrinsics,
                 theme,
             );
-            let sizing_changed = gui.apply_canvas_node_sizing(owner_id, request);
+            let sizing_changed = request.missing_auto_height_intrinsics == 0
+                && gui.apply_canvas_node_sizing(owner_id, request);
             let height_delta = request.target_height - view.state.layout.rect.h;
             if sizing_changed || height_delta.abs() > 0.5 {
                 tracing::trace!(
@@ -143,6 +144,7 @@ impl WorkspaceController {
                     target_w = request.target_width,
                     target_h = request.target_height,
                     height_delta,
+                    missing_auto_height_intrinsics = request.missing_auto_height_intrinsics,
                     sizing_changed,
                     "apply canvas node sizing request while building render views"
                 );
@@ -154,6 +156,7 @@ impl WorkspaceController {
                     min_h = request.min_height,
                     target_w = request.target_width,
                     target_h = request.target_height,
+                    missing_auto_height_intrinsics = request.missing_auto_height_intrinsics,
                     sizing_changed,
                     "apply canvas node sizing request while building render views"
                 );
@@ -656,6 +659,28 @@ mod tests {
         assert!(views
             .iter()
             .any(|view| view.state.owner_id == showcase_node::TEXT_AREA_OWNER_ID));
+    }
+
+    #[test]
+    fn canvas_node_render_views_preserve_text_area_height_before_intrinsic_sync() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+        let theme = light_theme();
+        let identity = showcase_node::text_area_node_identity();
+
+        let views = controller.canvas_node_render_views(&mut gui, &theme);
+        let text_area_view = views
+            .iter()
+            .find(|view| view.state.owner_id == showcase_node::TEXT_AREA_OWNER_ID)
+            .expect("text area showcase view");
+        let runtime_layout = gui
+            .export_canvas_node_layouts()
+            .into_iter()
+            .find(|layout| layout.owner_id == showcase_node::TEXT_AREA_OWNER_ID)
+            .expect("text area runtime layout");
+
+        assert_eq!(text_area_view.state.layout.rect.h, identity.default_rect.h);
+        assert_eq!(runtime_layout.rect.h, identity.default_rect.h);
     }
 
     #[test]

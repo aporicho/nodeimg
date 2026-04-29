@@ -67,6 +67,7 @@ pub(crate) fn build_paint_fragment(
         x: node.rect.x,
         y: node.rect.y,
     };
+    let boundary_to_screen = Affine2D::translation(node.rect.x, node.rect.y);
     let local_bounds = Rect {
         x: 0.0,
         y: 0.0,
@@ -81,7 +82,7 @@ pub(crate) fn build_paint_fragment(
     let mut child_boundaries = Vec::new();
     let mut traversal = PaintTraversal::Boundary {
         root: boundary.0,
-        origin,
+        boundary_to_screen,
         child_boundaries: &mut child_boundaries,
     };
     paint_to_target(
@@ -127,7 +128,7 @@ pub(crate) enum PaintTraversal<'a> {
     Full,
     Boundary {
         root: NodeId,
-        origin: Point,
+        boundary_to_screen: Affine2D,
         child_boundaries: &'a mut Vec<FragmentChildRef>,
     },
 }
@@ -168,17 +169,20 @@ fn paint_node(
 
     if let PaintTraversal::Boundary {
         root,
-        origin,
+        boundary_to_screen,
         child_boundaries,
+        ..
     } = traversal
     {
         if node_id != *root && node.paint_meta.boundary.is_some() {
+            let node_space = current_space.node_space(node.rect, node.style.transform);
+            let local_transform = boundary_to_screen
+                .inverse()
+                .map(|inverse| Affine2D::compose(inverse, node_space.local_to_screen))
+                .unwrap_or_else(|| Affine2D::translation(node.rect.x, node.rect.y));
             child_boundaries.push(FragmentChildRef {
                 boundary: RepaintBoundaryId(node_id),
-                local_transform: Affine2D::translation(
-                    node.rect.x - origin.x,
-                    node.rect.y - origin.y,
-                ),
+                local_transform,
                 clip_stack: Vec::new(),
                 z_index: node.style.z_index,
             });
@@ -621,6 +625,7 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }
@@ -637,6 +642,7 @@ mod tests {
             local_runtime: NodeLocalRuntime::default(),
             layout_meta: Default::default(),
             paint_meta: Default::default(),
+            mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
         }
     }
@@ -800,6 +806,42 @@ mod tests {
                 .local_transform
                 .transform_point(point(0.0, 0.0)),
             point(10.0, 20.0)
+        );
+    }
+
+    #[test]
+    fn fragment_child_boundary_ref_includes_ancestor_transform() {
+        let stroke = Stroke::new(2.0, Color::WHITE);
+        let mut tree = Tree::new();
+        let child = tree.insert(leaf_node(
+            "child",
+            LeafKind::Line {
+                start: point(1.0, 2.0),
+                end: point(3.0, 4.0),
+                stroke,
+            },
+            rect(20.0, 30.0, 20.0, 20.0),
+        ));
+        tree.set_repaint_boundary(child, RepaintBoundaryReason::CanvasNodeCard);
+        let mut canvas = container_node("canvas", rect(10.0, 10.0, 100.0, 80.0), vec![child]);
+        canvas.style.transform = Some(TransformSpec::translate_scale([100.0, 50.0], 2.0));
+        let canvas = tree.insert(canvas);
+        tree.set_root(canvas);
+
+        let fragment = build_paint_fragment(
+            &tree,
+            RepaintBoundaryId(canvas),
+            paint_cx(&Theme::default()),
+            |_, _| (0.0, 0.0),
+        )
+        .expect("fragment");
+
+        assert_eq!(fragment.child_boundaries.len(), 1);
+        assert_eq!(
+            fragment.child_boundaries[0]
+                .local_transform
+                .transform_point(point(0.0, 0.0)),
+            point(140.0, 110.0)
         );
     }
 

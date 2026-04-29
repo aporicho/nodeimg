@@ -1,5 +1,6 @@
 use super::dirty::DirtyFlags;
 use super::layout::{BoxStyle, Decoration, LeafKind, Position, Size};
+use super::rect_invalidation::rect_invalidation;
 use super::{NodeId, NodeKind, Tree};
 use crate::diagnostics::render_trace::{self, RenderTraceStage, TextPayloadSummary};
 use crate::geometry::TransformSpec;
@@ -135,15 +136,21 @@ impl Tree {
             }
             TreeMutation::SetRect { node, rect } => {
                 let old = self.get(node).ok_or(MutationError::MissingNode(node))?.rect;
+                let invalidation = rect_invalidation(self, node, old, rect);
+                let flags = invalidation.flags;
+                if flags.is_empty() {
+                    return Ok(Invalidation { node, flags });
+                }
                 if let Some(target) = self.get_mut(node) {
                     target.rect = rect;
                     target.layout_meta.bump_explicit_rect();
-                    if old.w != rect.w || old.h != rect.h {
+                    if invalidation.size_changed {
                         target.layout_meta.bump_style();
+                        target.paint_meta.bump_visual();
+                    } else if invalidation.position_changed {
                         target.paint_meta.bump_visual();
                     }
                 }
-                let flags = rect_dirty_flags(old, rect);
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
             }
@@ -161,17 +168,27 @@ impl Tree {
                         operation: "SetText",
                     });
                 };
-                if *content != value {
-                    *content = value;
-                    target.layout_meta.bump_text();
-                    target.paint_meta.bump_text();
+                if *content == value {
+                    return Ok(Invalidation {
+                        node,
+                        flags: DirtyFlags::NONE,
+                    });
                 }
+                *content = value;
+                target.layout_meta.bump_text();
+                target.paint_meta.bump_text();
                 let flags = DirtyFlags::TEXT_LAYOUT | DirtyFlags::PAINT;
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
             }
             TreeMutation::SetVisible { node, visible } => {
                 let target = self.get_mut(node).ok_or(MutationError::MissingNode(node))?;
+                if target.local_runtime.visible == visible {
+                    return Ok(Invalidation {
+                        node,
+                        flags: DirtyFlags::NONE,
+                    });
+                }
                 target.local_runtime.visible = visible;
                 let flags = DirtyFlags::HIT | DirtyFlags::PAINT;
                 self.mark_dirty(node, flags);
@@ -179,8 +196,13 @@ impl Tree {
             }
             TreeMutation::SetZIndex { node, z_index } => {
                 let target = self.get_mut(node).ok_or(MutationError::MissingNode(node))?;
+                if target.style.z_index == z_index {
+                    return Ok(Invalidation {
+                        node,
+                        flags: DirtyFlags::NONE,
+                    });
+                }
                 target.style.z_index = z_index;
-                target.layout_meta.bump_style();
                 target.paint_meta.bump_paint_order();
                 let flags = DirtyFlags::PAINT_ORDER | DirtyFlags::HIT | DirtyFlags::PAINT;
                 self.mark_dirty(node, flags);
@@ -202,6 +224,14 @@ impl Tree {
                         operation: "SetConnection",
                     });
                 };
+                if target_from.as_ref() == from_port.as_str()
+                    && target_to.as_ref() == to_port.as_str()
+                {
+                    return Ok(Invalidation {
+                        node,
+                        flags: DirtyFlags::NONE,
+                    });
+                }
                 *target_from = std::borrow::Cow::Owned(from_port);
                 *target_to = std::borrow::Cow::Owned(to_port);
                 target.paint_meta.bump_visual();
@@ -225,6 +255,12 @@ impl Tree {
                         operation: "SetPendingConnection",
                     });
                 };
+                if target_from.as_ref() == from_port.as_str() && *target_cursor == cursor_canvas {
+                    return Ok(Invalidation {
+                        node,
+                        flags: DirtyFlags::NONE,
+                    });
+                }
                 *target_from = std::borrow::Cow::Owned(from_port);
                 *target_cursor = cursor_canvas;
                 target.paint_meta.bump_visual();
@@ -341,63 +377,63 @@ fn log_mutation_trace(
     );
 }
 
-fn rect_dirty_flags(old: Rect, new: Rect) -> DirtyFlags {
-    let size_changed = old.w != new.w || old.h != new.h;
-    let position_changed = old.x != new.x || old.y != new.y;
-    if size_changed {
-        DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT
-    } else if position_changed {
-        DirtyFlags::COMPOSITE | DirtyFlags::HIT
-    } else {
-        DirtyFlags::NONE
-    }
-}
-
 fn apply_style_patch(node: &mut super::TreeNode, patch: StylePatch) -> DirtyFlags {
     if let Some(style) = patch.replace_box_style {
+        if node.style == style {
+            return DirtyFlags::NONE;
+        }
         node.style = style;
         node.layout_meta.bump_style();
         node.paint_meta.bump_visual();
         return DirtyFlags::STYLE | DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
     }
 
-    let mut flags = DirtyFlags::STYLE;
+    let mut flags = DirtyFlags::NONE;
 
     if let Some(position) = patch.position {
-        node.style.position = position;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        if node.style.position != position {
+            node.style.position = position;
+            node.layout_meta.bump_style();
+            node.paint_meta.bump_visual();
+            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        }
     }
     if let Some(width) = patch.width {
-        node.style.width = width;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        if node.style.width != width {
+            node.style.width = width;
+            node.layout_meta.bump_style();
+            node.paint_meta.bump_visual();
+            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        }
     }
     if let Some(height) = patch.height {
-        node.style.height = height;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        if node.style.height != height {
+            node.style.height = height;
+            node.layout_meta.bump_style();
+            node.paint_meta.bump_visual();
+            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
+        }
     }
     if let Some(z_index) = patch.z_index {
-        node.style.z_index = z_index;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_paint_order();
-        flags |= DirtyFlags::PAINT_ORDER | DirtyFlags::HIT | DirtyFlags::PAINT;
+        if node.style.z_index != z_index {
+            node.style.z_index = z_index;
+            node.paint_meta.bump_paint_order();
+            flags |= DirtyFlags::PAINT_ORDER | DirtyFlags::HIT | DirtyFlags::PAINT;
+        }
     }
     if let Some(transform) = patch.transform {
-        node.style.transform = transform;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        flags |= DirtyFlags::COMPOSITE | DirtyFlags::HIT;
+        if node.style.transform != transform {
+            node.style.transform = transform;
+            node.paint_meta.bump_visual();
+            flags |= DirtyFlags::PAINT | DirtyFlags::HIT;
+        }
     }
     if let Some(decoration) = patch.decoration {
-        node.decoration = decoration;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        flags |= DirtyFlags::PAINT;
+        if node.decoration != decoration {
+            node.decoration = decoration;
+            node.paint_meta.bump_visual();
+            flags |= DirtyFlags::PAINT;
+        }
     }
 
     flags
