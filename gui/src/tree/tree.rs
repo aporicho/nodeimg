@@ -1826,7 +1826,7 @@ mod tests {
     use super::*;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
-    use crate::tree::layout::{BoxStyle, LeafKind, Size, TextLayout};
+    use crate::tree::layout::{BoxStyle, LeafKind, RelayoutBoundaryReason, Size, TextLayout};
     use crate::tree::{
         reconcile, Desc, DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps,
         StylePatch, TreeDumpLevel, TreeMutation, TreeSnapshotOptions,
@@ -2387,6 +2387,49 @@ mod tests {
         assert!(invalidation.flags.contains(DirtyFlags::HIT));
         assert!(!invalidation.flags.contains(DirtyFlags::LAYOUT));
         let dirty = tree.take_paint_dirty();
+        assert!(dirty.placement.contains(&RepaintBoundaryId(root)));
+    }
+
+    #[test]
+    fn tree_mutation_set_rect_layout_boundary_move_marks_layout_and_placement() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut panel_node = container_node("panel");
+        panel_node
+            .layout_meta
+            .set_boundary(RelayoutBoundaryReason::Panel);
+        panel_node
+            .paint_meta
+            .set_boundary(RepaintBoundaryReason::PanelFrame);
+        panel_node.mutation_meta.rect_move =
+            crate::tree::RectMoveInvalidation::LayoutAndBoundaryPlacement;
+        let panel = tree.insert_checked(panel_node).expect("panel");
+        tree.append_child(root, panel);
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: panel,
+                    rect: Rect {
+                        x: 24.0,
+                        y: 18.0,
+                        w: 0.0,
+                        h: 0.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::LAYOUT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT_PLACEMENT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        assert!(tree.take_layout_dirty().boundaries.contains(&panel));
+        let dirty = tree.take_paint_dirty();
+        assert!(dirty.boundaries.contains(&RepaintBoundaryId(panel)));
         assert!(dirty.placement.contains(&RepaintBoundaryId(root)));
     }
 

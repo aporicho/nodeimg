@@ -9,4 +9,5 @@ pub enum RectMoveInvalidation {
     Layout,
     Repaint,
     BoundaryPlacement,
+    LayoutAndBoundaryPlacement,
 }

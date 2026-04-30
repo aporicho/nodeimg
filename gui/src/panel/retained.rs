@@ -167,7 +167,7 @@ fn mount_panel(
         .with_semantic_role("Panel")
         .with_layout_boundary(RelayoutBoundaryReason::Panel)
         .with_paint_boundary(RepaintBoundaryReason::PanelFrame)
-        .with_rect_move_invalidation(RectMoveInvalidation::Layout),
+        .with_rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),
     )?;
 
     if data.config.titlebar_visible {

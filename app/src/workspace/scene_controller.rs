@@ -951,7 +951,7 @@ mod tests {
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
-    use gui::output::{GuiEvent, WidgetEvent};
+    use gui::output::{GuiEvent, PanelEvent, WidgetEvent};
     use gui::renderer::TextMeasurer;
     use gui::shell::{AppEvent, Key, Modifiers, MouseButton};
     use gui::theme::light_theme;
@@ -1199,6 +1199,109 @@ mod tests {
         assert!(gui.node_exists("canvas_grid"));
         assert!(gui.node_exists("canvas_node::diagnostic_node::retained_clean_room"));
         assert!(gui.node_exists("toolbar"));
+        assert!(!gui.node_exists("preview"));
+        assert!(!gui.node_exists("engine"));
+        assert!(!gui.node_exists("node_palette"));
+    }
+
+    #[test]
+    fn clean_room_panel_drag_moves_toolbar_root_and_hit_targets() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let identity = diagnostic_scene::diagnostic_node_identity();
+        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
+            owner_id: identity.owner_id.clone(),
+            rect: identity.default_rect,
+            z_index: 0,
+            collapsed: false,
+            user_min_height: None,
+        });
+        let nodes = vec![node];
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("initial clean room sync");
+        gui.flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let toolbar = gui.node_id_by_name("toolbar").expect("toolbar");
+        let titlebar = gui
+            .node_id_by_name("toolbar::titlebar")
+            .expect("toolbar titlebar");
+        let before_root = gui.node_rect("toolbar").expect("toolbar rect");
+        let before_titlebar = gui
+            .node_rect("toolbar::titlebar")
+            .expect("toolbar titlebar rect");
+        let drag_start_x = before_titlebar.x + 12.0;
+        let drag_start_y = before_titlebar.y + 10.0;
+        let dx = 260.0;
+        let dy = 120.0;
+
+        assert!(gui.handle_panel_event(&PanelEvent::DragStart {
+            id: "toolbar".to_string(),
+            x: drag_start_x,
+            y: drag_start_y,
+        }));
+        assert!(gui.handle_panel_event(&PanelEvent::DragMove {
+            id: "toolbar".to_string(),
+            x: drag_start_x + dx,
+            y: drag_start_y + dy,
+        }));
+        assert!(gui.handle_panel_event(&PanelEvent::DragEnd {
+            id: "toolbar".to_string(),
+            x: drag_start_x + dx,
+            y: drag_start_y + dy,
+        }));
+
+        let sync = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("drag sync");
+        gui.flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let after_root = gui.node_rect("toolbar").expect("moved toolbar rect");
+        let after_titlebar = gui
+            .node_rect("toolbar::titlebar")
+            .expect("moved toolbar titlebar rect");
+
+        assert!(sync.mutations_queued > 0);
+        assert_eq!(after_root.x, before_root.x + dx);
+        assert_eq!(after_root.y, before_root.y + dy);
+        assert_eq!(after_titlebar.x, before_titlebar.x + dx);
+        assert_eq!(after_titlebar.y, before_titlebar.y + dy);
+        assert!(gui
+            .hit_test(after_titlebar.x + 12.0, after_titlebar.y + 10.0)
+            .contains(titlebar));
+        assert!(!gui
+            .hit_test(before_titlebar.x + 12.0, before_titlebar.y + 10.0)
+            .contains(toolbar));
         assert!(!gui.node_exists("preview"));
         assert!(!gui.node_exists("engine"));
         assert!(!gui.node_exists("node_palette"));

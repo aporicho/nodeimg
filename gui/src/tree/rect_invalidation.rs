@@ -31,6 +31,12 @@ pub(crate) fn rect_invalidation(
             RectMoveInvalidation::BoundaryPlacement => {
                 DirtyFlags::PAINT_PLACEMENT | DirtyFlags::HIT
             }
+            RectMoveInvalidation::LayoutAndBoundaryPlacement => {
+                DirtyFlags::LAYOUT
+                    | DirtyFlags::HIT
+                    | DirtyFlags::PAINT
+                    | DirtyFlags::PAINT_PLACEMENT
+            }
         }
     } else {
         DirtyFlags::NONE
