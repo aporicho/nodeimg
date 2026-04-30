@@ -34,6 +34,10 @@ impl WorkspaceSceneState {
         self.panels.remove(id);
     }
 
+    pub(crate) fn panel_ids(&self) -> impl Iterator<Item = &str> {
+        self.panels.keys().map(String::as_str)
+    }
+
     pub(crate) fn palette_root_rect(&self) -> Option<Rect> {
         self.node_palette.root_rect
     }

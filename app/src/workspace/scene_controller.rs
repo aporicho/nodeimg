@@ -26,6 +26,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
 use crate::panels::EnginePanelState;
 
+use super::composition::WorkspacePanelComposition;
+#[cfg(test)]
+use super::composition::WorkspaceUiComposition;
 use super::node_palette::{node_palette_item_id, NodePaletteState};
 use super::scene_state::{PanelAppliedState, WorkspaceSceneState};
 
@@ -64,6 +67,48 @@ pub(crate) struct WorkspaceSceneInput<'a> {
     pub(crate) theme: &'a Theme,
     pub(crate) preview_image: TextureHandle,
     pub(crate) engine_panel: &'a EnginePanelState,
+    pub(crate) features: WorkspaceSceneFeatures,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct WorkspaceSceneFeatures {
+    pub(crate) composition: &'static str,
+    pub(crate) panels: &'static [WorkspacePanelComposition],
+    pub(crate) node_palette_enabled: bool,
+}
+
+impl WorkspaceSceneFeatures {
+    pub(crate) fn new(
+        composition: &'static str,
+        panels: &'static [WorkspacePanelComposition],
+        node_palette_enabled: bool,
+    ) -> Self {
+        Self {
+            composition,
+            panels,
+            node_palette_enabled,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn full() -> Self {
+        let composition = WorkspaceUiComposition::full();
+        Self::new(
+            composition.name(),
+            composition.panels(),
+            composition.node_palette_enabled(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clean_room() -> Self {
+        let composition = WorkspaceUiComposition::clean_room();
+        Self::new(
+            composition.name(),
+            composition.panels(),
+            composition.node_palette_enabled(),
+        )
+    }
 }
 
 impl WorkspaceSceneController {
@@ -80,8 +125,12 @@ impl WorkspaceSceneController {
         }
 
         let mut stats = SceneSyncStats::default();
-        stats.mutations_effective +=
-            self.ensure_node_palette_root(gui, roots.overlay_root, input.viewport)?;
+        if input.features.node_palette_enabled {
+            stats.mutations_effective +=
+                self.ensure_node_palette_root(gui, roots.overlay_root, input.viewport)?;
+        } else {
+            self.node_palette = None;
+        }
         let mut mutations = Vec::new();
         let grid_rect = canvas_grid_rect(input.viewport, input.camera);
         if self.canvas.set_grid_rect(grid_rect) {
@@ -110,12 +159,17 @@ impl WorkspaceSceneController {
         self.sync_panels(
             roots.panel_root,
             gui,
+            input.features.panels,
             input.theme,
             input.preview_image,
             input.engine_panel,
             &mut mutations,
         );
-        self.sync_node_palette(input.viewport, gui, &mut mutations);
+        if input.features.node_palette_enabled {
+            self.sync_node_palette(input.viewport, gui, &mut mutations);
+        } else {
+            self.sync_node_palette_disabled(gui, &mut mutations);
+        }
 
         stats.mutations_queued += mutations.len();
         let invalidations = gui.apply_mutations(mutations)?;
@@ -127,6 +181,9 @@ impl WorkspaceSceneController {
             RenderTraceStage::SceneSync,
             SceneSyncTraceSummary {
                 viewport: RectSummary::from(input.viewport),
+                composition: input.features.composition,
+                panels: input.features.panels,
+                node_palette_enabled: input.features.node_palette_enabled,
                 desired_nodes: input.canvas_nodes.len(),
                 desired_connections: input.canvas_connections.len(),
                 pending_connection: input.pending_connection.is_some(),
@@ -157,12 +214,41 @@ impl WorkspaceSceneController {
         &mut self,
         parent: usize,
         gui: &mut Context,
+        desired_panels: &[WorkspacePanelComposition],
         theme: &Theme,
         preview_image: TextureHandle,
         engine: &EnginePanelState,
         mutations: &mut Vec<TreeMutation>,
     ) {
-        for panel in retained_panels(preview_image, engine) {
+        let desired = desired_panels.iter().copied().collect::<BTreeSet<_>>();
+        let panels = retained_panels(preview_image, engine);
+        let desired_ids = panels
+            .iter()
+            .filter(|panel| desired.contains(&panel.kind))
+            .map(|panel| panel.config.id.as_str().to_string())
+            .collect::<BTreeSet<_>>();
+        let mut stale_ids = panels
+            .iter()
+            .filter(|panel| !desired.contains(&panel.kind))
+            .map(|panel| panel.config.id.as_str().to_string())
+            .collect::<BTreeSet<_>>();
+        stale_ids.extend(
+            self.workspace_scene
+                .panel_ids()
+                .filter(|id| !desired_ids.contains(*id))
+                .map(str::to_string),
+        );
+        for id in stale_ids {
+            if let Some(root) = gui.node_id_by_name(&id) {
+                mutations.push(TreeMutation::Unmount { node: root });
+            }
+            self.workspace_scene.remove_panel(&id);
+        }
+
+        for panel in panels {
+            if !desired.contains(&panel.kind) {
+                continue;
+            }
             let Some(runtime) = gui.ensure_panel_runtime(&panel.config) else {
                 continue;
             };
@@ -597,12 +683,23 @@ impl WorkspaceSceneController {
             self.workspace_scene.set_palette_child_label(id, label);
         }
     }
+
+    fn sync_node_palette_disabled(&mut self, gui: &Context, mutations: &mut Vec<TreeMutation>) {
+        self.node_palette = None;
+        if let Some(root) = gui.node_id_by_name("node_palette") {
+            mutations.push(TreeMutation::Unmount { node: root });
+        }
+        self.workspace_scene.clear_palette();
+    }
 }
 
 #[allow(dead_code)]
 #[derive(Debug)]
 struct SceneSyncTraceSummary {
     viewport: RectSummary,
+    composition: &'static str,
+    panels: &'static [WorkspacePanelComposition],
+    node_palette_enabled: bool,
     desired_nodes: usize,
     desired_connections: usize,
     pending_connection: bool,
@@ -754,6 +851,7 @@ fn panel_applied_state(
 }
 
 struct RetainedPanelSpec {
+    kind: WorkspacePanelComposition,
     config: PanelConfig,
     content: PanelContentTemplate,
 }
@@ -764,6 +862,7 @@ fn retained_panels(
 ) -> Vec<RetainedPanelSpec> {
     vec![
         RetainedPanelSpec {
+            kind: WorkspacePanelComposition::Toolbar,
             config: PanelConfig {
                 id: PanelId::new("toolbar"),
                 title: std::borrow::Cow::Borrowed("Toolbar"),
@@ -786,6 +885,7 @@ fn retained_panels(
             },
         },
         RetainedPanelSpec {
+            kind: WorkspacePanelComposition::Preview,
             config: PanelConfig {
                 id: PanelId::new("preview"),
                 title: std::borrow::Cow::Borrowed("Preview"),
@@ -809,6 +909,7 @@ fn retained_panels(
             },
         },
         RetainedPanelSpec {
+            kind: WorkspacePanelComposition::Engine,
             config: PanelConfig {
                 id: PanelId::new("engine"),
                 title: std::borrow::Cow::Borrowed("Engine"),
@@ -846,6 +947,7 @@ fn retained_panels(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::diagnostic_scene;
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
@@ -891,6 +993,7 @@ mod tests {
                     theme: &light_theme(),
                     preview_image: TextureHandle(1),
                     engine_panel: &empty_engine_panel(),
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("sync");
@@ -921,6 +1024,7 @@ mod tests {
                     theme: &light_theme(),
                     preview_image: TextureHandle(1),
                     engine_panel: &empty_engine_panel(),
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("open sync");
@@ -938,6 +1042,7 @@ mod tests {
                     theme: &light_theme(),
                     preview_image: TextureHandle(1),
                     engine_panel: &empty_engine_panel(),
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("close sync");
@@ -966,6 +1071,7 @@ mod tests {
                     theme: &theme,
                     preview_image: TextureHandle(1),
                     engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("first sync");
@@ -981,6 +1087,7 @@ mod tests {
                     theme: &theme,
                     preview_image: TextureHandle(1),
                     engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("second sync");
@@ -1011,6 +1118,7 @@ mod tests {
                     theme: &theme,
                     preview_image: TextureHandle(1),
                     engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("first sync");
@@ -1028,11 +1136,156 @@ mod tests {
                     theme: &theme,
                     preview_image: TextureHandle(1),
                     engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("second sync");
 
         assert_eq!(gui.node_rect("canvas_grid"), Some(expected_grid));
+    }
+
+    #[test]
+    fn clean_room_scene_mounts_grid_toolbar_and_one_node() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let identity = diagnostic_scene::diagnostic_node_identity();
+        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
+            owner_id: identity.owner_id.clone(),
+            rect: identity.default_rect,
+            z_index: 0,
+            collapsed: false,
+            user_min_height: None,
+        });
+        let nodes = vec![node];
+
+        let first = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("first clean room sync");
+        let second = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("second clean room sync");
+
+        assert!(first.mutations_queued > 0);
+        assert_eq!(second.mutations_queued, 0);
+        assert!(gui.node_exists("canvas_grid"));
+        assert!(gui.node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(gui.node_exists("toolbar"));
+        assert!(!gui.node_exists("preview"));
+        assert!(!gui.node_exists("engine"));
+        assert!(!gui.node_exists("node_palette"));
+    }
+
+    #[test]
+    fn switch_full_to_clean_room_unmounts_stale_scene_elements() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let palette = NodePaletteState {
+            items: vec![NodePaletteItem {
+                type_id: "image_gen".to_string(),
+                name: "Image Generator".to_string(),
+                category: "Generators".to_string(),
+                source: "built-in".to_string(),
+            }],
+        };
+        let full_identity = showcase_node::solo_node_identity();
+        let full_node = showcase_node::showcase_render_view_for_layout_with_text(
+            CanvasNodeLayout {
+                owner_id: full_identity.owner_id.clone(),
+                rect: full_identity.default_rect,
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            },
+            "unused",
+        )
+        .expect("showcase node");
+        let full_nodes = vec![full_node];
+        controller.open_node_palette(40.0, 50.0, palette);
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &full_nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
+                },
+            )
+            .expect("full sync");
+        assert!(gui.node_exists("canvas_node::showcase_node::solo_control"));
+        assert!(gui.node_exists("toolbar"));
+        assert!(gui.node_exists("node_palette"));
+
+        let clean_identity = diagnostic_scene::diagnostic_node_identity();
+        let clean_node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
+            owner_id: clean_identity.owner_id.clone(),
+            rect: clean_identity.default_rect,
+            z_index: 0,
+            collapsed: false,
+            user_min_height: None,
+        });
+        let clean_nodes = vec![clean_node];
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &clean_nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("clean room sync");
+
+        assert!(gui.node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(!gui.node_exists("canvas_node::showcase_node::solo_control"));
+        assert!(gui.node_exists("toolbar"));
+        assert!(!gui.node_exists("preview"));
+        assert!(!gui.node_exists("engine"));
+        assert!(!gui.node_exists("node_palette"));
+        assert!(!controller.node_palette_open());
     }
 
     #[test]
@@ -1072,6 +1325,7 @@ mod tests {
                     theme: &theme,
                     preview_image: TextureHandle(1),
                     engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
                 },
             )
             .expect("sync");

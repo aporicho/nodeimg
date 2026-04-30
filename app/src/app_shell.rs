@@ -1,5 +1,8 @@
+use crate::workspace::composition::WorkspaceUiComposition;
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
-use crate::workspace::scene_controller::{WorkspaceSceneController, WorkspaceSceneInput};
+use crate::workspace::scene_controller::{
+    WorkspaceSceneController, WorkspaceSceneFeatures, WorkspaceSceneInput,
+};
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
@@ -195,6 +198,7 @@ struct AppUpdateTraceSummary {
     pending_connection: bool,
     animations_active: bool,
     mode: AppMode,
+    composition: &'static str,
 }
 
 fn create_sample_texture(
@@ -265,10 +269,11 @@ impl AppShell {
         renderer: &mut Renderer,
         trace_app_update: bool,
     ) -> Vec<CanvasNodeRenderView> {
-        let canvas_nodes = self
-            .workspace
-            .canvas_node_render_views(&mut self.gui, &self.theme);
-        let canvas_connections = self.workspace.canvas_connection_views();
+        let composition = WorkspaceUiComposition::for_app_mode(self.mode);
+        let canvas_nodes =
+            self.workspace
+                .canvas_node_render_views(&mut self.gui, &self.theme, composition);
+        let canvas_connections = self.workspace.canvas_connection_views(composition);
         let engine_panel = self.workspace.engine_panel_state();
         let pending_connection = self.gui.pending_canvas_connection();
         if trace_app_update {
@@ -281,6 +286,7 @@ impl AppShell {
                     pending_connection: pending_connection.is_some(),
                     animations_active: self.gui.animations_active(),
                     mode: self.mode,
+                    composition: composition.name(),
                 },
             );
         }
@@ -295,6 +301,11 @@ impl AppShell {
                 theme: &self.theme,
                 preview_image: SAMPLE_IMAGE_HANDLE,
                 engine_panel: &engine_panel,
+                features: WorkspaceSceneFeatures::new(
+                    composition.name(),
+                    composition.panels(),
+                    composition.node_palette_enabled(),
+                ),
             },
         ) {
             tracing::warn!(

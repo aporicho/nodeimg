@@ -22,6 +22,12 @@ The same frame flows through app update, scene sync, mutation, dirty
 propagation, layout flush, text runtime sync, paint flush, display-list
 lowering, renderer prepare/dispatch, and present.
 
+`AppUpdate` and `SceneSync` summaries include the active workspace composition.
+Developer mode defaults to `clean_room`, which keeps the full retained pipeline
+but only feeds canvas grid, one diagnostic node, and the retained toolbar panel
+into scene sync. User mode uses `full`, which feeds the engine/showcase nodes,
+all panels, overlays, and connections.
+
 Logging rules:
 
 - Debug level is for stage summaries and should stay low-volume.

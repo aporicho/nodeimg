@@ -1,6 +1,8 @@
 pub(crate) mod canvas_drag;
 pub(crate) mod canvas_resize;
+pub(crate) mod composition;
 pub(crate) mod controller;
+pub(crate) mod diagnostic_scene;
 pub(crate) mod engine_adapter;
 pub(crate) mod node_palette;
 #[allow(dead_code)]
