@@ -32,6 +32,45 @@ pub use crate::overlay::{
 };
 pub use crate::tree::HitChain;
 
+#[derive(Debug, Clone)]
+pub struct PointerHitQueryResult {
+    x: f32,
+    y: f32,
+    chain: HitChain,
+    resize_hit: Option<(NodeId, ResizeEdge)>,
+}
+
+impl PointerHitQueryResult {
+    fn new(x: f32, y: f32, chain: HitChain, resize_hit: Option<(NodeId, ResizeEdge)>) -> Self {
+        Self {
+            x,
+            y,
+            chain,
+            resize_hit,
+        }
+    }
+
+    pub fn x(&self) -> f32 {
+        self.x
+    }
+
+    pub fn y(&self) -> f32 {
+        self.y
+    }
+
+    pub fn matches_point(&self, x: f32, y: f32) -> bool {
+        self.x == x && self.y == y
+    }
+
+    pub fn chain(&self) -> &HitChain {
+        &self.chain
+    }
+
+    pub fn resize_hit(&self) -> Option<(NodeId, ResizeEdge)> {
+        self.resize_hit
+    }
+}
+
 /// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
     pub(crate) tree: Tree,
@@ -874,6 +913,15 @@ impl Context {
         hit.map(|hit| (hit.node_id, hit.edge))
     }
 
+    pub(crate) fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitQueryResult {
+        PointerHitQueryResult::new(
+            x,
+            y,
+            self.hit_test(x, y),
+            self.resize_hit_at_screen_point(x, y),
+        )
+    }
+
     pub(crate) fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
         let mut candidate = self.node_name(node_id)?;
 
@@ -1150,6 +1198,10 @@ impl QueryApi<'_> {
 
     pub fn resize_hit_at_screen_point(&self, x: f32, y: f32) -> Option<(NodeId, ResizeEdge)> {
         self.ctx.resize_hit_at_screen_point(x, y)
+    }
+
+    pub fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitQueryResult {
+        self.ctx.pointer_hit_at(x, y)
     }
 
     pub fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
@@ -1528,4 +1580,52 @@ fn layout_output_from_tree(tree: &Tree, node: NodeId) -> Option<LayoutOutput> {
         intrinsic_height: tree_node.rect.h,
         baseline: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree::layout::BoxStyle;
+    use crate::tree::{NodeKind, RuntimeSlots, TreeNode};
+
+    fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
+        TreeNode {
+            id: id.into(),
+            props: Default::default(),
+            style: BoxStyle {
+                hittable: true,
+                ..Default::default()
+            },
+            decoration: None,
+            kind: NodeKind::Container,
+            rect,
+            children: Vec::new(),
+            local_runtime: Default::default(),
+            layout_meta: Default::default(),
+            paint_meta: Default::default(),
+            mutation_meta: Default::default(),
+            runtime_slots: RuntimeSlots::default(),
+        }
+    }
+
+    #[test]
+    fn pointer_hit_query_result_captures_point_and_chain() {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(hittable_node(
+            "root",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(20.0, 30.0);
+
+        assert!(hit.matches_point(20.0, 30.0));
+        assert_eq!(hit.chain().leaf(), Some(root));
+        assert!(hit.resize_hit().is_none());
+    }
 }

@@ -1,5 +1,8 @@
 use crate::workspace::composition::WorkspaceUiComposition;
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
+use crate::workspace::cursor_refresh::{
+    WorkspaceCursorDirtyReason, WorkspaceCursorRefreshGate, WorkspaceCursorRefreshKey,
+};
 use crate::workspace::scene_controller::{
     WorkspaceSceneController, WorkspaceSceneFeatures, WorkspaceSceneInput,
 };
@@ -10,7 +13,9 @@ use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
-use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, HitChain, PlatformEffect};
+use gui::context::{
+    Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect, PointerHitQueryResult,
+};
 use gui::control::ResizeEdge;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
@@ -103,6 +108,7 @@ pub struct AppShell {
     workspace: WorkspaceController,
     scene_controller: WorkspaceSceneController,
     scene_sync: WorkspaceSceneSyncGate,
+    cursor_refresh: WorkspaceCursorRefreshGate,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
     mouse_y: f32,
@@ -129,6 +135,7 @@ impl App for AppShell {
             workspace: WorkspaceController::new(),
             scene_controller: WorkspaceSceneController::default(),
             scene_sync: WorkspaceSceneSyncGate::new(),
+            cursor_refresh: WorkspaceCursorRefreshGate::new(),
             last_canvas_click: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -153,8 +160,13 @@ impl App for AppShell {
         let navigation_consumed =
             !consumed && self.navigation.handle_event(&event, &mut self.camera);
         if navigation_consumed {
+            self.cursor_refresh
+                .mark(WorkspaceCursorDirtyReason::Navigation);
             if self.navigation.is_panning() {
                 ctx.cursor.set(CursorStyle::Move);
+                let viewport = viewport_rect(ctx);
+                let key = self.cursor_refresh_key(viewport);
+                self.cursor_refresh.finish_refreshed(key);
             }
             return;
         }
@@ -163,11 +175,16 @@ impl App for AppShell {
     }
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
+        let animations_were_active = self.gui.animations().active();
         self.gui.animations_mut().tick(Instant::now());
+        self.cursor_refresh.mark_if(
+            animations_were_active || self.gui.animations().active(),
+            WorkspaceCursorDirtyReason::Animation,
+        );
         let viewport = viewport_rect(ctx);
         self.sync_workspace_scene_until_controls_stable(viewport, renderer);
         ctx.apply_ime_request(self.gui.input().ime_request());
-        self.update_hover_cursor_from_chain(self.mouse_x, self.mouse_y, None, ctx);
+        self.refresh_hover_cursor_if_needed(viewport, ctx);
         if self.gui.animations().active() {
             ctx.request_redraw();
         }
@@ -358,6 +375,27 @@ impl AppShell {
             .flush_layout_dirty(viewport, renderer.text_measurer());
     }
 
+    fn cursor_refresh_key(&self, viewport: Rect) -> WorkspaceCursorRefreshKey {
+        WorkspaceCursorRefreshKey::new(
+            self.mouse_x,
+            self.mouse_y,
+            &self.camera,
+            viewport,
+            self.navigation.is_panning(),
+        )
+    }
+
+    fn mark_workspace_scene_dirty(&mut self, reason: WorkspaceSceneDirtyReason) {
+        self.scene_sync.mark(reason);
+        self.cursor_refresh.mark(WorkspaceCursorDirtyReason::Scene);
+    }
+
+    fn mark_workspace_scene_dirty_if(&mut self, changed: bool, reason: WorkspaceSceneDirtyReason) {
+        self.scene_sync.mark_if(changed, reason);
+        self.cursor_refresh
+            .mark_if(changed, WorkspaceCursorDirtyReason::Scene);
+    }
+
     fn handle_global_shortcut(&mut self, event: &AppEvent) -> bool {
         if !DEVELOPER_MODE_ENABLED || !is_developer_mode_shortcut(event) {
             return false;
@@ -366,9 +404,9 @@ impl AppShell {
         let next_mode = toggle_app_mode(self.mode, DEVELOPER_MODE_ENABLED);
         if next_mode != self.mode {
             self.mode = next_mode;
-            self.scene_sync.mark(WorkspaceSceneDirtyReason::Composition);
+            self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Composition);
             self.gui.overlay_mut().close();
-            self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
+            self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Overlay);
             tracing::info!("app mode switched to {:?}", self.mode);
         }
         true
@@ -381,23 +419,32 @@ impl AppShell {
             } if !consumed => {
                 if self.scene_controller.node_palette_open() {
                     self.scene_controller.close_overlay();
-                    self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Overlay);
                     return;
                 }
                 let cancelled = self.workspace.cancel_canvas_port_connection(&mut self.gui);
-                self.scene_sync
-                    .mark_if(cancelled, WorkspaceSceneDirtyReason::CanvasRuntime);
-                self.scene_sync
-                    .mark_if(cancelled, WorkspaceSceneDirtyReason::EngineGraph);
+                self.mark_workspace_scene_dirty_if(
+                    cancelled,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
+                self.mark_workspace_scene_dirty_if(
+                    cancelled,
+                    WorkspaceSceneDirtyReason::EngineGraph,
+                );
             }
             AppEvent::MouseMove { x, y } => {
-                let chain = self.gui.query().hit_test(x, y);
+                let hit = self.gui.query().pointer_hit_at(x, y);
                 let changed = self
                     .workspace
-                    .update_canvas_hover_from_chain(&mut self.gui, &chain);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
-                self.update_hover_cursor_from_chain(x, y, Some(&chain), ctx);
+                    .update_canvas_hover_from_chain(&mut self.gui, hit.chain());
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
+                self.update_hover_cursor_from_hit(&hit, ctx);
+                let viewport = viewport_rect(ctx);
+                let key = self.cursor_refresh_key(viewport);
+                self.cursor_refresh.finish_refreshed(key);
             }
             AppEvent::MouseRelease {
                 x,
@@ -431,14 +478,14 @@ impl AppShell {
         let mut handled_node_adds = Vec::new();
         for action in output.actions {
             let result = self.handle_gui_action(action);
-            self.scene_sync.mark_if(
+            self.mark_workspace_scene_dirty_if(
                 result.handled_node_add.is_some(),
                 WorkspaceSceneDirtyReason::EngineGraph,
             );
             if result.close_overlay {
                 self.scene_controller.close_overlay();
                 self.gui.overlay_mut().close();
-                self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
+                self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Overlay);
             }
             if let Some(type_id) = result.handled_node_add {
                 handled_node_adds.push(type_id);
@@ -450,8 +497,7 @@ impl AppShell {
                 continue;
             }
             if self.try_handle_panel_control_event(&event) {
-                self.scene_sync
-                    .mark(WorkspaceSceneDirtyReason::PanelRuntime);
+                self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::PanelRuntime);
                 continue;
             }
             self.handle_gui_event(event);
@@ -539,31 +585,28 @@ impl AppShell {
         match message {
             AppMessage::ControlClicked(id) => {
                 if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
-                    self.scene_sync
-                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 if self.workspace.select_canvas_node(&mut self.gui, &id) {
-                    self.scene_sync
-                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);
-                    self.scene_sync.mark_if(
+                    self.mark_workspace_scene_dirty_if(
                         result.handled_node_add.is_some(),
                         WorkspaceSceneDirtyReason::EngineGraph,
                     );
                     if result.close_overlay {
                         self.scene_controller.close_overlay();
                         self.gui.overlay_mut().close();
-                        self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
+                        self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Overlay);
                     }
                     return;
                 }
                 let changed = self.workspace.handle_image_demo_button(&id);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
+                self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::ControlDragStart { id, x, y } => {
                 if self.workspace.begin_canvas_port_connection(
@@ -573,46 +616,49 @@ impl AppShell {
                     x,
                     y,
                 ) {
-                    self.scene_sync
-                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 let changed =
                     self.workspace
                         .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlDragMove { id, x, y } => {
                 if self
                     .workspace
                     .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
                 {
-                    self.scene_sync
-                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 let changed =
                     self.workspace
                         .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlDragEnd { id, x, y } => {
                 if self
                     .workspace
                     .end_canvas_port_connection(&mut self.gui, x, y)
                 {
-                    self.scene_sync
-                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
-                    self.scene_sync.mark(WorkspaceSceneDirtyReason::EngineGraph);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::EngineGraph);
                     return;
                 }
                 let changed =
                     self.workspace
                         .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlResizeStart { id, edge, x, y } => {
                 let changed = self.workspace.start_canvas_node_resize(
@@ -623,15 +669,19 @@ impl AppShell {
                     x,
                     y,
                 );
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlResizeMove { id, edge, x, y } => {
                 let changed =
                     self.workspace
                         .resize_canvas_node(&mut self.gui, &self.camera, &id, edge, x, y);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlResizeEnd { id, edge, x, y } => {
                 let changed = self.workspace.end_canvas_node_resize(
@@ -642,13 +692,14 @@ impl AppShell {
                     x,
                     y,
                 );
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.mark_workspace_scene_dirty_if(
+                    changed,
+                    WorkspaceSceneDirtyReason::CanvasRuntime,
+                );
             }
             AppMessage::ControlTextChanged { id, value } => {
                 let changed = self.workspace.update_text_area_showcase_value(&id, value);
-                self.scene_sync
-                    .mark_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
+                self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
@@ -656,11 +707,32 @@ impl AppShell {
         }
     }
 
-    fn update_hover_cursor_from_chain(
+    fn refresh_hover_cursor_if_needed(&mut self, viewport: Rect, ctx: &mut AppContext) {
+        let key = self.cursor_refresh_key(viewport);
+        let decision = self.cursor_refresh.begin_frame(key);
+        if !decision.should_refresh {
+            return;
+        }
+
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
+            reasons = ?decision.reasons,
+            "refresh hover cursor"
+        );
+
+        self.update_hover_cursor(self.mouse_x, self.mouse_y, None, ctx);
+        self.cursor_refresh.finish_refreshed(key);
+    }
+
+    fn update_hover_cursor_from_hit(&self, hit: &PointerHitQueryResult, ctx: &mut AppContext) {
+        self.update_hover_cursor(hit.x(), hit.y(), Some(hit), ctx);
+    }
+
+    fn update_hover_cursor(
         &self,
         x: f32,
         y: f32,
-        chain: Option<&HitChain>,
+        hit: Option<&PointerHitQueryResult>,
         ctx: &mut AppContext,
     ) {
         tracing::trace!(
@@ -682,8 +754,15 @@ impl AppShell {
             return;
         }
 
+        let fallback;
+        let hit = if let Some(hit) = hit {
+            hit
+        } else {
+            fallback = self.gui.query().pointer_hit_at(x, y);
+            &fallback
+        };
         let query = self.gui.query();
-        if let Some((node_id, edge)) = query.resize_hit_at_screen_point(x, y) {
+        if let Some((node_id, edge)) = hit.resize_hit() {
             let cursor = cursor_for_resize_edge(edge);
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -698,13 +777,7 @@ impl AppShell {
             return;
         }
 
-        let fallback;
-        let chain = if let Some(chain) = chain {
-            chain
-        } else {
-            fallback = query.hit_test(x, y);
-            &fallback
-        };
+        let chain = hit.chain();
         if chain.is_empty() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -791,8 +864,7 @@ impl AppShell {
             return;
         }
         let changed = self.workspace.clear_canvas_selection(&mut self.gui);
-        self.scene_sync
-            .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+        self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
 
         let now = Instant::now();
         let double_click = self.last_canvas_click.is_some_and(|last| {
@@ -828,8 +900,8 @@ impl AppShell {
         let state = self.node_palette_state();
         self.scene_controller.open_node_palette(x, y, state);
         self.workspace.note_node_library_opened();
-        self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
-        self.scene_sync.mark(WorkspaceSceneDirtyReason::EngineGraph);
+        self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::Overlay);
+        self.mark_workspace_scene_dirty(WorkspaceSceneDirtyReason::EngineGraph);
     }
 
     fn node_palette_state(&self) -> crate::workspace::node_palette::NodePaletteState {
