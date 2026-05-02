@@ -56,6 +56,10 @@ impl TextBoxRegistry {
         self.dirty_intrinsics.iter().map(String::as_str)
     }
 
+    pub(crate) fn has_dirty_intrinsics(&self) -> bool {
+        !self.dirty_intrinsics.is_empty()
+    }
+
     pub(crate) fn take_dirty_intrinsics(&mut self) -> BTreeSet<String> {
         std::mem::take(&mut self.dirty_intrinsics)
     }

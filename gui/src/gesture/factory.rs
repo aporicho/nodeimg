@@ -9,7 +9,7 @@ use crate::tree::{HitChain, ResizeHit, Tree};
 ///
 /// 规则：
 /// - 容器级 draggable/resizable 会注册对应识别器
-/// - 显式 gestures 保持兼容，供低层控件直接声明手势
+/// - 显式 gestures 是低层控件声明手势能力的标准入口
 /// - 所有识别器都绑定声明能力的节点本身，业务 owner 由事件层解析
 pub(crate) fn arena_from_hit_chain(
     tree: &Tree,
@@ -18,8 +18,7 @@ pub(crate) fn arena_from_hit_chain(
     y: f32,
     last_tap_time: Option<Instant>,
 ) -> Option<GestureArena> {
-    let target_id = default_target_id(tree, chain)?;
-    let mut arena = GestureArena::new(target_id);
+    let mut arena = GestureArena::new();
     let first_control_index = first_control_index(tree, chain);
 
     for (index, node_id) in chain.iter().enumerate() {
@@ -77,7 +76,7 @@ pub(crate) fn arena_from_resize_hit(
 ) -> Option<GestureArena> {
     let node = tree.get(hit.node_id)?;
     let target_id = node.id.to_string();
-    let mut arena = GestureArena::new(target_id.clone());
+    let mut arena = GestureArena::new();
     let mut rec = ResizeRecognizer::new(target_id.clone(), hit.edge);
     if rec.on_pointer_down(x, y) {
         tracing::debug!(
@@ -94,13 +93,6 @@ pub(crate) fn arena_from_resize_hit(
     } else {
         Some(arena)
     }
-}
-
-fn default_target_id(tree: &Tree, chain: &HitChain) -> Option<String> {
-    chain
-        .leaf()
-        .and_then(|id| tree.get(id))
-        .map(|node| node.id.to_string())
 }
 
 fn first_control_index(tree: &Tree, chain: &HitChain) -> Option<usize> {

@@ -8,7 +8,7 @@ pub struct GestureArena {
 }
 
 impl GestureArena {
-    pub fn new(_target_id: String) -> Self {
+    pub fn new() -> Self {
         Self {
             members: Vec::new(),
             resolved: false,
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn tap_is_emitted_only_once_on_pointer_up() {
-        let mut arena = GestureArena::new("toggle_grid::track".to_string());
+        let mut arena = GestureArena::new();
         let mut tap = TapRecognizer::new(
             "toggle_grid::track".to_string(),
             Some(Instant::now() - std::time::Duration::from_secs(1)),
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn deepest_drag_member_wins_over_parent_drag() {
-        let mut arena = GestureArena::new("child".to_string());
+        let mut arena = GestureArena::new();
         let mut child = DragRecognizer::new("child".to_string());
         let mut parent = DragRecognizer::new("parent".to_string());
         assert!(child.on_pointer_down(0.0, 0.0));

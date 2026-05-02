@@ -2,7 +2,7 @@ use crate::action::dispatch_control_click;
 use crate::control::ResizeEdge;
 use crate::event::target::TargetResolver;
 use crate::gesture::GestureSignal;
-use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OutputBuilder, PanelEvent};
+use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OutputBuilder};
 use crate::tree::Tree;
 
 #[derive(Clone, Copy)]
@@ -68,17 +68,6 @@ fn drag_event(
     phase: DragPhase,
 ) -> GuiEvent {
     let owner_id = resolver.owner_id(id);
-    if resolver
-        .control_role(&owner_id)
-        .is_some_and(|role| role.is_panel())
-    {
-        return GuiEvent::Panel(match phase {
-            DragPhase::Start => PanelEvent::DragStart { id: owner_id, x, y },
-            DragPhase::Move => PanelEvent::DragMove { id: owner_id, x, y },
-            DragPhase::End => PanelEvent::DragEnd { id: owner_id, x, y },
-        });
-    }
-
     GuiEvent::Control(match phase {
         DragPhase::Start => ControlEvent::DragStart { id: owner_id, x, y },
         DragPhase::Move => ControlEvent::DragMove { id: owner_id, x, y },
@@ -102,49 +91,22 @@ fn resize_event(
         edge = ?edge,
         x,
         y,
-        is_panel = resolver.control_role(&owner_id).is_some_and(|role| role.is_panel()),
         "map resize gesture signal"
     );
-    if !resolver
-        .control_role(&owner_id)
-        .is_some_and(|role| role.is_panel())
-    {
-        return GuiEvent::Control(match phase {
-            ResizePhase::Start => ControlEvent::ResizeStart {
-                id: owner_id,
-                edge,
-                x,
-                y,
-            },
-            ResizePhase::Move => ControlEvent::ResizeMove {
-                id: owner_id,
-                edge,
-                x,
-                y,
-            },
-            ResizePhase::End => ControlEvent::ResizeEnd {
-                id: owner_id,
-                edge,
-                x,
-                y,
-            },
-        });
-    }
-
-    GuiEvent::Panel(match phase {
-        ResizePhase::Start => PanelEvent::ResizeStart {
+    GuiEvent::Control(match phase {
+        ResizePhase::Start => ControlEvent::ResizeStart {
             id: owner_id,
             edge,
             x,
             y,
         },
-        ResizePhase::Move => PanelEvent::ResizeMove {
+        ResizePhase::Move => ControlEvent::ResizeMove {
             id: owner_id,
             edge,
             x,
             y,
         },
-        ResizePhase::End => PanelEvent::ResizeEnd {
+        ResizePhase::End => ControlEvent::ResizeEnd {
             id: owner_id,
             edge,
             x,

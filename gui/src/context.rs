@@ -25,9 +25,7 @@ use crate::tree::{
     TreeSnapshotOptions,
 };
 
-pub use crate::output::{
-    ControlEvent, FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect,
-};
+pub use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OverlayEvent, PlatformEffect};
 pub use crate::overlay::{
     DropdownOverlayContent, OverlayContent, OverlayPlacement, OverlayRequest,
 };
@@ -609,8 +607,8 @@ impl Context {
             .paste_focused_text(&self.tree, self.interaction.focused(), text)
     }
 
-    pub(crate) fn handle_panel_event(&mut self, event: &PanelEvent) -> bool {
-        crate::panel::event::apply_panel_event(&mut self.tree, event)
+    pub(crate) fn handle_panel_control_event(&mut self, event: &ControlEvent) -> bool {
+        crate::panel::event::apply_panel_control_event(&mut self.tree, event)
     }
 
     pub(crate) fn sync_canvas_node_layouts(
@@ -667,16 +665,8 @@ impl Context {
         self.systems.control_intrinsics()
     }
 
-    pub(crate) fn control_intrinsics_snapshot(&self) -> Vec<ControlIntrinsic> {
-        self.systems.control_intrinsics()
-    }
-
     pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
         self.systems.take_dirty_control_intrinsics()
-    }
-
-    pub(crate) fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
-        self.systems.take_text_box_dirty_intrinsics()
     }
 
     pub(crate) fn sync_canvas_text_boxes(
@@ -685,7 +675,7 @@ impl Context {
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
-        let before_dirty = self.systems.text_box_dirty_intrinsics().len();
+        let before_dirty = self.systems.dirty_control_intrinsic_ids().len();
         self.systems.sync_canvas_text_boxes(
             &self.tree,
             views,
@@ -698,13 +688,13 @@ impl Context {
             TextRuntimeTraceSummary {
                 views: views.len(),
                 dirty_intrinsics_before: before_dirty,
-                dirty_intrinsics_after: self.systems.text_box_dirty_intrinsics().len(),
+                dirty_intrinsics_after: self.systems.dirty_control_intrinsic_ids().len(),
             },
         );
     }
 
-    pub(crate) fn text_box_dirty_intrinsics(&self) -> Vec<String> {
-        self.systems.text_box_dirty_intrinsics()
+    pub(crate) fn has_dirty_control_intrinsics(&self) -> bool {
+        self.systems.has_dirty_control_intrinsics()
     }
 
     pub(crate) fn canvas_port_group_view(
@@ -1365,8 +1355,8 @@ pub struct PanelMutApi<'a> {
 }
 
 impl PanelMutApi<'_> {
-    pub fn handle_event(&mut self, event: &PanelEvent) -> bool {
-        self.ctx.handle_panel_event(event)
+    pub fn handle_control_event(&mut self, event: &ControlEvent) -> bool {
+        self.ctx.handle_panel_control_event(event)
     }
 
     pub fn ensure_runtime(
@@ -1453,12 +1443,8 @@ impl ControlsApi<'_> {
         self.ctx.control_intrinsics()
     }
 
-    pub fn intrinsics_snapshot(&self) -> Vec<ControlIntrinsic> {
-        self.ctx.control_intrinsics_snapshot()
-    }
-
-    pub fn text_box_dirty_intrinsics(&self) -> Vec<String> {
-        self.ctx.text_box_dirty_intrinsics()
+    pub fn has_dirty_intrinsics(&self) -> bool {
+        self.ctx.has_dirty_control_intrinsics()
     }
 }
 
@@ -1469,10 +1455,6 @@ pub struct ControlsMutApi<'a> {
 impl ControlsMutApi<'_> {
     pub fn take_dirty_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
         self.ctx.take_dirty_control_intrinsics()
-    }
-
-    pub fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
-        self.ctx.take_text_box_dirty_intrinsics()
     }
 
     pub fn sync_canvas_text_boxes(

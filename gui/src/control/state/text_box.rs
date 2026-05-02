@@ -558,7 +558,7 @@ impl TextBoxStore {
         self.registry.take_dirty_intrinsics()
     }
 
-    pub(crate) fn sync_retained_text_box(
+    pub(crate) fn sync_text_box(
         &mut self,
         tree: &Tree,
         measurer: &mut TextMeasurer,
@@ -622,6 +622,10 @@ impl TextBoxStore {
             .dirty_intrinsics()
             .map(str::to_string)
             .collect()
+    }
+
+    pub(crate) fn has_dirty_intrinsics(&self) -> bool {
+        self.registry.has_dirty_intrinsics()
     }
 
     pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {

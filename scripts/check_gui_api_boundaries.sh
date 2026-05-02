@@ -145,11 +145,35 @@ check_no_match \
     app/src/workspace/node_palette.rs
 
 check_no_match \
-    "app production must use the ControlsApi intrinsic snapshot only through query/update flow" \
+    "app production must use the ControlsApi intrinsic query only through query/update flow" \
     '(^|[^[:alnum:]_])control_intrinsics\(' \
     app/src/app_shell.rs \
     app/src/workspace/controller.rs \
     app/src/workspace/scene_controller.rs
+
+check_no_match \
+    "panel drag/resize must use ControlEvent, not a parallel PanelEvent channel" \
+    'PanelEvent|GuiEvent::Panel' \
+    app/src \
+    gui/src
+
+check_no_match \
+    "control intrinsic API must not expose snapshot aliases" \
+    'intrinsics_snapshot|control_intrinsics_snapshot' \
+    app/src \
+    gui/src
+
+check_no_match \
+    "app-facing ControlsApi must not expose text-box-specific dirty intrinsic state" \
+    'text_box_dirty_intrinsics|take_text_box_dirty_intrinsics' \
+    app/src \
+    gui/src
+
+check_no_match \
+    "GestureArena must not take target identity in its constructor" \
+    'GestureArena::new\([^)]' \
+    gui/src/gesture \
+    app/src
 
 check_no_match \
     "backend resource creation must stay out of tree/template/control layers" \

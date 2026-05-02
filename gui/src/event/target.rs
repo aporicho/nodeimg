@@ -1,5 +1,4 @@
-use crate::control::ControlRole;
-use crate::tree::{NodeId, Tree};
+use crate::tree::Tree;
 
 pub(crate) struct TargetResolver<'a> {
     tree: &'a Tree,
@@ -43,16 +42,6 @@ impl<'a> TargetResolver<'a> {
         }
 
         id.to_string()
-    }
-
-    pub(crate) fn control_role(&self, id: &str) -> Option<ControlRole> {
-        let node = self.tree.node_by_str(id)?;
-        self.control_role_for_resolved_node(node)
-    }
-
-    fn control_role_for_resolved_node(&self, node_id: NodeId) -> Option<ControlRole> {
-        let node = self.tree.get(node_id)?;
-        node.props.semantic_role
     }
 }
 

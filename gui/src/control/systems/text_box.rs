@@ -130,7 +130,7 @@ impl TextBoxSystem {
                 let Some(spec) = retained_param_text_box_spec(&param.control, theme) else {
                     continue;
                 };
-                self.store.sync_retained_text_box(
+                self.store.sync_text_box(
                     tree,
                     measurer,
                     theme,

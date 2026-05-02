@@ -959,7 +959,7 @@ mod tests {
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
     use gui::layout::TextureHandle;
-    use gui::output::{ControlEvent, GuiEvent, PanelEvent};
+    use gui::output::{ControlEvent, GuiEvent};
     use gui::renderer::TextMeasurer;
     use gui::shell::{AppEvent, Key, Modifiers, MouseButton};
     use gui::theme::light_theme;
@@ -1266,21 +1266,27 @@ mod tests {
         let dx = 260.0;
         let dy = 120.0;
 
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragStart {
-            id: "toolbar".to_string(),
-            x: drag_start_x,
-            y: drag_start_y,
-        }));
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragMove {
-            id: "toolbar".to_string(),
-            x: drag_start_x + dx,
-            y: drag_start_y + dy,
-        }));
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragEnd {
-            id: "toolbar".to_string(),
-            x: drag_start_x + dx,
-            y: drag_start_y + dy,
-        }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragStart {
+                id: "toolbar".to_string(),
+                x: drag_start_x,
+                y: drag_start_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragMove {
+                id: "toolbar".to_string(),
+                x: drag_start_x + dx,
+                y: drag_start_y + dy,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragEnd {
+                id: "toolbar".to_string(),
+                x: drag_start_x + dx,
+                y: drag_start_y + dy,
+            }));
 
         let sync = controller
             .sync(
@@ -1328,21 +1334,27 @@ mod tests {
         let second_drag_start_y = after_titlebar.y + 10.0;
         let second_dx = -90.0;
         let second_dy = 44.0;
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragStart {
-            id: "toolbar".to_string(),
-            x: second_drag_start_x,
-            y: second_drag_start_y,
-        }));
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragMove {
-            id: "toolbar".to_string(),
-            x: second_drag_start_x + second_dx,
-            y: second_drag_start_y + second_dy,
-        }));
-        assert!(gui.panel_mut().handle_event(&PanelEvent::DragEnd {
-            id: "toolbar".to_string(),
-            x: second_drag_start_x + second_dx,
-            y: second_drag_start_y + second_dy,
-        }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragStart {
+                id: "toolbar".to_string(),
+                x: second_drag_start_x,
+                y: second_drag_start_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragMove {
+                id: "toolbar".to_string(),
+                x: second_drag_start_x + second_dx,
+                y: second_drag_start_y + second_dy,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::DragEnd {
+                id: "toolbar".to_string(),
+                x: second_drag_start_x + second_dx,
+                y: second_drag_start_y + second_dy,
+            }));
 
         let second_sync = controller
             .sync(

@@ -160,20 +160,7 @@ impl App for AppShell {
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
         self.gui.animations_mut().tick(Instant::now());
         let viewport = viewport_rect(ctx);
-        let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
-        self.gui.controls_mut().sync_canvas_text_boxes(
-            &canvas_nodes,
-            renderer.text_measurer(),
-            &self.theme,
-        );
-        if !self.gui.controls().text_box_dirty_intrinsics().is_empty() {
-            let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
-            self.gui.controls_mut().sync_canvas_text_boxes(
-                &stabilized_nodes,
-                renderer.text_measurer(),
-                &self.theme,
-            );
-        }
+        self.sync_workspace_scene_until_controls_stable(viewport, renderer);
         ctx.apply_ime_request(self.gui.input().ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
         if self.gui.animations().active() {
@@ -264,6 +251,28 @@ fn create_sample_texture(
 }
 
 impl AppShell {
+    fn sync_workspace_scene_until_controls_stable(
+        &mut self,
+        viewport: Rect,
+        renderer: &mut Renderer,
+    ) {
+        let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
+        self.gui.controls_mut().sync_canvas_text_boxes(
+            &canvas_nodes,
+            renderer.text_measurer(),
+            &self.theme,
+        );
+
+        if self.gui.controls().has_dirty_intrinsics() {
+            let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
+            self.gui.controls_mut().sync_canvas_text_boxes(
+                &stabilized_nodes,
+                renderer.text_measurer(),
+                &self.theme,
+            );
+        }
+    }
+
     fn sync_workspace_scene(
         &mut self,
         viewport: Rect,
@@ -396,10 +405,8 @@ impl AppShell {
             if self.is_duplicate_action_event(&event, &handled_node_adds) {
                 continue;
             }
-            if let GuiEvent::Panel(panel_event) = &event {
-                if self.gui.panel_mut().handle_event(panel_event) {
-                    continue;
-                }
+            if self.try_handle_panel_control_event(&event) {
+                continue;
             }
             self.handle_gui_event(event);
         }
@@ -417,6 +424,13 @@ impl AppShell {
                 }
             }
         }
+    }
+
+    fn try_handle_panel_control_event(&mut self, event: &GuiEvent) -> bool {
+        let GuiEvent::Control(control_event) = event else {
+            return false;
+        };
+        self.gui.panel_mut().handle_control_event(control_event)
     }
 
     fn handle_gui_action(&mut self, action: GuiAction) -> WorkspaceActionResult {
@@ -444,7 +458,6 @@ impl AppShell {
     fn map_gui_event(&self, event: GuiEvent) -> Option<AppMessage> {
         match event {
             GuiEvent::Control(event) => self.map_control_event(event),
-            GuiEvent::Panel(_) => None,
             GuiEvent::Overlay(_) => None,
         }
     }

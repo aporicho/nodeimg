@@ -114,12 +114,12 @@ impl RuntimeSystems {
         self.text_box.store_mut().take_dirty_control_intrinsics()
     }
 
-    pub(crate) fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
-        self.text_box.store_mut().take_dirty_intrinsics()
+    pub(crate) fn dirty_control_intrinsic_ids(&self) -> Vec<String> {
+        self.text_box.store().dirty_intrinsic_ids()
     }
 
-    pub(crate) fn text_box_dirty_intrinsics(&self) -> Vec<String> {
-        self.text_box.store().dirty_intrinsic_ids()
+    pub(crate) fn has_dirty_control_intrinsics(&self) -> bool {
+        self.text_box.store().has_dirty_intrinsics()
     }
 
     pub(crate) fn sync_canvas_text_boxes(

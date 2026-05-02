@@ -10,7 +10,6 @@ pub enum PlatformEffect {
 #[derive(Debug, Clone)]
 pub enum GuiEvent {
     Control(ControlEvent),
-    Panel(PanelEvent),
     Overlay(OverlayEvent),
 }
 
@@ -37,43 +36,6 @@ pub enum ControlEvent {
         id: String,
         selected: usize,
     },
-    DragStart {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    DragMove {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    DragEnd {
-        id: String,
-        x: f32,
-        y: f32,
-    },
-    ResizeStart {
-        id: String,
-        edge: ResizeEdge,
-        x: f32,
-        y: f32,
-    },
-    ResizeMove {
-        id: String,
-        edge: ResizeEdge,
-        x: f32,
-        y: f32,
-    },
-    ResizeEnd {
-        id: String,
-        edge: ResizeEdge,
-        x: f32,
-        y: f32,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum PanelEvent {
     DragStart {
         id: String,
         x: f32,
