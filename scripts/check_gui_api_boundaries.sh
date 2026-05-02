@@ -66,6 +66,7 @@ check_missing_path "old text intrinsic module" gui/src/text/intrinsic.rs
 check_missing_path "legacy full-tree desc reconciler" gui/src/tree/legacy_desc.rs
 check_missing_path "legacy full-tree desc diff" gui/src/tree/diff.rs
 check_missing_path "legacy Desc canvas node-card builder" gui/src/canvas/node_card.rs
+check_missing_path "old flat canvas retained node card module" gui/src/canvas/retained_node_card.rs
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat Tree implementation module" gui/src/tree/tree.rs
@@ -217,6 +218,16 @@ check_no_match \
     "tree layout arrange module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/tree/layout/arrange/mod.rs
+
+check_no_match \
+    "canvas retained node card module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/canvas/retained_node_card/mod.rs
+
+check_no_match \
+    "canvas retained node card controls module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/canvas/retained_node_card/controls/mod.rs
 
 check_no_match \
     "Tree must not expose canvas or panel runtime APIs" \
