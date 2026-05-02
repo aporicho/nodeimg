@@ -29,10 +29,9 @@ mod scroll;
 mod shape;
 mod snapshot;
 mod stacking;
+mod state;
 pub(crate) mod style_patch;
 pub(crate) mod text_layout;
-#[allow(clippy::module_inception)]
-mod tree;
 
 pub use dirty::{DirtyFlags, DirtyQueues};
 pub use frame_stats::FrameStats;
@@ -49,10 +48,9 @@ pub(crate) use paint::PaintCx;
 pub use paint_cache::PaintCache;
 pub use props::NodeProps;
 pub use repaint::{PaintDirtyQueues, PaintDirtyReason, RepaintBoundaryId, RepaintBoundaryReason};
-pub(crate) use retained_runtime::RetainedRuntimeStore;
 pub use revision::Revision;
 pub use runtime_policy::{PersistenceClass, RuntimeRetention, RuntimeSlotPolicy, UndoClass};
 pub use runtime_slots::{RuntimeSlot, RuntimeSlots};
 pub use snapshot::{TreeDumpLevel, TreeSnapshot, TreeSnapshotMaxNodes, TreeSnapshotOptions};
+pub use state::Tree;
 pub use style_patch::StylePatch;
-pub use tree::Tree;

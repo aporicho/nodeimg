@@ -2,7 +2,7 @@ use super::connection_endpoint::node_screen_center;
 use super::layout::LeafKind;
 use super::paint_helpers::{connection_path, grid_cells, CONNECTION_WIDTH};
 use super::paint_space::{NodePaintSpace, PaintSpace};
-use super::tree::Tree;
+use super::Tree;
 use crate::geometry::{Point, Rect};
 use crate::paint::{FillRule, PathCommand, PathData, PathStyle};
 

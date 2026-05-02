@@ -68,6 +68,10 @@ check_missing_path "legacy full-tree desc diff" gui/src/tree/diff.rs
 check_missing_path "legacy Desc canvas node-card builder" gui/src/canvas/node_card.rs
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
+check_missing_path "old flat Tree implementation module" gui/src/tree/tree.rs
+check_missing_path "old flat panel runtime module" gui/src/panel/runtime.rs
+check_missing_path "old panel reducer test holder" gui/src/panel/reducer.rs
+check_missing_path "old flat canvas runtime module" gui/src/canvas/runtime.rs
 
 check_no_match \
     "app must not import gui crate-private/internal modules" \
@@ -181,6 +185,16 @@ check_no_match \
     gui/src/template \
     gui/src/tree \
     gui/src/control
+
+check_no_match \
+    "tree module must not depend on canvas or panel domains" \
+    'crate::(canvas|panel)|super::(canvas|panel)' \
+    gui/src/tree
+
+check_no_match \
+    "Tree must not expose canvas or panel runtime APIs" \
+    'fn (ensure_panel|panel_state|panel_state_mut|export_panel_layouts|import_panel_layouts|move_panel_by|resize_panel_by|show_panel|hide_panel|toggle_panel|bring_panel_to_front|start_panel_drag|move_panel_drag|end_panel_drag|start_panel_resize|move_panel_resize|end_panel_resize|sync_canvas_node_layouts|export_canvas_node_layouts|import_canvas_node_layouts|move_canvas_node_by|resize_canvas_node_by|ensure_canvas_node_min_size|apply_canvas_node_sizing|canvas_port_group_view|toggle_canvas_port_group|select_canvas_node|clear_canvas_selection|is_canvas_node_selected|pending_canvas_connection|begin_pending_canvas_connection|update_pending_canvas_connection|end_pending_canvas_connection|cancel_pending_canvas_connection|hovered_canvas_port_id|set_hovered_canvas_port)\b' \
+    gui/src/tree
 
 check_no_match \
     "hittable must be an explicit bool, not an Option compatibility surface" \

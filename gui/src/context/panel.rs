@@ -7,22 +7,22 @@ impl Context {
     }
 
     pub(crate) fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
-        self.tree.export_panel_layouts()
+        crate::panel::runtime::export_layouts(&self.tree)
     }
 
     pub(crate) fn ensure_panel_runtime(
         &mut self,
         config: &crate::panel::PanelConfig,
     ) -> Option<crate::panel::PanelRuntime> {
-        self.tree.ensure_panel(config);
-        self.tree.panel_state(config.id.as_str()).cloned()
+        crate::panel::runtime::ensure_panel(&mut self.tree, config);
+        crate::panel::runtime::panel_state(&self.tree, config.id.as_str()).cloned()
     }
 
     pub(crate) fn panel_runtime(&self, id: &str) -> Option<crate::panel::PanelRuntime> {
-        self.tree.panel_state(id).cloned()
+        crate::panel::runtime::panel_state(&self.tree, id).cloned()
     }
 
     pub(crate) fn import_panel_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
-        self.tree.import_panel_layouts(layouts);
+        crate::panel::runtime::import_layouts(&mut self.tree, layouts);
     }
 }

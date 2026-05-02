@@ -1,5 +1,5 @@
-use super::PanelConfig;
 use crate::control::ResizeEdge;
+use crate::panel::PanelConfig;
 use crate::renderer::Rect;
 use crate::tree::RuntimeSlot;
 

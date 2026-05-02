@@ -3,7 +3,7 @@ use super::node::{NodeId, TreeNode};
 use super::paint_space::PaintSpace;
 use super::shape::ContainerShape;
 use super::stacking::children_in_hit_order;
-use super::tree::Tree;
+use super::Tree;
 use crate::animation::{visual_affine, AnimationStore};
 use crate::control::ResizeEdge;
 use crate::geometry::{Point, Rect};

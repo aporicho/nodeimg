@@ -410,8 +410,7 @@ mod tests {
     use super::*;
     use crate::geometry::TransformSpec;
     use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-    use crate::tree::tree::Tree;
-    use crate::tree::{NodeProps, RuntimeSlots};
+    use crate::tree::{NodeProps, RuntimeSlots, Tree};
     use std::borrow::Cow;
 
     /// 构造一个基础 Container 节点（decoration 无、子节点无）

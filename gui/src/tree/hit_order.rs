@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::layout::RelayoutBoundaryReason;
-use super::tree::Tree;
+use super::Tree;
 use super::{NodeId, Revision};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

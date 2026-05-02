@@ -2,7 +2,7 @@ use super::hit_shape::leaf_shape_hit;
 use super::layout::Overflow;
 use super::node::{NodeId, NodeKind, TreeNode};
 use super::paint_space::{NodePaintSpace, PaintSpace};
-use super::tree::Tree;
+use super::Tree;
 use crate::animation::{visual_affine, AnimationStore};
 use crate::geometry::Point;
 

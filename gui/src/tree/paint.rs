@@ -5,7 +5,7 @@ use super::paint_helpers::{connection_path, CONNECTION_WIDTH};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::paint_target::{CustomPaintCx, PaintTarget};
 use super::text_layout::resolve_text_paint;
-use super::tree::Tree;
+use super::Tree;
 use super::{RepaintBoundaryId, Revision};
 use crate::animation::{visual_affine, AnimationStore};
 use crate::control::painter::paint_text_leaf_override;

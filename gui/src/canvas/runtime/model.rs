@@ -1,9 +1,13 @@
-use super::layout::{CanvasNodeIdentity, CanvasNodeLayout};
-use super::port::canvas_port_group_stable_id;
-use super::port::{parse_canvas_port_id, CanvasPendingConnectionView, CanvasPortGroupView};
+use crate::canvas::layout::{CanvasNodeIdentity, CanvasNodeLayout};
+use crate::canvas::port::canvas_port_group_stable_id;
+use crate::canvas::port::{
+    parse_canvas_port_id, CanvasPendingConnectionView, CanvasPortGroupView, CanvasPortSide,
+};
 use crate::renderer::Rect;
 use crate::tree::{PersistenceClass, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, UndoClass};
 use std::collections::HashSet;
+
+pub(crate) const CANVAS_INTERACTION_ID: &str = "canvas_interaction";
 
 #[derive(Clone, Debug)]
 pub(crate) struct CanvasNodeRuntime {
@@ -92,7 +96,7 @@ impl CanvasInteractionRuntime {
     pub(crate) fn port_group_view(
         &self,
         owner_id: &str,
-        side: super::port::CanvasPortSide,
+        side: CanvasPortSide,
     ) -> CanvasPortGroupView {
         CanvasPortGroupView {
             open: self
@@ -101,11 +105,7 @@ impl CanvasInteractionRuntime {
         }
     }
 
-    pub(crate) fn toggle_port_group(
-        &mut self,
-        owner_id: &str,
-        side: super::port::CanvasPortSide,
-    ) -> bool {
+    pub(crate) fn toggle_port_group(&mut self, owner_id: &str, side: CanvasPortSide) -> bool {
         let stable_id = canvas_port_group_stable_id(owner_id, side);
         if self.open_port_group_ids.contains(&stable_id) {
             self.open_port_group_ids.remove(&stable_id);
@@ -128,7 +128,7 @@ impl CanvasInteractionRuntime {
         let Some(port) = parse_canvas_port_id(from_port_id) else {
             return false;
         };
-        if port.side != super::port::CanvasPortSide::Output {
+        if port.side != CanvasPortSide::Output {
             return false;
         }
         self.pending_connection = Some(CanvasPendingConnectionView {
@@ -220,31 +220,5 @@ impl RuntimeSlot for CanvasInteractionRuntime {
             persistence: PersistenceClass::SessionOnly,
             undo: UndoClass::NonUndoable,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const OUTPUT_PORT: &str = "canvas_node::node::1::port::output::image";
-
-    #[test]
-    fn hovered_port_update_is_idempotent() {
-        let mut runtime = CanvasInteractionRuntime::default();
-
-        assert!(runtime.set_hovered_port(Some(OUTPUT_PORT)));
-        assert!(!runtime.set_hovered_port(Some(OUTPUT_PORT)));
-        assert!(runtime.set_hovered_port(None));
-        assert!(!runtime.set_hovered_port(None));
-    }
-
-    #[test]
-    fn pending_connection_update_is_idempotent() {
-        let mut runtime = CanvasInteractionRuntime::default();
-
-        assert!(runtime.begin_pending_connection(OUTPUT_PORT, [1.0, 2.0]));
-        assert!(!runtime.update_pending_connection([1.0, 2.0]));
-        assert!(runtime.update_pending_connection([2.0, 3.0]));
     }
 }

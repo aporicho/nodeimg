@@ -5,27 +5,27 @@ use crate::tree::Tree;
 pub(crate) fn apply_panel_control_event(tree: &mut Tree, event: &ControlEvent) -> bool {
     match event {
         ControlEvent::DragStart { id, x, y } if is_panel_control(tree, id) => {
-            tree.start_panel_drag(id, *x, *y);
+            crate::panel::runtime::start_drag(tree, id, *x, *y);
             true
         }
         ControlEvent::DragMove { id, x, y } if is_panel_control(tree, id) => {
-            tree.move_panel_drag(id, *x, *y);
+            crate::panel::runtime::move_drag(tree, id, *x, *y);
             true
         }
         ControlEvent::DragEnd { id, .. } if is_panel_control(tree, id) => {
-            tree.end_panel_drag();
+            crate::panel::runtime::end_drag(tree);
             true
         }
         ControlEvent::ResizeStart { id, edge, x, y } if is_panel_control(tree, id) => {
-            tree.start_panel_resize(id, *edge, *x, *y);
+            crate::panel::runtime::start_resize(tree, id, *edge, *x, *y);
             true
         }
         ControlEvent::ResizeMove { id, edge, x, y } if is_panel_control(tree, id) => {
-            tree.move_panel_resize(id, *edge, *x, *y);
+            crate::panel::runtime::move_resize(tree, id, *edge, *x, *y);
             true
         }
         ControlEvent::ResizeEnd { id, edge, x, y } if is_panel_control(tree, id) => {
-            tree.end_panel_resize(id, *edge, *x, *y);
+            crate::panel::runtime::end_resize(tree, id, *edge, *x, *y);
             true
         }
         _ => false,

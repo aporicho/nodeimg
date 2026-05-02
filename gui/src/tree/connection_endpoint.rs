@@ -4,7 +4,7 @@ use super::node::NodeId;
 use super::paint_helpers::rect_center;
 use super::paint_space::PaintSpace;
 use super::stacking::children_in_paint_order;
-use super::tree::Tree;
+use super::Tree;
 
 pub(crate) fn node_screen_center(tree: &Tree, id: &str) -> Option<Point> {
     let target = tree.node_by_str(id)?;

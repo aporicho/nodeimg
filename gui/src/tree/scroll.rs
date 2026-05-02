@@ -1,5 +1,5 @@
 use super::node::NodeId;
-use super::tree::Tree;
+use super::Tree;
 
 impl Tree {
     /// 更新滚动偏移。delta 为正数向下滚。

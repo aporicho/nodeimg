@@ -6,22 +6,22 @@ impl Context {
         &mut self,
         identities: &[crate::canvas::CanvasNodeIdentity],
     ) -> Vec<crate::canvas::CanvasNodeLayout> {
-        self.tree.sync_canvas_node_layouts(identities)
+        crate::canvas::runtime::sync_node_layouts(&mut self.tree, identities)
     }
 
     pub(crate) fn export_canvas_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
-        self.tree.export_canvas_node_layouts()
+        crate::canvas::runtime::export_node_layouts(&self.tree)
     }
 
     pub(crate) fn import_canvas_node_layouts(
         &mut self,
         layouts: &[crate::canvas::CanvasNodeLayout],
     ) {
-        self.tree.import_canvas_node_layouts(layouts);
+        crate::canvas::runtime::import_node_layouts(&mut self.tree, layouts);
     }
 
     pub(crate) fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
-        self.tree.move_canvas_node_by(owner_id, dx, dy)
+        crate::canvas::runtime::move_node_by(&mut self.tree, owner_id, dx, dy)
     }
 
     pub(crate) fn resize_canvas_node_by(
@@ -31,7 +31,7 @@ impl Context {
         dx: f32,
         dy: f32,
     ) -> bool {
-        self.tree.resize_canvas_node_by(owner_id, edge, dx, dy)
+        crate::canvas::runtime::resize_node_by(&mut self.tree, owner_id, edge, dx, dy)
     }
 
     pub(crate) fn ensure_canvas_node_min_size(
@@ -40,8 +40,12 @@ impl Context {
         min_width: f32,
         min_height: f32,
     ) -> bool {
-        self.tree
-            .ensure_canvas_node_min_size(owner_id, min_width, min_height)
+        crate::canvas::runtime::ensure_node_min_size(
+            &mut self.tree,
+            owner_id,
+            min_width,
+            min_height,
+        )
     }
 
     pub(crate) fn apply_canvas_node_sizing(
@@ -49,7 +53,7 @@ impl Context {
         owner_id: &str,
         request: crate::canvas::CanvasNodeSizingRequest,
     ) -> bool {
-        self.tree.apply_canvas_node_sizing(owner_id, request)
+        crate::canvas::runtime::apply_node_sizing(&mut self.tree, owner_id, request)
     }
 
     pub(crate) fn canvas_port_group_view(
@@ -57,7 +61,7 @@ impl Context {
         owner_id: &str,
         side: crate::canvas::CanvasPortSide,
     ) -> crate::canvas::CanvasPortGroupView {
-        self.tree.canvas_port_group_view(owner_id, side)
+        crate::canvas::runtime::port_group_view(&self.tree, owner_id, side)
     }
 
     pub(crate) fn toggle_canvas_port_group(
@@ -65,25 +69,25 @@ impl Context {
         owner_id: &str,
         side: crate::canvas::CanvasPortSide,
     ) -> bool {
-        self.tree.toggle_canvas_port_group(owner_id, side)
+        crate::canvas::runtime::toggle_port_group(&mut self.tree, owner_id, side)
     }
 
     pub(crate) fn select_canvas_node(&mut self, owner_id: &str) -> bool {
-        self.tree.select_canvas_node(owner_id)
+        crate::canvas::runtime::select_node(&mut self.tree, owner_id)
     }
 
     pub(crate) fn clear_canvas_selection(&mut self) -> bool {
-        self.tree.clear_canvas_selection()
+        crate::canvas::runtime::clear_selection(&mut self.tree)
     }
 
     pub(crate) fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
-        self.tree.is_canvas_node_selected(owner_id)
+        crate::canvas::runtime::is_node_selected(&self.tree, owner_id)
     }
 
     pub(crate) fn pending_canvas_connection(
         &self,
     ) -> Option<crate::canvas::CanvasPendingConnectionView> {
-        self.tree.pending_canvas_connection()
+        crate::canvas::runtime::pending_connection(&self.tree)
     }
 
     pub(crate) fn begin_pending_canvas_connection(
@@ -91,29 +95,32 @@ impl Context {
         from_port_id: &str,
         cursor_canvas: [f32; 2],
     ) -> bool {
-        self.tree
-            .begin_pending_canvas_connection(from_port_id, cursor_canvas)
+        crate::canvas::runtime::begin_pending_connection(
+            &mut self.tree,
+            from_port_id,
+            cursor_canvas,
+        )
     }
 
     pub(crate) fn update_pending_canvas_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
-        self.tree.update_pending_canvas_connection(cursor_canvas)
+        crate::canvas::runtime::update_pending_connection(&mut self.tree, cursor_canvas)
     }
 
     pub(crate) fn end_pending_canvas_connection(
         &mut self,
     ) -> Option<crate::canvas::CanvasPendingConnectionView> {
-        self.tree.end_pending_canvas_connection()
+        crate::canvas::runtime::end_pending_connection(&mut self.tree)
     }
 
     pub(crate) fn cancel_pending_canvas_connection(&mut self) -> bool {
-        self.tree.cancel_pending_canvas_connection()
+        crate::canvas::runtime::cancel_pending_connection(&mut self.tree)
     }
 
     pub(crate) fn hovered_canvas_port_id(&self) -> Option<String> {
-        self.tree.hovered_canvas_port_id()
+        crate::canvas::runtime::hovered_port_id(&self.tree)
     }
 
     pub(crate) fn set_hovered_canvas_port(&mut self, port_id: Option<&str>) -> bool {
-        self.tree.set_hovered_canvas_port(port_id)
+        crate::canvas::runtime::set_hovered_port(&mut self.tree, port_id)
     }
 }

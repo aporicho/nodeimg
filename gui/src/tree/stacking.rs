@@ -1,5 +1,5 @@
 use super::node::NodeId;
-use super::tree::Tree;
+use super::Tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StackingChild {

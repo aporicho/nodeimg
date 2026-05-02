@@ -1,7 +1,7 @@
 use super::layout::{BoxStyle, LayoutTree, LeafKind};
 use super::node::{NodeId, NodeKind};
-use super::tree::Tree;
 use super::Revision;
+use super::Tree;
 use crate::renderer::Rect;
 
 impl LayoutTree for Tree {
