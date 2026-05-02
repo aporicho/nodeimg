@@ -69,6 +69,11 @@ check_missing_path "legacy Desc canvas node-card builder" gui/src/canvas/node_ca
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat Tree implementation module" gui/src/tree/tree.rs
+check_missing_path "old flat tree hit query module" gui/src/tree/hit.rs
+check_missing_path "old flat tree hit order module" gui/src/tree/hit_order.rs
+check_missing_path "old flat tree leaf hit shape module" gui/src/tree/hit_shape.rs
+check_missing_path "old flat tree interaction hit module" gui/src/tree/interaction_hit.rs
+check_missing_path "old flat tree container shape module" gui/src/tree/shape.rs
 check_missing_path "old flat panel runtime module" gui/src/panel/runtime.rs
 check_missing_path "old panel reducer test holder" gui/src/panel/reducer.rs
 check_missing_path "old flat canvas runtime module" gui/src/canvas/runtime.rs
@@ -190,6 +195,16 @@ check_no_match \
     "tree module must not depend on canvas or panel domains" \
     'crate::(canvas|panel)|super::(canvas|panel)' \
     gui/src/tree
+
+check_no_match \
+    "old flat tree hit modules must not be referenced" \
+    '(mod (hit_order|hit_shape|interaction_hit|shape);|use (crate::tree|super)::(hit_order|hit_shape|interaction_hit|shape)|::(hit_order|hit_shape|interaction_hit|shape)::)' \
+    gui/src/tree
+
+check_no_match \
+    "tree hit module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/tree/hit/mod.rs
 
 check_no_match \
     "Tree must not expose canvas or panel runtime APIs" \

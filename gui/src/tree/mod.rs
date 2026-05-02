@@ -2,11 +2,8 @@ mod connection_endpoint;
 mod dirty;
 mod frame_stats;
 mod hit;
-mod hit_order;
-mod hit_shape;
 mod id;
 mod index;
-mod interaction_hit;
 pub mod layout;
 mod layout_adapter;
 mod mutation;
@@ -26,7 +23,6 @@ mod revision;
 mod runtime_policy;
 mod runtime_slots;
 mod scroll;
-mod shape;
 mod snapshot;
 mod stacking;
 mod state;
@@ -35,11 +31,12 @@ pub(crate) mod text_layout;
 
 pub use dirty::{DirtyFlags, DirtyQueues};
 pub use frame_stats::FrameStats;
-pub(crate) use hit::screen_to_node_layout_point;
 pub use hit::{hit_test_with_animations, HitChain};
+pub(crate) use hit::{
+    resize_hit_at_screen_point, screen_to_node_layout_point, HitOrderCache, ResizeHit,
+};
 pub use id::{NodeId, StableId};
 pub use index::TreeIndexError;
-pub(crate) use interaction_hit::{resize_hit_at_screen_point, ResizeHit};
 pub use layout::layout;
 pub use mutation::{Invalidation, MutationError, TreeMutation};
 pub use mutation_meta::{NodeMutationMeta, RectMoveInvalidation};

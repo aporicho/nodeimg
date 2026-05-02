@@ -1,6 +1,5 @@
 use crate::tree::dirty::DirtyQueues;
 use crate::tree::frame_stats::FrameStats;
-use crate::tree::hit_order::HitOrderCache;
 use crate::tree::index::TreeIndex;
 use crate::tree::layout::{LayoutCache, LayoutDirtyQueues};
 use crate::tree::node::{NodeId, TreeNode};
@@ -8,6 +7,7 @@ use crate::tree::paint_cache::PaintCache;
 use crate::tree::paint_order::PaintOrderCache;
 use crate::tree::repaint::PaintDirtyQueues;
 use crate::tree::retained_runtime::RetainedRuntimeStore;
+use crate::tree::HitOrderCache;
 use std::cell::RefCell;
 use std::collections::HashMap;
 

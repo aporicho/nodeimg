@@ -1,13 +1,13 @@
-use super::layout::Overflow;
-use super::node::{NodeId, TreeNode};
-use super::paint_space::PaintSpace;
-use super::shape::ContainerShape;
-use super::stacking::children_in_hit_order;
-use super::Tree;
+use super::container_shape::ContainerShape;
 use crate::animation::{visual_affine, AnimationStore};
 use crate::control::ResizeEdge;
 use crate::geometry::{Point, Rect};
 use crate::gesture::Gesture;
+use crate::tree::layout::Overflow;
+use crate::tree::node::{NodeId, TreeNode};
+use crate::tree::paint_space::PaintSpace;
+use crate::tree::stacking::children_in_hit_order;
+use crate::tree::Tree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct InteractionHit {
@@ -195,150 +195,4 @@ fn container_shape(node: &TreeNode) -> ContainerShape {
 
 fn resize_enabled(node: &TreeNode) -> bool {
     node.style.resizable || node.style.gestures.contains(&Gesture::Resize)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::geometry::TransformSpec;
-    use crate::renderer::{Color, Rect};
-    use crate::tree::layout::{BoxStyle, Decoration};
-    use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-    use crate::tree::{NodeProps, RuntimeSlots};
-    use std::borrow::Cow;
-
-    fn container(id: &'static str, style: BoxStyle, rect: Rect) -> TreeNode {
-        TreeNode {
-            id: Cow::Borrowed(id).into(),
-            props: NodeProps::default(),
-            style,
-            decoration: None,
-            kind: NodeKind::Container,
-            rect,
-            children: Vec::new(),
-            local_runtime: NodeLocalRuntime::default(),
-            layout_meta: Default::default(),
-            paint_meta: Default::default(),
-            mutation_meta: Default::default(),
-            runtime_slots: RuntimeSlots::default(),
-        }
-    }
-
-    fn resizable_style() -> BoxStyle {
-        BoxStyle {
-            resizable: true,
-            ..Default::default()
-        }
-    }
-
-    fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
-        Rect { x, y, w, h }
-    }
-
-    fn rounded_decoration(radius: [f32; 4]) -> Decoration {
-        Decoration {
-            background: Some(Color::WHITE),
-            border: None,
-            radius,
-            shadow: None,
-        }
-    }
-
-    #[test]
-    fn resize_hit_uses_transformed_parent_space() {
-        let mut tree = Tree::new();
-        let card_id = tree.insert(container(
-            "card",
-            resizable_style(),
-            rect(20.0, 30.0, 100.0, 40.0),
-        ));
-        let mut canvas = container(
-            "canvas",
-            BoxStyle {
-                overflow: Overflow::Visible,
-                transform: Some(TransformSpec::translate_scale([100.0, -40.0], 2.0)),
-                ..Default::default()
-            },
-            rect(0.0, 0.0, 300.0, 200.0),
-        );
-        canvas.children = vec![card_id];
-        let canvas_id = tree.insert(canvas);
-        let mut root = container("root", BoxStyle::default(), rect(0.0, 0.0, 500.0, 400.0));
-        root.children = vec![canvas_id];
-        let root_id = tree.insert(root);
-        tree.set_root(root_id);
-
-        let hit =
-            resize_hit_at_screen_point(&tree, root_id, 340.0, 60.0, None).expect("resize hit");
-
-        assert_eq!(hit.node_id, card_id);
-        assert_eq!(hit.edge, ResizeEdge::Right);
-    }
-
-    #[test]
-    fn resize_hit_respects_rounded_container_shape() {
-        let mut tree = Tree::new();
-        let mut card = container("card", resizable_style(), rect(0.0, 0.0, 100.0, 100.0));
-        card.decoration = Some(rounded_decoration([40.0; 4]));
-        let card_id = tree.insert(card);
-        tree.set_root(card_id);
-
-        assert_eq!(
-            resize_hit_at_screen_point(&tree, card_id, 100.0, 100.0, None),
-            None
-        );
-
-        let hit =
-            resize_hit_at_screen_point(&tree, card_id, 88.0, 88.0, None).expect("arc resize hit");
-        assert_eq!(hit.node_id, card_id);
-        assert_eq!(hit.edge, ResizeEdge::BottomRight);
-    }
-
-    #[test]
-    fn resize_hit_includes_edge_band_outside_container_bounds() {
-        let mut tree = Tree::new();
-        let card_id = tree.insert(container(
-            "card",
-            resizable_style(),
-            rect(0.0, 0.0, 100.0, 100.0),
-        ));
-        tree.set_root(card_id);
-
-        let hit = resize_hit_at_screen_point(&tree, card_id, 106.0, 50.0, None)
-            .expect("outside edge band should resize");
-
-        assert_eq!(hit.node_id, card_id);
-        assert_eq!(hit.edge, ResizeEdge::Right);
-    }
-
-    #[test]
-    fn resize_hit_prefers_topmost_overlapping_child() {
-        let mut tree = Tree::new();
-        let lower_id = tree.insert(container(
-            "lower",
-            BoxStyle {
-                z_index: 0,
-                ..resizable_style()
-            },
-            rect(0.0, 0.0, 100.0, 100.0),
-        ));
-        let upper_id = tree.insert(container(
-            "upper",
-            BoxStyle {
-                z_index: 10,
-                ..resizable_style()
-            },
-            rect(0.0, 0.0, 100.0, 100.0),
-        ));
-        let mut root = container("root", BoxStyle::default(), rect(0.0, 0.0, 200.0, 200.0));
-        root.children = vec![lower_id, upper_id];
-        let root_id = tree.insert(root);
-        tree.set_root(root_id);
-
-        let hit =
-            resize_hit_at_screen_point(&tree, root_id, 100.0, 50.0, None).expect("resize hit");
-
-        assert_eq!(hit.node_id, upper_id);
-        assert_eq!(hit.edge, ResizeEdge::Right);
-    }
 }

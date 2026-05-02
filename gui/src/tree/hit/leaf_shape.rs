@@ -1,10 +1,10 @@
-use super::connection_endpoint::node_screen_center;
-use super::layout::LeafKind;
-use super::paint_helpers::{connection_path, grid_cells, CONNECTION_WIDTH};
-use super::paint_space::{NodePaintSpace, PaintSpace};
-use super::Tree;
 use crate::geometry::{Point, Rect};
 use crate::paint::{FillRule, PathCommand, PathData, PathStyle};
+use crate::tree::connection_endpoint::node_screen_center;
+use crate::tree::layout::LeafKind;
+use crate::tree::paint_helpers::{connection_path, grid_cells, CONNECTION_WIDTH};
+use crate::tree::paint_space::{NodePaintSpace, PaintSpace};
+use crate::tree::Tree;
 
 const CURVE_SEGMENTS: usize = 16;
 const EPSILON: f32 = 1e-5;
@@ -109,7 +109,13 @@ fn pending_connection_path(
     ))
 }
 
-fn circle_hit(point: Point, center: Point, radius: f32, has_fill: bool, stroke_width: f32) -> bool {
+pub(super) fn circle_hit(
+    point: Point,
+    center: Point,
+    radius: f32,
+    has_fill: bool,
+    stroke_width: f32,
+) -> bool {
     if radius <= 0.0 || !radius.is_finite() {
         return false;
     }
@@ -123,13 +129,13 @@ fn circle_hit(point: Point, center: Point, radius: f32, has_fill: bool, stroke_w
     half_stroke > 0.0 && (distance - radius).abs() <= half_stroke + EPSILON
 }
 
-fn grid_hit(point: Point, rect: Rect, spacing: f32, radius: f32) -> bool {
+pub(super) fn grid_hit(point: Point, rect: Rect, spacing: f32, radius: f32) -> bool {
     grid_cells(rect, spacing)
         .into_iter()
         .any(|center| circle_hit(point, center, radius, true, 0.0))
 }
 
-fn path_hit(point: Point, data: &PathData, style: PathStyle) -> bool {
+pub(super) fn path_hit(point: Point, data: &PathData, style: PathStyle) -> bool {
     if let Some(fill) = style.fill {
         if fill_hit(point, data, fill.rule) {
             return true;
@@ -141,7 +147,7 @@ fn path_hit(point: Point, data: &PathData, style: PathStyle) -> bool {
         .is_some_and(|stroke| stroke_hit(point, data, stroke.width))
 }
 
-fn stroke_hit(point: Point, data: &PathData, width: f32) -> bool {
+pub(super) fn stroke_hit(point: Point, data: &PathData, width: f32) -> bool {
     let half_width = width.max(0.0) * 0.5;
     if half_width <= 0.0 {
         return false;
@@ -152,7 +158,7 @@ fn stroke_hit(point: Point, data: &PathData, width: f32) -> bool {
     })
 }
 
-fn fill_hit(point: Point, data: &PathData, fill_rule: FillRule) -> bool {
+pub(super) fn fill_hit(point: Point, data: &PathData, fill_rule: FillRule) -> bool {
     let segments = flattened_segments(data, true);
     match fill_rule {
         FillRule::EvenOdd => {
@@ -313,97 +319,4 @@ fn distance_to_segment(point: Point, start: Point, end: Point) -> f32 {
 
 fn distance(a: Point, b: Point) -> f32 {
     (a.x - b.x).hypot(a.y - b.y)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::paint::{Color, Fill, Stroke};
-
-    fn p(x: f32, y: f32) -> Point {
-        Point { x, y }
-    }
-
-    #[test]
-    fn circle_hit_rejects_bounding_box_corner() {
-        assert!(circle_hit(p(5.0, 5.0), p(5.0, 5.0), 5.0, true, 0.0));
-        assert!(!circle_hit(p(0.0, 0.0), p(5.0, 5.0), 5.0, true, 0.0));
-    }
-
-    #[test]
-    fn stroke_hit_uses_distance_to_line() {
-        let data = PathData::line(p(0.0, 0.0), p(10.0, 0.0));
-
-        assert!(stroke_hit(p(5.0, 0.9), &data, 2.0));
-        assert!(!stroke_hit(p(5.0, 2.0), &data, 2.0));
-    }
-
-    #[test]
-    fn stroke_hit_flattens_cubic_curve() {
-        let data = PathData::cubic([p(0.0, 0.0), p(5.0, 0.0), p(5.0, 10.0), p(10.0, 10.0)]);
-
-        assert!(stroke_hit(p(5.0, 5.0), &data, 3.0));
-        assert!(!stroke_hit(p(5.0, 9.0), &data, 1.0));
-    }
-
-    #[test]
-    fn fill_hit_respects_even_odd_rule() {
-        let data = PathData::new()
-            .move_to(p(0.0, 0.0))
-            .line_to(p(10.0, 0.0))
-            .line_to(p(10.0, 10.0))
-            .line_to(p(0.0, 10.0))
-            .close()
-            .move_to(p(3.0, 3.0))
-            .line_to(p(7.0, 3.0))
-            .line_to(p(7.0, 7.0))
-            .line_to(p(3.0, 7.0))
-            .close();
-
-        assert!(fill_hit(p(1.0, 1.0), &data, FillRule::EvenOdd));
-        assert!(!fill_hit(p(5.0, 5.0), &data, FillRule::EvenOdd));
-    }
-
-    #[test]
-    fn path_hit_accepts_fill_or_stroke() {
-        let data = PathData::new()
-            .move_to(p(0.0, 0.0))
-            .line_to(p(10.0, 0.0))
-            .line_to(p(10.0, 10.0))
-            .close();
-        let style = PathStyle::fill_and_stroke(
-            Fill::non_zero(Color::WHITE),
-            Stroke::new(2.0, Color::WHITE),
-        );
-
-        assert!(path_hit(p(5.0, 2.0), &data, style));
-        assert!(path_hit(p(5.0, -0.5), &data, style));
-        assert!(!path_hit(p(20.0, 20.0), &data, style));
-    }
-
-    #[test]
-    fn grid_hit_checks_dot_circles() {
-        assert!(grid_hit(
-            p(0.5, 0.0),
-            Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 10.0,
-                h: 10.0,
-            },
-            10.0,
-            1.0,
-        ));
-        assert!(!grid_hit(
-            p(5.0, 5.0),
-            Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 10.0,
-                h: 10.0,
-            },
-            10.0,
-            1.0,
-        ));
-    }
 }
