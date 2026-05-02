@@ -42,8 +42,10 @@ impl CursorState {
         self.desired
     }
 
-    pub fn set(&mut self, cursor: CursorKind) {
+    pub fn set(&mut self, cursor: CursorKind) -> bool {
+        let changed = self.desired != cursor;
         self.desired = cursor;
+        changed
     }
 
     pub(crate) fn apply_to_window(&mut self, window: &winit::window::Window) {
@@ -206,9 +208,10 @@ mod tests {
     fn cursor_state_persists_desired_cursor_until_changed() {
         let mut state = CursorState::new();
 
-        state.set(CursorKind::Pointer);
+        assert!(state.set(CursorKind::Pointer));
 
         assert_eq!(state.desired(), CursorKind::Pointer);
         assert_eq!(state.desired(), CursorKind::Pointer);
+        assert!(!state.set(CursorKind::Pointer));
     }
 }

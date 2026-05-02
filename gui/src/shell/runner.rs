@@ -128,7 +128,6 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 },
             );
             state.app.update(&mut state.renderer, &mut state.ctx);
-            state.ctx.apply_cursor();
 
             let output = match state.surface.get_current_texture() {
                 Ok(tex) => tex,

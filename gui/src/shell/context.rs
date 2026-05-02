@@ -27,14 +27,11 @@ impl AppContext {
 
     pub fn set_cursor(&mut self, cursor: CursorKind) {
         self.cursor.set(cursor);
+        self.cursor.apply_to_window(&self.window);
     }
 
     pub fn cursor(&self) -> CursorKind {
         self.cursor.desired()
-    }
-
-    pub(crate) fn apply_cursor(&mut self) {
-        self.cursor.apply_to_window(&self.window);
     }
 
     pub(crate) fn take_redraw_request(&mut self) -> bool {
