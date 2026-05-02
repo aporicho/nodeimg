@@ -2690,6 +2690,98 @@ mod tests {
     }
 
     #[test]
+    fn tree_mutation_set_rect_layout_boundary_resize_move_marks_layout_and_placement() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut panel_node = container_node("panel");
+        panel_node
+            .layout_meta
+            .set_boundary(RelayoutBoundaryReason::Panel);
+        panel_node
+            .paint_meta
+            .set_boundary(RepaintBoundaryReason::PanelFrame);
+        panel_node.mutation_meta.rect_move =
+            crate::tree::RectMoveInvalidation::LayoutAndBoundaryPlacement;
+        let panel = tree.insert_checked(panel_node).expect("panel");
+        tree.append_child(root, panel);
+        tree.get_mut(panel).expect("panel").rect = Rect {
+            x: 100.0,
+            y: 80.0,
+            w: 240.0,
+            h: 160.0,
+        };
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: panel,
+                    rect: Rect {
+                        x: 60.0,
+                        y: 40.0,
+                        w: 280.0,
+                        h: 200.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::LAYOUT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT_PLACEMENT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        assert!(tree.take_layout_dirty().boundaries.contains(&panel));
+        let dirty = tree.take_paint_dirty();
+        assert!(dirty.boundaries.contains(&RepaintBoundaryId(panel)));
+        assert!(dirty.placement.contains(&RepaintBoundaryId(root)));
+    }
+
+    #[test]
+    fn tree_mutation_set_rect_boundary_resize_move_marks_placement() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut child_node = container_node("child");
+        child_node
+            .paint_meta
+            .set_boundary(RepaintBoundaryReason::CanvasNodeCard);
+        child_node.mutation_meta.rect_move = crate::tree::RectMoveInvalidation::BoundaryPlacement;
+        let child = tree.insert_checked(child_node).expect("child");
+        tree.append_child(root, child);
+        tree.get_mut(child).expect("child").rect = Rect {
+            x: 100.0,
+            y: 80.0,
+            w: 240.0,
+            h: 160.0,
+        };
+        let registry = crate::template::TemplateRegistry::new();
+
+        let invalidation = tree
+            .apply_mutation(
+                &registry,
+                TreeMutation::SetRect {
+                    node: child,
+                    rect: Rect {
+                        x: 60.0,
+                        y: 40.0,
+                        w: 280.0,
+                        h: 200.0,
+                    },
+                },
+            )
+            .expect("mutation");
+
+        assert!(invalidation.flags.contains(DirtyFlags::LAYOUT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT));
+        assert!(invalidation.flags.contains(DirtyFlags::PAINT_PLACEMENT));
+        assert!(invalidation.flags.contains(DirtyFlags::HIT));
+        let dirty = tree.take_paint_dirty();
+        assert!(dirty.placement.contains(&RepaintBoundaryId(root)));
+    }
+
+    #[test]
     fn tree_mutation_set_rect_size_marks_layout_hit_paint() {
         let mut tree = Tree::new();
         let root = tree.insert_checked(container_node("root")).expect("root");
