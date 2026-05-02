@@ -10,8 +10,6 @@ mod signal;
 mod tap;
 
 pub use drag::DragRecognizer;
-#[cfg(test)]
-pub(crate) use factory::arena_from_resize_hit;
 pub use kind::Gesture;
 pub use long_press::LongPressRecognizer;
 pub(crate) use recognizer::GestureRecognizer;

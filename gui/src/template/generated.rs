@@ -21,6 +21,7 @@ pub const CANVAS_CONNECTION_TEMPLATE: &str = "builtin::canvas_connection";
 pub const CANVAS_PENDING_CONNECTION_TEMPLATE: &str = "builtin::canvas_pending_connection";
 pub const PARAM_CONTROL_TEMPLATE: &str = "builtin::param_control";
 pub const PANEL_FRAME_TEMPLATE: &str = "builtin::panel_frame";
+pub const DROPDOWN_OVERLAY_TEMPLATE: &str = "builtin::dropdown_overlay";
 pub const NODE_PALETTE_TEMPLATE: &str = "builtin::node_palette";
 pub const NODE_PALETTE_CATEGORY_TEMPLATE: &str = "builtin::node_palette_category";
 pub const NODE_PALETTE_ITEM_TEMPLATE: &str = "builtin::node_palette_item";
@@ -47,6 +48,7 @@ pub(crate) fn register_builtin_templates(
     registry
         .register_retained(crate::canvas::retained_node_card::CanvasNodeCardRetainedTemplate)?;
     registry.register_retained(crate::panel::retained::PanelFrameRetainedTemplate)?;
+    registry.register_retained(crate::overlay::retained::DropdownOverlayRetainedTemplate)?;
     Ok(())
 }
 

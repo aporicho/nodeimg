@@ -5,25 +5,13 @@ use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
 use crate::overlay::OverlaySystem;
-#[cfg(test)]
-use crate::renderer::{Rect, TextMeasurer};
 use crate::runtime::ControlIntrinsic;
 use crate::shell::AppEvent;
-#[cfg(test)]
+use crate::template::TemplateRegistry;
 use crate::theme::Theme;
-#[cfg(test)]
-use crate::tree::Desc;
-use crate::tree::{NodeId, Tree};
+use crate::tree::{MutationError, NodeId, Tree};
 use crate::widget::state::TextBoxStore;
 use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextBoxSystem};
-
-#[cfg(test)]
-pub(crate) struct RuntimeSyncCx<'a> {
-    pub(crate) tree: &'a mut Tree,
-    pub(crate) interaction: &'a InteractionState,
-    pub(crate) measurer: &'a mut TextMeasurer,
-    pub(crate) theme: &'a Theme,
-}
 
 pub(crate) struct RuntimeEventCx<'a> {
     pub(crate) tree: &'a mut Tree,
@@ -50,23 +38,6 @@ impl RuntimeSystems {
             dropdown: DropdownSystem::new(),
             text_box: TextBoxSystem::new(),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn compose_desc(&mut self, tree: &Tree, desc: Desc, root_rect: Rect) -> Desc {
-        self.overlay.compose_desc(tree, desc, root_rect)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn sync_with_tree(&mut self, cx: RuntimeSyncCx<'_>) {
-        self.text_box.sync_with_tree(
-            cx.tree,
-            cx.measurer,
-            cx.theme,
-            cx.interaction.focused(),
-            cx.interaction.captured(),
-        );
-        self.dropdown.sync_with_tree(cx.tree, &self.overlay);
     }
 
     pub(crate) fn handle_pre_gesture_event(
@@ -105,16 +76,25 @@ impl RuntimeSystems {
         }
     }
 
-    pub(crate) fn open_overlay(&mut self, tree: &Tree, request: OverlayRequest) {
+    pub(crate) fn open_overlay(&mut self, tree: &mut Tree, request: OverlayRequest) {
         self.overlay.open(tree, request);
     }
 
-    pub(crate) fn close_overlay(&mut self, tree: &Tree, interaction: &mut InteractionState) {
+    pub(crate) fn close_overlay(&mut self, tree: &mut Tree, interaction: &mut InteractionState) {
         self.overlay.close(tree, interaction);
     }
 
     pub(crate) fn overlay_open(&self) -> bool {
         self.overlay.is_open()
+    }
+
+    pub(crate) fn sync_overlay_tree(
+        &mut self,
+        tree: &mut Tree,
+        registry: &TemplateRegistry,
+        theme: &Theme,
+    ) -> Result<(), MutationError> {
+        self.overlay.sync_tree(tree, registry, theme)
     }
 
     pub(crate) fn ime_request(&self, tree: &Tree, focused: Option<NodeId>) -> ImeRequest {

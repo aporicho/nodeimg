@@ -2,8 +2,6 @@ use crate::canvas::canvas_node_stable_id;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
 use crate::output::{FrameworkOutput, OutputBuilder, PlatformEffect, WidgetEvent};
-#[cfg(test)]
-use crate::renderer::TextMeasurer;
 use crate::shell::{AppEvent, Key, Modifiers, MouseButton};
 use crate::theme::{ControlSize, Density, Theme};
 use crate::tree::{NodeId, Tree};
@@ -24,21 +22,6 @@ impl TextBoxSystem {
             store: TextBoxStore::new(),
             active_drag_text_box: None,
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn sync_with_tree(
-        &mut self,
-        tree: &Tree,
-        measurer: &mut TextMeasurer,
-        theme: &Theme,
-        focused: Option<NodeId>,
-        captured: Option<NodeId>,
-    ) {
-        let focused_widget_id = self.focused_widget_id(tree, focused);
-        self.store
-            .sync_with_tree(tree, measurer, theme, focused_widget_id.as_deref());
-        self.sync_sessions(tree, focused, captured);
     }
 
     pub(crate) fn handle_event(

@@ -129,6 +129,6 @@ impl<'a> OverlaySystemCx<'a> {
     }
 
     pub(crate) fn close_overlay_no_focus_restore(&mut self) {
-        self.overlay.close_no_focus_restore();
+        self.overlay.close_no_focus_restore(self.tree);
     }
 }

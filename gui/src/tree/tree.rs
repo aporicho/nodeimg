@@ -1059,22 +1059,12 @@ impl Tree {
         flags
     }
 
-    #[cfg(test)]
-    pub(crate) fn record_widget_build_call(&self) {
-        self.frame_stats.borrow_mut().widget_build_calls += 1;
-    }
-
     pub(crate) fn record_stable_id_lookup(&self) {
         self.frame_stats.borrow_mut().stable_id_lookups += 1;
     }
 
     pub(crate) fn record_full_tree_scan(&self) {
         self.frame_stats.borrow_mut().full_tree_scans += 1;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn record_reconcile_child_match(&self) {
-        self.frame_stats.borrow_mut().reconcile_child_matches += 1;
     }
 
     pub(crate) fn record_layout_node_visited(&self) {
@@ -1147,11 +1137,6 @@ impl Tree {
 
     pub(crate) fn record_paint_order_cache_miss(&self) {
         self.frame_stats.borrow_mut().paint_order_cache_misses += 1;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn record_full_root_paint_call(&self) {
-        self.frame_stats.borrow_mut().full_root_paint_calls += 1;
     }
 
     pub fn ensure_panel(&mut self, config: &PanelConfig) {
@@ -1880,17 +1865,14 @@ fn panel_layout_from_runtime(id: &str, panel: &PanelRuntime) -> PanelLayout {
 mod tests {
     use super::*;
     use crate::renderer::Rect;
-    use crate::theme::light_theme;
     use crate::tree::layout::{
         BoxStyle, LayoutConstraints, LayoutOutput, LeafKind, RelayoutBoundaryReason, Size,
         TextLayout,
     };
     use crate::tree::{
-        reconcile, Desc, DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps,
-        StylePatch, TreeDumpLevel, TreeMutation, TreeSnapshotOptions,
+        DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps, StylePatch, TreeDumpLevel,
+        TreeMutation, TreeSnapshotOptions,
     };
-    use crate::widget::props::WidgetBuildCx;
-    use std::borrow::Cow;
 
     #[derive(Debug, Default)]
     struct TestRuntime {
@@ -1898,26 +1880,6 @@ mod tests {
     }
 
     impl RuntimeSlot for TestRuntime {}
-
-    fn build_cx<'a>(theme: &'a crate::theme::Theme) -> WidgetBuildCx<'a> {
-        WidgetBuildCx {
-            theme,
-            force_rebuild: false,
-        }
-    }
-
-    fn root_desc(width: f32) -> Desc {
-        Desc::Container {
-            id: Cow::Borrowed("root"),
-            style: BoxStyle {
-                width: Size::Fixed(width),
-                height: Size::Fixed(100.0),
-                ..BoxStyle::default()
-            },
-            decoration: None,
-            children: Vec::new(),
-        }
-    }
 
     fn container_node(id: &'static str) -> TreeNode {
         TreeNode {
@@ -2096,9 +2058,8 @@ mod tests {
     #[test]
     fn runtime_slot_roundtrips_by_type() {
         let mut tree = Tree::new();
-        let theme = light_theme();
-        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
-        let root = tree.root().expect("root");
+        let root = tree.insert(container_node("root"));
+        tree.set_root(root);
 
         tree.ensure_runtime_slot::<TestRuntime>(root)
             .expect("slot")
@@ -2119,32 +2080,10 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_preserves_runtime_for_stable_node() {
-        let mut tree = Tree::new();
-        let theme = light_theme();
-        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
-        let root = tree.root().expect("root");
-        tree.ensure_runtime_slot::<TestRuntime>(root)
-            .expect("slot")
-            .value = 7;
-
-        reconcile(&mut tree, root_desc(200.0), build_cx(&theme));
-        let root_after = tree.root().expect("root after reconcile");
-
-        assert_eq!(root_after, root);
-        assert_eq!(
-            tree.runtime_slot::<TestRuntime>(root_after)
-                .expect("runtime survives reconcile")
-                .value,
-            7
-        );
-    }
-
-    #[test]
     fn stable_id_lookup_uses_tree_node_identity() {
         let mut tree = Tree::new();
-        let theme = light_theme();
-        reconcile(&mut tree, root_desc(100.0), build_cx(&theme));
+        let root = tree.insert(container_node("root"));
+        tree.set_root(root);
 
         assert_eq!(tree.node_by_stable_id(&StableId::from("root")), tree.root());
         assert_eq!(tree.node_by_str("root"), tree.root());

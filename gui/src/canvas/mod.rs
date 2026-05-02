@@ -2,8 +2,6 @@ pub mod camera;
 pub(crate) mod connection;
 mod layout;
 pub mod navigation;
-#[cfg(test)]
-pub(crate) mod node_card;
 pub(crate) mod node_sizing;
 pub(crate) mod node_spec;
 pub(crate) mod node_style;

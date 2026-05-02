@@ -34,7 +34,7 @@ docs/
     retained-ui-render-path.md
 
 scripts/ or xtask/
-  check_retained_ui_gates
+  check_gui_api_boundaries
 ```
 
 可能接入：

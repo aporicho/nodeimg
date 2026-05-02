@@ -6,7 +6,7 @@ use crate::tree::{NodeId, Tree};
 
 pub(crate) fn close_overlay(
     state: Option<OverlayState>,
-    tree: &Tree,
+    tree: &mut Tree,
     interaction: &mut InteractionState,
 ) {
     let Some(state) = state else {
@@ -25,6 +25,7 @@ pub(crate) fn close_overlay(
     if let Some(node_id) = restore_node_id {
         interaction.focus(node_id);
     }
+    super::system::remove_overlay_root(tree, state.root);
 }
 
 pub(crate) fn handle_dismiss_event(

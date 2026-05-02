@@ -1,6 +1,4 @@
-#[cfg(test)]
 use super::OverlayRequest;
-#[cfg(test)]
 use crate::tree::Tree;
 
 #[derive(Debug, Clone, Copy)]
@@ -9,7 +7,6 @@ pub enum OverlayPlacement {
     BelowStart,
 }
 
-#[cfg(test)]
 pub(crate) fn resolve_placement(
     tree: &Tree,
     request: &OverlayRequest,
@@ -29,7 +26,6 @@ pub(crate) fn resolve_placement(
     }
 }
 
-#[cfg(test)]
 fn anchor_layout(tree: &Tree, request: &OverlayRequest) -> Option<(f32, f32, f32, f32)> {
     let node_id = tree.node_by_str(&request.anchor_id)?;
     let node = tree.get(node_id)?;

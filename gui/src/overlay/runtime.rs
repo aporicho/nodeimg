@@ -1,11 +1,11 @@
 use super::OverlayRequest;
+use crate::tree::NodeId;
 
 pub(crate) struct OverlayState {
     pub(crate) request: OverlayRequest,
-    #[cfg(test)]
     pub(crate) last_x: f32,
-    #[cfg(test)]
     pub(crate) last_y: f32,
-    #[cfg(test)]
     pub(crate) last_width: Option<f32>,
+    pub(crate) root: Option<NodeId>,
+    pub(crate) dirty: bool,
 }

@@ -31,29 +31,6 @@ pub(crate) struct PaintCx<'a> {
     pub(crate) theme: &'a Theme,
 }
 
-#[cfg(test)]
-pub(crate) fn build_display_list(
-    tree: &Tree,
-    root: NodeId,
-    cx: PaintCx<'_>,
-    measure_text: impl FnMut(&str, &TextStyle) -> (f32, f32),
-) -> Result<DisplayList, PaintBuildError> {
-    tree.record_full_root_paint_call();
-    let mut target = RecordingPaintTarget::with_measure(measure_text);
-    let mut traversal = PaintTraversal::Full;
-    paint_to_target(
-        tree,
-        root,
-        &mut target,
-        cx.interaction,
-        cx.text_boxes,
-        cx.animations,
-        cx.theme,
-        &mut traversal,
-    );
-    target.display_list()
-}
-
 pub(crate) fn build_paint_fragment(
     tree: &Tree,
     boundary: RepaintBoundaryId,

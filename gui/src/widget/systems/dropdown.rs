@@ -1,52 +1,17 @@
-use crate::context::{OverlayPlacement, OverlayRequest};
+use crate::context::{DropdownOverlayContent, OverlayContent, OverlayPlacement, OverlayRequest};
 use crate::output::{FrameworkOutput, OutputBuilder, WidgetEvent};
 use crate::shell::{AppEvent, Key, MouseButton};
 use crate::tree::{HitChain, NodeId, NodeKind, Tree};
-use crate::ui;
-use crate::widget::atoms::dropdown::{DropdownOptionProps, DropdownProps};
-use crate::widget::atoms::label::{LabelProps, LabelVariant};
-use crate::widget::frameworks::group::GroupProps;
-use crate::widget::frameworks::list_view::ListViewProps;
-#[cfg(test)]
-use crate::widget::state::dropdown::DropdownRuntime;
+use crate::widget::atoms::dropdown::DropdownProps;
 use crate::widget::state::dropdown::OpenDropdown;
 use crate::widget::systems::OverlaySystemCx;
 use std::borrow::Cow;
-
-#[cfg(test)]
-const DROPDOWN_RUNTIME_ID: &str = "__dropdown_runtime";
 
 pub(crate) struct DropdownSystem;
 
 impl DropdownSystem {
     pub fn new() -> Self {
         Self
-    }
-
-    #[cfg(test)]
-    pub fn sync_with_tree(
-        &mut self,
-        tree: &mut Tree,
-        overlay_system: &crate::overlay::OverlaySystem,
-    ) {
-        let open_id = tree
-            .ensure_runtime_slot_by_stable_id::<DropdownRuntime>(DROPDOWN_RUNTIME_ID)
-            .open
-            .as_ref()
-            .map(|open| open.id.clone());
-
-        if !overlay_system.is_open() {
-            tree.ensure_runtime_slot_by_stable_id::<DropdownRuntime>(DROPDOWN_RUNTIME_ID)
-                .open = None;
-            return;
-        }
-
-        if let Some(open_id) = open_id {
-            if dropdown_props(tree, &open_id).is_none() {
-                tree.ensure_runtime_slot_by_stable_id::<DropdownRuntime>(DROPDOWN_RUNTIME_ID)
-                    .open = None;
-            }
-        }
     }
 
     pub fn handle_event(
@@ -192,57 +157,20 @@ fn selection_output(id: String, selected: usize) -> FrameworkOutput {
 }
 
 fn build_request(dropdown_id: &str, highlighted: usize, props: &DropdownProps) -> OverlayRequest {
-    let items = props
-        .options
-        .iter()
-        .enumerate()
-        .map(|(index, option)| {
-            ui::widget(
-                format!("__dropdown_option::{}::{}", dropdown_id, index),
-                DropdownOptionProps {
-                    label: option.clone(),
-                    selected: index == props.selected,
-                    highlighted: index == highlighted,
-                    disabled: false,
-                    size: props.size,
-                    density: props.density,
-                },
-            )
-            .build()
-        })
-        .collect();
-
     OverlayRequest {
         id: format!("dropdown::{}", dropdown_id),
         anchor_id: format!("{}::field", dropdown_id),
         restore_focus_id: Some(dropdown_id.to_string()),
         placement: OverlayPlacement::BelowStart,
-        content: ui::widget(
-            format!("{}::popup_group", dropdown_id),
-            GroupProps {
-                title: props.label.clone().unwrap_or(Cow::Borrowed("Options")),
-                content: vec![
-                    ui::widget(
-                        format!("{}::popup_hint", dropdown_id),
-                        LabelProps {
-                            text: Cow::Borrowed("Use mouse or Up/Down + Enter"),
-                            variant: LabelVariant::Caption,
-                            muted: true,
-                        },
-                    )
-                    .build(),
-                    ui::widget(
-                        format!("{}::popup_list", dropdown_id),
-                        ListViewProps {
-                            height: 140.0,
-                            items,
-                        },
-                    )
-                    .build(),
-                ],
-            },
-        )
-        .build(),
+        content: OverlayContent::DropdownOptions(DropdownOverlayContent {
+            dropdown_id: dropdown_id.to_string(),
+            title: props.label.clone().unwrap_or(Cow::Borrowed("Options")),
+            options: props.options.clone(),
+            selected: props.selected,
+            highlighted,
+            size: props.size,
+            density: props.density,
+        }),
         offset_x: 0.0,
         offset_y: 8.0,
         match_anchor_width: true,
@@ -297,14 +225,10 @@ fn focused_dropdown_id(tree: &Tree, focused: Option<NodeId>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::icon::{names, IconId};
     use crate::theme::{ControlSize, Density};
-    use crate::tree::Desc;
-    use crate::widget::frameworks::group::GroupProps;
-    use crate::widget::frameworks::list_view::ListViewProps;
 
     #[test]
-    fn dropdown_popup_options_use_icon_markers_not_text_prefixes() {
+    fn dropdown_popup_request_preserves_structured_option_state() {
         let props = DropdownProps {
             label: Some(Cow::Borrowed("Mode")),
             options: vec![Cow::Borrowed("Normal"), Cow::Borrowed("Multiply")],
@@ -315,60 +239,17 @@ mod tests {
         };
 
         let request = build_request("blend", 1, &props);
-        let options = popup_option_props(&request.content);
 
-        assert_eq!(options.len(), 2);
-        assert_eq!(options[0].label, "Normal");
-        assert!(options[0].selected);
-        assert!(!options[0].highlighted);
+        let OverlayContent::DropdownOptions(content) = request.content;
+        assert_eq!(content.dropdown_id, "blend");
+        assert_eq!(content.title, "Mode");
         assert_eq!(
-            options[0].marker_icon().map(IconId::from),
-            Some(IconId::from(names::CHECK))
+            content.options,
+            vec![Cow::Borrowed("Normal"), Cow::Borrowed("Multiply")]
         );
-
-        assert_eq!(options[1].label, "Multiply");
-        assert!(!options[1].selected);
-        assert!(options[1].highlighted);
-        assert_eq!(
-            options[1].marker_icon().map(IconId::from),
-            Some(IconId::from(names::NAV_ARROW_RIGHT))
-        );
-
-        for option in options {
-            assert!(!option.label.starts_with('✓'));
-            assert!(!option.label.starts_with('›'));
-        }
-    }
-
-    fn popup_option_props(content: &Desc) -> Vec<&DropdownOptionProps> {
-        let Desc::Widget(group_widget) = content else {
-            panic!("dropdown popup content should be a group widget");
-        };
-        let group = group_widget
-            .props()
-            .as_any()
-            .downcast_ref::<GroupProps>()
-            .expect("popup content should carry GroupProps");
-        let Desc::Widget(list_widget) = &group.content[1] else {
-            panic!("popup second child should be a list widget");
-        };
-        let list = list_widget
-            .props()
-            .as_any()
-            .downcast_ref::<ListViewProps>()
-            .expect("popup list should carry ListViewProps");
-        list.items
-            .iter()
-            .map(|item| {
-                let Desc::Widget(option_widget) = item else {
-                    panic!("list item should be a dropdown option widget");
-                };
-                option_widget
-                    .props()
-                    .as_any()
-                    .downcast_ref::<DropdownOptionProps>()
-                    .expect("list item should carry DropdownOptionProps")
-            })
-            .collect()
+        assert_eq!(content.selected, 0);
+        assert_eq!(content.highlighted, 1);
+        assert_eq!(content.size, ControlSize::Small);
+        assert_eq!(content.density, Density::Compact);
     }
 }
