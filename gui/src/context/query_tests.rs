@@ -1,0 +1,183 @@
+use super::*;
+use crate::control::{ControlRole, ResizeEdge};
+use crate::cursor::CursorKind;
+use crate::gesture::Gesture;
+use crate::renderer::Rect;
+use crate::tree::layout::BoxStyle;
+use crate::tree::{NodeKind, NodeProps, RuntimeSlots, TreeNode};
+
+fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
+    TreeNode {
+        id: id.into(),
+        props: Default::default(),
+        style: BoxStyle {
+            hittable: true,
+            ..Default::default()
+        },
+        decoration: None,
+        kind: NodeKind::Container,
+        rect,
+        children: Vec::new(),
+        local_runtime: Default::default(),
+        layout_meta: Default::default(),
+        paint_meta: Default::default(),
+        mutation_meta: Default::default(),
+        runtime_slots: RuntimeSlots::default(),
+    }
+}
+
+fn node_with_style(id: &'static str, rect: Rect, style: BoxStyle) -> TreeNode {
+    TreeNode {
+        style,
+        ..hittable_node(id, rect)
+    }
+}
+
+fn node_with_role(id: &'static str, rect: Rect, role: ControlRole) -> TreeNode {
+    TreeNode {
+        props: NodeProps {
+            semantic_role: Some(role),
+            ..Default::default()
+        },
+        ..hittable_node(id, rect)
+    }
+}
+
+#[test]
+fn pointer_hit_query_result_captures_point_and_chain() {
+    let mut ctx = Context::new();
+    let root = ctx.tree.insert(hittable_node(
+        "root",
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        },
+    ));
+    ctx.tree.set_root(root);
+
+    let hit = ctx.query().pointer_hit_at(20.0, 30.0);
+
+    assert!(hit.matches_point(20.0, 30.0));
+    assert_eq!(hit.chain().leaf(), Some(root));
+    assert!(hit.resize_hit().is_none());
+}
+
+#[test]
+fn cursor_for_hit_prefers_resize_hit() {
+    let mut ctx = Context::new();
+    let root = ctx.tree.insert(node_with_style(
+        "resizable",
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        },
+        BoxStyle {
+            hittable: true,
+            resizable: true,
+            ..Default::default()
+        },
+    ));
+    ctx.tree.set_root(root);
+
+    let hit = ctx.query().pointer_hit_at(100.0, 50.0);
+
+    assert_eq!(
+        ctx.query().cursor_for_hit(&hit),
+        CursorKind::Resize(ResizeEdge::Right)
+    );
+}
+
+#[test]
+fn cursor_for_hit_reports_draggable_as_move() {
+    let mut ctx = Context::new();
+    let root = ctx.tree.insert(node_with_style(
+        "titlebar",
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 32.0,
+        },
+        BoxStyle {
+            hittable: true,
+            draggable: true,
+            gestures: vec![Gesture::Tap, Gesture::Drag],
+            ..Default::default()
+        },
+    ));
+    ctx.tree.set_root(root);
+
+    let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+    assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Move);
+    assert_eq!(ctx.query().cursor_at(20.0, 10.0), CursorKind::Move);
+}
+
+#[test]
+fn cursor_for_hit_reports_clickable_as_pointer() {
+    let mut ctx = Context::new();
+    let root = ctx.tree.insert(node_with_role(
+        "button",
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 80.0,
+            h: 28.0,
+        },
+        ControlRole::Button,
+    ));
+    ctx.tree.set_root(root);
+
+    let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+    assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Pointer);
+}
+
+#[test]
+fn cursor_for_hit_reports_text_roles_as_text() {
+    for role in [
+        ControlRole::TextInput,
+        ControlRole::TextArea,
+        ControlRole::NumberInput,
+    ] {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(node_with_role(
+            "field",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 28.0,
+            },
+            role,
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+        assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Text);
+    }
+}
+
+#[test]
+fn cursor_for_hit_defaults_for_plain_hittable_node() {
+    let mut ctx = Context::new();
+    let root = ctx.tree.insert(hittable_node(
+        "plain",
+        Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        },
+    ));
+    ctx.tree.set_root(root);
+
+    let hit = ctx.query().pointer_hit_at(20.0, 30.0);
+
+    assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Default);
+}
