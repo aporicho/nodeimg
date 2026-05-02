@@ -90,6 +90,22 @@ mod tests {
     }
 
     #[test]
+    fn resize_session_expands_left_edge_without_moving_right_edge() {
+        let mut tree = crate::tree::Tree::new();
+        tree.ensure_panel(&config("preview"));
+
+        tree.start_panel_resize("preview", ResizeEdge::Left, 10.0, 100.0);
+        tree.move_panel_resize("preview", ResizeEdge::Left, -30.0, 100.0);
+
+        let state = tree.panel_state("preview").expect("preview state");
+        assert_eq!(state.rect.x, -30.0);
+        assert_eq!(state.rect.y, 20.0);
+        assert_eq!(state.rect.w, 280.0);
+        assert_eq!(state.rect.h, 160.0);
+        assert_eq!(state.rect.x + state.rect.w, 250.0);
+    }
+
+    #[test]
     fn resize_session_clamps_top_edge_without_moving_bottom_edge() {
         let mut tree = crate::tree::Tree::new();
         tree.ensure_panel(&config("preview"));
@@ -106,6 +122,22 @@ mod tests {
     }
 
     #[test]
+    fn resize_session_expands_top_edge_without_moving_bottom_edge() {
+        let mut tree = crate::tree::Tree::new();
+        tree.ensure_panel(&config("preview"));
+
+        tree.start_panel_resize("preview", ResizeEdge::Top, 100.0, 20.0);
+        tree.move_panel_resize("preview", ResizeEdge::Top, 100.0, -40.0);
+
+        let state = tree.panel_state("preview").expect("preview state");
+        assert_eq!(state.rect.x, 10.0);
+        assert_eq!(state.rect.y, -40.0);
+        assert_eq!(state.rect.w, 240.0);
+        assert_eq!(state.rect.h, 220.0);
+        assert_eq!(state.rect.y + state.rect.h, 180.0);
+    }
+
+    #[test]
     fn resize_session_clamps_top_left_corner_without_moving_opposite_corner() {
         let mut tree = crate::tree::Tree::new();
         tree.ensure_panel(&config("preview"));
@@ -118,6 +150,23 @@ mod tests {
         assert_eq!(state.rect.y, 100.0);
         assert_eq!(state.rect.w, 120.0);
         assert_eq!(state.rect.h, 80.0);
+        assert_eq!(state.rect.x + state.rect.w, 250.0);
+        assert_eq!(state.rect.y + state.rect.h, 180.0);
+    }
+
+    #[test]
+    fn resize_session_expands_top_left_corner_without_moving_opposite_corner() {
+        let mut tree = crate::tree::Tree::new();
+        tree.ensure_panel(&config("preview"));
+
+        tree.start_panel_resize("preview", ResizeEdge::TopLeft, 10.0, 20.0);
+        tree.move_panel_resize("preview", ResizeEdge::TopLeft, -30.0, -40.0);
+
+        let state = tree.panel_state("preview").expect("preview state");
+        assert_eq!(state.rect.x, -30.0);
+        assert_eq!(state.rect.y, -40.0);
+        assert_eq!(state.rect.w, 280.0);
+        assert_eq!(state.rect.h, 220.0);
         assert_eq!(state.rect.x + state.rect.w, 250.0);
         assert_eq!(state.rect.y + state.rect.h, 180.0);
     }

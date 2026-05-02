@@ -1532,6 +1532,66 @@ mod tests {
             .query()
             .hit_test(before_root.x + 2.0, before_root.y + 2.0)
             .contains(toolbar));
+
+        let expand_start_x = after_root.x + 2.0;
+        let expand_start_y = after_root.y + 2.0;
+        let expand_end_x = expand_start_x - 40.0;
+        let expand_end_y = expand_start_y - 30.0;
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeStart {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: expand_start_x,
+                y: expand_start_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeMove {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: expand_end_x,
+                y: expand_end_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeEnd {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: expand_end_x,
+                y: expand_end_y,
+            }));
+
+        let expand_sync = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("expand resize sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let expanded_root = gui.query().node_rect("toolbar").expect("toolbar rect");
+        let expected_expand_right = after_root.x + after_root.w;
+        let expected_expand_bottom = after_root.y + after_root.h;
+
+        assert!(expand_sync.mutations_queued > 0);
+        assert_eq!(expanded_root.x, after_root.x - 40.0);
+        assert_eq!(expanded_root.y, after_root.y - 30.0);
+        assert_eq!(expanded_root.w, after_root.w + 40.0);
+        assert_eq!(expanded_root.h, after_root.h + 30.0);
+        assert_eq!(expanded_root.x + expanded_root.w, expected_expand_right);
+        assert_eq!(expanded_root.y + expanded_root.h, expected_expand_bottom);
     }
 
     #[test]

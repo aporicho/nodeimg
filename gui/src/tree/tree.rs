@@ -1560,7 +1560,7 @@ impl Tree {
             panel.min_size[1],
         );
         tracing::trace!(
-            target: "nodeimg::render_trace::node",
+            target: "gui::panel",
             panel_id = id,
             edge = ?edge,
             dx,
@@ -1654,6 +1654,14 @@ impl Tree {
 
     pub fn start_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
         let Some(start_rect) = self.panel_state(id).map(|panel| panel.rect) else {
+            tracing::trace!(
+                target: "gui::panel",
+                panel_id = id,
+                edge = ?edge,
+                x,
+                y,
+                "skip panel resize start because panel runtime is missing"
+            );
             return;
         };
         self.bring_panel_to_front(id);
@@ -1665,15 +1673,45 @@ impl Tree {
             start_y: y,
             start_rect,
         });
+        tracing::trace!(
+            target: "gui::panel",
+            panel_id = id,
+            edge = ?edge,
+            x,
+            y,
+            start_rect_x = start_rect.x,
+            start_rect_y = start_rect.y,
+            start_rect_w = start_rect.w,
+            start_rect_h = start_rect.h,
+            "panel resize session started"
+        );
     }
 
     pub fn move_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
         let Some(session) = ({
             let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
             let Some(session) = root.active_resize.as_ref() else {
+                tracing::trace!(
+                    target: "gui::panel",
+                    panel_id = id,
+                    edge = ?edge,
+                    x,
+                    y,
+                    "skip panel resize move because there is no active session"
+                );
                 return;
             };
             if session.id != id || session.edge != edge {
+                tracing::trace!(
+                    target: "gui::panel",
+                    panel_id = id,
+                    edge = ?edge,
+                    active_panel_id = %session.id,
+                    active_edge = ?session.edge,
+                    x,
+                    y,
+                    "skip panel resize move because active session does not match event"
+                );
                 return;
             }
             Some(session.clone())
@@ -1694,6 +1732,16 @@ impl Tree {
             }
         }
         let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
+        tracing::trace!(
+            target: "gui::panel",
+            panel_id = id,
+            edge = ?edge,
+            active_panel_id = ?root.active_resize.as_ref().map(|session| session.id.as_str()),
+            active_edge = ?root.active_resize.as_ref().map(|session| session.edge),
+            x,
+            y,
+            "panel resize session ended"
+        );
         root.active_resize = None;
     }
 
@@ -1717,7 +1765,7 @@ impl Tree {
         );
         panel.rect = next;
         tracing::trace!(
-            target: "nodeimg::render_trace::node",
+            target: "gui::panel",
             panel_id = %session.id,
             edge = ?session.edge,
             x,
@@ -1757,35 +1805,52 @@ fn resize_rect_by_edge(
     min_width: f32,
     min_height: f32,
 ) {
-    let right = rect.x + rect.w;
-    let bottom = rect.y + rect.h;
+    let start = *rect;
+    let fixed_right = start.x + start.w;
+    let fixed_bottom = start.y + start.h;
 
     match edge {
         ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => {
-            let next_x = (rect.x + dx).min(right - min_width);
-            rect.x = next_x;
-            rect.w = right - next_x;
+            resize_rect_left(rect, start.x + dx, fixed_right, min_width);
         }
         ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => {
-            rect.w = (rect.w + dx).max(min_width);
+            resize_rect_right(rect, start.w + dx, min_width);
         }
         _ => {}
     }
 
     match edge {
         ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => {
-            let next_y = (rect.y + dy).min(bottom - min_height);
-            rect.y = next_y;
-            rect.h = bottom - next_y;
+            resize_rect_top(rect, start.y + dy, fixed_bottom, min_height);
         }
         ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => {
-            rect.h = (rect.h + dy).max(min_height);
+            resize_rect_bottom(rect, start.h + dy, min_height);
         }
         _ => {}
     }
 
     rect.w = rect.w.max(min_width);
     rect.h = rect.h.max(min_height);
+}
+
+fn resize_rect_left(rect: &mut Rect, requested_left: f32, fixed_right: f32, min_width: f32) {
+    let next_left = requested_left.min(fixed_right - min_width);
+    rect.x = next_left;
+    rect.w = fixed_right - next_left;
+}
+
+fn resize_rect_right(rect: &mut Rect, requested_width: f32, min_width: f32) {
+    rect.w = requested_width.max(min_width);
+}
+
+fn resize_rect_top(rect: &mut Rect, requested_top: f32, fixed_bottom: f32, min_height: f32) {
+    let next_top = requested_top.min(fixed_bottom - min_height);
+    rect.y = next_top;
+    rect.h = fixed_bottom - next_top;
+}
+
+fn resize_rect_bottom(rect: &mut Rect, requested_height: f32, min_height: f32) {
+    rect.h = requested_height.max(min_height);
 }
 
 fn requested_resize_width(rect: Rect, edge: ResizeEdge, dx: f32) -> f32 {

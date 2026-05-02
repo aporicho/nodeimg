@@ -88,8 +88,8 @@ impl GestureRecognizer for ResizeRecognizer {
             GestureSignal::ResizeStart {
                 id: self.target_id.clone(),
                 edge: self.edge,
-                x: self.current_x,
-                y: self.current_y,
+                x: self.down_x,
+                y: self.down_y,
             }
         }
     }
@@ -212,9 +212,26 @@ mod tests {
         rec.on_pointer_down(2.0, 2.0);
         rec.on_pointer_move(12.0, 12.0);
         match rec.accept() {
-            GestureSignal::ResizeStart { id, edge, .. } => {
+            GestureSignal::ResizeStart { id, edge, x, y } => {
                 assert_eq!(id, "panel_1");
                 assert_eq!(edge, ResizeEdge::TopLeft);
+                assert_eq!(x, 2.0);
+                assert_eq!(y, 2.0);
+            }
+            other => panic!("期望 ResizeStart，实际 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resize_start_uses_pointer_down_origin_after_threshold() {
+        let mut rec = ResizeRecognizer::new("panel_1".to_string(), ResizeEdge::Left);
+        rec.on_pointer_down(10.0, 20.0);
+        assert_eq!(rec.on_pointer_move(4.0, 20.0), GestureDisposition::Accepted);
+
+        match rec.accept() {
+            GestureSignal::ResizeStart { x, y, .. } => {
+                assert_eq!(x, 10.0);
+                assert_eq!(y, 20.0);
             }
             other => panic!("期望 ResizeStart，实际 {:?}", other),
         }
@@ -227,9 +244,11 @@ mod tests {
         rec.on_pointer_move(12.0, 12.0);
         let _ = rec.accept();
         match rec.accept() {
-            GestureSignal::ResizeMove { id, edge, .. } => {
+            GestureSignal::ResizeMove { id, edge, x, y } => {
                 assert_eq!(id, "panel_1");
                 assert_eq!(edge, ResizeEdge::TopLeft);
+                assert_eq!(x, 12.0);
+                assert_eq!(y, 12.0);
             }
             other => panic!("期望 ResizeMove，实际 {:?}", other),
         }
