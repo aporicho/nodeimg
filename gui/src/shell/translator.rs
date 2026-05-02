@@ -133,6 +133,14 @@ impl EventTranslator {
                     vec![AppEvent::Unfocused]
                 }
             }
+            WindowEvent::CursorEntered { .. } => {
+                tracing::trace!(target: "gui::cursor", "winit cursor entered window");
+                Vec::new()
+            }
+            WindowEvent::CursorLeft { .. } => {
+                tracing::trace!(target: "gui::cursor", "winit cursor left window");
+                Vec::new()
+            }
 
             // ── 触控板手势 ──
             WindowEvent::PinchGesture { delta, .. } => {

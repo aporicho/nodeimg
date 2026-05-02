@@ -1548,30 +1548,39 @@ impl Tree {
             return;
         };
 
-        match edge {
-            ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => {
-                panel.rect.x += dx;
-                panel.rect.w -= dx;
-            }
-            ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => {
-                panel.rect.w += dx;
-            }
-            _ => {}
-        }
-
-        match edge {
-            ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => {
-                panel.rect.y += dy;
-                panel.rect.h -= dy;
-            }
-            ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => {
-                panel.rect.h += dy;
-            }
-            _ => {}
-        }
-
-        panel.rect.w = panel.rect.w.max(panel.min_size[0]);
-        panel.rect.h = panel.rect.h.max(panel.min_size[1]);
+        let before = panel.rect;
+        let requested_w = requested_resize_width(before, edge, dx);
+        let requested_h = requested_resize_height(before, edge, dy);
+        resize_rect_by_edge(
+            &mut panel.rect,
+            edge,
+            dx,
+            dy,
+            panel.min_size[0],
+            panel.min_size[1],
+        );
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
+            panel_id = id,
+            edge = ?edge,
+            dx,
+            dy,
+            before_x = before.x,
+            before_y = before.y,
+            before_w = before.w,
+            before_h = before.h,
+            after_x = panel.rect.x,
+            after_y = panel.rect.y,
+            after_w = panel.rect.w,
+            after_h = panel.rect.h,
+            requested_w,
+            requested_h,
+            min_w = panel.min_size[0],
+            min_h = panel.min_size[1],
+            clamped_w = requested_w < panel.min_size[0],
+            clamped_h = requested_h < panel.min_size[1],
+            "resize panel runtime rect"
+        );
     }
 
     pub fn show_panel(&mut self, id: &str) {
@@ -1644,39 +1653,99 @@ impl Tree {
     }
 
     pub fn start_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
+        let Some(start_rect) = self.panel_state(id).map(|panel| panel.rect) else {
+            return;
+        };
         self.bring_panel_to_front(id);
         let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
         root.active_resize = Some(PanelResizeSession {
             id: id.to_string(),
             edge,
-            last_x: x,
-            last_y: y,
+            start_x: x,
+            start_y: y,
+            start_rect,
         });
     }
 
     pub fn move_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
-        let Some((dx, dy)) = ({
+        let Some(session) = ({
             let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
-            let Some(session) = root.active_resize.as_mut() else {
+            let Some(session) = root.active_resize.as_ref() else {
                 return;
             };
             if session.id != id || session.edge != edge {
                 return;
             }
-            let dx = x - session.last_x;
-            let dy = y - session.last_y;
-            session.last_x = x;
-            session.last_y = y;
-            Some((dx, dy))
+            Some(session.clone())
         }) else {
             return;
         };
-        self.resize_panel_by(id, edge, dx, dy);
+        self.resize_panel_from_session(&session, x, y);
     }
 
-    pub fn end_panel_resize(&mut self) {
+    pub fn end_panel_resize(&mut self, id: &str, edge: ResizeEdge, x: f32, y: f32) {
+        let session = {
+            let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
+            root.active_resize.as_ref().cloned()
+        };
+        if let Some(session) = session {
+            if session.id == id && session.edge == edge {
+                self.resize_panel_from_session(&session, x, y);
+            }
+        }
         let root = self.ensure_runtime_slot_by_stable_id::<PanelRootRuntime>(PANEL_ROOT_ID);
         root.active_resize = None;
+    }
+
+    fn resize_panel_from_session(&mut self, session: &PanelResizeSession, x: f32, y: f32) {
+        let Some(panel) = self.panel_state_mut(&session.id) else {
+            return;
+        };
+        let dx = x - session.start_x;
+        let dy = y - session.start_y;
+        let requested_w = requested_resize_width(session.start_rect, session.edge, dx);
+        let requested_h = requested_resize_height(session.start_rect, session.edge, dy);
+        let before = panel.rect;
+        let mut next = session.start_rect;
+        resize_rect_by_edge(
+            &mut next,
+            session.edge,
+            dx,
+            dy,
+            panel.min_size[0],
+            panel.min_size[1],
+        );
+        panel.rect = next;
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
+            panel_id = %session.id,
+            edge = ?session.edge,
+            x,
+            y,
+            start_x = session.start_x,
+            start_y = session.start_y,
+            dx,
+            dy,
+            start_rect_x = session.start_rect.x,
+            start_rect_y = session.start_rect.y,
+            start_rect_w = session.start_rect.w,
+            start_rect_h = session.start_rect.h,
+            before_x = before.x,
+            before_y = before.y,
+            before_w = before.w,
+            before_h = before.h,
+            after_x = panel.rect.x,
+            after_y = panel.rect.y,
+            after_w = panel.rect.w,
+            after_h = panel.rect.h,
+            requested_w,
+            requested_h,
+            min_w = panel.min_size[0],
+            min_h = panel.min_size[1],
+            clamped_w = requested_w < panel.min_size[0],
+            clamped_h = requested_h < panel.min_size[1],
+            "resize panel runtime rect from pointer session"
+        );
     }
 }
 

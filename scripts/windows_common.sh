@@ -15,10 +15,25 @@ profile_flag() {
 
 default_rust_log() {
   local mode="$1"
-  if [[ "$mode" == "dev" ]]; then
-    printf '%s' "gui=debug,app=debug,engine=debug,info"
+  case "$mode" in
+    dev)
+      printf '%s' "gui=debug,app=debug,engine=debug,info"
+      ;;
+    diag)
+      printf '%s' "gui=trace,app=trace,engine=trace,nodeimg=trace,info"
+      ;;
+    *)
+      printf '%s' "info"
+      ;;
+  esac
+}
+
+default_rust_backtrace() {
+  local mode="$1"
+  if [[ "$mode" == "diag" ]]; then
+    printf '%s' "1"
   else
-    printf '%s' "info"
+    printf '%s' "0"
   fi
 }
 
@@ -113,6 +128,7 @@ run_windows_cargo() {
   shift 3
 
   local rust_log="${RUST_LOG:-$(default_rust_log "$mode")}"
+  local rust_backtrace="${RUST_BACKTRACE:-$(default_rust_backtrace "$mode")}"
   local log_file="${LOG_FILE:-$(log_file_for "$name")}"
   local cargo_profile_arg
   local pwsh
@@ -131,7 +147,7 @@ run_windows_cargo() {
   cleanup_workspace_nodeimg "$pwsh" "$win_project"
   trap 'cleanup_workspace_nodeimg "'"$pwsh"'" "'"$win_project"'"' EXIT INT TERM
 
-  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); \$env:CARGO_INCREMENTAL='0'; cargo run -p $APP_PACKAGE --bin $APP_BIN $cargo_profile_arg -- $app_args" 2>&1 | tee "$log_file"
+  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); \$env:RUST_BACKTRACE=$(ps_quote "$rust_backtrace"); \$env:CARGO_INCREMENTAL='0'; cargo run -p $APP_PACKAGE --bin $APP_BIN $cargo_profile_arg -- $app_args" 2>&1 | tee "$log_file"
 }
 
 run_windows_existing() {
@@ -141,6 +157,7 @@ run_windows_existing() {
   shift 3
 
   local rust_log="${RUST_LOG:-$(default_rust_log "$mode")}"
+  local rust_backtrace="${RUST_BACKTRACE:-$(default_rust_backtrace "$mode")}"
   local log_file="${LOG_FILE:-$(log_file_for "$name")}"
   local pwsh
   local win_project
@@ -159,5 +176,5 @@ run_windows_existing() {
   cleanup_workspace_nodeimg "$pwsh" "$win_project"
   trap 'cleanup_workspace_nodeimg "'"$pwsh"'" "'"$win_project"'"' EXIT INT TERM
 
-  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); if (!(Test-Path $(ps_quote "$win_bin"))) { Write-Error 'Missing executable: $win_bin. Run scripts/windows_${mode}_build_run.sh first.'; exit 1 }; ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); & $(ps_quote "$win_bin") $app_args" 2>&1 | tee "$log_file"
+  "$pwsh" -Command "Set-Location $(ps_quote "$win_project"); if (!(Test-Path $(ps_quote "$win_bin"))) { Write-Error 'Missing executable: $win_bin. Run scripts/windows_${mode}_build_run.sh first.'; exit 1 }; ${app_env}\$env:RUST_LOG=$(ps_quote "$rust_log"); \$env:RUST_BACKTRACE=$(ps_quote "$rust_backtrace"); & $(ps_quote "$win_bin") $app_args" 2>&1 | tee "$log_file"
 }

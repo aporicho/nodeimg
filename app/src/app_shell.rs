@@ -444,6 +444,16 @@ impl AppShell {
                 } else {
                     self.gui.query().cursor_for_hit(&hit)
                 };
+                tracing::trace!(
+                    target: "gui::cursor",
+                    x,
+                    y,
+                    cursor = ?cursor,
+                    current_cursor = ?ctx.cursor(),
+                    leaf = ?hit.chain().leaf(),
+                    resize_edge = ?hit.resize_hit().map(|(_, edge)| edge),
+                    "workspace mouse move resolved cursor"
+                );
                 ctx.set_cursor(cursor);
                 let viewport = viewport_rect(ctx);
                 let key = self.cursor_refresh_key(viewport);

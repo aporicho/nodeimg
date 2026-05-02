@@ -1417,6 +1417,124 @@ mod tests {
     }
 
     #[test]
+    fn clean_room_panel_top_left_resize_clamps_and_updates_hit_targets() {
+        let mut gui = Context::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let identity = diagnostic_scene::diagnostic_node_identity();
+        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
+            owner_id: identity.owner_id.clone(),
+            rect: identity.default_rect,
+            z_index: 0,
+            collapsed: false,
+            user_min_height: None,
+        });
+        let nodes = vec![node];
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("initial clean room sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let toolbar = gui.query().node_id_by_name("toolbar").expect("toolbar");
+        let before_root = gui.query().node_rect("toolbar").expect("toolbar rect");
+        let start_x = before_root.x + 2.0;
+        let start_y = before_root.y + 2.0;
+        let before_hit = gui.query().pointer_hit_at(start_x, start_y);
+
+        assert!(before_hit.chain().contains(toolbar));
+        assert_eq!(
+            gui.query().cursor_for_hit(&before_hit),
+            CursorKind::Resize(ResizeEdge::TopLeft)
+        );
+
+        let end_x = start_x + 80.0;
+        let end_y = start_y + 40.0;
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeStart {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: start_x,
+                y: start_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeMove {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: end_x,
+                y: end_y,
+            }));
+        assert!(gui
+            .panel_mut()
+            .handle_control_event(&ControlEvent::ResizeEnd {
+                id: "toolbar".to_string(),
+                edge: ResizeEdge::TopLeft,
+                x: end_x,
+                y: end_y,
+            }));
+
+        let sync = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("resize sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let after_root = gui.query().node_rect("toolbar").expect("toolbar rect");
+        let expected_right = before_root.x + before_root.w;
+        let expected_bottom = before_root.y + before_root.h;
+
+        assert!(sync.mutations_queued > 0);
+        assert_eq!(after_root.w, 156.0);
+        assert_eq!(after_root.h, 72.0);
+        assert_eq!(after_root.x + after_root.w, expected_right);
+        assert_eq!(after_root.y + after_root.h, expected_bottom);
+
+        let after_hit = gui
+            .query()
+            .pointer_hit_at(after_root.x + 2.0, after_root.y + 2.0);
+        assert!(after_hit.chain().contains(toolbar));
+        assert_eq!(
+            gui.query().cursor_for_hit(&after_hit),
+            CursorKind::Resize(ResizeEdge::TopLeft)
+        );
+        assert!(!gui
+            .query()
+            .hit_test(before_root.x + 2.0, before_root.y + 2.0)
+            .contains(toolbar));
+    }
+
+    #[test]
     fn switch_full_to_clean_room_unmounts_stale_scene_elements() {
         let mut gui = Context::new();
         let mut controller = WorkspaceSceneController::default();

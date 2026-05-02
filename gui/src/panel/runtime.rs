@@ -54,8 +54,9 @@ pub(crate) struct PanelPointerSession {
 pub(crate) struct PanelResizeSession {
     pub(crate) id: String,
     pub(crate) edge: ResizeEdge,
-    pub(crate) last_x: f32,
-    pub(crate) last_y: f32,
+    pub(crate) start_x: f32,
+    pub(crate) start_y: f32,
+    pub(crate) start_rect: Rect,
 }
 
 #[derive(Clone, Debug, Default)]

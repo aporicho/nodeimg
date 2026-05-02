@@ -15,10 +15,25 @@ profile_flag() {
 
 default_rust_log() {
   local mode="$1"
-  if [[ "$mode" == "dev" ]]; then
-    printf '%s' "gui=debug,app=debug,engine=debug,info"
+  case "$mode" in
+    dev)
+      printf '%s' "gui=debug,app=debug,engine=debug,info"
+      ;;
+    diag)
+      printf '%s' "gui=trace,app=trace,engine=trace,nodeimg=trace,info"
+      ;;
+    *)
+      printf '%s' "info"
+      ;;
+  esac
+}
+
+default_rust_backtrace() {
+  local mode="$1"
+  if [[ "$mode" == "diag" ]]; then
+    printf '%s' "1"
   else
-    printf '%s' "info"
+    printf '%s' "0"
   fi
 }
 
@@ -36,6 +51,7 @@ run_macos_cargo() {
   shift 3
 
   local rust_log="${RUST_LOG:-$(default_rust_log "$mode")}"
+  local rust_backtrace="${RUST_BACKTRACE:-$(default_rust_backtrace "$mode")}"
   local log_file="${LOG_FILE:-$(log_file_for "$name")}"
   local cargo_profile_arg
   cargo_profile_arg="$(profile_flag "$profile")"
@@ -44,9 +60,9 @@ run_macos_cargo() {
 
   cd "$PROJECT_DIR"
   if [[ -n "$cargo_profile_arg" ]]; then
-    RUST_LOG="$rust_log" cargo run -p "$APP_PACKAGE" --bin "$APP_BIN" "$cargo_profile_arg" -- "$@" 2>&1 | tee "$log_file"
+    RUST_LOG="$rust_log" RUST_BACKTRACE="$rust_backtrace" cargo run -p "$APP_PACKAGE" --bin "$APP_BIN" "$cargo_profile_arg" -- "$@" 2>&1 | tee "$log_file"
   else
-    RUST_LOG="$rust_log" cargo run -p "$APP_PACKAGE" --bin "$APP_BIN" -- "$@" 2>&1 | tee "$log_file"
+    RUST_LOG="$rust_log" RUST_BACKTRACE="$rust_backtrace" cargo run -p "$APP_PACKAGE" --bin "$APP_BIN" -- "$@" 2>&1 | tee "$log_file"
   fi
 }
 
@@ -57,6 +73,7 @@ run_macos_existing() {
   shift 3
 
   local rust_log="${RUST_LOG:-$(default_rust_log "$mode")}"
+  local rust_backtrace="${RUST_BACKTRACE:-$(default_rust_backtrace "$mode")}"
   local log_file="${LOG_FILE:-$(log_file_for "$name")}"
   local bin_path="$PROJECT_DIR/target/$profile/$APP_BIN"
 
@@ -69,5 +86,5 @@ run_macos_existing() {
   echo "[$name] mode=$mode profile=$profile build=none log=$log_file"
 
   cd "$PROJECT_DIR"
-  RUST_LOG="$rust_log" "$bin_path" "$@" 2>&1 | tee "$log_file"
+  RUST_LOG="$rust_log" RUST_BACKTRACE="$rust_backtrace" "$bin_path" "$@" 2>&1 | tee "$log_file"
 }

@@ -50,8 +50,21 @@ impl CursorState {
 
     pub(crate) fn apply_to_window(&mut self, window: &winit::window::Window) {
         if self.desired != self.applied {
+            tracing::trace!(
+                target: "gui::cursor",
+                desired = ?self.desired,
+                applied = ?self.applied,
+                "apply cursor to window"
+            );
             window.set_cursor(self.desired.to_winit());
             self.applied = self.desired;
+        } else {
+            tracing::trace!(
+                target: "gui::cursor",
+                desired = ?self.desired,
+                applied = ?self.applied,
+                "skip cursor apply because cached cursor matches desired cursor"
+            );
         }
     }
 }

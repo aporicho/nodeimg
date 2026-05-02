@@ -24,8 +24,8 @@ pub(crate) fn apply_panel_control_event(tree: &mut Tree, event: &ControlEvent) -
             tree.move_panel_resize(id, *edge, *x, *y);
             true
         }
-        ControlEvent::ResizeEnd { id, .. } if is_panel_control(tree, id) => {
-            tree.end_panel_resize();
+        ControlEvent::ResizeEnd { id, edge, x, y } if is_panel_control(tree, id) => {
+            tree.end_panel_resize(id, *edge, *x, *y);
             true
         }
         _ => false,
