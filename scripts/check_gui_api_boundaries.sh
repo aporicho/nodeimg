@@ -74,6 +74,7 @@ check_missing_path "old flat tree hit order module" gui/src/tree/hit_order.rs
 check_missing_path "old flat tree leaf hit shape module" gui/src/tree/hit_shape.rs
 check_missing_path "old flat tree interaction hit module" gui/src/tree/interaction_hit.rs
 check_missing_path "old flat tree container shape module" gui/src/tree/shape.rs
+check_missing_path "old flat tree paint module" gui/src/tree/paint.rs
 check_missing_path "old flat panel runtime module" gui/src/panel/runtime.rs
 check_missing_path "old panel reducer test holder" gui/src/panel/reducer.rs
 check_missing_path "old flat canvas runtime module" gui/src/canvas/runtime.rs
@@ -205,6 +206,11 @@ check_no_match \
     "tree hit module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/tree/hit/mod.rs
+
+check_no_match \
+    "tree paint module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/tree/paint/mod.rs
 
 check_no_match \
     "Tree must not expose canvas or panel runtime APIs" \
