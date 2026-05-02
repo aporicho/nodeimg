@@ -440,7 +440,7 @@ fn connection_leaf(id_suffix: &'static str, kind: LeafKind) -> CompiledNode {
             position: Position::absolute_xy(0.0, 0.0),
             width: Size::Fixed(0.0),
             height: Size::Fixed(0.0),
-            hittable: Some(false),
+            hittable: false,
             ..BoxStyle::default()
         },
     )
@@ -455,7 +455,7 @@ fn workspace_root_style() -> BoxStyle {
         position: Position::relative(),
         width: Size::Fill,
         height: Size::Fill,
-        hittable: Some(true),
+        hittable: true,
         ..BoxStyle::default()
     }
 }
@@ -466,7 +466,7 @@ fn workspace_canvas_root_style() -> BoxStyle {
         width: Size::Fill,
         height: Size::Fill,
         overflow: Overflow::Hidden,
-        hittable: Some(true),
+        hittable: true,
         ..BoxStyle::default()
     }
 }
@@ -475,7 +475,7 @@ fn workspace_grid_leaf(id_suffix: &'static str) -> CompiledNode {
     let mut node = grid_leaf_with_boundary(id_suffix, RepaintBoundaryReason::CanvasGridLayer);
     node.style.position = Position::absolute_xy(0.0, 0.0);
     node.style.z_index = -20;
-    node.style.hittable = Some(false);
+    node.style.hittable = false;
     node.mutation_meta.rect_move = RectMoveInvalidation::Repaint;
     node
 }
@@ -486,7 +486,7 @@ fn canvas_connections_style() -> BoxStyle {
         width: Size::Fill,
         height: Size::Fill,
         z_index: -10,
-        hittable: Some(false),
+        hittable: false,
         ..BoxStyle::default()
     }
 }
@@ -496,7 +496,7 @@ fn panel_root_style() -> BoxStyle {
         position: Position::absolute_xy(0.0, 0.0),
         width: Size::Fill,
         height: Size::Fill,
-        hittable: Some(false),
+        hittable: false,
         ..BoxStyle::default()
     }
 }
@@ -506,7 +506,7 @@ fn overlay_root_style() -> BoxStyle {
         position: Position::absolute_xy(0.0, 0.0),
         width: Size::Fill,
         height: Size::Fill,
-        hittable: Some(false),
+        hittable: false,
         z_index: 10_000,
         ..BoxStyle::default()
     }
@@ -527,7 +527,7 @@ fn text_box_field_style() -> BoxStyle {
         width: Size::Fill,
         height: Size::Fixed(32.0),
         overflow: Overflow::Hidden,
-        hittable: Some(true),
+        hittable: true,
         gestures: vec![Gesture::Tap, Gesture::Drag],
         ..BoxStyle::default()
     }
@@ -538,7 +538,7 @@ fn absolute_fill_style() -> BoxStyle {
         position: Position::absolute_inset(Inset::ZERO),
         width: Size::Fill,
         height: Size::Fill,
-        hittable: Some(false),
+        hittable: false,
         ..BoxStyle::default()
     }
 }
@@ -548,7 +548,7 @@ fn caret_style() -> BoxStyle {
         position: Position::absolute_xy(0.0, 0.0),
         width: Size::Fixed(1.0),
         height: Size::Fill,
-        hittable: Some(false),
+        hittable: false,
         ..BoxStyle::default()
     }
 }
@@ -580,7 +580,7 @@ fn canvas_node_root_style() -> BoxStyle {
         height: Size::Auto,
         align_items: Align::Center,
         justify_content: Justify::Start,
-        hittable: Some(true),
+        hittable: true,
         draggable: true,
         gestures: vec![Gesture::Tap, Gesture::Drag],
         ..BoxStyle::default()
@@ -593,7 +593,7 @@ fn canvas_node_card_style() -> BoxStyle {
         direction: Direction::Column,
         width: Size::Fixed(304.0),
         height: Size::Fixed(132.0),
-        hittable: Some(true),
+        hittable: true,
         resizable: true,
         ..BoxStyle::default()
     }
@@ -634,7 +634,7 @@ fn panel_frame_style() -> BoxStyle {
         direction: Direction::Column,
         width: Size::Fixed(320.0),
         height: Size::Fixed(240.0),
-        hittable: Some(true),
+        hittable: true,
         draggable: true,
         resizable: true,
         ..BoxStyle::default()
@@ -650,7 +650,7 @@ fn node_palette_root_style() -> BoxStyle {
         padding: crate::tree::layout::Edges::all(10.0),
         gap: 8.0,
         z_index: 10_100,
-        hittable: Some(true),
+        hittable: true,
         ..BoxStyle::default()
     }
 }
@@ -682,7 +682,7 @@ fn node_palette_item_style() -> BoxStyle {
         height: Size::Fixed(34.0),
         padding: crate::tree::layout::Edges::symmetric(7.0, 10.0),
         align_items: Align::Center,
-        hittable: Some(true),
+        hittable: true,
         gestures: vec![Gesture::Tap],
         ..BoxStyle::default()
     }
@@ -897,7 +897,6 @@ mod tests {
         assert!(invalidation.flags.contains(DirtyFlags::TEXT_LAYOUT));
         assert_eq!(tree.node_by_str("input::value"), Some(value));
         assert_eq!(tree.frame_stats_snapshot().tree_nodes, node_count);
-        assert_eq!(tree.frame_stats_snapshot().widget_build_calls, 0);
     }
 
     #[test]
@@ -1007,7 +1006,7 @@ mod tests {
     }
 
     #[test]
-    fn canvas_node_card_template_does_not_call_widget_build() {
+    fn canvas_node_card_template_instantiates_directly() {
         let (mut tree, root) = host_tree();
         let registry = TemplateRegistry::with_builtin_templates();
         tree.clear_frame_stats();
@@ -1023,6 +1022,5 @@ mod tests {
             .expect("node card");
 
         assert!(tree.contains_stable_id("canvas_node::engine_node::7::card"));
-        assert_eq!(tree.frame_stats_snapshot().widget_build_calls, 0);
     }
 }

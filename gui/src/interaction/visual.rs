@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WidgetVisualState {
+pub enum ControlVisualState {
     Normal,
     Hovered,
     Pressed,

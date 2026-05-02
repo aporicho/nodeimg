@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use super::{PanelConfig, PanelRuntime};
+use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::renderer::{Border, ImageStyle, Rect};
 use crate::template::{
@@ -16,7 +17,6 @@ use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
     RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
 };
-use crate::widget::WidgetRole;
 
 const REVISION: TemplateRevision = TemplateRevision::new(2);
 
@@ -112,7 +112,7 @@ fn mount_panel(
                 min_height: data.runtime.min_size[1],
                 z_index: data.runtime.z_index,
                 overflow: Overflow::Hidden,
-                hittable: Some(true),
+                hittable: true,
                 resizable: data.config.resizable,
                 ..BoxStyle::default()
             },
@@ -126,7 +126,7 @@ fn mount_panel(
                 shadow: None,
             }),
         )
-        .with_semantic_role(WidgetRole::Panel)
+        .with_semantic_role(ControlRole::Panel)
         .with_layout_boundary(RelayoutBoundaryReason::Panel)
         .with_paint_boundary(RepaintBoundaryReason::PanelFrame)
         .with_rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),
@@ -173,7 +173,7 @@ fn mount_titlebar(
                 padding: Edges::symmetric(panel.title_padding_y, panel.title_padding_x),
                 direction: Direction::Row,
                 align_items: Align::Center,
-                hittable: Some(true),
+                hittable: true,
                 draggable: data.config.draggable,
                 gestures: vec![Gesture::Tap, Gesture::Drag],
                 ..BoxStyle::default()
@@ -269,7 +269,7 @@ fn mount_button(
     label: &str,
     theme: &Theme,
 ) -> Result<(), TemplateError> {
-    let visual = theme.button_visual(crate::interaction::WidgetVisualState::Normal);
+    let visual = theme.button_visual(crate::interaction::ControlVisualState::Normal);
     let button = cx.child(
         parent,
         container(
@@ -286,7 +286,7 @@ fn mount_button(
                 direction: Direction::Row,
                 align_items: Align::Center,
                 justify_content: crate::tree::layout::Justify::Center,
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
@@ -300,7 +300,7 @@ fn mount_button(
                 shadow: None,
             }),
         )
-        .with_semantic_role(WidgetRole::Button),
+        .with_semantic_role(ControlRole::Button),
     )?;
     cx.child(
         button,
@@ -455,7 +455,7 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 trait TreeNodeExt {
-    fn with_semantic_role(self, role: WidgetRole) -> Self;
+    fn with_semantic_role(self, role: ControlRole) -> Self;
     fn with_owner(self, owner: String) -> Self;
     fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
@@ -463,7 +463,7 @@ trait TreeNodeExt {
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: WidgetRole) -> Self {
+    fn with_semantic_role(mut self, role: ControlRole) -> Self {
         self.props.semantic_role = Some(role);
         self
     }

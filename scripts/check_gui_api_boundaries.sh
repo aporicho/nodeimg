@@ -50,13 +50,19 @@ if ! command -v rg >/dev/null 2>&1; then
 fi
 
 check_required_match "gui tree module remains crate-private" '^pub\(crate\) mod tree;' gui/src/lib.rs
-check_required_match "gui ui module remains crate-private" '^pub\(crate\) mod ui;' gui/src/lib.rs
 check_required_match "gui runtime module remains crate-private" '^pub\(crate\) mod runtime;' gui/src/lib.rs
 check_required_match "gui event module remains crate-private" '^pub\(crate\) mod event;' gui/src/lib.rs
 check_required_match "gui text module remains crate-private" '^pub\(crate\) mod text;' gui/src/lib.rs
+check_required_match "gui control facade is public" '^pub mod control;' gui/src/lib.rs
 check_required_match "gui layout facade is public" '^pub mod layout;' gui/src/lib.rs
 check_required_match "gui scene facade is public" '^pub mod scene;' gui/src/lib.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
+check_missing_path "old widget module tree" gui/src/widget
+check_missing_path "old ui convenience module" gui/src/ui.rs
+check_missing_path "old desc tree module" gui/src/tree/desc.rs
+check_missing_path "old desc build module" gui/src/tree/build
+check_missing_path "old event gesture adapter module" gui/src/event/gesture_adapter.rs
+check_missing_path "old text intrinsic module" gui/src/text/intrinsic.rs
 check_missing_path "legacy full-tree desc reconciler" gui/src/tree/legacy_desc.rs
 check_missing_path "legacy full-tree desc diff" gui/src/tree/diff.rs
 check_missing_path "legacy Desc canvas node-card builder" gui/src/canvas/node_card.rs
@@ -65,13 +71,14 @@ check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 
 check_no_match \
     "app must not import gui crate-private/internal modules" \
-    'gui::(tree|ui|runtime|event|text)(::|;|\{)' \
+    'gui::(tree|ui|runtime|event|text|widget)(::|;|\{)' \
     app/src
 
 check_no_match \
-    "app must not import gui widget implementation submodules" \
-    'gui::widget::(anatomy|atoms|build|desc|frameworks|mapping|painters|param_control|props|resize_edge|state|systems)(::|;|\{)' \
-    app/src
+    "old widget module and event/action names must not be restored" \
+    'widget|Widget' \
+    app/src \
+    gui/src
 
 check_no_match \
     "legacy gui facade must not be restored" \
@@ -80,7 +87,7 @@ check_no_match \
     gui/src
 
 check_no_match \
-    "semantic roles must use WidgetRole instead of string roles" \
+    "semantic roles must use ControlRole instead of string roles" \
     '\.with_semantic_role\("|from_semantic_role|semantic_role: Option<Cow' \
     app/src \
     gui/src
@@ -127,7 +134,7 @@ check_no_match \
     gui/src/tree/mutation.rs \
     gui/src/tree/retained_runtime.rs \
     gui/src/tree/dirty.rs \
-    gui/src/widget/state/text_box_registry.rs
+    gui/src/control/state/text_box_registry.rs
 
 check_no_match \
     "app production retained path must not call legacy desc builders" \
@@ -138,18 +145,30 @@ check_no_match \
     app/src/workspace/node_palette.rs
 
 check_no_match \
-    "app production must consume dirty control intrinsics instead of full intrinsic export" \
+    "app production must use the ControlsApi intrinsic snapshot only through query/update flow" \
     '(^|[^[:alnum:]_])control_intrinsics\(' \
     app/src/app_shell.rs \
     app/src/workspace/controller.rs \
     app/src/workspace/scene_controller.rs
 
 check_no_match \
-    "backend resource creation must stay out of tree/template/widget layers" \
+    "backend resource creation must stay out of tree/template/control layers" \
     'create_buffer|wgpu::|BackendCommandEncoder|RenderPass' \
     gui/src/template \
     gui/src/tree \
-    gui/src/widget
+    gui/src/control
+
+check_no_match \
+    "hittable must be an explicit bool, not an Option compatibility surface" \
+    'hittable: Option|hittable: Some|hittable = Some|hittable=Some' \
+    gui/src \
+    app/src
+
+check_no_match \
+    "old frame stats must not be restored" \
+    'widget_build_calls|full_tree_scans|reconcile_child_matches|full_root_paint_calls|record_full_tree_scan' \
+    gui/src \
+    app/src
 
 if [[ "$fail" -ne 0 ]]; then
     printf '\nGUI API boundary gate failed\n' >&2

@@ -1,5 +1,5 @@
 use super::hit_shape::leaf_shape_hit;
-use super::layout::{BoxStyle, Decoration, Overflow};
+use super::layout::Overflow;
 use super::node::{NodeId, NodeKind, TreeNode};
 use super::paint_space::{NodePaintSpace, PaintSpace};
 use super::tree::Tree;
@@ -164,7 +164,6 @@ fn hit_recursive(
 
     let children = tree.children_in_hit_order_cached(node_id, &node.children);
     let style = node.style.clone();
-    let decoration = node.decoration.clone();
     let child_space = if node_space.children_are_local {
         node_space.child_space()
     } else {
@@ -186,7 +185,7 @@ fn hit_recursive(
         current_space,
         inside_bounds,
     );
-    if self_hit && is_hittable(&style, &decoration) {
+    if self_hit && is_hittable(&style) {
         chain.push(node_id);
         return true;
     }
@@ -205,18 +204,12 @@ fn node_self_hit(
     match &node.kind {
         NodeKind::Leaf(leaf) => leaf_shape_hit(tree, leaf, local_point, node_space, current_space)
             .unwrap_or(inside_bounds),
-        NodeKind::Container | NodeKind::Widget(_) => inside_bounds,
+        NodeKind::Container => inside_bounds,
     }
 }
 
-/// 混合判据：hittable 强制覆盖优先，否则交互能力、gestures 或 decoration 可命中。
-fn is_hittable(style: &BoxStyle, decoration: &Option<Decoration>) -> bool {
-    match style.hittable {
-        Some(h) => h,
-        None => {
-            style.draggable || style.resizable || !style.gestures.is_empty() || decoration.is_some()
-        }
-    }
+fn is_hittable(style: &super::layout::BoxStyle) -> bool {
+    style.hittable || style.draggable || style.resizable || !style.gestures.is_empty()
 }
 
 #[cfg(test)]
@@ -267,7 +260,14 @@ mod tests {
         node_with_rect(id, style, None, NodeKind::Leaf(leaf), rect)
     }
 
-    /// 默认 decoration（background 让节点可命中）
+    fn hittable_style() -> BoxStyle {
+        BoxStyle {
+            hittable: true,
+            ..Default::default()
+        }
+    }
+
+    /// 默认 decoration（仅用于绘制；命中必须由 style 显式声明）
     fn decor() -> Decoration {
         Decoration {
             background: Some(Color {
@@ -298,14 +298,14 @@ mod tests {
         tree.set_root(root);
 
         let chain = hit_test(&tree, root, 50.0, 50.0);
-        assert!(chain.is_empty(), "没 decoration 没 gestures 应该不可命中");
+        assert!(chain.is_empty(), "未声明交互能力的节点应该不可命中");
     }
 
     #[test]
     fn hit_root_only() {
         let mut tree = Tree::new();
         let root = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 0.0,
@@ -326,7 +326,7 @@ mod tests {
     fn hit_leaf_nested() {
         let mut tree = Tree::new();
         let leaf_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 20.0,
@@ -337,7 +337,7 @@ mod tests {
         ));
         let middle = {
             let mut n = container_with_rect(
-                BoxStyle::default(),
+                hittable_style(),
                 Some(decor()),
                 Rect {
                     x: 10.0,
@@ -352,7 +352,7 @@ mod tests {
         let middle_id = tree.insert(middle);
         let root = {
             let mut n = container_with_rect(
-                BoxStyle::default(),
+                hittable_style(),
                 Some(decor()),
                 Rect {
                     x: 0.0,
@@ -377,7 +377,7 @@ mod tests {
     fn hit_reverse_z_order() {
         let mut tree = Tree::new();
         let child1_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -387,7 +387,7 @@ mod tests {
             },
         ));
         let child2_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -422,6 +422,7 @@ mod tests {
         let mut tree = Tree::new();
         let lower_id = tree.insert(container_with_rect(
             BoxStyle {
+                hittable: true,
                 z_index: 0,
                 ..Default::default()
             },
@@ -435,6 +436,7 @@ mod tests {
         ));
         let higher_id = tree.insert(container_with_rect(
             BoxStyle {
+                hittable: true,
                 z_index: 10,
                 ..Default::default()
             },
@@ -469,11 +471,11 @@ mod tests {
     }
 
     #[test]
-    fn hit_hittable_force_false() {
+    fn hit_hittable_explicit_false() {
         let mut tree = Tree::new();
         let root = tree.insert(container_with_rect(
             BoxStyle {
-                hittable: Some(false),
+                hittable: false,
                 ..Default::default()
             },
             Some(decor()),
@@ -487,15 +489,15 @@ mod tests {
         tree.set_root(root);
 
         let chain = hit_test(&tree, root, 50.0, 50.0);
-        assert!(chain.is_empty(), "hittable=Some(false) 应强制不命中");
+        assert!(chain.is_empty(), "hittable=false 应不可命中");
     }
 
     #[test]
-    fn hit_hittable_force_true() {
+    fn hit_hittable_explicit_true() {
         let mut tree = Tree::new();
         let root = tree.insert(container_with_rect(
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             None,
@@ -582,7 +584,7 @@ mod tests {
     fn hit_outside_bounds() {
         let mut tree = Tree::new();
         let root = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 0.0,
@@ -601,7 +603,7 @@ mod tests {
     fn hit_visible_overflow_child_outside_parent_bounds() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 120.0,
@@ -675,7 +677,7 @@ mod tests {
     fn hit_visible_overflow_keeps_reverse_z_order() {
         let mut tree = Tree::new();
         let child1_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 120.0,
@@ -685,7 +687,7 @@ mod tests {
             },
         ));
         let child2_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 120.0,
@@ -729,7 +731,7 @@ mod tests {
                 stroke: None,
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -771,7 +773,7 @@ mod tests {
                 stroke: Stroke::new(2.0, Color::WHITE),
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -813,7 +815,7 @@ mod tests {
                 stroke: Stroke::new(2.0, Color::WHITE),
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -862,7 +864,7 @@ mod tests {
                 stroke: None,
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -935,7 +937,7 @@ mod tests {
                 to_port: Cow::Borrowed("to"),
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -994,7 +996,7 @@ mod tests {
                 cursor_canvas: Point { x: 95.0, y: 55.0 },
             },
             BoxStyle {
-                hittable: Some(true),
+                hittable: true,
                 ..Default::default()
             },
             Rect {
@@ -1032,7 +1034,7 @@ mod tests {
     fn hit_transform_identity() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1069,7 +1071,7 @@ mod tests {
     fn hit_transform_translate() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1107,7 +1109,7 @@ mod tests {
     fn hit_transform_scale() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1145,7 +1147,7 @@ mod tests {
     fn screen_to_node_layout_point_inverts_transformed_parent_space() {
         let mut tree = Tree::new();
         let field_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 20.0,
@@ -1198,7 +1200,7 @@ mod tests {
     fn hit_uses_animation_transform_for_whole_node() {
         let mut tree = Tree::new();
         let node_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1229,7 +1231,7 @@ mod tests {
     fn hit_transform_rotate_uses_affine_inverse() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1273,7 +1275,7 @@ mod tests {
     fn hit_transform_zero_scale_is_not_hittable() {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 10.0,
@@ -1309,7 +1311,7 @@ mod tests {
     fn hit_overflow_child_outside_parent_bounds(overflow: Overflow) -> HitChain {
         let mut tree = Tree::new();
         let child_id = tree.insert(container_with_rect(
-            BoxStyle::default(),
+            hittable_style(),
             Some(decor()),
             Rect {
                 x: 120.0,

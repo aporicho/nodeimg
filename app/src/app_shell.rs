@@ -7,14 +7,14 @@ use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
-use gui::context::{Context, FrameworkOutput, GuiEvent, PlatformEffect, WidgetEvent};
+use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
+use gui::control::ResizeEdge;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
 use gui::layout::TextureHandle;
 use gui::renderer::{Rect, Renderer, TextureSize};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
 use gui::theme::{light_theme, Theme};
-use gui::widget::ResizeEdge;
 use std::time::{Duration, Instant};
 
 const APP_THEME_SCALE: f32 = 1.2;
@@ -26,41 +26,41 @@ const CANVAS_DOUBLE_CLICK_DISTANCE_SQ: f32 = 36.0;
 
 #[derive(Debug)]
 enum AppMessage {
-    WidgetClicked(String),
-    WidgetDragStart {
+    ControlClicked(String),
+    ControlDragStart {
         id: String,
         x: f32,
         y: f32,
     },
-    WidgetDragMove {
+    ControlDragMove {
         id: String,
         x: f32,
         y: f32,
     },
-    WidgetDragEnd {
+    ControlDragEnd {
         id: String,
         x: f32,
         y: f32,
     },
-    WidgetResizeStart {
-        id: String,
-        edge: ResizeEdge,
-        x: f32,
-        y: f32,
-    },
-    WidgetResizeMove {
+    ControlResizeStart {
         id: String,
         edge: ResizeEdge,
         x: f32,
         y: f32,
     },
-    WidgetResizeEnd {
+    ControlResizeMove {
         id: String,
         edge: ResizeEdge,
         x: f32,
         y: f32,
     },
-    WidgetTextChanged {
+    ControlResizeEnd {
+        id: String,
+        edge: ResizeEdge,
+        x: f32,
+        y: f32,
+    },
+    ControlTextChanged {
         id: String,
         value: String,
     },
@@ -161,14 +161,14 @@ impl App for AppShell {
         self.gui.animations_mut().tick(Instant::now());
         let viewport = viewport_rect(ctx);
         let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
-        self.gui.runtime_mut().sync_retained_canvas_text_boxes(
+        self.gui.controls_mut().sync_canvas_text_boxes(
             &canvas_nodes,
             renderer.text_measurer(),
             &self.theme,
         );
-        if !self.gui.runtime().text_box_dirty_intrinsics().is_empty() {
+        if !self.gui.controls().text_box_dirty_intrinsics().is_empty() {
             let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
-            self.gui.runtime_mut().sync_retained_canvas_text_boxes(
+            self.gui.controls_mut().sync_canvas_text_boxes(
                 &stabilized_nodes,
                 renderer.text_measurer(),
                 &self.theme,
@@ -425,7 +425,7 @@ impl AppShell {
     }
 
     fn is_duplicate_action_event(&self, event: &GuiEvent, handled_node_adds: &[String]) -> bool {
-        let GuiEvent::Widget(WidgetEvent::Click { id }) = event else {
+        let GuiEvent::Control(ControlEvent::Click { id }) = event else {
             return false;
         };
         let Some(type_id) = node_library_add_type_id(id) else {
@@ -443,32 +443,32 @@ impl AppShell {
 
     fn map_gui_event(&self, event: GuiEvent) -> Option<AppMessage> {
         match event {
-            GuiEvent::Widget(event) => self.map_widget_event(event),
+            GuiEvent::Control(event) => self.map_control_event(event),
             GuiEvent::Panel(_) => None,
             GuiEvent::Overlay(_) => None,
         }
     }
 
-    fn map_widget_event(&self, event: WidgetEvent) -> Option<AppMessage> {
+    fn map_control_event(&self, event: ControlEvent) -> Option<AppMessage> {
         Some(match event {
-            WidgetEvent::Click { id } => AppMessage::WidgetClicked(id),
-            WidgetEvent::DragStart { id, x, y } => AppMessage::WidgetDragStart { id, x, y },
-            WidgetEvent::DragMove { id, x, y } => AppMessage::WidgetDragMove { id, x, y },
-            WidgetEvent::DragEnd { id, x, y } => AppMessage::WidgetDragEnd { id, x, y },
-            WidgetEvent::ResizeStart { id, edge, x, y } => {
-                AppMessage::WidgetResizeStart { id, edge, x, y }
+            ControlEvent::Click { id } => AppMessage::ControlClicked(id),
+            ControlEvent::DragStart { id, x, y } => AppMessage::ControlDragStart { id, x, y },
+            ControlEvent::DragMove { id, x, y } => AppMessage::ControlDragMove { id, x, y },
+            ControlEvent::DragEnd { id, x, y } => AppMessage::ControlDragEnd { id, x, y },
+            ControlEvent::ResizeStart { id, edge, x, y } => {
+                AppMessage::ControlResizeStart { id, edge, x, y }
             }
-            WidgetEvent::ResizeMove { id, edge, x, y } => {
-                AppMessage::WidgetResizeMove { id, edge, x, y }
+            ControlEvent::ResizeMove { id, edge, x, y } => {
+                AppMessage::ControlResizeMove { id, edge, x, y }
             }
-            WidgetEvent::ResizeEnd { id, edge, x, y } => {
-                AppMessage::WidgetResizeEnd { id, edge, x, y }
+            ControlEvent::ResizeEnd { id, edge, x, y } => {
+                AppMessage::ControlResizeEnd { id, edge, x, y }
             }
-            WidgetEvent::TextChanged { id, value } => AppMessage::WidgetTextChanged { id, value },
-            WidgetEvent::LongPress { id } => AppMessage::LongPress(id),
-            WidgetEvent::DoubleClick { .. }
-            | WidgetEvent::NumberChanged { .. }
-            | WidgetEvent::SelectionChanged { .. } => return None,
+            ControlEvent::TextChanged { id, value } => AppMessage::ControlTextChanged { id, value },
+            ControlEvent::LongPress { id } => AppMessage::LongPress(id),
+            ControlEvent::DoubleClick { .. }
+            | ControlEvent::NumberChanged { .. }
+            | ControlEvent::SelectionChanged { .. } => return None,
         })
     }
 
@@ -478,7 +478,7 @@ impl AppShell {
 
     fn handle_user_message(&mut self, message: AppMessage) {
         match message {
-            AppMessage::WidgetClicked(id) => {
+            AppMessage::ControlClicked(id) => {
                 if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
                     return;
                 }
@@ -495,7 +495,7 @@ impl AppShell {
                 }
                 let _ = self.workspace.handle_image_demo_button(&id);
             }
-            AppMessage::WidgetDragStart { id, x, y } => {
+            AppMessage::ControlDragStart { id, x, y } => {
                 if self.workspace.begin_canvas_port_connection(
                     &mut self.gui,
                     &self.camera,
@@ -509,7 +509,7 @@ impl AppShell {
                     self.workspace
                         .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
             }
-            AppMessage::WidgetDragMove { id, x, y } => {
+            AppMessage::ControlDragMove { id, x, y } => {
                 if self
                     .workspace
                     .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
@@ -520,7 +520,7 @@ impl AppShell {
                     .workspace
                     .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y);
             }
-            AppMessage::WidgetDragEnd { id, x, y } => {
+            AppMessage::ControlDragEnd { id, x, y } => {
                 if self
                     .workspace
                     .end_canvas_port_connection(&mut self.gui, x, y)
@@ -531,7 +531,7 @@ impl AppShell {
                     .workspace
                     .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
             }
-            AppMessage::WidgetResizeStart { id, edge, x, y } => {
+            AppMessage::ControlResizeStart { id, edge, x, y } => {
                 let _ = self.workspace.start_canvas_node_resize(
                     &mut self.gui,
                     &self.camera,
@@ -541,12 +541,12 @@ impl AppShell {
                     y,
                 );
             }
-            AppMessage::WidgetResizeMove { id, edge, x, y } => {
+            AppMessage::ControlResizeMove { id, edge, x, y } => {
                 let _ =
                     self.workspace
                         .resize_canvas_node(&mut self.gui, &self.camera, &id, edge, x, y);
             }
-            AppMessage::WidgetResizeEnd { id, edge, x, y } => {
+            AppMessage::ControlResizeEnd { id, edge, x, y } => {
                 let _ = self.workspace.end_canvas_node_resize(
                     &mut self.gui,
                     &self.camera,
@@ -556,7 +556,7 @@ impl AppShell {
                     y,
                 );
             }
-            AppMessage::WidgetTextChanged { id, value } => {
+            AppMessage::ControlTextChanged { id, value } => {
                 let _ = self.workspace.update_text_area_showcase_value(&id, value);
             }
             AppMessage::LongPress(id) => {

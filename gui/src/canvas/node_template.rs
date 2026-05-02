@@ -2,7 +2,7 @@ use super::{
     canvas_port_stable_id, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortGroupView,
     CanvasPortSide,
 };
-use crate::widget::mapping::ParamControlSpec;
+use crate::control::ParamControlSpec;
 
 #[derive(Clone, Debug)]
 pub struct CanvasNodeRenderView {

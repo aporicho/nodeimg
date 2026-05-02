@@ -14,16 +14,6 @@ impl FocusState {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn set_focusable(&mut self, ids: Vec<NodeId>) {
-        if let Some(focused) = self.focused {
-            if !ids.contains(&focused) {
-                self.focused = None;
-            }
-        }
-        self.focusable = ids;
-    }
-
     pub(crate) fn focus(&mut self, id: NodeId) {
         self.focused = Some(id);
     }

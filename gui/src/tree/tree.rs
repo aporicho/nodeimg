@@ -24,6 +24,7 @@ use crate::canvas::{
     canvas_node_stable_id, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortGroupView,
     CanvasPortSide,
 };
+use crate::control::ResizeEdge;
 use crate::diagnostics::render_trace::{self, RenderTraceStage};
 use crate::paint::{compose_fragments, DisplayList, PaintBuildError, PaintFlushStats};
 use crate::panel::{
@@ -31,7 +32,6 @@ use crate::panel::{
     PanelRuntime,
 };
 use crate::renderer::Rect;
-use crate::widget::resize_edge::ResizeEdge;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -135,7 +135,7 @@ impl Tree {
 
     pub fn insert(&mut self, node: TreeNode) -> NodeId {
         self.insert_with_index_policy(node, false)
-            .expect("compat insertion does not reject duplicate stable ids")
+            .expect("unchecked insertion does not reject duplicate stable ids")
     }
 
     pub fn insert_checked(&mut self, node: TreeNode) -> Result<NodeId, TreeIndexError> {
@@ -257,11 +257,6 @@ impl Tree {
 
     pub fn remove_runtime_slot<T: RuntimeSlot>(&mut self, id: NodeId) -> Option<T> {
         self.get_mut(id)?.runtime_slots.remove::<T>()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn take_retained_runtime_slots(&mut self, id: &str) -> Option<RuntimeSlots> {
-        self.retained_runtime.take(id)
     }
 
     pub(crate) fn runtime_slot_by_stable_id<T: RuntimeSlot>(&self, id: &str) -> Option<&T> {
@@ -453,7 +448,7 @@ impl Tree {
         if let Some(parent) = self.parents.get(&node).copied() {
             return Some(parent);
         }
-        self.record_full_tree_scan();
+        self.record_parent_lookup_fallback_scan();
         self.iter().find_map(|(candidate, tree_node)| {
             tree_node.children.contains(&node).then_some(candidate)
         })
@@ -1063,8 +1058,8 @@ impl Tree {
         self.frame_stats.borrow_mut().stable_id_lookups += 1;
     }
 
-    pub(crate) fn record_full_tree_scan(&self) {
-        self.frame_stats.borrow_mut().full_tree_scans += 1;
+    pub(crate) fn record_parent_lookup_fallback_scan(&self) {
+        self.frame_stats.borrow_mut().parent_lookup_fallback_scans += 1;
     }
 
     pub(crate) fn record_layout_node_visited(&self) {
@@ -1774,7 +1769,6 @@ fn collect_snapshot_order(
 fn normal_kind_summary(kind: &super::NodeKind) -> String {
     match kind {
         super::NodeKind::Container => "Container".to_string(),
-        super::NodeKind::Widget(widget) => format!("Widget({})", widget.widget_type()),
         super::NodeKind::Leaf(super::layout::LeafKind::Text { content, .. }) => {
             format!(
                 "Leaf::Text(bytes:{} chars:{})",
@@ -1789,9 +1783,6 @@ fn normal_kind_summary(kind: &super::NodeKind) -> String {
 fn full_kind_summary(kind: &super::NodeKind) -> String {
     match kind {
         super::NodeKind::Container => "Container".to_string(),
-        super::NodeKind::Widget(widget) => {
-            format!("Widget(type:{} props:{widget:?})", widget.widget_type())
-        }
         super::NodeKind::Leaf(super::layout::LeafKind::Text {
             content,
             style,
@@ -2159,7 +2150,7 @@ mod tests {
 
         assert_eq!(value, 9);
         assert_eq!(stats.stable_id_lookups, 1);
-        assert_eq!(stats.full_tree_scans, 0);
+        assert_eq!(stats.parent_lookup_fallback_scans, 0);
     }
 
     #[test]

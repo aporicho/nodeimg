@@ -4,9 +4,7 @@ use crate::tree::{NodeId, Tree};
 
 use super::focus::FocusState;
 use super::reducer;
-#[cfg(test)]
-use super::target;
-use super::WidgetVisualState;
+use super::ControlVisualState;
 
 /// Framework-level interaction state for hover, press, pointer capture, and focus.
 pub struct InteractionState {
@@ -26,19 +24,6 @@ impl InteractionState {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn sync_with_tree(&mut self, tree: &Tree) {
-        self.hovered = self.hovered.filter(|&id| tree.get(id).is_some());
-        self.pressed = self.pressed.filter(|&id| tree.get(id).is_some());
-        self.captured = self.captured.filter(|&id| tree.get(id).is_some());
-        self.focus.set_focusable(target::focusable_nodes(tree));
-        if let Some(id) = self.focus.focused() {
-            if tree.get(id).is_none() {
-                self.focus.blur();
-            }
-        }
-    }
-
     pub(crate) fn handle_event(
         &mut self,
         tree: &Tree,
@@ -48,17 +33,17 @@ impl InteractionState {
         reducer::apply_event(self, tree, animations, event);
     }
 
-    pub fn visual_state(&self, node_id: NodeId, disabled: bool) -> WidgetVisualState {
+    pub fn visual_state(&self, node_id: NodeId, disabled: bool) -> ControlVisualState {
         if disabled {
-            WidgetVisualState::Disabled
+            ControlVisualState::Disabled
         } else if self.pressed == Some(node_id) || self.captured == Some(node_id) {
-            WidgetVisualState::Pressed
+            ControlVisualState::Pressed
         } else if self.focus.is_focused(node_id) {
-            WidgetVisualState::Focused
+            ControlVisualState::Focused
         } else if self.hovered == Some(node_id) {
-            WidgetVisualState::Hovered
+            ControlVisualState::Hovered
         } else {
-            WidgetVisualState::Normal
+            ControlVisualState::Normal
         }
     }
 

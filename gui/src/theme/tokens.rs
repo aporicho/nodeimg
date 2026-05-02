@@ -1,4 +1,4 @@
-use crate::interaction::WidgetVisualState;
+use crate::interaction::ControlVisualState;
 use crate::renderer::{Color, TextFamily, TextStyle, TextWeight};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -480,36 +480,36 @@ impl Theme {
             .with_weight(TextWeight::Medium)
     }
 
-    pub fn text_color_for_visual(&self, visual: WidgetVisualState) -> Color {
+    pub fn text_color_for_visual(&self, visual: ControlVisualState) -> Color {
         match visual {
-            WidgetVisualState::Disabled => self.colors.text_disabled,
+            ControlVisualState::Disabled => self.colors.text_disabled,
             _ => self.colors.text,
         }
     }
 
-    pub fn button_visual(&self, visual: WidgetVisualState) -> SurfaceVisual {
+    pub fn button_visual(&self, visual: ControlVisualState) -> SurfaceVisual {
         match visual {
-            WidgetVisualState::Normal => SurfaceVisual {
+            ControlVisualState::Normal => SurfaceVisual {
                 background: self.colors.surface,
                 border: Some(self.colors.border),
                 text: self.colors.text,
             },
-            WidgetVisualState::Hovered => SurfaceVisual {
+            ControlVisualState::Hovered => SurfaceVisual {
                 background: self.colors.surface_hover,
                 border: Some(self.colors.border_hover),
                 text: self.colors.text,
             },
-            WidgetVisualState::Pressed => SurfaceVisual {
+            ControlVisualState::Pressed => SurfaceVisual {
                 background: self.colors.surface_pressed,
                 border: Some(self.colors.border_pressed),
                 text: self.colors.text,
             },
-            WidgetVisualState::Focused => SurfaceVisual {
+            ControlVisualState::Focused => SurfaceVisual {
                 background: self.colors.surface,
                 border: Some(self.colors.border_focus),
                 text: self.colors.text,
             },
-            WidgetVisualState::Disabled => SurfaceVisual {
+            ControlVisualState::Disabled => SurfaceVisual {
                 background: self.colors.surface_disabled,
                 border: Some(self.colors.border_disabled),
                 text: self.colors.text_disabled,
@@ -517,13 +517,13 @@ impl Theme {
         }
     }
 
-    pub fn dropdown_visual(&self, visual: WidgetVisualState) -> SurfaceVisual {
+    pub fn dropdown_visual(&self, visual: ControlVisualState) -> SurfaceVisual {
         self.button_visual(visual)
     }
 
-    pub fn checkbox_visual(&self, checked: bool, visual: WidgetVisualState) -> CheckboxVisual {
+    pub fn checkbox_visual(&self, checked: bool, visual: ControlVisualState) -> CheckboxVisual {
         match visual {
-            WidgetVisualState::Disabled => CheckboxVisual {
+            ControlVisualState::Disabled => CheckboxVisual {
                 box_background: if checked {
                     self.colors.accent_disabled
                 } else {
@@ -533,7 +533,7 @@ impl Theme {
                 check: self.colors.surface,
                 text: self.colors.text_disabled,
             },
-            WidgetVisualState::Focused => CheckboxVisual {
+            ControlVisualState::Focused => CheckboxVisual {
                 box_background: if checked {
                     self.colors.accent
                 } else {
@@ -543,7 +543,7 @@ impl Theme {
                 check: self.colors.surface,
                 text: self.colors.text,
             },
-            WidgetVisualState::Hovered => CheckboxVisual {
+            ControlVisualState::Hovered => CheckboxVisual {
                 box_background: if checked {
                     self.colors.accent_hover
                 } else {
@@ -557,7 +557,7 @@ impl Theme {
                 check: self.colors.surface,
                 text: self.colors.text,
             },
-            WidgetVisualState::Pressed => CheckboxVisual {
+            ControlVisualState::Pressed => CheckboxVisual {
                 box_background: if checked {
                     self.colors.accent_pressed
                 } else {
@@ -571,7 +571,7 @@ impl Theme {
                 check: self.colors.surface,
                 text: self.colors.text,
             },
-            WidgetVisualState::Normal => CheckboxVisual {
+            ControlVisualState::Normal => CheckboxVisual {
                 box_background: if checked {
                     self.colors.accent
                 } else {
@@ -588,18 +588,18 @@ impl Theme {
         }
     }
 
-    pub fn toggle_visual(&self, on: bool, visual: WidgetVisualState) -> ToggleVisual {
+    pub fn toggle_visual(&self, on: bool, visual: ControlVisualState) -> ToggleVisual {
         let track_background = match (on, visual) {
-            (_, WidgetVisualState::Disabled) => self.colors.accent_disabled,
-            (true, WidgetVisualState::Pressed) => self.colors.accent_pressed,
-            (true, WidgetVisualState::Hovered) => self.colors.accent_hover,
+            (_, ControlVisualState::Disabled) => self.colors.accent_disabled,
+            (true, ControlVisualState::Pressed) => self.colors.accent_pressed,
+            (true, ControlVisualState::Hovered) => self.colors.accent_hover,
             (true, _) => self.colors.accent,
-            (false, WidgetVisualState::Pressed) => self.colors.border_pressed,
-            (false, WidgetVisualState::Hovered) => self.colors.border,
+            (false, ControlVisualState::Pressed) => self.colors.border_pressed,
+            (false, ControlVisualState::Hovered) => self.colors.border,
             (false, _) => self.colors.border_hover,
         };
         let track_border =
-            matches!(visual, WidgetVisualState::Focused).then_some(self.colors.border_focus);
+            matches!(visual, ControlVisualState::Focused).then_some(self.colors.border_focus);
         ToggleVisual {
             track_background,
             track_border,
@@ -608,21 +608,21 @@ impl Theme {
         }
     }
 
-    pub fn slider_visual(&self, visual: WidgetVisualState) -> SliderVisual {
+    pub fn slider_visual(&self, visual: ControlVisualState) -> SliderVisual {
         let track_background = match visual {
-            WidgetVisualState::Disabled => self.colors.border_disabled,
-            WidgetVisualState::Pressed => self.colors.border_hover,
-            WidgetVisualState::Hovered => self.colors.surface_hover,
+            ControlVisualState::Disabled => self.colors.border_disabled,
+            ControlVisualState::Pressed => self.colors.border_hover,
+            ControlVisualState::Hovered => self.colors.surface_hover,
             _ => self.colors.border,
         };
         let fill = match visual {
-            WidgetVisualState::Disabled => self.colors.text_disabled,
-            WidgetVisualState::Pressed => self.colors.surface_pressed,
-            WidgetVisualState::Hovered => self.colors.surface_disabled,
+            ControlVisualState::Disabled => self.colors.text_disabled,
+            ControlVisualState::Pressed => self.colors.surface_pressed,
+            ControlVisualState::Hovered => self.colors.surface_disabled,
             _ => self.colors.text,
         };
         let track_border =
-            matches!(visual, WidgetVisualState::Focused).then_some(self.colors.border_focus);
+            matches!(visual, ControlVisualState::Focused).then_some(self.colors.border_focus);
         SliderVisual {
             track_background,
             track_border,
@@ -632,9 +632,9 @@ impl Theme {
         }
     }
 
-    pub fn radio_visual(&self, selected: bool, visual: WidgetVisualState) -> RadioVisual {
+    pub fn radio_visual(&self, selected: bool, visual: ControlVisualState) -> RadioVisual {
         match visual {
-            WidgetVisualState::Disabled => RadioVisual {
+            ControlVisualState::Disabled => RadioVisual {
                 ring_background: self.colors.surface_disabled,
                 ring_border: Some(self.colors.border_disabled),
                 dot: if selected {
@@ -644,7 +644,7 @@ impl Theme {
                 },
                 text: self.colors.text_disabled,
             },
-            WidgetVisualState::Focused => RadioVisual {
+            ControlVisualState::Focused => RadioVisual {
                 ring_background: self.colors.surface,
                 ring_border: Some(self.colors.border_focus),
                 dot: if selected {
@@ -654,7 +654,7 @@ impl Theme {
                 },
                 text: self.colors.text,
             },
-            WidgetVisualState::Hovered => RadioVisual {
+            ControlVisualState::Hovered => RadioVisual {
                 ring_background: self.colors.surface_hover,
                 ring_border: Some(self.colors.border_hover),
                 dot: if selected {
@@ -664,7 +664,7 @@ impl Theme {
                 },
                 text: self.colors.text,
             },
-            WidgetVisualState::Pressed => RadioVisual {
+            ControlVisualState::Pressed => RadioVisual {
                 ring_background: self.colors.surface_pressed,
                 ring_border: Some(self.colors.border_pressed),
                 dot: if selected {
@@ -674,7 +674,7 @@ impl Theme {
                 },
                 text: self.colors.text,
             },
-            WidgetVisualState::Normal => RadioVisual {
+            ControlVisualState::Normal => RadioVisual {
                 ring_background: self.colors.surface,
                 ring_border: Some(self.colors.border),
                 dot: if selected {
@@ -687,29 +687,29 @@ impl Theme {
         }
     }
 
-    pub fn text_input_visual(&self, visual: WidgetVisualState) -> SurfaceVisual {
+    pub fn text_input_visual(&self, visual: ControlVisualState) -> SurfaceVisual {
         match visual {
-            WidgetVisualState::Disabled => SurfaceVisual {
+            ControlVisualState::Disabled => SurfaceVisual {
                 background: self.colors.surface_disabled,
                 border: Some(self.colors.border_disabled),
                 text: self.colors.text_disabled,
             },
-            WidgetVisualState::Pressed => SurfaceVisual {
+            ControlVisualState::Pressed => SurfaceVisual {
                 background: self.colors.surface_disabled,
                 border: Some(self.colors.border_pressed),
                 text: self.colors.text,
             },
-            WidgetVisualState::Hovered => SurfaceVisual {
+            ControlVisualState::Hovered => SurfaceVisual {
                 background: self.colors.surface,
                 border: Some(self.colors.border_hover),
                 text: self.colors.text,
             },
-            WidgetVisualState::Focused => SurfaceVisual {
+            ControlVisualState::Focused => SurfaceVisual {
                 background: self.colors.surface,
                 border: Some(self.colors.border_focus),
                 text: self.colors.text,
             },
-            WidgetVisualState::Normal => SurfaceVisual {
+            ControlVisualState::Normal => SurfaceVisual {
                 background: self.colors.surface,
                 border: Some(self.colors.border),
                 text: self.colors.text,

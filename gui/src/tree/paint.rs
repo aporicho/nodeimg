@@ -8,6 +8,8 @@ use super::text_layout::resolve_text_paint;
 use super::tree::Tree;
 use super::{RepaintBoundaryId, Revision};
 use crate::animation::{visual_affine, AnimationStore};
+use crate::control::painter::paint_text_leaf_override;
+use crate::control::state::TextBoxStore;
 use crate::geometry::{Affine2D, Point, Rect};
 use crate::icon::{IconFit, IconPaintOverride, IconStrokeWidth, IconStyle};
 use crate::interaction::InteractionState;
@@ -18,11 +20,6 @@ use crate::paint::{
     SvgStrokeWidth, SvgStyle, TextStyle,
 };
 use crate::theme::Theme;
-use crate::widget::painters::{
-    paint_text_leaf_override as paint_widget_text_leaf_override,
-    widget_visual_override as paint_widget_visual_override,
-};
-use crate::widget::state::TextBoxStore;
 
 pub(crate) struct PaintCx<'a> {
     pub(crate) interaction: Option<&'a InteractionState>,
@@ -252,16 +249,11 @@ fn paint_node_inner(
         .map(|decoration| decoration.radius)
         .unwrap_or([0.0; 4]);
     let children = tree.children_in_paint_order_cached(node_id, &node.children);
-    let mut child_text_color = inherited_text_color;
+    let child_text_color = inherited_text_color;
 
     target.push_transform(Affine2D::translation(node.rect.x, node.rect.y));
 
-    if let Some((style, text_color)) =
-        paint_widget_visual_override(tree, node_id, interaction, theme)
-    {
-        target.draw_rect(local_rect, style);
-        child_text_color = Some(text_color);
-    } else if let Some(decoration) = &node.decoration {
+    if let Some(decoration) = &node.decoration {
         target.draw_rect(
             local_rect,
             RectStyle {
@@ -363,7 +355,7 @@ fn paint_leaf(
             layout,
         } => {
             let text_style = with_inherited_text_color(*style, inherited_text_color);
-            if !paint_widget_text_leaf_override(
+            if !paint_text_leaf_override(
                 tree,
                 node_id,
                 target,
@@ -371,7 +363,6 @@ fn paint_leaf(
                 interaction,
                 text_boxes,
                 theme,
-                content,
                 &text_style,
             ) {
                 let resolved =

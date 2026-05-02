@@ -1,5 +1,5 @@
 use crate::action::GuiAction;
-use crate::widget::resize_edge::ResizeEdge;
+use crate::control::ResizeEdge;
 
 #[derive(Debug, Clone)]
 pub enum PlatformEffect {
@@ -9,13 +9,13 @@ pub enum PlatformEffect {
 
 #[derive(Debug, Clone)]
 pub enum GuiEvent {
-    Widget(WidgetEvent),
+    Control(ControlEvent),
     Panel(PanelEvent),
     Overlay(OverlayEvent),
 }
 
 #[derive(Debug, Clone)]
-pub enum WidgetEvent {
+pub enum ControlEvent {
     Click {
         id: String,
     },
@@ -160,8 +160,8 @@ impl OutputBuilder {
         self
     }
 
-    pub(crate) fn widget(self, event: WidgetEvent) -> Self {
-        self.event(GuiEvent::Widget(event))
+    pub(crate) fn control(self, event: ControlEvent) -> Self {
+        self.event(GuiEvent::Control(event))
     }
 
     pub(crate) fn action(mut self, action: GuiAction) -> Self {
@@ -189,12 +189,12 @@ mod tests {
     #[test]
     fn merge_preserves_actions() {
         let left = OutputBuilder::new()
-            .action(GuiAction::WidgetClicked {
+            .action(GuiAction::ControlClicked {
                 id: "left".to_string(),
             })
             .finish();
         let right = OutputBuilder::new()
-            .action(GuiAction::WidgetClicked {
+            .action(GuiAction::ControlClicked {
                 id: "right".to_string(),
             })
             .finish();
@@ -204,10 +204,10 @@ mod tests {
         assert_eq!(
             merged.actions,
             vec![
-                GuiAction::WidgetClicked {
+                GuiAction::ControlClicked {
                     id: "left".to_string()
                 },
-                GuiAction::WidgetClicked {
+                GuiAction::ControlClicked {
                     id: "right".to_string()
                 }
             ]

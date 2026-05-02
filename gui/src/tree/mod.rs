@@ -1,6 +1,4 @@
-pub mod build;
 mod connection_endpoint;
-mod desc;
 mod dirty;
 mod frame_stats;
 mod hit;
@@ -36,7 +34,6 @@ pub(crate) mod text_layout;
 #[allow(clippy::module_inception)]
 mod tree;
 
-pub(crate) use desc::Desc;
 pub use dirty::{DirtyFlags, DirtyQueues};
 pub use frame_stats::FrameStats;
 pub(crate) use hit::screen_to_node_layout_point;

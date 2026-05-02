@@ -1,7 +1,7 @@
 use super::PanelConfig;
+use crate::control::ResizeEdge;
 use crate::renderer::Rect;
 use crate::tree::RuntimeSlot;
-use crate::widget::resize_edge::ResizeEdge;
 
 #[derive(Clone, Debug)]
 pub struct PanelRuntime {

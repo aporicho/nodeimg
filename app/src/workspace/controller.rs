@@ -24,8 +24,8 @@ use gui::canvas::{
     CanvasPortRef, CanvasPortSide,
 };
 use gui::context::Context;
+use gui::control::ResizeEdge;
 use gui::theme::Theme;
-use gui::widget::ResizeEdge;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
@@ -61,7 +61,7 @@ impl WorkspaceController {
             GuiAction::AddNode { type_id } => self.add_node_from_library(&type_id),
             GuiAction::OpenOverlay { .. }
             | GuiAction::CloseOverlay { .. }
-            | GuiAction::WidgetClicked { .. } => WorkspaceActionResult::default(),
+            | GuiAction::ControlClicked { .. } => WorkspaceActionResult::default(),
         }
     }
 
@@ -111,8 +111,8 @@ impl WorkspaceController {
 
         let mut views = self.canvas_node_render_views_for_layouts(layouts.clone(), composition);
         let mut resized_to_fit = false;
-        let dirty_intrinsics = gui.runtime_mut().take_dirty_control_intrinsics();
-        let control_intrinsics = gui.runtime().retained_control_intrinsics_snapshot();
+        let dirty_intrinsics = gui.controls_mut().take_dirty_intrinsics();
+        let control_intrinsics = gui.controls().intrinsics_snapshot();
         if !dirty_intrinsics.is_empty() || !control_intrinsics.is_empty() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",

@@ -5,8 +5,8 @@ use gui::canvas::node_template::{
 use gui::canvas::{
     CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide,
 };
+use gui::control::ParamControlSpec;
 use gui::renderer::Rect;
-use gui::widget::ParamControlSpec;
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
 pub(crate) const SOLO_OWNER_ID: &str = "showcase_node::solo_control";

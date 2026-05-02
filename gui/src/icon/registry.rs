@@ -75,7 +75,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_icon_aliases_resolve_to_canonical_assets() {
+    fn icon_aliases_resolve_to_canonical_assets() {
         let registry = IconRegistry::with_builtin_icons();
 
         assert_eq!(

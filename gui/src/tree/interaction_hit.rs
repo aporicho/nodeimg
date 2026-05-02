@@ -5,9 +5,9 @@ use super::shape::ContainerShape;
 use super::stacking::children_in_hit_order;
 use super::tree::Tree;
 use crate::animation::{visual_affine, AnimationStore};
+use crate::control::ResizeEdge;
 use crate::geometry::{Point, Rect};
 use crate::gesture::Gesture;
-use crate::widget::resize_edge::ResizeEdge;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct InteractionHit {
@@ -194,8 +194,7 @@ fn container_shape(node: &TreeNode) -> ContainerShape {
 }
 
 fn resize_enabled(node: &TreeNode) -> bool {
-    node.style.hittable != Some(false)
-        && (node.style.resizable || node.style.gestures.contains(&Gesture::Resize))
+    node.style.resizable || node.style.gestures.contains(&Gesture::Resize)
 }
 
 #[cfg(test)]

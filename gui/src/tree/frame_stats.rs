@@ -1,10 +1,8 @@
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FrameStats {
-    pub widget_build_calls: usize,
     pub tree_nodes: usize,
     pub stable_id_lookups: usize,
-    pub full_tree_scans: usize,
-    pub reconcile_child_matches: usize,
+    pub parent_lookup_fallback_scans: usize,
     pub layout_nodes_visited: usize,
     pub layout_boundaries_flushed: usize,
     pub layout_cache_hits: usize,
@@ -22,7 +20,6 @@ pub struct FrameStats {
     pub paint_composition_fragments_flattened: usize,
     pub paint_order_cache_hits: usize,
     pub paint_order_cache_misses: usize,
-    pub full_root_paint_calls: usize,
     pub backend_commands: usize,
     pub text_batches: usize,
     pub render_passes: usize,

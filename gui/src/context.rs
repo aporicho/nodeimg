@@ -2,10 +2,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBuilder};
+use crate::control::{ControlIntrinsic, ControlRole, ResizeEdge};
 use crate::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use crate::diagnostics::tree_dump::{self, TreeDumpController, TreeDumpPhase, TreeDumpPoint};
-use crate::event::gesture_adapter;
 use crate::event::router;
+use crate::event::signal_output;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
 use crate::icon::{IconId, IconRegistry};
 use crate::interaction::InteractionState;
@@ -20,14 +21,12 @@ use crate::theme::Theme;
 use crate::tree::layout::{LayoutConstraints, LayoutFlushStats, LayoutOutput, TextureHandle};
 use crate::tree::{
     hit_test_with_animations, resize_hit_at_screen_point, FrameStats, HitChain, Invalidation,
-    MutationError, NodeId, NodeKind, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree,
-    TreeMutation, TreeSnapshotOptions,
+    MutationError, NodeId, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree, TreeMutation,
+    TreeSnapshotOptions,
 };
-use crate::widget::resize_edge::ResizeEdge;
-use crate::widget::WidgetRole;
 
 pub use crate::output::{
-    FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
+    ControlEvent, FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect,
 };
 pub use crate::overlay::{
     DropdownOverlayContent, OverlayContent, OverlayPlacement, OverlayRequest,
@@ -553,7 +552,7 @@ impl Context {
     }
 
     pub(crate) fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        let focused_before = self.focused_widget_id().map(str::to_string);
+        let focused_before = self.focused_control_id().map(str::to_string);
         let output = router::handle_event(self, event);
         self.sync_overlay_tree();
         if matches!(
@@ -567,7 +566,7 @@ impl Context {
                 target: "nodeimg::render_trace::input",
                 ?event,
                 focused_before = focused_before.as_deref(),
-                focused_after = self.focused_widget_id(),
+                focused_after = self.focused_control_id(),
                 events = output.events.len(),
                 consumed = output.consumed,
                 "gui input event handled"
@@ -639,7 +638,7 @@ impl Context {
     pub(crate) fn resize_canvas_node_by(
         &mut self,
         owner_id: &str,
-        edge: crate::widget::resize_edge::ResizeEdge,
+        edge: ResizeEdge,
         dx: f32,
         dy: f32,
     ) -> bool {
@@ -664,19 +663,15 @@ impl Context {
         self.tree.apply_canvas_node_sizing(owner_id, request)
     }
 
-    pub(crate) fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn control_intrinsics(&self) -> Vec<ControlIntrinsic> {
         self.systems.control_intrinsics()
     }
 
-    pub(crate) fn retained_control_intrinsics_snapshot(
-        &self,
-    ) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn control_intrinsics_snapshot(&self) -> Vec<ControlIntrinsic> {
         self.systems.control_intrinsics()
     }
 
-    pub(crate) fn take_dirty_control_intrinsics(
-        &mut self,
-    ) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
         self.systems.take_dirty_control_intrinsics()
     }
 
@@ -684,14 +679,14 @@ impl Context {
         self.systems.take_text_box_dirty_intrinsics()
     }
 
-    pub(crate) fn sync_retained_canvas_text_boxes(
+    pub(crate) fn sync_canvas_text_boxes(
         &mut self,
         views: &[crate::canvas::node_template::CanvasNodeRenderView],
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
         let before_dirty = self.systems.text_box_dirty_intrinsics().len();
-        self.systems.sync_retained_canvas_text_boxes(
+        self.systems.sync_canvas_text_boxes(
             &self.tree,
             views,
             measurer,
@@ -887,19 +882,14 @@ impl Context {
         hit.map(|hit| (hit.node_id, hit.edge))
     }
 
-    pub(crate) fn node_root_widget_role(&self, node_id: NodeId) -> Option<WidgetRole> {
+    pub(crate) fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
         let mut candidate = self.node_name(node_id)?;
 
         loop {
             if let Some(root_id) = self.node_id_by_name(candidate) {
                 if let Some(root_node) = self.tree.get(root_id) {
-                    match &root_node.kind {
-                        NodeKind::Widget(props) => return Some(props.role()),
-                        _ => {
-                            if let Some(role) = root_node.props.semantic_role {
-                                return Some(role);
-                            }
-                        }
+                    if let Some(role) = root_node.props.semantic_role {
+                        return Some(role);
                     }
                 }
             }
@@ -913,23 +903,23 @@ impl Context {
         self.node_name(node_id)
             .is_some_and(|id| id.ends_with("::field"))
             && self
-                .node_root_widget_role(node_id)
-                .is_some_and(WidgetRole::is_text_input)
+                .node_root_control_role(node_id)
+                .is_some_and(ControlRole::is_text_input)
     }
 
     pub(crate) fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
         self.node_name(node_id)
             .is_some_and(|id| id.ends_with("::field"))
             && self
-                .node_root_widget_role(node_id)
-                .is_some_and(WidgetRole::is_text_area)
+                .node_root_control_role(node_id)
+                .is_some_and(ControlRole::is_text_area)
     }
 
     pub(crate) fn focused_node(&self) -> Option<NodeId> {
         self.interaction.focused()
     }
 
-    pub(crate) fn focused_widget_id(&self) -> Option<&str> {
+    pub(crate) fn focused_control_id(&self) -> Option<&str> {
         self.node_name_for(self.focused_node())
     }
 
@@ -937,7 +927,7 @@ impl Context {
         self.interaction.hovered()
     }
 
-    pub(crate) fn hovered_widget_id(&self) -> Option<&str> {
+    pub(crate) fn hovered_control_id(&self) -> Option<&str> {
         self.node_name_for(self.hovered_node())
     }
 
@@ -945,7 +935,7 @@ impl Context {
         self.interaction.captured()
     }
 
-    pub(crate) fn captured_widget_id(&self) -> Option<&str> {
+    pub(crate) fn captured_control_id(&self) -> Option<&str> {
         self.node_name_for(self.captured_node())
     }
 
@@ -981,7 +971,7 @@ impl Context {
         let output = update
             .signal
             .as_ref()
-            .map(|signal| gesture_adapter::gesture_signal_output(&self.tree, signal))
+            .map(|signal| signal_output::gesture_signal_output(&self.tree, signal))
             .unwrap_or_default();
         output.with_consumed(update.consumed)
     }
@@ -1062,12 +1052,12 @@ impl Context {
         AnimationMutApi { ctx: self }
     }
 
-    pub fn runtime(&self) -> RuntimeApi<'_> {
-        RuntimeApi { ctx: self }
+    pub fn controls(&self) -> ControlsApi<'_> {
+        ControlsApi { ctx: self }
     }
 
-    pub fn runtime_mut(&mut self) -> RuntimeMutApi<'_> {
-        RuntimeMutApi { ctx: self }
+    pub fn controls_mut(&mut self) -> ControlsMutApi<'_> {
+        ControlsMutApi { ctx: self }
     }
 }
 
@@ -1155,8 +1145,8 @@ impl QueryApi<'_> {
         self.ctx.resize_hit_at_screen_point(x, y)
     }
 
-    pub fn node_root_widget_role(&self, node_id: NodeId) -> Option<WidgetRole> {
-        self.ctx.node_root_widget_role(node_id)
+    pub fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
+        self.ctx.node_root_control_role(node_id)
     }
 
     pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
@@ -1171,24 +1161,24 @@ impl QueryApi<'_> {
         self.ctx.focused_node()
     }
 
-    pub fn focused_widget_id(&self) -> Option<&str> {
-        self.ctx.focused_widget_id()
+    pub fn focused_control_id(&self) -> Option<&str> {
+        self.ctx.focused_control_id()
     }
 
     pub fn hovered_node(&self) -> Option<NodeId> {
         self.ctx.hovered_node()
     }
 
-    pub fn hovered_widget_id(&self) -> Option<&str> {
-        self.ctx.hovered_widget_id()
+    pub fn hovered_control_id(&self) -> Option<&str> {
+        self.ctx.hovered_control_id()
     }
 
     pub fn captured_node(&self) -> Option<NodeId> {
         self.ctx.captured_node()
     }
 
-    pub fn captured_widget_id(&self) -> Option<&str> {
-        self.ctx.captured_widget_id()
+    pub fn captured_control_id(&self) -> Option<&str> {
+        self.ctx.captured_control_id()
     }
 }
 
@@ -1292,13 +1282,7 @@ impl CanvasMutApi<'_> {
         self.ctx.move_canvas_node_by(owner_id, dx, dy)
     }
 
-    pub fn resize_node_by(
-        &mut self,
-        owner_id: &str,
-        edge: crate::widget::resize_edge::ResizeEdge,
-        dx: f32,
-        dy: f32,
-    ) -> bool {
+    pub fn resize_node_by(&mut self, owner_id: &str, edge: ResizeEdge, dx: f32, dy: f32) -> bool {
         self.ctx.resize_canvas_node_by(owner_id, edge, dx, dy)
     }
 
@@ -1460,17 +1444,17 @@ impl AnimationMutApi<'_> {
     }
 }
 
-pub struct RuntimeApi<'a> {
+pub struct ControlsApi<'a> {
     ctx: &'a Context,
 }
 
-impl RuntimeApi<'_> {
-    pub fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+impl ControlsApi<'_> {
+    pub fn intrinsics(&self) -> Vec<ControlIntrinsic> {
         self.ctx.control_intrinsics()
     }
 
-    pub fn retained_control_intrinsics_snapshot(&self) -> Vec<crate::runtime::ControlIntrinsic> {
-        self.ctx.retained_control_intrinsics_snapshot()
+    pub fn intrinsics_snapshot(&self) -> Vec<ControlIntrinsic> {
+        self.ctx.control_intrinsics_snapshot()
     }
 
     pub fn text_box_dirty_intrinsics(&self) -> Vec<String> {
@@ -1478,12 +1462,12 @@ impl RuntimeApi<'_> {
     }
 }
 
-pub struct RuntimeMutApi<'a> {
+pub struct ControlsMutApi<'a> {
     ctx: &'a mut Context,
 }
 
-impl RuntimeMutApi<'_> {
-    pub fn take_dirty_control_intrinsics(&mut self) -> Vec<crate::runtime::ControlIntrinsic> {
+impl ControlsMutApi<'_> {
+    pub fn take_dirty_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
         self.ctx.take_dirty_control_intrinsics()
     }
 
@@ -1491,14 +1475,13 @@ impl RuntimeMutApi<'_> {
         self.ctx.take_text_box_dirty_intrinsics()
     }
 
-    pub fn sync_retained_canvas_text_boxes(
+    pub fn sync_canvas_text_boxes(
         &mut self,
         views: &[crate::canvas::node_template::CanvasNodeRenderView],
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
-        self.ctx
-            .sync_retained_canvas_text_boxes(views, measurer, theme);
+        self.ctx.sync_canvas_text_boxes(views, measurer, theme);
     }
 }
 

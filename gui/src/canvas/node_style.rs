@@ -1,6 +1,6 @@
+use crate::control::ParamControlMetrics;
 use crate::renderer::Rect;
 use crate::theme::Theme;
-use crate::widget::param_control::ParamControlMetrics;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct NodeCardMetrics {

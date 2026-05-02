@@ -5,4 +5,4 @@ mod target;
 mod visual;
 
 pub use state::InteractionState;
-pub use visual::WidgetVisualState;
+pub use visual::ControlVisualState;

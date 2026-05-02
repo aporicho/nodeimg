@@ -1,9 +1,9 @@
-use crate::action::dispatch_widget_click;
+use crate::action::dispatch_control_click;
+use crate::control::ResizeEdge;
 use crate::event::target::TargetResolver;
 use crate::gesture::GestureSignal;
-use crate::output::{FrameworkOutput, GuiEvent, OutputBuilder, PanelEvent, WidgetEvent};
+use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OutputBuilder, PanelEvent};
 use crate::tree::Tree;
-use crate::widget::resize_edge::ResizeEdge;
 
 #[derive(Clone, Copy)]
 enum DragPhase {
@@ -24,8 +24,8 @@ pub(crate) fn gesture_signal_output(tree: &Tree, signal: &GestureSignal) -> Fram
     let builder = OutputBuilder::new().event(event.clone());
 
     match event {
-        GuiEvent::Widget(WidgetEvent::Click { id }) => {
-            builder.action(dispatch_widget_click(&id)).finish()
+        GuiEvent::Control(ControlEvent::Click { id }) => {
+            builder.action(dispatch_control_click(&id)).finish()
         }
         _ => builder.finish(),
     }
@@ -34,10 +34,10 @@ pub(crate) fn gesture_signal_output(tree: &Tree, signal: &GestureSignal) -> Fram
 fn gesture_signal_event(tree: &Tree, signal: &GestureSignal) -> GuiEvent {
     let resolver = TargetResolver::new(tree);
     match signal {
-        GestureSignal::Click(id) => GuiEvent::Widget(WidgetEvent::Click {
+        GestureSignal::Click(id) => GuiEvent::Control(ControlEvent::Click {
             id: resolver.owner_id(id),
         }),
-        GestureSignal::DoubleClick(id) => GuiEvent::Widget(WidgetEvent::DoubleClick {
+        GestureSignal::DoubleClick(id) => GuiEvent::Control(ControlEvent::DoubleClick {
             id: resolver.owner_id(id),
         }),
         GestureSignal::DragStart { id, x, y } => {
@@ -45,7 +45,7 @@ fn gesture_signal_event(tree: &Tree, signal: &GestureSignal) -> GuiEvent {
         }
         GestureSignal::DragMove { id, x, y } => drag_event(&resolver, id, *x, *y, DragPhase::Move),
         GestureSignal::DragEnd { id, x, y } => drag_event(&resolver, id, *x, *y, DragPhase::End),
-        GestureSignal::LongPress(id) => GuiEvent::Widget(WidgetEvent::LongPress {
+        GestureSignal::LongPress(id) => GuiEvent::Control(ControlEvent::LongPress {
             id: resolver.owner_id(id),
         }),
         GestureSignal::ResizeStart { id, edge, x, y } => {
@@ -69,7 +69,7 @@ fn drag_event(
 ) -> GuiEvent {
     let owner_id = resolver.owner_id(id);
     if resolver
-        .widget_role(&owner_id)
+        .control_role(&owner_id)
         .is_some_and(|role| role.is_panel())
     {
         return GuiEvent::Panel(match phase {
@@ -79,10 +79,10 @@ fn drag_event(
         });
     }
 
-    GuiEvent::Widget(match phase {
-        DragPhase::Start => WidgetEvent::DragStart { id: owner_id, x, y },
-        DragPhase::Move => WidgetEvent::DragMove { id: owner_id, x, y },
-        DragPhase::End => WidgetEvent::DragEnd { id: owner_id, x, y },
+    GuiEvent::Control(match phase {
+        DragPhase::Start => ControlEvent::DragStart { id: owner_id, x, y },
+        DragPhase::Move => ControlEvent::DragMove { id: owner_id, x, y },
+        DragPhase::End => ControlEvent::DragEnd { id: owner_id, x, y },
     })
 }
 
@@ -102,27 +102,27 @@ fn resize_event(
         edge = ?edge,
         x,
         y,
-        is_panel = resolver.widget_role(&owner_id).is_some_and(|role| role.is_panel()),
+        is_panel = resolver.control_role(&owner_id).is_some_and(|role| role.is_panel()),
         "map resize gesture signal"
     );
     if !resolver
-        .widget_role(&owner_id)
+        .control_role(&owner_id)
         .is_some_and(|role| role.is_panel())
     {
-        return GuiEvent::Widget(match phase {
-            ResizePhase::Start => WidgetEvent::ResizeStart {
+        return GuiEvent::Control(match phase {
+            ResizePhase::Start => ControlEvent::ResizeStart {
                 id: owner_id,
                 edge,
                 x,
                 y,
             },
-            ResizePhase::Move => WidgetEvent::ResizeMove {
+            ResizePhase::Move => ControlEvent::ResizeMove {
                 id: owner_id,
                 edge,
                 x,
                 y,
             },
-            ResizePhase::End => WidgetEvent::ResizeEnd {
+            ResizePhase::End => ControlEvent::ResizeEnd {
                 id: owner_id,
                 edge,
                 x,

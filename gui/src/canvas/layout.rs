@@ -57,7 +57,7 @@ mod tests {
         );
         assert_eq!(
             canvas_node_event_owner_id(
-                "canvas_node::engine_node::7::body::param::0::control::widget"
+                "canvas_node::engine_node::7::body::param::0::control::content"
             ),
             Some("engine_node::7")
         );

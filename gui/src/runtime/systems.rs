@@ -1,17 +1,17 @@
 use crate::animation::AnimationStore;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
+use crate::control::state::TextBoxStore;
+use crate::control::systems::{SystemCx, TextBoxSystem};
+use crate::control::ControlIntrinsic;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
 use crate::overlay::OverlaySystem;
-use crate::runtime::ControlIntrinsic;
 use crate::shell::AppEvent;
 use crate::template::TemplateRegistry;
 use crate::theme::Theme;
 use crate::tree::{MutationError, NodeId, Tree};
-use crate::widget::state::TextBoxStore;
-use crate::widget::systems::{DropdownSystem, OverlaySystemCx, SystemCx, TextBoxSystem};
 
 pub(crate) struct RuntimeEventCx<'a> {
     pub(crate) tree: &'a mut Tree,
@@ -27,7 +27,6 @@ pub(crate) struct RuntimeEventResult {
 
 pub(crate) struct RuntimeSystems {
     overlay: OverlaySystem,
-    dropdown: DropdownSystem,
     text_box: TextBoxSystem,
 }
 
@@ -35,7 +34,6 @@ impl RuntimeSystems {
     pub(crate) fn new() -> Self {
         Self {
             overlay: OverlaySystem::new(),
-            dropdown: DropdownSystem::new(),
             text_box: TextBoxSystem::new(),
         }
     }
@@ -57,21 +55,15 @@ impl RuntimeSystems {
             }
         }
 
-        let dropdown_output = {
-            let dropdown_cx =
-                OverlaySystemCx::new(cx.tree, cx.animations, cx.interaction, &mut self.overlay);
-            self.dropdown.handle_event(dropdown_cx, event)
-        };
         let text_output = {
             let text_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction);
             self.text_box.handle_event(text_cx, event)
         };
 
-        let cancel_gesture = output_has_pre_gesture_work(&dropdown_output)
-            || output_has_pre_gesture_work(&text_output);
+        let cancel_gesture = output_has_pre_gesture_work(&text_output);
 
         RuntimeEventResult {
-            output: dropdown_output.merge(text_output),
+            output: text_output,
             cancel_gesture,
         }
     }
@@ -130,7 +122,7 @@ impl RuntimeSystems {
         self.text_box.store().dirty_intrinsic_ids()
     }
 
-    pub(crate) fn sync_retained_canvas_text_boxes(
+    pub(crate) fn sync_canvas_text_boxes(
         &mut self,
         tree: &Tree,
         views: &[CanvasNodeRenderView],
@@ -139,7 +131,7 @@ impl RuntimeSystems {
         focused: Option<NodeId>,
     ) {
         self.text_box
-            .sync_retained_canvas_text_boxes(tree, views, measurer, theme, focused);
+            .sync_canvas_text_boxes(tree, views, measurer, theme, focused);
     }
 }
 

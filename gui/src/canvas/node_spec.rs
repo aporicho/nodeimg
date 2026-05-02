@@ -4,10 +4,10 @@ use super::{
 };
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
+use crate::control::param_control_min_height;
+use crate::control::ParamControlSpec;
 use crate::renderer::Color;
 use crate::theme::Theme;
-use crate::widget::mapping::ParamControlSpec;
-use crate::widget::param_control::param_control_min_height;
 
 #[derive(Debug, Clone)]
 pub(crate) struct NodeRenderSpec {
@@ -245,9 +245,9 @@ mod tests {
     use crate::canvas::node_template::{
         CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     };
+    use crate::control::ParamControlSpec;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
-    use crate::widget::mapping::ParamControlSpec;
 
     #[test]
     fn spec_root_id_uses_canvas_node_stable_id() {

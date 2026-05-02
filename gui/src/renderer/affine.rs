@@ -63,7 +63,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn translate_uniform_scale_accepts_existing_compat_shape() {
+    fn translate_uniform_scale_accepts_axis_aligned_shape() {
         let transform = Affine2D::compose(Affine2D::translation(10.0, 20.0), Affine2D::scale(2.0));
 
         assert_eq!(

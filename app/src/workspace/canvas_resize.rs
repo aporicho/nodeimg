@@ -1,7 +1,7 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::canvas_node_event_owner_id;
 use gui::context::Context;
-use gui::widget::ResizeEdge;
+use gui::control::ResizeEdge;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CanvasNodeResizeSession {

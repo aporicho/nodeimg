@@ -1,65 +1,13 @@
-use crate::interaction::{InteractionState, WidgetVisualState};
+use crate::control::state::{TextBoxRuntime, TextBoxStore};
+use crate::interaction::InteractionState;
 use crate::paint::ClipShape;
-use crate::renderer::{Color, Point, Rect, RectStyle, TextStyle};
+use crate::renderer::{Point, Rect, RectStyle, TextStyle};
 use crate::theme::Theme;
 use crate::tree::paint_target::PaintTarget;
 use crate::tree::{NodeId, Tree};
-use crate::widget::state::{is_text_box_props, text_box_spec, TextBoxStore};
-
-use super::owner::widget_owner_for_part;
-use super::transparent_style;
-
-pub(super) fn visual_override(
-    tree: &Tree,
-    node_id: NodeId,
-    interaction: Option<&InteractionState>,
-    theme: &Theme,
-) -> Option<(RectStyle, Color)> {
-    let node = tree.get(node_id)?;
-    let node_id_str = node.id.as_ref();
-    let owner = text_box_widget_for_node(tree, node_id_str)?;
-    let root_id = owner.root_id;
-    let root_node_id = owner.root_node_id;
-    let spec = text_box_spec(owner.props, theme)?;
-    let root_visual = interaction
-        .map(|state| state.visual_state(root_node_id, spec.disabled))
-        .unwrap_or(if spec.disabled {
-            WidgetVisualState::Disabled
-        } else {
-            WidgetVisualState::Normal
-        });
-
-    if node_id_str == root_id {
-        return Some((
-            transparent_style(),
-            theme.text_color_for_visual(root_visual),
-        ));
-    }
-
-    if node_id_str
-        .strip_suffix("::field")
-        .is_some_and(|id| id == root_id)
-    {
-        let visual = theme.text_input_visual(root_visual);
-        return Some((
-            RectStyle {
-                color: visual.background,
-                border: visual.border.map(|color| crate::renderer::Border {
-                    width: spec.tokens.border_width,
-                    color,
-                }),
-                radius: [spec.tokens.radius; 4],
-                shadow: None,
-            },
-            visual.text,
-        ));
-    }
-
-    None
-}
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn paint_text_leaf(
+pub(crate) fn paint_text_leaf_override(
     tree: &Tree,
     node_id: NodeId,
     target: &mut dyn PaintTarget,
@@ -67,16 +15,15 @@ pub(super) fn paint_text_leaf(
     interaction: Option<&InteractionState>,
     text_boxes: Option<&TextBoxStore>,
     theme: &Theme,
-    _content: &str,
     text_style: &TextStyle,
 ) -> bool {
-    let Some((widget_id, focused)) = text_box_widget_id(tree, node_id, interaction) else {
+    let Some((control_id, focused)) = text_box_control_id(tree, node_id, interaction) else {
         return false;
     };
-    let Some(runtime) = text_boxes.and_then(|store| store.runtime(widget_id.as_ref())) else {
+    let Some(runtime) = text_boxes.and_then(|store| store.text_box(control_id.as_ref())) else {
         tracing::trace!(
-            target: "gui::widget::text_box",
-            widget_id = %widget_id,
+            target: "gui::control::text_box",
+            control_id = %control_id,
             has_store = text_boxes.is_some(),
             "skip text box paint leaf: runtime missing"
         );
@@ -139,7 +86,7 @@ pub(super) fn paint_text_leaf(
 }
 
 fn paint_runtime_text(
-    runtime: &crate::widget::state::TextBoxRuntime,
+    runtime: &TextBoxRuntime,
     target: &mut dyn PaintTarget,
     node_rect: Rect,
     clip_rect: Rect,
@@ -164,7 +111,7 @@ fn paint_runtime_text(
 }
 
 fn paint_single_line_preedit(
-    runtime: &crate::widget::state::TextBoxRuntime,
+    runtime: &TextBoxRuntime,
     target: &mut dyn PaintTarget,
     node_rect: Rect,
     clip_rect: Rect,
@@ -190,7 +137,6 @@ fn paint_single_line_preedit(
     if !prefix.is_empty() {
         target.draw_text_clipped(local_text_origin, prefix, *text_style, clip_rect);
     }
-
     if !preedit_text.is_empty() {
         target.draw_text_clipped(
             Point {
@@ -202,7 +148,6 @@ fn paint_single_line_preedit(
             clip_rect,
         );
     }
-
     if !suffix.is_empty() {
         target.draw_text_clipped(
             Point {
@@ -214,7 +159,6 @@ fn paint_single_line_preedit(
             clip_rect,
         );
     }
-
     if let Some(underline_rect) = runtime
         .preedit_underline_rect()
         .map(|rect| rect_to_node_local(rect, node_rect))
@@ -231,7 +175,7 @@ fn paint_single_line_preedit(
     }
 }
 
-fn text_box_widget_id(
+fn text_box_control_id(
     tree: &Tree,
     node_id: NodeId,
     interaction: Option<&InteractionState>,
@@ -241,19 +185,36 @@ fn text_box_widget_id(
     if !node_id_str.ends_with("::value") {
         return None;
     }
-
-    let owner = text_box_widget_for_node(tree, node_id_str)?;
+    let control_id = retained_text_box_owner(tree, node_id_str)?;
+    let root_node_id = tree.node_by_str(control_id)?;
     let focused = interaction
-        .map(|state| state.focused() == Some(owner.root_node_id))
+        .map(|state| state.focused() == Some(root_node_id))
         .unwrap_or(false);
-    Some((owner.root_id.to_string(), focused))
+    Some((control_id.to_string(), focused))
 }
 
-fn text_box_widget_for_node<'tree, 'node>(
-    tree: &'tree Tree,
-    node_id: &'node str,
-) -> Option<super::owner::WidgetOwner<'tree, 'node>> {
-    widget_owner_for_part(tree, node_id, is_text_box_props)
+fn retained_text_box_owner<'a>(tree: &Tree, node_id: &'a str) -> Option<&'a str> {
+    for candidate in part_candidates(node_id) {
+        let node = tree.get(tree.node_by_str(candidate)?)?;
+        if node.props.semantic_role.is_some_and(|role| {
+            role.is_text_input()
+                || role.is_text_area()
+                || matches!(role, crate::control::ControlRole::NumberInput)
+        }) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn part_candidates(node_id: &str) -> impl Iterator<Item = &str> {
+    [
+        Some(node_id),
+        node_id.strip_suffix("::field"),
+        node_id.strip_suffix("::value"),
+    ]
+    .into_iter()
+    .flatten()
 }
 
 fn clamp_text_index(text: &str, index: usize) -> usize {

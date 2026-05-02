@@ -27,16 +27,15 @@ production code must not create a `Desc` tree as an intermediate representation.
 - `gui/src/tree`: live retained instance tree, index, mutation, dirty queues,
   retained runtime slots, and frame counters. Tree modifications from retained
   production code go through `TreeMutation`.
-- `gui/src/widget/state`: control runtime state only. Text editor state is keyed
+- `gui/src/control/state`: control runtime state only. Text editor state is keyed
   by retained ids and emits mutations for tree-visible text changes.
 - `gui/src/canvas`: scene model and scene diff. It converts canvas semantic
   changes into template mounts, unmounts, and mutations. It does not call engine
-  internals or widget builders.
+  internals or removed control builders.
 - `app/src/workspace`: maps engine/workspace snapshots into deterministic scene
-  changes. Legacy full-tree view builders remain isolated until the workspace
-  shell is fully retained.
+  changes through retained scene controllers.
 - `gui/src/renderer`: backend command preparation and resource caches. Backend
-  resource handles must not leak back into tree/template/widget modules.
+  resource handles must not leak back into tree/template/control modules.
 
 ## Compiled Template Contract
 
@@ -80,19 +79,19 @@ hittable roots, drag gestures, resize gestures, z-index patches, and rect
 mutations. Resize is represented as `SetRect`; internal node/card content is not
 rebuilt for a pure outer rect change.
 
-## Legacy Boundaries
+## Removed Boundaries
 
-These APIs are legacy/prototype boundaries and are not retained production
-entrypoints:
+These APIs are removed from the retained production path and must not be
+reintroduced:
 
-| API | Current owner | Deletion condition |
-| --- | --- | --- |
-| `Context::update(Desc, ...)` | UI engine migration | App shell composes root through retained scene mutations. |
-| `WidgetProps::build()` | Legacy widget desc path | All controls used by production workspace have compiled templates or retained atoms. |
-| `app::workspace::view::build_workspace_tree` | Workspace migration | `WorkspaceSceneController` drives canvas, panels, and overlays without `Desc`. |
-| `gui::canvas::legacy_desc::node_card_from_render_view` | Canvas migration | Node cards are mounted and patched through `CanvasSceneModel`. |
-| `tree::build_display_list` full-root calls | Paint migration | Retained paint fragment flushing covers all production paint paths. |
-| `control_intrinsics` full scan | Text editor migration | Text runtime dirty intrinsic queue is the only production source. |
+| API | Replacement |
+| --- | --- |
+| `Context::update(Desc, ...)` | Retained scene mutations through `Context::scene()` |
+| `WidgetProps::build()` / `NodeKind::Widget` | Retained templates and `gui::control` roles |
+| `app::workspace::view::build_workspace_tree` | `WorkspaceSceneController` |
+| `gui::canvas::legacy_desc::node_card_from_render_view` | `CanvasSceneModel` template mount/patch flow |
+| `tree::build_display_list` full-root calls | Retained paint fragment flushing |
+| `control_intrinsics` full scan | Dirty intrinsic queue through `Context::controls()` |
 
 `app/build.rs` currently generates panel declaration collection code only. It is
 not a second template/codegen path; when panels move to retained templates, that

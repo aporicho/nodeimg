@@ -1,4 +1,4 @@
-use crate::widget::resize_edge::ResizeEdge;
+use crate::control::ResizeEdge;
 
 /// 手势识别后产出的内部信号。
 #[derive(Debug, Clone)]

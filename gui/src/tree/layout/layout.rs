@@ -7,7 +7,7 @@ use super::types::{LayoutTree, Position};
 ///
 /// 如果根节点自身声明了 `Position::absolute_xy(x, y)`，
 /// 则以该 left/top 作为 available 的起点，使根节点 rect 从指定坐标开始。
-/// 这支持 Panel 等顶层 widget 把绝对位置编码在 WidgetBuild.style 里。
+/// 这支持 Panel 等顶层 retained control 把绝对位置编码在节点 style 里。
 pub fn layout<T: LayoutTree>(
     tree: &mut T,
     root: T::NodeId,

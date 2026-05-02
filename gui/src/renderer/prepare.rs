@@ -389,7 +389,7 @@ fn append_circle_requests(req: &AffineCircleRequest, scale: f32, batch: &mut Vec
 }
 
 fn push_text_op(req: &AffineTextRequest, frame: &mut PreparedFrame) {
-    let Some(legacy) = translate_uniform_scale(req.transform) else {
+    let Some(axis_aligned) = translate_uniform_scale(req.transform) else {
         frame.stats.affine_text_fallbacks += 1;
         frame.ops.push(DrawOp::AffineText(req.clone()));
         return;
@@ -399,8 +399,8 @@ fn push_text_op(req: &AffineTextRequest, frame: &mut PreparedFrame) {
     frame.text_requests.push(TextRequest {
         pos: req.transform.transform_point(req.pos),
         text: req.text.clone(),
-        style: scale_text_style(req.style, legacy.scale),
-        bounds: req.bounds.map(|bounds| legacy.rect(bounds)),
+        style: scale_text_style(req.style, axis_aligned.scale),
+        bounds: req.bounds.map(|bounds| axis_aligned.rect(bounds)),
     });
     frame.ops.push(DrawOp::Text { index });
 }
@@ -766,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_frame_keeps_translate_scale_text_on_legacy_path() {
+    fn prepare_frame_batches_translate_scale_text_directly() {
         let mut vector_tessellator = VectorTessellator::new();
         let frame = prepare_frame(
             &[BackendCommand::Text(AffineTextRequest {

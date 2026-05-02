@@ -103,11 +103,6 @@ impl GestureSession {
         self.arena = None;
     }
 
-    #[cfg(test)]
-    pub(crate) fn is_active(&self) -> bool {
-        self.arena.is_some()
-    }
-
     fn record_signal(&mut self, signal: GestureSignal) -> GestureSessionUpdate {
         match &signal {
             GestureSignal::Click(_) => {

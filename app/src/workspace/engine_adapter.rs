@@ -11,8 +11,8 @@ use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortConnectionState, CanvasPortSide,
 };
+use gui::control::{ParamControlMap, ParamControlSpec};
 use gui::renderer::Rect;
-use gui::widget::{ParamControlMap, ParamControlSpec};
 use std::collections::HashMap;
 
 #[derive(Default)]

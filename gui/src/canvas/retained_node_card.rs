@@ -5,6 +5,10 @@ use super::node_spec::{
 use super::node_style::NodeCardMetrics;
 use super::node_template::CanvasNodeRenderView;
 use super::{CanvasPortConnectionState, CanvasPortSide};
+use crate::control::{
+    param_control_layout_policy, ControlRole, ParamControlHeight, ParamControlLayoutPolicy,
+    ParamControlSpec,
+};
 use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
 use crate::renderer::{Border, Color, Rect};
@@ -21,11 +25,6 @@ use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
     RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
 };
-use crate::widget::mapping::ParamControlSpec;
-use crate::widget::param_control::{
-    param_control_layout_policy, ParamControlHeight, ParamControlLayoutPolicy,
-};
-use crate::widget::WidgetRole;
 
 const REVISION: TemplateRevision = TemplateRevision::new(2);
 
@@ -94,7 +93,7 @@ fn mount_node_card(
                 justify_content: crate::tree::layout::Justify::Start,
                 overflow: Overflow::Visible,
                 z_index: spec.layout.z_index,
-                hittable: Some(true),
+                hittable: true,
                 draggable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
@@ -154,7 +153,7 @@ fn mount_card(
                 align_items: Align::Start,
                 justify_content: crate::tree::layout::Justify::Start,
                 overflow: Overflow::Visible,
-                hittable: Some(true),
+                hittable: true,
                 resizable: true,
                 ..BoxStyle::default()
             },
@@ -198,7 +197,7 @@ fn mount_pin_column(
                 align_items: Align::Start,
                 justify_content: crate::tree::layout::Justify::Start,
                 overflow: Overflow::Visible,
-                hittable: Some(false),
+                hittable: false,
                 ..BoxStyle::default()
             },
             None,
@@ -244,7 +243,7 @@ fn mount_port_group_trigger(
                 direction: Direction::Row,
                 align_items: Align::Center,
                 justify_content: crate::tree::layout::Justify::Center,
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
@@ -308,7 +307,7 @@ fn mount_pin_row(
                 gap: metrics.pin_label_gap,
                 align_items: Align::Center,
                 justify_content: crate::tree::layout::Justify::Start,
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap, Gesture::Drag],
                 ..BoxStyle::default()
             },
@@ -354,7 +353,7 @@ fn mount_pin_dot(
             BoxStyle {
                 width: Size::Fixed(metrics.pin_dot_diameter),
                 height: Size::Fixed(metrics.pin_dot_diameter),
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap, Gesture::Drag],
                 ..BoxStyle::default()
             },
@@ -552,7 +551,7 @@ fn mount_param_control(
             None,
         ),
     )?;
-    let child_id = format!("{id}::widget");
+    let child_id = format!("{id}::content");
     match control {
         ParamControlSpec::Text { value } => mount_text_field(
             cx,
@@ -561,7 +560,7 @@ fn mount_param_control(
             value,
             false,
             1,
-            WidgetRole::TextInput,
+            ControlRole::TextInput,
             theme,
             metrics,
         )?,
@@ -572,7 +571,7 @@ fn mount_param_control(
             value,
             true,
             *min_rows,
-            WidgetRole::TextArea,
+            ControlRole::TextArea,
             theme,
             metrics,
         )?,
@@ -588,7 +587,7 @@ fn mount_param_control(
             &format!("{value:.precision$}"),
             false,
             1,
-            WidgetRole::NumberInput,
+            ControlRole::NumberInput,
             theme,
             metrics,
         )?,
@@ -646,7 +645,7 @@ fn mount_text_field(
     value: &str,
     multiline: bool,
     min_rows: usize,
-    role: WidgetRole,
+    role: ControlRole,
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Result<(), TemplateError> {
@@ -699,7 +698,7 @@ fn mount_text_field(
                 } else {
                     Overflow::Hidden
                 },
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
@@ -852,7 +851,7 @@ fn mount_toggle(
                 width: Size::Fixed(width),
                 height: Size::Fixed(height),
                 position: Position::relative(),
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
@@ -973,7 +972,7 @@ fn mount_node_header(
                 direction: Direction::Row,
                 gap: metrics.title_label_gap,
                 align_items: Align::Center,
-                hittable: Some(false),
+                hittable: false,
                 ..BoxStyle::default()
             },
             None,
@@ -1096,14 +1095,14 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 trait TreeNodeExt {
-    fn with_semantic_role(self, role: WidgetRole) -> Self;
+    fn with_semantic_role(self, role: ControlRole) -> Self;
     fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
     fn with_rect_move_invalidation(self, invalidation: RectMoveInvalidation) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: WidgetRole) -> Self {
+    fn with_semantic_role(mut self, role: ControlRole) -> Self {
         self.props.semantic_role = Some(role);
         self
     }

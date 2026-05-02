@@ -1,12 +1,11 @@
 use super::node_style::NodeCardMetrics;
 use super::node_template::{CanvasNodeParamTemplate, CanvasNodeTemplate};
 use super::{canvas_node_stable_id, CanvasNodeLayout};
-use crate::runtime::ControlIntrinsic;
-use crate::theme::Theme;
-use crate::widget::mapping::ParamControlSpec;
-use crate::widget::param_control::{
-    param_control_kind, param_control_layout_policy, param_control_min_height,
+use crate::control::{
+    param_control_kind, param_control_layout_policy, param_control_min_height, ControlIntrinsic,
+    ParamControlSpec,
 };
+use crate::theme::Theme;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CanvasNodeSizingRequest {
@@ -48,7 +47,7 @@ pub fn canvas_node_sizing_request(
     let stable_id = canvas_node_stable_id(&layout.owner_id);
     let owner_intrinsic_count = control_intrinsics
         .iter()
-        .filter(|intrinsic| intrinsic.widget_id.starts_with(stable_id.as_str()))
+        .filter(|intrinsic| intrinsic.control_id.starts_with(stable_id.as_str()))
         .count();
     let height_delta = target_height - layout.rect.h;
     if owner_intrinsic_count > 0
@@ -176,13 +175,13 @@ fn row_desired_height(
     let min_height = row_min_height(control, metrics, theme);
     let policy = param_control_layout_policy(control, theme, metrics.control);
     let control_kind = param_control_kind(control);
-    let widget_id = format!(
-        "{}::body::param::{index}::control::widget",
+    let control_id = format!(
+        "{}::body::param::{index}::control::content",
         canvas_node_stable_id(owner_id)
     );
     let intrinsic = control_intrinsics
         .iter()
-        .find(|intrinsic| intrinsic.widget_id == widget_id && intrinsic.affects_parent_height);
+        .find(|intrinsic| intrinsic.control_id == control_id && intrinsic.affects_parent_height);
     match intrinsic {
         Some(intrinsic) => {
             let desired_height = intrinsic.desired_size[1]
@@ -195,7 +194,7 @@ fn row_desired_height(
                     target: "nodeimg::render_trace::node",
                     owner_id,
                     index,
-                    widget_id = %intrinsic.widget_id,
+                    control_id = %intrinsic.control_id,
                     control_kind = ?control_kind,
                     row_min_h = min_height,
                     current_h = intrinsic.current_size[1],
@@ -216,7 +215,7 @@ fn row_desired_height(
                     target: "nodeimg::render_trace::node",
                     owner_id,
                     index,
-                    expected_widget_id = %widget_id,
+                    expected_control_id = %control_id,
                     control_kind = ?control_kind,
                     total_intrinsic_count = control_intrinsics.len(),
                     row_min_h = min_height,
@@ -276,7 +275,7 @@ mod tests {
             user_min_height: None,
         };
         let intrinsics = vec![ControlIntrinsic {
-            widget_id: "canvas_node::engine_node::7::body::param::0::control::widget".to_string(),
+            control_id: "canvas_node::engine_node::7::body::param::0::control::content".to_string(),
             current_size: [252.0, 72.0],
             min_size: [252.0, 72.0],
             desired_size: [252.0, 220.0],

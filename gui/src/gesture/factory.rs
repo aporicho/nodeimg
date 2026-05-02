@@ -3,7 +3,7 @@ use std::time::Instant;
 use super::arena::GestureArena;
 use super::resize::ResizeRecognizer;
 use super::{DragRecognizer, Gesture, GestureRecognizer, LongPressRecognizer, TapRecognizer};
-use crate::tree::{HitChain, NodeKind, ResizeHit, Tree};
+use crate::tree::{HitChain, ResizeHit, Tree};
 
 /// 根据命中链自动创建手势竞技场。
 ///
@@ -20,7 +20,7 @@ pub(crate) fn arena_from_hit_chain(
 ) -> Option<GestureArena> {
     let target_id = default_target_id(tree, chain)?;
     let mut arena = GestureArena::new(target_id);
-    let first_widget_index = first_widget_index(tree, chain);
+    let first_control_index = first_control_index(tree, chain);
 
     for (index, node_id) in chain.iter().enumerate() {
         let Some(node) = tree.get(node_id) else {
@@ -28,7 +28,7 @@ pub(crate) fn arena_from_hit_chain(
         };
         let target_id = node.id.to_string();
         let gestures = &node.style.gestures;
-        let allow_semantic_drag = allows_semantic_drag(index, first_widget_index);
+        let allow_semantic_drag = allows_semantic_drag(index, first_control_index);
         tracing::debug!(
             target: "gui::gesture",
             node_id = %node.id,
@@ -103,16 +103,16 @@ fn default_target_id(tree: &Tree, chain: &HitChain) -> Option<String> {
         .map(|node| node.id.to_string())
 }
 
-fn first_widget_index(tree: &Tree, chain: &HitChain) -> Option<usize> {
+fn first_control_index(tree: &Tree, chain: &HitChain) -> Option<usize> {
     chain.iter().enumerate().find_map(|(index, node_id)| {
         tree.get(node_id)
-            .is_some_and(|node| matches!(node.kind, NodeKind::Widget(_)))
+            .is_some_and(|node| node.props.semantic_role.is_some())
             .then_some(index)
     })
 }
 
-fn allows_semantic_drag(index: usize, first_widget_index: Option<usize>) -> bool {
-    first_widget_index
-        .map(|widget_index| index <= widget_index)
+fn allows_semantic_drag(index: usize, first_control_index: Option<usize>) -> bool {
+    first_control_index
+        .map(|control_index| index <= control_index)
         .unwrap_or(true)
 }

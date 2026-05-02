@@ -1,6 +1,6 @@
+use super::ParamControlSpec;
 use crate::theme::{ControlSize, Density, Theme};
 use crate::tree::layout::Align;
-use crate::widget::mapping::ParamControlSpec;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ParamControlMetrics {

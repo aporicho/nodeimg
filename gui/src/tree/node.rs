@@ -4,7 +4,6 @@ use super::props::NodeProps;
 use super::runtime_slots::RuntimeSlots;
 use super::{Revision, StableId};
 use crate::renderer::Rect;
-use crate::widget::props::WidgetProps;
 
 pub use super::repaint::NodePaintMeta;
 
@@ -14,7 +13,6 @@ pub use super::id::NodeId;
 pub enum NodeKind {
     Container,
     Leaf(LeafKind),
-    Widget(Box<dyn WidgetProps>),
 }
 
 pub struct TreeNode {

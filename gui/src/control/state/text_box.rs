@@ -1,18 +1,14 @@
 use std::collections::HashMap;
 
+use crate::control::{
+    text_box_value_style, ControlIntrinsic, ControlRole, TextBoxFont, TextBoxMode,
+};
 use crate::diagnostics::render_trace::{self, RenderTraceStage};
 use crate::renderer::{Point, Rect, TextMeasurer, TextStyle};
-use crate::runtime::ControlIntrinsic;
 use crate::text::layout::{TextLayoutPolicy, TextLayoutResult};
-use crate::text::TextLayoutCache;
+use crate::text::{TextEditState, TextLayoutCache};
 use crate::theme::{TextInputTheme, Theme};
-use crate::tree::{NodeId, NodeKind, Tree};
-use crate::widget::atoms::number_input::{format_number, NumberInputProps};
-use crate::widget::atoms::text_area::TextAreaProps;
-use crate::widget::atoms::text_box::text_box_value_style;
-use crate::widget::atoms::text_box::{TextBoxFont, TextBoxMode, TextBoxProps};
-use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::{TextEditState, WidgetRole};
+use crate::tree::{NodeId, Tree};
 
 use super::text_box_registry::TextBoxRegistry;
 
@@ -63,6 +59,9 @@ pub(crate) struct TextBoxRuntime {
     last_external_text: String,
     mode: TextBoxMode,
     value_kind: TextBoxValueKind,
+    tokens: TextInputTheme,
+    font: TextBoxFont,
+    disabled: bool,
     field_rect: Rect,
     content_rect: Rect,
     text_origin: Point,
@@ -83,6 +82,9 @@ impl TextBoxRuntime {
             last_external_text: spec.external_text.clone(),
             mode: spec.mode,
             value_kind: spec.value_kind,
+            tokens: spec.tokens,
+            font: spec.font,
+            disabled: spec.disabled,
             field_rect: Rect {
                 x: 0.0,
                 y: 0.0,
@@ -113,6 +115,9 @@ impl TextBoxRuntime {
     fn sync_spec(&mut self, spec: &TextBoxSpec) {
         self.mode = spec.mode;
         self.value_kind = spec.value_kind;
+        self.tokens = spec.tokens;
+        self.font = spec.font;
+        self.disabled = spec.disabled;
         if self.is_multiline() {
             self.scroll_x = 0.0;
         }
@@ -558,31 +563,31 @@ impl TextBoxStore {
         tree: &Tree,
         measurer: &mut TextMeasurer,
         theme: &Theme,
-        widget_id: String,
+        control_id: String,
         spec: TextBoxSpec,
-        focused_widget_id: Option<&str>,
+        focused_control_id: Option<&str>,
     ) {
         self.registry
-            .register_instance(widget_id.clone(), spec.external_text.clone());
-        let is_new_runtime = !self.runtimes.contains_key(&widget_id);
+            .register_instance(control_id.clone(), spec.external_text.clone());
+        let is_new_runtime = !self.runtimes.contains_key(&control_id);
         let mut runtime = self
             .runtimes
-            .remove(&widget_id)
+            .remove(&control_id)
             .unwrap_or_else(|| TextBoxRuntime::new(&spec));
 
         runtime.sync_spec(&spec);
-        let allow_override = Some(widget_id.as_str()) != focused_widget_id;
+        let allow_override = Some(control_id.as_str()) != focused_control_id;
         let external_text_changed = runtime.sync_external_text(&spec.external_text, allow_override);
         self.registry
-            .update_external_value(&widget_id, spec.external_text.clone());
+            .update_external_value(&control_id, spec.external_text.clone());
 
-        let field_rect = find_rect(tree, &format!("{widget_id}::field")).unwrap_or(Rect {
+        let field_rect = find_rect(tree, &format!("{control_id}::field")).unwrap_or(Rect {
             x: 0.0,
             y: 0.0,
             w: 1.0,
             h: fallback_height(spec.mode, spec.tokens),
         });
-        let value_rect = find_rect(tree, &format!("{widget_id}::value"));
+        let value_rect = find_rect(tree, &format!("{control_id}::value"));
         let value_style = text_box_value_style(theme, spec.tokens, spec.font);
         tree.record_text_layout_request();
         let layout_sync = runtime.sync_layout_with_style(
@@ -598,18 +603,18 @@ impl TextBoxStore {
         }
         if runtime.is_multiline() && (is_new_runtime || layout_sync.desired_height_changed) {
             self.registry
-                .handle_editor_change(&widget_id, runtime.editor().text().to_string());
-            self.registry.mark_dirty_intrinsic(&widget_id);
+                .handle_editor_change(&control_id, runtime.editor().text().to_string());
+            self.registry.mark_dirty_intrinsic(&control_id);
         }
         log_text_box_sizing(
-            widget_id.as_str(),
+            control_id.as_str(),
             &runtime,
             &spec,
-            Some(widget_id.as_str()) == focused_widget_id,
+            Some(control_id.as_str()) == focused_control_id,
             external_text_changed,
             value_rect,
         );
-        self.runtimes.insert(widget_id, runtime);
+        self.runtimes.insert(control_id, runtime);
     }
 
     pub(crate) fn dirty_intrinsic_ids(&self) -> Vec<String> {
@@ -622,29 +627,29 @@ impl TextBoxStore {
     pub(crate) fn take_dirty_control_intrinsics(&mut self) -> Vec<ControlIntrinsic> {
         self.take_dirty_intrinsics()
             .into_iter()
-            .filter_map(|widget_id| self.control_intrinsic(&widget_id))
+            .filter_map(|control_id| self.control_intrinsic(&control_id))
             .collect()
     }
 
-    pub(crate) fn runtime(&self, widget_id: &str) -> Option<&TextBoxRuntime> {
-        self.runtimes.get(widget_id)
+    pub(crate) fn text_box(&self, control_id: &str) -> Option<&TextBoxRuntime> {
+        self.runtimes.get(control_id)
     }
 
-    pub(crate) fn runtime_mut(&mut self, widget_id: &str) -> Option<&mut TextBoxRuntime> {
-        self.runtimes.get_mut(widget_id)
+    pub(crate) fn text_box_mut(&mut self, control_id: &str) -> Option<&mut TextBoxRuntime> {
+        self.runtimes.get_mut(control_id)
     }
 
-    pub(crate) fn clear_unfocused_preedit(&mut self, focused_widget_id: Option<&str>) {
-        for (widget_id, runtime) in &mut self.runtimes {
-            if Some(widget_id.as_str()) != focused_widget_id {
+    pub(crate) fn clear_unfocused_preedit(&mut self, focused_control_id: Option<&str>) {
+        for (control_id, runtime) in &mut self.runtimes {
+            if Some(control_id.as_str()) != focused_control_id {
                 runtime.clear_preedit();
             }
         }
     }
 
-    pub(crate) fn revert_unfocused_numbers(&mut self, focused_widget_id: Option<&str>) {
-        for (widget_id, runtime) in &mut self.runtimes {
-            if Some(widget_id.as_str()) != focused_widget_id
+    pub(crate) fn revert_unfocused_numbers(&mut self, focused_control_id: Option<&str>) {
+        for (control_id, runtime) in &mut self.runtimes {
+            if Some(control_id.as_str()) != focused_control_id
                 && runtime.is_number()
                 && runtime.editor().text() != runtime.external_text()
             {
@@ -653,12 +658,13 @@ impl TextBoxStore {
         }
     }
 
-    pub(crate) fn focused_widget_id(&self, tree: &Tree, focused: Option<NodeId>) -> Option<String> {
+    pub(crate) fn focused_control_id(
+        &self,
+        tree: &Tree,
+        focused: Option<NodeId>,
+    ) -> Option<String> {
         let focused = focused?;
         let node = tree.get(focused)?;
-        if let NodeKind::Widget(props) = &node.kind {
-            return is_text_box_props(props.as_ref()).then(|| node.id.to_string());
-        }
         text_box_owner_from_retained_node(tree, node.id.as_ref())
     }
 
@@ -667,7 +673,7 @@ impl TextBoxStore {
             .runtimes
             .iter()
             .filter(|(_, runtime)| runtime.is_multiline())
-            .map(|(widget_id, runtime)| control_intrinsic_for(widget_id, runtime))
+            .map(|(control_id, runtime)| control_intrinsic_for(control_id, runtime))
             .collect::<Vec<_>>();
 
         for intrinsic in &intrinsics {
@@ -677,11 +683,11 @@ impl TextBoxStore {
         intrinsics
     }
 
-    pub(crate) fn control_intrinsic(&self, widget_id: &str) -> Option<ControlIntrinsic> {
-        let runtime = self.runtimes.get(widget_id)?;
+    pub(crate) fn control_intrinsic(&self, control_id: &str) -> Option<ControlIntrinsic> {
+        let runtime = self.runtimes.get(control_id)?;
         runtime
             .is_multiline()
-            .then(|| control_intrinsic_for(widget_id, runtime))
+            .then(|| control_intrinsic_for(control_id, runtime))
             .inspect(log_control_intrinsic)
     }
 }
@@ -690,71 +696,6 @@ impl Default for TextBoxStore {
     fn default() -> Self {
         Self::new()
     }
-}
-
-pub(crate) fn text_box_spec(
-    props: &dyn crate::widget::props::WidgetProps,
-    theme: &Theme,
-) -> Option<TextBoxSpec> {
-    if let Some(text_input) = props.as_any().downcast_ref::<TextInputProps>() {
-        return Some(TextBoxSpec {
-            external_text: text_input.value.to_string(),
-            mode: TextBoxMode::SingleLine,
-            value_kind: TextBoxValueKind::Text,
-            tokens: theme.text_field_metrics(text_input.size, text_input.density),
-            font: TextBoxFont::Body,
-            disabled: text_input.disabled,
-        });
-    }
-
-    if let Some(text_area) = props.as_any().downcast_ref::<TextAreaProps>() {
-        return Some(TextBoxSpec {
-            external_text: text_area.value.to_string(),
-            mode: TextBoxMode::MultiLine {
-                min_rows: text_area.min_rows,
-            },
-            value_kind: TextBoxValueKind::Text,
-            tokens: theme.text_field_metrics(text_area.size, text_area.density),
-            font: TextBoxFont::Body,
-            disabled: text_area.disabled,
-        });
-    }
-
-    if let Some(number_input) = props.as_any().downcast_ref::<NumberInputProps>() {
-        return Some(TextBoxSpec {
-            external_text: format_number(number_input.value, number_input.precision),
-            mode: TextBoxMode::SingleLine,
-            value_kind: TextBoxValueKind::Number {
-                value: number_input.value,
-                min: number_input.min,
-                max: number_input.max,
-                step: number_input.step,
-                precision: number_input.precision,
-            },
-            tokens: theme.text_field_metrics(number_input.size, number_input.density),
-            font: TextBoxFont::Mono,
-            disabled: number_input.disabled,
-        });
-    }
-
-    props
-        .as_any()
-        .downcast_ref::<TextBoxProps>()
-        .map(|text_box| TextBoxSpec {
-            external_text: text_box.value.to_string(),
-            mode: text_box.mode,
-            value_kind: TextBoxValueKind::Text,
-            tokens: theme.text_field_metrics(text_box.size, text_box.density),
-            font: text_box.font,
-            disabled: text_box.disabled,
-        })
-}
-
-pub(crate) fn is_text_box_props(props: &dyn crate::widget::props::WidgetProps) -> bool {
-    props.as_any().downcast_ref::<TextInputProps>().is_some()
-        || props.as_any().downcast_ref::<TextAreaProps>().is_some()
-        || props.as_any().downcast_ref::<NumberInputProps>().is_some()
-        || props.as_any().downcast_ref::<TextBoxProps>().is_some()
 }
 
 fn text_box_owner_from_retained_node(tree: &Tree, id: &str) -> Option<String> {
@@ -769,10 +710,10 @@ fn text_box_owner_from_retained_node(tree: &Tree, id: &str) -> Option<String> {
     None
 }
 
-fn retained_text_box_role(tree: &Tree, id: &str) -> Option<WidgetRole> {
+fn retained_text_box_role(tree: &Tree, id: &str) -> Option<ControlRole> {
     let node = tree.get(tree.node_by_str(id)?)?;
     match node.props.semantic_role? {
-        role @ (WidgetRole::TextInput | WidgetRole::TextArea | WidgetRole::NumberInput) => {
+        role @ (ControlRole::TextInput | ControlRole::TextArea | ControlRole::NumberInput) => {
             Some(role)
         }
         _ => None,
@@ -812,7 +753,7 @@ fn min_height_for_mode(mode: TextBoxMode, line_height: f32, tokens: TextInputThe
 }
 
 fn log_text_box_sizing(
-    widget_id: &str,
+    control_id: &str,
     runtime: &TextBoxRuntime,
     spec: &TextBoxSpec,
     focused: bool,
@@ -835,7 +776,7 @@ fn log_text_box_sizing(
         return;
     }
     let summary = TextBoxSizingTraceSummary {
-        widget_id,
+        control_id,
         focused,
         external_text_changed,
         editor_dirty,
@@ -864,9 +805,9 @@ fn log_text_box_sizing(
     }
 }
 
-fn control_intrinsic_for(widget_id: &str, runtime: &TextBoxRuntime) -> ControlIntrinsic {
+fn control_intrinsic_for(control_id: &str, runtime: &TextBoxRuntime) -> ControlIntrinsic {
     ControlIntrinsic {
-        widget_id: widget_id.to_string(),
+        control_id: control_id.to_string(),
         current_size: runtime.current_size(),
         min_size: runtime.min_size(),
         desired_size: runtime.desired_size(),
@@ -886,7 +827,7 @@ fn log_control_intrinsic(intrinsic: &ControlIntrinsic) {
         return;
     }
     let summary = ControlIntrinsicTraceSummary {
-        widget_id: intrinsic.widget_id.as_str(),
+        control_id: intrinsic.control_id.as_str(),
         current_w: intrinsic.current_size[0],
         current_h: intrinsic.current_size[1],
         min_w: intrinsic.min_size[0],
@@ -906,7 +847,7 @@ fn log_control_intrinsic(intrinsic: &ControlIntrinsic) {
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 struct TextBoxSizingTraceSummary<'a> {
-    widget_id: &'a str,
+    control_id: &'a str,
     focused: bool,
     external_text_changed: bool,
     editor_dirty: bool,
@@ -931,7 +872,7 @@ struct TextBoxSizingTraceSummary<'a> {
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 struct ControlIntrinsicTraceSummary<'a> {
-    widget_id: &'a str,
+    control_id: &'a str,
     current_w: f32,
     current_h: f32,
     min_w: f32,
@@ -978,19 +919,26 @@ mod tests {
     use super::*;
     use crate::theme::dark_theme;
 
+    fn text_spec(
+        theme: &Theme,
+        external_text: &str,
+        mode: TextBoxMode,
+        font: TextBoxFont,
+    ) -> TextBoxSpec {
+        TextBoxSpec {
+            external_text: external_text.to_string(),
+            mode,
+            value_kind: TextBoxValueKind::Text,
+            tokens: theme.text_field_metrics(Default::default(), Default::default()),
+            font,
+            disabled: false,
+        }
+    }
+
     #[test]
     fn single_line_scrolls_to_keep_caret_visible() {
         let theme = dark_theme();
-        let props = TextBoxProps {
-            label: None,
-            value: std::borrow::Cow::Borrowed("hello"),
-            disabled: false,
-            size: Default::default(),
-            density: Default::default(),
-            mode: TextBoxMode::SingleLine,
-            font: TextBoxFont::Body,
-        };
-        let spec = text_box_spec(&props, &theme).unwrap();
+        let spec = text_spec(&theme, "hello", TextBoxMode::SingleLine, TextBoxFont::Body);
         let mut runtime = TextBoxRuntime::new(&spec);
         let mut measurer = TextMeasurer::new();
         let mut layout_cache = TextLayoutCache::default();
@@ -1017,18 +965,12 @@ mod tests {
     #[test]
     fn multiline_desired_height_uses_wrapped_line_count() {
         let theme = dark_theme();
-        let props = TextBoxProps {
-            label: None,
-            value: std::borrow::Cow::Borrowed(
-                "a long line that should wrap only when the measured field is narrow",
-            ),
-            disabled: false,
-            size: Default::default(),
-            density: Default::default(),
-            mode: TextBoxMode::MultiLine { min_rows: 1 },
-            font: TextBoxFont::Body,
-        };
-        let spec = text_box_spec(&props, &theme).unwrap();
+        let spec = text_spec(
+            &theme,
+            "a long line that should wrap only when the measured field is narrow",
+            TextBoxMode::MultiLine { min_rows: 1 },
+            TextBoxFont::Body,
+        );
         let mut runtime = TextBoxRuntime::new(&spec);
         let mut measurer = TextMeasurer::new();
         let mut layout_cache = TextLayoutCache::default();
@@ -1069,16 +1011,12 @@ mod tests {
     #[test]
     fn cursor_only_change_reuses_text_layout_cache() {
         let theme = dark_theme();
-        let props = TextBoxProps {
-            label: None,
-            value: std::borrow::Cow::Borrowed("cached multiline text"),
-            disabled: false,
-            size: Default::default(),
-            density: Default::default(),
-            mode: TextBoxMode::MultiLine { min_rows: 1 },
-            font: TextBoxFont::Body,
-        };
-        let spec = text_box_spec(&props, &theme).unwrap();
+        let spec = text_spec(
+            &theme,
+            "cached multiline text",
+            TextBoxMode::MultiLine { min_rows: 1 },
+            TextBoxFont::Body,
+        );
         let mut runtime = TextBoxRuntime::new(&spec);
         let mut measurer = TextMeasurer::new();
         let mut layout_cache = TextLayoutCache::default();

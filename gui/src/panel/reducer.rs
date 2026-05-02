@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
+    use crate::control::ResizeEdge;
     use crate::panel::{PanelConfig, PanelId};
     use crate::renderer::Rect;
-    use crate::widget::resize_edge::ResizeEdge;
     use std::borrow::Cow;
 
     fn config(id: &'static str) -> PanelConfig {

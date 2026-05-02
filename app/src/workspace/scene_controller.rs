@@ -8,6 +8,7 @@ use gui::canvas::{
     CanvasPendingConnectionView, CanvasSceneChange,
 };
 use gui::context::Context;
+use gui::control::ParamControlSpec;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
@@ -21,7 +22,6 @@ use gui::template::{
     PANEL_FRAME_TEMPLATE,
 };
 use gui::theme::Theme;
-use gui::widget::ParamControlSpec;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
@@ -798,25 +798,25 @@ fn canvas_node_param_texts(
 ) -> BTreeMap<String, String> {
     let mut texts = BTreeMap::new();
     for (index, param) in view.template.params.iter().enumerate() {
-        let widget_id = format!("{stable_id}::body::param::{index}::control::widget");
+        let control_id = format!("{stable_id}::body::param::{index}::control::content");
         let (target_id, value) = match &param.control {
             ParamControlSpec::Text { value } | ParamControlSpec::TextArea { value, .. } => {
-                (format!("{widget_id}::value"), value.clone())
+                (format!("{control_id}::value"), value.clone())
             }
             ParamControlSpec::Number {
                 value, precision, ..
             } => (
-                format!("{widget_id}::value"),
+                format!("{control_id}::value"),
                 format!("{value:.precision$}"),
             ),
-            ParamControlSpec::ReadOnly { value } => (widget_id, value.clone()),
+            ParamControlSpec::ReadOnly { value } => (control_id, value.clone()),
             ParamControlSpec::Select { options, selected } => (
-                widget_id,
+                control_id,
                 options.get(*selected).cloned().unwrap_or_default(),
             ),
-            ParamControlSpec::FilePath { path, .. } => (widget_id, path.clone()),
+            ParamControlSpec::FilePath { path, .. } => (control_id, path.clone()),
             ParamControlSpec::Color { rgba } => (
-                format!("{widget_id}::value"),
+                format!("{control_id}::value"),
                 format!(
                     "#{:02X}{:02X}{:02X}",
                     (rgba[0].clamp(0.0, 1.0) * 255.0) as u8,
@@ -959,7 +959,7 @@ mod tests {
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
     use gui::layout::TextureHandle;
-    use gui::output::{GuiEvent, PanelEvent, WidgetEvent};
+    use gui::output::{ControlEvent, GuiEvent, PanelEvent};
     use gui::renderer::TextMeasurer;
     use gui::shell::{AppEvent, Key, Modifiers, MouseButton};
     use gui::theme::light_theme;
@@ -974,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn node_palette_open_mounts_retained_templates_without_widget_builds() {
+    fn node_palette_open_mounts_retained_templates() {
         let mut gui = Context::new();
         let mut controller = WorkspaceSceneController::default();
         let camera = Camera::new();
@@ -1012,8 +1012,7 @@ mod tests {
             .query()
             .node_exists("node_palette::category::Generators"));
         assert!(gui.query().node_exists("node_library::add::image_gen"));
-        assert_eq!(gui.last_frame_stats().widget_build_calls, 0);
-        assert_eq!(gui.last_frame_stats().full_tree_scans, 0);
+        assert_eq!(gui.last_frame_stats().parent_lookup_fallback_scans, 0);
     }
 
     #[test]
@@ -1524,11 +1523,11 @@ mod tests {
             .expect("sync");
         gui.rendering()
             .flush_layout_dirty(viewport(), &mut measurer);
-        gui.runtime_mut()
-            .sync_retained_canvas_text_boxes(&nodes, &mut measurer, &theme);
+        gui.controls_mut()
+            .sync_canvas_text_boxes(&nodes, &mut measurer, &theme);
 
         let field_id =
-            "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
+            "canvas_node::showcase_node::text_area_control::body::param::0::control::content::field";
         let field = gui.query().node_rect(field_id).expect("field rect");
         let (x, y) = camera.canvas_to_screen(field.x + 8.0, field.y + 8.0);
         let query = gui.query();
@@ -1559,8 +1558,8 @@ mod tests {
 
         assert!(input.events.iter().any(|event| matches!(
             event,
-            GuiEvent::Widget(WidgetEvent::TextChanged { id, value })
-                if id == "canvas_node::showcase_node::text_area_control::body::param::0::control::widget"
+            GuiEvent::Control(ControlEvent::TextChanged { id, value })
+                if id == "canvas_node::showcase_node::text_area_control::body::param::0::control::content"
                     && value == "hello!"
         )));
     }

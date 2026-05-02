@@ -1,7 +1,8 @@
 use super::{DropdownOverlayContent, OverlayContent};
+use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
-use crate::interaction::WidgetVisualState;
+use crate::interaction::ControlVisualState;
 use crate::renderer::{Border, Rect};
 use crate::template::{
     InstanceId, RetainedTemplate, TemplateError, TemplateId, TemplateMountCx, TemplatePayload,
@@ -16,7 +17,6 @@ use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
     RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
 };
-use crate::widget::WidgetRole;
 
 const REVISION: TemplateRevision = TemplateRevision::new(1);
 const POPUP_HEIGHT: f32 = 140.0;
@@ -94,7 +94,7 @@ fn mount_dropdown_overlay(
                 width: data.width.map(Size::Fixed).unwrap_or(Size::Auto),
                 height: Size::Auto,
                 overflow: Overflow::Visible,
-                hittable: Some(true),
+                hittable: true,
                 z_index: 20_000,
                 ..BoxStyle::default()
             },
@@ -276,9 +276,9 @@ fn mount_option(
     let highlighted = index == content.highlighted;
     let selected = index == content.selected;
     let visual_state = if highlighted {
-        WidgetVisualState::Focused
+        ControlVisualState::Focused
     } else {
-        WidgetVisualState::Normal
+        ControlVisualState::Normal
     };
     let visual = theme.button_visual(visual_state);
     let marker_color = if selected {
@@ -298,7 +298,7 @@ fn mount_option(
                 gap: metrics.gap,
                 direction: Direction::Row,
                 align_items: Align::Center,
-                hittable: Some(true),
+                hittable: true,
                 gestures: vec![Gesture::Tap],
                 ..BoxStyle::default()
             },
@@ -312,7 +312,7 @@ fn mount_option(
                 shadow: None,
             }),
         )
-        .with_semantic_role(WidgetRole::Button),
+        .with_semantic_role(ControlRole::Button),
     )?;
     let marker = cx.child(
         option_root,
@@ -426,12 +426,12 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 trait TreeNodeExt {
-    fn with_semantic_role(self, role: WidgetRole) -> Self;
+    fn with_semantic_role(self, role: ControlRole) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: WidgetRole) -> Self {
+    fn with_semantic_role(mut self, role: ControlRole) -> Self {
         self.props.semantic_role = Some(role);
         self
     }

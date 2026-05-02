@@ -1,5 +1,5 @@
+use crate::control::ResizeEdge;
 use crate::geometry::{Point, Rect};
-use crate::widget::resize_edge::ResizeEdge;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ContainerShape {
