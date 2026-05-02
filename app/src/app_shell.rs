@@ -10,11 +10,11 @@ use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::context::{Context, FrameworkOutput, GuiEvent, PlatformEffect, WidgetEvent};
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
+use gui::layout::TextureHandle;
 use gui::renderer::{Rect, Renderer, TextureSize};
 use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
 use gui::theme::{light_theme, Theme};
-use gui::tree::layout::TextureHandle;
-use gui::widget::resize_edge::ResizeEdge;
+use gui::widget::ResizeEdge;
 use std::time::{Duration, Instant};
 
 const APP_THEME_SCALE: f32 = 1.2;
@@ -108,7 +108,7 @@ pub struct AppShell {
 impl App for AppShell {
     fn init(ctx: &mut AppContext) -> Self {
         let mut gui = Context::new();
-        gui.register_texture(
+        gui.resources_mut().register_texture(
             SAMPLE_IMAGE_HANDLE,
             create_sample_texture(&ctx.device, &ctx.queue),
             SAMPLE_IMAGE_SIZE,
@@ -141,7 +141,7 @@ impl App for AppShell {
             return;
         }
 
-        let output = self.gui.handle_event(&event);
+        let output = self.gui.input().handle_event(&event);
         let consumed = output.consumed;
         self.handle_framework_output(output, ctx);
 
@@ -158,25 +158,25 @@ impl App for AppShell {
     }
 
     fn update(&mut self, renderer: &mut Renderer, ctx: &mut AppContext) {
-        self.gui.tick_animations(Instant::now());
+        self.gui.animations_mut().tick(Instant::now());
         let viewport = viewport_rect(ctx);
         let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
-        self.gui.sync_retained_canvas_text_boxes(
+        self.gui.runtime_mut().sync_retained_canvas_text_boxes(
             &canvas_nodes,
             renderer.text_measurer(),
             &self.theme,
         );
-        if !self.gui.text_box_dirty_intrinsics().is_empty() {
+        if !self.gui.runtime().text_box_dirty_intrinsics().is_empty() {
             let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
-            self.gui.sync_retained_canvas_text_boxes(
+            self.gui.runtime_mut().sync_retained_canvas_text_boxes(
                 &stabilized_nodes,
                 renderer.text_measurer(),
                 &self.theme,
             );
         }
-        ctx.apply_ime_request(self.gui.ime_request());
+        ctx.apply_ime_request(self.gui.input().ime_request());
         self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
-        if self.gui.animations_active() {
+        if self.gui.animations().active() {
             ctx.request_redraw();
         }
     }
@@ -185,6 +185,7 @@ impl App for AppShell {
         let viewport = viewport_rect(ctx);
         renderer.set_clear_color(self.theme.colors.canvas_bg);
         self.gui
+            .rendering()
             .render(renderer, viewport.w, viewport.h, &self.theme);
     }
 }
@@ -275,7 +276,7 @@ impl AppShell {
                 .canvas_node_render_views(&mut self.gui, &self.theme, composition);
         let canvas_connections = self.workspace.canvas_connection_views(composition);
         let engine_panel = self.workspace.engine_panel_state();
-        let pending_connection = self.gui.pending_canvas_connection();
+        let pending_connection = self.gui.canvas().pending_connection();
         if trace_app_update {
             render_trace::debug_stage(
                 RenderTraceStage::AppUpdate,
@@ -284,7 +285,7 @@ impl AppShell {
                     canvas_nodes: canvas_nodes.len(),
                     canvas_connections: canvas_connections.len(),
                     pending_connection: pending_connection.is_some(),
-                    animations_active: self.gui.animations_active(),
+                    animations_active: self.gui.animations().active(),
                     mode: self.mode,
                     composition: composition.name(),
                 },
@@ -316,6 +317,7 @@ impl AppShell {
             );
         }
         self.gui
+            .rendering()
             .flush_layout_dirty(viewport, renderer.text_measurer());
         canvas_nodes
     }
@@ -328,7 +330,7 @@ impl AppShell {
         let next_mode = toggle_app_mode(self.mode, DEVELOPER_MODE_ENABLED);
         if next_mode != self.mode {
             self.mode = next_mode;
-            self.gui.close_overlay();
+            self.gui.overlay_mut().close();
             tracing::info!("app mode switched to {:?}", self.mode);
         }
         true
@@ -383,7 +385,7 @@ impl AppShell {
             let result = self.handle_gui_action(action);
             if result.close_overlay {
                 self.scene_controller.close_overlay();
-                self.gui.close_overlay();
+                self.gui.overlay_mut().close();
             }
             if let Some(type_id) = result.handled_node_add {
                 handled_node_adds.push(type_id);
@@ -395,7 +397,7 @@ impl AppShell {
                 continue;
             }
             if let GuiEvent::Panel(panel_event) = &event {
-                if self.gui.handle_panel_event(panel_event) {
+                if self.gui.panel_mut().handle_event(panel_event) {
                     continue;
                 }
             }
@@ -409,7 +411,7 @@ impl AppShell {
                 }
                 PlatformEffect::RequestClipboardPaste => {
                     if let Some(text) = ctx.clipboard_read_text() {
-                        let paste_output = self.gui.paste_focused_text(&text);
+                        let paste_output = self.gui.input().paste_focused_text(&text);
                         self.handle_framework_output(paste_output, ctx);
                     }
                 }
@@ -487,7 +489,7 @@ impl AppShell {
                     let result = self.workspace.add_node_from_library(type_id);
                     if result.close_overlay {
                         self.scene_controller.close_overlay();
-                        self.gui.close_overlay();
+                        self.gui.overlay_mut().close();
                     }
                     return;
                 }
@@ -583,13 +585,14 @@ impl AppShell {
             return;
         }
 
-        if let Some((node_id, edge)) = self.gui.resize_hit_at_screen_point(x, y) {
+        let query = self.gui.query();
+        if let Some((node_id, edge)) = query.resize_hit_at_screen_point(x, y) {
             let cursor = cursor_for_resize_edge(edge);
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
                 x,
                 y,
-                node_id = ?self.gui.node_name(node_id),
+                node_id = ?query.node_name(node_id),
                 edge = ?edge,
                 cursor = ?cursor,
                 "hover cursor set from resize hit"
@@ -598,7 +601,7 @@ impl AppShell {
             return;
         }
 
-        let chain = self.gui.hit_test(x, y);
+        let chain = query.hit_test(x, y);
         if chain.is_empty() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -613,24 +616,22 @@ impl AppShell {
             x,
             y,
             chain_len = chain.len(),
-            leaf = ?chain.leaf().and_then(|node_id| self.gui.node_name(node_id)),
-            root = ?chain.root().and_then(|node_id| self.gui.node_name(node_id)),
+            leaf = ?chain.leaf().and_then(|node_id| query.node_name(node_id)),
+            root = ?chain.root().and_then(|node_id| query.node_name(node_id)),
             "hover cursor falling back to ordinary hit chain"
         );
 
         for node_id in chain.iter() {
-            if self.gui.node_name(node_id).is_none() {
+            if query.node_name(node_id).is_none() {
                 continue;
             }
 
-            if self.gui.node_is_text_input_field(node_id)
-                || self.gui.node_is_text_area_field(node_id)
-            {
+            if query.node_is_text_input_field(node_id) || query.node_is_text_area_field(node_id) {
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     x,
                     y,
-                    node_id = ?self.gui.node_name(node_id),
+                    node_id = ?query.node_name(node_id),
                     cursor = ?CursorStyle::Text,
                     "hover cursor set from text field hit"
                 );
@@ -638,12 +639,12 @@ impl AppShell {
                 return;
             }
 
-            if self.gui.node_is_draggable(node_id) {
+            if query.node_is_draggable(node_id) {
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     x,
                     y,
-                    node_id = ?self.gui.node_name(node_id),
+                    node_id = ?query.node_name(node_id),
                     cursor = ?CursorStyle::Move,
                     "hover cursor set from draggable hit"
                 );
@@ -651,12 +652,12 @@ impl AppShell {
                 return;
             }
 
-            if self.gui.node_has_gesture(node_id, Gesture::Drag) {
+            if query.node_has_gesture(node_id, Gesture::Drag) {
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     x,
                     y,
-                    node_id = ?self.gui.node_name(node_id),
+                    node_id = ?query.node_name(node_id),
                     cursor = ?CursorStyle::Pointer,
                     "hover cursor set from drag gesture hit"
                 );
@@ -664,14 +665,14 @@ impl AppShell {
                 return;
             }
 
-            if self.gui.node_has_gesture(node_id, Gesture::Tap)
-                || self.gui.node_has_gesture(node_id, Gesture::DoubleTap)
+            if query.node_has_gesture(node_id, Gesture::Tap)
+                || query.node_has_gesture(node_id, Gesture::DoubleTap)
             {
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     x,
                     y,
-                    node_id = ?self.gui.node_name(node_id),
+                    node_id = ?query.node_name(node_id),
                     cursor = ?CursorStyle::Pointer,
                     "hover cursor set from tap gesture hit"
                 );
@@ -703,13 +704,14 @@ impl AppShell {
     }
 
     fn is_blank_canvas_position(&self, x: f32, y: f32) -> bool {
-        let chain = self.gui.hit_test(x, y);
+        let chain = self.gui.query().hit_test(x, y);
         if chain.is_empty() {
             return true;
         }
 
+        let query = self.gui.query();
         let blank = chain.iter().all(|node_id| {
-            self.gui
+            query
                 .node_name(node_id)
                 .map(|id| matches!(id, "root" | "canvas_root" | "canvas_grid" | "panel_root"))
                 .unwrap_or(true)

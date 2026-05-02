@@ -7,10 +7,13 @@ use crate::widget::atoms::dropdown::{DropdownOptionProps, DropdownProps};
 use crate::widget::atoms::label::{LabelProps, LabelVariant};
 use crate::widget::frameworks::group::GroupProps;
 use crate::widget::frameworks::list_view::ListViewProps;
-use crate::widget::state::dropdown::{DropdownRuntime, OpenDropdown};
+#[cfg(test)]
+use crate::widget::state::dropdown::DropdownRuntime;
+use crate::widget::state::dropdown::OpenDropdown;
 use crate::widget::systems::OverlaySystemCx;
 use std::borrow::Cow;
 
+#[cfg(test)]
 const DROPDOWN_RUNTIME_ID: &str = "__dropdown_runtime";
 
 pub(crate) struct DropdownSystem;
@@ -20,6 +23,7 @@ impl DropdownSystem {
         Self
     }
 
+    #[cfg(test)]
     pub fn sync_with_tree(
         &mut self,
         tree: &mut Tree,

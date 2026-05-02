@@ -6,11 +6,6 @@ use crate::widget::build::WidgetBuildBuilder;
 pub trait DecorationBuilder: Sized {
     fn decoration_mut(&mut self) -> &mut Option<Decoration>;
 
-    fn decoration(mut self, decoration: Decoration) -> Self {
-        *self.decoration_mut() = Some(decoration);
-        self
-    }
-
     fn map_decoration(mut self, update: impl FnOnce(&mut Decoration)) -> Self {
         let decoration = self.decoration_mut().get_or_insert_with(empty_decoration);
         update(decoration);

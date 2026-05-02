@@ -1,5 +1,7 @@
 use crate::icon::IconSpec;
-use crate::renderer::{Color, PathData, PathStyle, Point, Stroke, TextStyle};
+use crate::renderer::{Color, TextStyle};
+#[cfg(test)]
+use crate::renderer::{PathData, PathStyle, Point, Stroke};
 use crate::tree::layout::{BoxStyle, LeafKind, Size, TextLayout};
 use crate::tree::Desc;
 use std::borrow::Cow;
@@ -43,6 +45,7 @@ pub fn text_with_layout(
     )
 }
 
+#[cfg(test)]
 pub fn line(
     id: impl Into<Cow<'static, str>>,
     start: Point,
@@ -52,10 +55,7 @@ pub fn line(
     leaf(id, LeafKind::Line { start, end, stroke })
 }
 
-pub fn curve(id: impl Into<Cow<'static, str>>, points: [Point; 4], stroke: Stroke) -> LeafBuilder {
-    leaf(id, LeafKind::Curve { points, stroke })
-}
-
+#[cfg(test)]
 pub fn path(id: impl Into<Cow<'static, str>>, data: PathData, style: PathStyle) -> LeafBuilder {
     leaf(id, LeafKind::Path { data, style })
 }

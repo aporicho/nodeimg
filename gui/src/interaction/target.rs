@@ -1,21 +1,15 @@
 use crate::tree::{HitChain, NodeId, NodeKind, Tree};
-use crate::widget::atoms::button::ButtonProps;
-use crate::widget::atoms::checkbox::CheckboxProps;
-use crate::widget::atoms::dropdown::DropdownProps;
-use crate::widget::atoms::number_input::NumberInputProps;
-use crate::widget::atoms::radio::RadioProps;
-use crate::widget::atoms::slider::SliderProps;
-use crate::widget::atoms::text_area::TextAreaProps;
-use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::atoms::toggle::ToggleProps;
-use crate::widget::frameworks::collapsible::CollapsibleProps;
+use crate::widget::{
+    ButtonProps, CheckboxProps, CollapsibleProps, DropdownProps, NumberInputProps, RadioProps,
+    SliderProps, TextAreaProps, TextInputProps, ToggleProps,
+};
 
+#[cfg(test)]
 pub(crate) fn focusable_nodes(tree: &Tree) -> Vec<NodeId> {
     tree.iter()
         .filter_map(|(id, node)| match &node.kind {
             NodeKind::Widget(props)
-                if is_focusable_widget_type(props.widget_type())
-                    && !is_disabled(props.as_ref()) =>
+                if props.role().is_focusable() && !is_disabled(props.as_ref()) =>
             {
                 Some(id)
             }
@@ -84,25 +78,9 @@ pub(crate) fn input_target(tree: &Tree, chain: &HitChain) -> Option<NodeId> {
 
 fn is_focusable_node_kind(kind: &NodeKind) -> bool {
     match kind {
-        NodeKind::Widget(props) => is_focusable_widget_type(props.widget_type()),
+        NodeKind::Widget(props) => props.role().is_focusable(),
         _ => false,
     }
-}
-
-fn is_focusable_widget_type(widget_type: &str) -> bool {
-    matches!(
-        widget_type,
-        "Button"
-            | "Checkbox"
-            | "Collapsible"
-            | "Dropdown"
-            | "NumberInput"
-            | "Radio"
-            | "Slider"
-            | "TextArea"
-            | "TextInput"
-            | "Toggle"
-    )
 }
 
 fn is_disabled(props: &dyn crate::widget::props::WidgetProps) -> bool {

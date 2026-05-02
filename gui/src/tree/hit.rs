@@ -48,6 +48,7 @@ impl HitChain {
 
 /// 公开入口：返回命中链。从 root 开始向下递归，返回的链从叶子到根。
 /// 如果没命中返回 empty HitChain。
+#[cfg(test)]
 pub fn hit_test(tree: &Tree, root: NodeId, x: f32, y: f32) -> HitChain {
     hit_test_with_animations(tree, root, x, y, None)
 }

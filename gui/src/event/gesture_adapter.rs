@@ -68,7 +68,10 @@ fn drag_event(
     phase: DragPhase,
 ) -> GuiEvent {
     let owner_id = resolver.owner_id(id);
-    if resolver.widget_type(&owner_id) == Some("Panel") {
+    if resolver
+        .widget_role(&owner_id)
+        .is_some_and(|role| role.is_panel())
+    {
         return GuiEvent::Panel(match phase {
             DragPhase::Start => PanelEvent::DragStart { id: owner_id, x, y },
             DragPhase::Move => PanelEvent::DragMove { id: owner_id, x, y },
@@ -99,10 +102,13 @@ fn resize_event(
         edge = ?edge,
         x,
         y,
-        is_panel = resolver.widget_type(&owner_id) == Some("Panel"),
+        is_panel = resolver.widget_role(&owner_id).is_some_and(|role| role.is_panel()),
         "map resize gesture signal"
     );
-    if resolver.widget_type(&owner_id) != Some("Panel") {
+    if !resolver
+        .widget_role(&owner_id)
+        .is_some_and(|role| role.is_panel())
+    {
         return GuiEvent::Widget(match phase {
             ResizePhase::Start => WidgetEvent::ResizeStart {
                 id: owner_id,

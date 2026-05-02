@@ -50,12 +50,14 @@ pub(crate) fn export_project_layout(gui: &Context, camera: &Camera) -> ProjectLa
         version: PROJECT_LAYOUT_VERSION,
         camera: CameraLayout::from_camera(camera),
         panels: gui
-            .export_panel_layouts()
+            .panel()
+            .export_layouts()
             .into_iter()
             .map(PanelLayout::from_gui)
             .collect(),
         canvas_nodes: gui
-            .export_canvas_node_layouts()
+            .canvas()
+            .export_node_layouts()
             .into_iter()
             .map(CanvasNodeLayout::from_gui)
             .collect(),
@@ -69,13 +71,13 @@ pub(crate) fn import_project_layout(gui: &mut Context, camera: &mut Camera, layo
         .into_iter()
         .map(PanelLayout::into_gui)
         .collect();
-    gui.import_panel_layouts(&panel_layouts);
+    gui.panel_mut().import_layouts(&panel_layouts);
     let canvas_node_layouts: Vec<GuiCanvasNodeLayout> = layout
         .canvas_nodes
         .into_iter()
         .map(CanvasNodeLayout::into_gui)
         .collect();
-    gui.import_canvas_node_layouts(&canvas_node_layouts);
+    gui.canvas_mut().import_node_layouts(&canvas_node_layouts);
 }
 
 impl CameraLayout {

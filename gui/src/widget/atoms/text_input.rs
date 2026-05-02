@@ -18,6 +18,9 @@ impl WidgetProps for TextInputProps {
     fn widget_type(&self) -> &'static str {
         "TextInput"
     }
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::TextInput
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }

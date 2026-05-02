@@ -68,6 +68,10 @@ impl WidgetProps for PanelProps {
         "Panel"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Panel
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

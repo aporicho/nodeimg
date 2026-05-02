@@ -1,6 +1,7 @@
 pub mod build;
 mod connection_endpoint;
 mod desc;
+#[cfg(test)]
 mod diff;
 mod dirty;
 mod frame_stats;
@@ -12,6 +13,7 @@ mod index;
 mod interaction_hit;
 pub mod layout;
 mod layout_adapter;
+#[cfg(test)]
 pub(crate) mod legacy_desc;
 mod mutation;
 mod mutation_meta;
@@ -33,6 +35,7 @@ mod scroll;
 mod shape;
 mod snapshot;
 mod stacking;
+pub(crate) mod style_patch;
 pub(crate) mod text_layout;
 #[allow(clippy::module_inception)]
 mod tree;
@@ -40,31 +43,29 @@ mod tree;
 pub use desc::Desc;
 pub use dirty::{DirtyFlags, DirtyQueues};
 pub use frame_stats::FrameStats;
+#[cfg(test)]
+pub(crate) use hit::hit_test;
 pub(crate) use hit::screen_to_node_layout_point;
-pub use hit::{hit_test, hit_test_with_animations, HitChain};
-pub use id::{NodeId, StableId, TreeNodeId};
-pub use index::{TreeIndex, TreeIndexError};
+pub use hit::{hit_test_with_animations, HitChain};
+pub use id::{NodeId, StableId};
+pub use index::TreeIndexError;
 pub(crate) use interaction_hit::{resize_hit_at_screen_point, ResizeHit};
 pub use layout::layout;
 #[cfg(test)]
 pub use legacy_desc::reconcile;
-pub use mutation::{Invalidation, MutationError, StylePatch, TreeMutation};
+pub use mutation::{Invalidation, MutationError, TreeMutation};
 pub use mutation_meta::{NodeMutationMeta, RectMoveInvalidation};
-pub use node::{
-    AnimationRuntime, LayoutRuntime, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodePaintMeta,
-    TreeNode,
-};
+pub use node::{NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodePaintMeta, TreeNode};
 #[cfg(test)]
 pub(crate) use paint::build_display_list;
 pub(crate) use paint::PaintCx;
-pub use paint_cache::{PaintCache, PaintCacheError};
+pub use paint_cache::PaintCache;
 pub use props::NodeProps;
 pub use repaint::{PaintDirtyQueues, PaintDirtyReason, RepaintBoundaryId, RepaintBoundaryReason};
 pub(crate) use retained_runtime::RetainedRuntimeStore;
 pub use revision::Revision;
 pub use runtime_policy::{PersistenceClass, RuntimeRetention, RuntimeSlotPolicy, UndoClass};
 pub use runtime_slots::{RuntimeSlot, RuntimeSlots};
-pub use snapshot::{
-    TreeDumpLevel, TreeSnapshot, TreeSnapshotMaxNodes, TreeSnapshotOptions, TreeSnapshotSummary,
-};
+pub use snapshot::{TreeDumpLevel, TreeSnapshot, TreeSnapshotMaxNodes, TreeSnapshotOptions};
+pub use style_patch::StylePatch;
 pub use tree::Tree;

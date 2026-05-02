@@ -23,6 +23,10 @@ impl WidgetProps for NumberInputProps {
         "NumberInput"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::NumberInput
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

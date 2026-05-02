@@ -1,8 +1,14 @@
+#[cfg(test)]
 use super::CanvasPendingConnectionView;
+#[cfg(test)]
 use crate::renderer::Point;
+#[cfg(test)]
 use crate::tree::layout::LeafKind;
+#[cfg(test)]
 use crate::tree::Desc;
+#[cfg(test)]
 use crate::ui::{self, StyleBuilder};
+#[cfg(test)]
 use std::borrow::Cow;
 
 #[derive(Clone, Debug)]
@@ -11,7 +17,8 @@ pub struct CanvasConnectionView {
     pub to_port_id: String,
 }
 
-pub fn connection_layer(
+#[cfg(test)]
+pub(crate) fn connection_layer(
     connections: &[CanvasConnectionView],
     pending: Option<&CanvasPendingConnectionView>,
     z_index: i32,
@@ -53,6 +60,7 @@ pub fn connection_layer(
         .build()
 }
 
+#[cfg(test)]
 fn connection_leaf(id: impl Into<Cow<'static, str>>, kind: LeafKind) -> Desc {
     ui::leaf(id, kind)
         .absolute_xy(0.0, 0.0)

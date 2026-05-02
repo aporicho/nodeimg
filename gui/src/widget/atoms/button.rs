@@ -65,6 +65,9 @@ impl WidgetProps for ButtonProps {
     fn widget_type(&self) -> &'static str {
         "Button"
     }
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Button
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }

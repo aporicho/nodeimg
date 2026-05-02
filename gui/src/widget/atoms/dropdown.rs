@@ -132,6 +132,9 @@ impl WidgetProps for DropdownProps {
     fn widget_type(&self) -> &'static str {
         "Dropdown"
     }
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Dropdown
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }

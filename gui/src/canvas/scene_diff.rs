@@ -165,9 +165,3 @@ pub fn scene_change_to_mutation(change: CanvasSceneChange) -> TreeMutation {
         CanvasSceneChange::SetText { node, value } => TreeMutation::SetText { node, value },
     }
 }
-
-pub fn scene_changes_to_mutations(
-    changes: impl IntoIterator<Item = CanvasSceneChange>,
-) -> Vec<TreeMutation> {
-    changes.into_iter().map(scene_change_to_mutation).collect()
-}

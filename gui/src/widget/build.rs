@@ -40,14 +40,6 @@ impl WidgetBuildBuilder {
         self
     }
 
-    pub fn extend_children<I, T>(self, children: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<Desc>,
-    {
-        self.children(children)
-    }
-
     pub fn build(self) -> WidgetBuild {
         WidgetBuild {
             style: self.style,

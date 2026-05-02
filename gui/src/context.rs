@@ -16,6 +16,7 @@ use crate::renderer::{Rect, RegistryDisplayResources, Renderer, TextMeasurer, Te
 #[cfg(test)]
 use crate::runtime::RuntimeSyncCx;
 use crate::runtime::{ResourceRegistry, RuntimeEventCx, RuntimeEventResult, RuntimeSystems};
+use crate::scene::SceneMutation;
 use crate::shell::AppEvent;
 use crate::template::TemplateRegistry;
 use crate::template::{InstanceId, SlotValue, SlotValues, TemplateId, WORKSPACE_ROOT_TEMPLATE};
@@ -31,6 +32,7 @@ use crate::tree::{
     TreeMutation, TreeSnapshotOptions,
 };
 use crate::widget::resize_edge::ResizeEdge;
+use crate::widget::WidgetRole;
 
 pub use crate::output::{
     FrameworkOutput, GuiEvent, OverlayEvent, PanelEvent, PlatformEffect, WidgetEvent,
@@ -185,7 +187,7 @@ impl Context {
         });
     }
 
-    pub fn flush_layout_dirty(
+    pub(crate) fn flush_layout_dirty(
         &mut self,
         root_rect: Rect,
         measurer: &mut TextMeasurer,
@@ -297,7 +299,7 @@ impl Context {
         stats
     }
 
-    pub fn ensure_retained_root(
+    pub(crate) fn ensure_retained_root(
         &mut self,
         viewport: Rect,
     ) -> Result<RetainedRootIds, MutationError> {
@@ -349,7 +351,7 @@ impl Context {
             .ok_or(MutationError::MissingNode(usize::MAX))
     }
 
-    pub fn retained_root_ids(&self) -> Option<RetainedRootIds> {
+    pub(crate) fn retained_root_ids(&self) -> Option<RetainedRootIds> {
         Some(RetainedRootIds {
             root: self.tree.node_by_str("root")?,
             canvas_root: self.tree.node_by_str("canvas_root")?,
@@ -360,14 +362,14 @@ impl Context {
         })
     }
 
-    pub fn apply_mutation(
+    pub(crate) fn apply_mutation(
         &mut self,
         mutation: TreeMutation,
     ) -> Result<Invalidation, MutationError> {
         self.tree.apply_mutation(&self.template_registry, mutation)
     }
 
-    pub fn apply_mutations(
+    pub(crate) fn apply_mutations(
         &mut self,
         mutations: impl IntoIterator<Item = TreeMutation>,
     ) -> Result<Vec<Invalidation>, MutationError> {
@@ -375,7 +377,7 @@ impl Context {
             .apply_mutations(&self.template_registry, mutations)
     }
 
-    pub fn update_canvas_transform(
+    pub(crate) fn update_canvas_transform(
         &mut self,
         transform: crate::geometry::TransformSpec,
     ) -> Result<(), MutationError> {
@@ -393,7 +395,7 @@ impl Context {
     }
 
     /// 渲染整棵树。
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         renderer: &mut Renderer,
         _viewport_w: f32,
@@ -544,7 +546,7 @@ impl Context {
         stats
     }
 
-    pub fn register_texture(
+    pub(crate) fn register_texture(
         &mut self,
         handle: TextureHandle,
         view: Arc<wgpu::TextureView>,
@@ -553,24 +555,24 @@ impl Context {
         self.resources.register_texture(handle, view, size);
     }
 
-    pub fn register_svg_icon(&mut self, id: impl Into<IconId>, svg: impl AsRef<[u8]>) {
+    pub(crate) fn register_svg_icon(&mut self, id: impl Into<IconId>, svg: impl AsRef<[u8]>) {
         self.icons.register_svg(id, svg);
     }
 
-    pub fn open_overlay(&mut self, request: OverlayRequest) {
+    pub(crate) fn open_overlay(&mut self, request: OverlayRequest) {
         self.systems.open_overlay(&self.tree, request);
     }
 
-    pub fn close_overlay(&mut self) {
+    pub(crate) fn close_overlay(&mut self) {
         self.systems
             .close_overlay(&self.tree, &mut self.interaction);
     }
 
-    pub fn overlay_open(&self) -> bool {
+    pub(crate) fn overlay_open(&self) -> bool {
         self.systems.overlay_open()
     }
 
-    pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
+    pub(crate) fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
         let focused_before = self.focused_widget_id().map(str::to_string);
         let output = router::handle_event(self, event);
         if matches!(
@@ -609,20 +611,20 @@ impl Context {
         self.animations.clear_visual(id)
     }
 
-    pub fn tick_animations(&mut self, now: Instant) -> bool {
+    pub(crate) fn tick_animations(&mut self, now: Instant) -> bool {
         self.animations.tick(now)
     }
 
-    pub fn animations_active(&self) -> bool {
+    pub(crate) fn animations_active(&self) -> bool {
         self.animations.active()
     }
 
-    pub fn ime_request(&self) -> ImeRequest {
+    pub(crate) fn ime_request(&self) -> ImeRequest {
         self.systems
             .ime_request(&self.tree, self.interaction.focused())
     }
 
-    pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
+    pub(crate) fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
         self.systems
             .paste_focused_text(&self.tree, self.interaction.focused(), text)
     }
@@ -632,30 +634,33 @@ impl Context {
         crate::panel::panel_root(&mut self.tree, viewport, panels)
     }
 
-    pub fn handle_panel_event(&mut self, event: &PanelEvent) -> bool {
+    pub(crate) fn handle_panel_event(&mut self, event: &PanelEvent) -> bool {
         crate::panel::event::apply_panel_event(&mut self.tree, event)
     }
 
-    pub fn sync_canvas_node_layouts(
+    pub(crate) fn sync_canvas_node_layouts(
         &mut self,
         identities: &[crate::canvas::CanvasNodeIdentity],
     ) -> Vec<crate::canvas::CanvasNodeLayout> {
         self.tree.sync_canvas_node_layouts(identities)
     }
 
-    pub fn export_canvas_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
+    pub(crate) fn export_canvas_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
         self.tree.export_canvas_node_layouts()
     }
 
-    pub fn import_canvas_node_layouts(&mut self, layouts: &[crate::canvas::CanvasNodeLayout]) {
+    pub(crate) fn import_canvas_node_layouts(
+        &mut self,
+        layouts: &[crate::canvas::CanvasNodeLayout],
+    ) {
         self.tree.import_canvas_node_layouts(layouts);
     }
 
-    pub fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
+    pub(crate) fn move_canvas_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
         self.tree.move_canvas_node_by(owner_id, dx, dy)
     }
 
-    pub fn resize_canvas_node_by(
+    pub(crate) fn resize_canvas_node_by(
         &mut self,
         owner_id: &str,
         edge: crate::widget::resize_edge::ResizeEdge,
@@ -665,7 +670,7 @@ impl Context {
         self.tree.resize_canvas_node_by(owner_id, edge, dx, dy)
     }
 
-    pub fn ensure_canvas_node_min_size(
+    pub(crate) fn ensure_canvas_node_min_size(
         &mut self,
         owner_id: &str,
         min_width: f32,
@@ -675,7 +680,7 @@ impl Context {
             .ensure_canvas_node_min_size(owner_id, min_width, min_height)
     }
 
-    pub fn apply_canvas_node_sizing(
+    pub(crate) fn apply_canvas_node_sizing(
         &mut self,
         owner_id: &str,
         request: crate::canvas::CanvasNodeSizingRequest,
@@ -683,23 +688,27 @@ impl Context {
         self.tree.apply_canvas_node_sizing(owner_id, request)
     }
 
-    pub fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
         self.systems.control_intrinsics()
     }
 
-    pub fn retained_control_intrinsics_snapshot(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn retained_control_intrinsics_snapshot(
+        &self,
+    ) -> Vec<crate::runtime::ControlIntrinsic> {
         self.systems.control_intrinsics()
     }
 
-    pub fn take_dirty_control_intrinsics(&mut self) -> Vec<crate::runtime::ControlIntrinsic> {
+    pub(crate) fn take_dirty_control_intrinsics(
+        &mut self,
+    ) -> Vec<crate::runtime::ControlIntrinsic> {
         self.systems.take_dirty_control_intrinsics()
     }
 
-    pub fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
+    pub(crate) fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
         self.systems.take_text_box_dirty_intrinsics()
     }
 
-    pub fn sync_retained_canvas_text_boxes(
+    pub(crate) fn sync_retained_canvas_text_boxes(
         &mut self,
         views: &[crate::canvas::node_template::CanvasNodeRenderView],
         measurer: &mut TextMeasurer,
@@ -723,11 +732,11 @@ impl Context {
         );
     }
 
-    pub fn text_box_dirty_intrinsics(&self) -> Vec<String> {
+    pub(crate) fn text_box_dirty_intrinsics(&self) -> Vec<String> {
         self.systems.text_box_dirty_intrinsics()
     }
 
-    pub fn canvas_port_group_view(
+    pub(crate) fn canvas_port_group_view(
         &self,
         owner_id: &str,
         side: crate::canvas::CanvasPortSide,
@@ -735,7 +744,7 @@ impl Context {
         self.tree.canvas_port_group_view(owner_id, side)
     }
 
-    pub fn toggle_canvas_port_group(
+    pub(crate) fn toggle_canvas_port_group(
         &mut self,
         owner_id: &str,
         side: crate::canvas::CanvasPortSide,
@@ -743,23 +752,25 @@ impl Context {
         self.tree.toggle_canvas_port_group(owner_id, side)
     }
 
-    pub fn select_canvas_node(&mut self, owner_id: &str) -> bool {
+    pub(crate) fn select_canvas_node(&mut self, owner_id: &str) -> bool {
         self.tree.select_canvas_node(owner_id)
     }
 
-    pub fn clear_canvas_selection(&mut self) {
+    pub(crate) fn clear_canvas_selection(&mut self) {
         self.tree.clear_canvas_selection();
     }
 
-    pub fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
+    pub(crate) fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
         self.tree.is_canvas_node_selected(owner_id)
     }
 
-    pub fn pending_canvas_connection(&self) -> Option<crate::canvas::CanvasPendingConnectionView> {
+    pub(crate) fn pending_canvas_connection(
+        &self,
+    ) -> Option<crate::canvas::CanvasPendingConnectionView> {
         self.tree.pending_canvas_connection()
     }
 
-    pub fn begin_pending_canvas_connection(
+    pub(crate) fn begin_pending_canvas_connection(
         &mut self,
         from_port_id: &str,
         cursor_canvas: [f32; 2],
@@ -768,33 +779,33 @@ impl Context {
             .begin_pending_canvas_connection(from_port_id, cursor_canvas)
     }
 
-    pub fn update_pending_canvas_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
+    pub(crate) fn update_pending_canvas_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
         self.tree.update_pending_canvas_connection(cursor_canvas)
     }
 
-    pub fn end_pending_canvas_connection(
+    pub(crate) fn end_pending_canvas_connection(
         &mut self,
     ) -> Option<crate::canvas::CanvasPendingConnectionView> {
         self.tree.end_pending_canvas_connection()
     }
 
-    pub fn cancel_pending_canvas_connection(&mut self) -> bool {
+    pub(crate) fn cancel_pending_canvas_connection(&mut self) -> bool {
         self.tree.cancel_pending_canvas_connection()
     }
 
-    pub fn hovered_canvas_port_id(&self) -> Option<String> {
+    pub(crate) fn hovered_canvas_port_id(&self) -> Option<String> {
         self.tree.hovered_canvas_port_id()
     }
 
-    pub fn set_hovered_canvas_port(&mut self, port_id: Option<&str>) -> bool {
+    pub(crate) fn set_hovered_canvas_port(&mut self, port_id: Option<&str>) -> bool {
         self.tree.set_hovered_canvas_port(port_id)
     }
 
-    pub fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
+    pub(crate) fn export_panel_layouts(&self) -> Vec<crate::panel::PanelLayout> {
         self.tree.export_panel_layouts()
     }
 
-    pub fn ensure_panel_runtime(
+    pub(crate) fn ensure_panel_runtime(
         &mut self,
         config: &crate::panel::PanelConfig,
     ) -> Option<crate::panel::PanelRuntime> {
@@ -802,75 +813,79 @@ impl Context {
         self.tree.panel_state(config.id.as_str()).cloned()
     }
 
-    pub fn panel_runtime(&self, id: &str) -> Option<crate::panel::PanelRuntime> {
+    pub(crate) fn panel_runtime(&self, id: &str) -> Option<crate::panel::PanelRuntime> {
         self.tree.panel_state(id).cloned()
     }
 
-    pub fn import_panel_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
+    pub(crate) fn import_panel_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
         self.tree.import_panel_layouts(layouts);
     }
 
     /// 命中测试，返回从叶子到根的命中链。
-    pub fn hit_test(&self, x: f32, y: f32) -> HitChain {
+    pub(crate) fn hit_test(&self, x: f32, y: f32) -> HitChain {
         let Some(root) = self.tree.root() else {
             return HitChain::empty();
         };
         hit_test_with_animations(&self.tree, root, x, y, Some(&self.animations))
     }
 
-    pub fn root(&self) -> Option<NodeId> {
+    pub(crate) fn root(&self) -> Option<NodeId> {
         self.tree.root()
     }
 
-    pub fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
+    pub(crate) fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
         self.tree.node_by_str(id)
     }
 
-    pub fn node_exists(&self, id: &str) -> bool {
+    pub(crate) fn node_exists(&self, id: &str) -> bool {
         self.node_id_by_name(id).is_some()
     }
 
-    pub fn node_rect(&self, id: &str) -> Option<Rect> {
+    pub(crate) fn node_rect(&self, id: &str) -> Option<Rect> {
         self.node_id_by_name(id)
             .and_then(|node_id| self.node_rect_by_node(node_id))
     }
 
-    pub fn node_rect_by_node(&self, node_id: NodeId) -> Option<Rect> {
+    pub(crate) fn node_rect_by_node(&self, node_id: NodeId) -> Option<Rect> {
         self.tree.get(node_id).map(|node| node.rect)
     }
 
-    pub fn node_name(&self, node_id: NodeId) -> Option<&str> {
+    pub(crate) fn node_name(&self, node_id: NodeId) -> Option<&str> {
         self.tree.get(node_id).map(|node| node.id.as_ref())
     }
 
-    pub fn node_scroll_offset(&self, id: &str) -> Option<f32> {
+    pub(crate) fn node_scroll_offset(&self, id: &str) -> Option<f32> {
         self.node_id_by_name(id)
             .and_then(|node_id| self.tree.get(node_id))
             .map(|node| node.scroll_offset())
     }
 
-    pub fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
+    pub(crate) fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
         self.tree
             .get(node_id)
             .map(|node| node.style.gestures.contains(&gesture))
             .unwrap_or(false)
     }
 
-    pub fn node_is_draggable(&self, node_id: NodeId) -> bool {
+    pub(crate) fn node_is_draggable(&self, node_id: NodeId) -> bool {
         self.tree
             .get(node_id)
             .map(|node| node.style.draggable)
             .unwrap_or(false)
     }
 
-    pub fn node_is_resizable(&self, node_id: NodeId) -> bool {
+    pub(crate) fn node_is_resizable(&self, node_id: NodeId) -> bool {
         self.tree
             .get(node_id)
             .map(|node| node.style.resizable)
             .unwrap_or(false)
     }
 
-    pub fn resize_hit_at_screen_point(&self, x: f32, y: f32) -> Option<(NodeId, ResizeEdge)> {
+    pub(crate) fn resize_hit_at_screen_point(
+        &self,
+        x: f32,
+        y: f32,
+    ) -> Option<(NodeId, ResizeEdge)> {
         let Some(root) = self.tree.root() else {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -896,16 +911,16 @@ impl Context {
         hit.map(|hit| (hit.node_id, hit.edge))
     }
 
-    pub fn node_root_widget_type(&self, node_id: NodeId) -> Option<&str> {
+    pub(crate) fn node_root_widget_role(&self, node_id: NodeId) -> Option<WidgetRole> {
         let mut candidate = self.node_name(node_id)?;
 
         loop {
             if let Some(root_id) = self.node_id_by_name(candidate) {
                 if let Some(root_node) = self.tree.get(root_id) {
                     match &root_node.kind {
-                        NodeKind::Widget(props) => return Some(props.widget_type()),
+                        NodeKind::Widget(props) => return Some(props.role()),
                         _ => {
-                            if let Some(role) = root_node.props.semantic_role.as_deref() {
+                            if let Some(role) = root_node.props.semantic_role {
                                 return Some(role);
                             }
                         }
@@ -918,39 +933,43 @@ impl Context {
         }
     }
 
-    pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
+    pub(crate) fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
         self.node_name(node_id)
             .is_some_and(|id| id.ends_with("::field"))
-            && self.node_root_widget_type(node_id) == Some("TextInput")
+            && self
+                .node_root_widget_role(node_id)
+                .is_some_and(WidgetRole::is_text_input)
     }
 
-    pub fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
+    pub(crate) fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
         self.node_name(node_id)
             .is_some_and(|id| id.ends_with("::field"))
-            && self.node_root_widget_type(node_id) == Some("TextArea")
+            && self
+                .node_root_widget_role(node_id)
+                .is_some_and(WidgetRole::is_text_area)
     }
 
-    pub fn focused_node(&self) -> Option<NodeId> {
+    pub(crate) fn focused_node(&self) -> Option<NodeId> {
         self.interaction.focused()
     }
 
-    pub fn focused_widget_id(&self) -> Option<&str> {
+    pub(crate) fn focused_widget_id(&self) -> Option<&str> {
         self.node_name_for(self.focused_node())
     }
 
-    pub fn hovered_node(&self) -> Option<NodeId> {
+    pub(crate) fn hovered_node(&self) -> Option<NodeId> {
         self.interaction.hovered()
     }
 
-    pub fn hovered_widget_id(&self) -> Option<&str> {
+    pub(crate) fn hovered_widget_id(&self) -> Option<&str> {
         self.node_name_for(self.hovered_node())
     }
 
-    pub fn captured_node(&self) -> Option<NodeId> {
+    pub(crate) fn captured_node(&self) -> Option<NodeId> {
         self.interaction.captured()
     }
 
-    pub fn captured_widget_id(&self) -> Option<&str> {
+    pub(crate) fn captured_widget_id(&self) -> Option<&str> {
         self.node_name_for(self.captured_node())
     }
 
@@ -1013,6 +1032,497 @@ impl Context {
 
     pub fn template_registry(&self) -> &TemplateRegistry {
         &self.template_registry
+    }
+
+    pub fn scene(&mut self) -> SceneApi<'_> {
+        SceneApi { ctx: self }
+    }
+
+    pub fn query(&self) -> QueryApi<'_> {
+        QueryApi { ctx: self }
+    }
+
+    pub fn input(&mut self) -> InputApi<'_> {
+        InputApi { ctx: self }
+    }
+
+    pub fn rendering(&mut self) -> RenderingApi<'_> {
+        RenderingApi { ctx: self }
+    }
+
+    pub fn canvas(&self) -> CanvasApi<'_> {
+        CanvasApi { ctx: self }
+    }
+
+    pub fn canvas_mut(&mut self) -> CanvasMutApi<'_> {
+        CanvasMutApi { ctx: self }
+    }
+
+    pub fn panel(&self) -> PanelApi<'_> {
+        PanelApi { ctx: self }
+    }
+
+    pub fn panel_mut(&mut self) -> PanelMutApi<'_> {
+        PanelMutApi { ctx: self }
+    }
+
+    pub fn resources_mut(&mut self) -> ResourcesApi<'_> {
+        ResourcesApi { ctx: self }
+    }
+
+    pub fn overlay(&self) -> OverlayApi<'_> {
+        OverlayApi { ctx: self }
+    }
+
+    pub fn overlay_mut(&mut self) -> OverlayMutApi<'_> {
+        OverlayMutApi { ctx: self }
+    }
+
+    pub fn animations(&self) -> AnimationApi<'_> {
+        AnimationApi { ctx: self }
+    }
+
+    pub fn animations_mut(&mut self) -> AnimationMutApi<'_> {
+        AnimationMutApi { ctx: self }
+    }
+
+    pub fn runtime(&self) -> RuntimeApi<'_> {
+        RuntimeApi { ctx: self }
+    }
+
+    pub fn runtime_mut(&mut self) -> RuntimeMutApi<'_> {
+        RuntimeMutApi { ctx: self }
+    }
+}
+
+pub struct SceneApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl SceneApi<'_> {
+    pub fn ensure_retained_root(
+        &mut self,
+        viewport: Rect,
+    ) -> Result<RetainedRootIds, MutationError> {
+        self.ctx.ensure_retained_root(viewport)
+    }
+
+    pub fn apply(&mut self, mutation: SceneMutation) -> Result<Invalidation, MutationError> {
+        self.ctx.apply_mutation(mutation)
+    }
+
+    pub fn apply_many(
+        &mut self,
+        mutations: impl IntoIterator<Item = SceneMutation>,
+    ) -> Result<Vec<Invalidation>, MutationError> {
+        self.ctx.apply_mutations(mutations)
+    }
+
+    pub fn update_canvas_transform(
+        &mut self,
+        transform: crate::geometry::TransformSpec,
+    ) -> Result<(), MutationError> {
+        self.ctx.update_canvas_transform(transform)
+    }
+}
+
+pub struct QueryApi<'a> {
+    ctx: &'a Context,
+}
+
+impl QueryApi<'_> {
+    pub fn root(&self) -> Option<NodeId> {
+        self.ctx.root()
+    }
+
+    pub fn node_id_by_name(&self, id: &str) -> Option<NodeId> {
+        self.ctx.node_id_by_name(id)
+    }
+
+    pub fn node_exists(&self, id: &str) -> bool {
+        self.ctx.node_exists(id)
+    }
+
+    pub fn node_rect(&self, id: &str) -> Option<Rect> {
+        self.ctx.node_rect(id)
+    }
+
+    pub fn node_rect_by_node(&self, node_id: NodeId) -> Option<Rect> {
+        self.ctx.node_rect_by_node(node_id)
+    }
+
+    pub fn node_name(&self, node_id: NodeId) -> Option<&str> {
+        self.ctx.node_name(node_id)
+    }
+
+    pub fn node_scroll_offset(&self, id: &str) -> Option<f32> {
+        self.ctx.node_scroll_offset(id)
+    }
+
+    pub fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
+        self.ctx.node_has_gesture(node_id, gesture)
+    }
+
+    pub fn node_is_draggable(&self, node_id: NodeId) -> bool {
+        self.ctx.node_is_draggable(node_id)
+    }
+
+    pub fn node_is_resizable(&self, node_id: NodeId) -> bool {
+        self.ctx.node_is_resizable(node_id)
+    }
+
+    pub fn hit_test(&self, x: f32, y: f32) -> HitChain {
+        self.ctx.hit_test(x, y)
+    }
+
+    pub fn resize_hit_at_screen_point(&self, x: f32, y: f32) -> Option<(NodeId, ResizeEdge)> {
+        self.ctx.resize_hit_at_screen_point(x, y)
+    }
+
+    pub fn node_root_widget_role(&self, node_id: NodeId) -> Option<WidgetRole> {
+        self.ctx.node_root_widget_role(node_id)
+    }
+
+    pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
+        self.ctx.node_is_text_input_field(node_id)
+    }
+
+    pub fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
+        self.ctx.node_is_text_area_field(node_id)
+    }
+
+    pub fn focused_node(&self) -> Option<NodeId> {
+        self.ctx.focused_node()
+    }
+
+    pub fn focused_widget_id(&self) -> Option<&str> {
+        self.ctx.focused_widget_id()
+    }
+
+    pub fn hovered_node(&self) -> Option<NodeId> {
+        self.ctx.hovered_node()
+    }
+
+    pub fn hovered_widget_id(&self) -> Option<&str> {
+        self.ctx.hovered_widget_id()
+    }
+
+    pub fn captured_node(&self) -> Option<NodeId> {
+        self.ctx.captured_node()
+    }
+
+    pub fn captured_widget_id(&self) -> Option<&str> {
+        self.ctx.captured_widget_id()
+    }
+}
+
+pub struct InputApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl InputApi<'_> {
+    pub fn handle_event(&mut self, event: &AppEvent) -> FrameworkOutput {
+        self.ctx.handle_event(event)
+    }
+
+    pub fn ime_request(&self) -> ImeRequest {
+        self.ctx.ime_request()
+    }
+
+    pub fn paste_focused_text(&mut self, text: &str) -> FrameworkOutput {
+        self.ctx.paste_focused_text(text)
+    }
+
+    pub fn request_focus(&mut self, node_id: NodeId) {
+        self.ctx.request_focus(node_id);
+    }
+}
+
+pub struct RenderingApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl RenderingApi<'_> {
+    pub fn flush_layout_dirty(
+        &mut self,
+        root_rect: Rect,
+        measurer: &mut TextMeasurer,
+    ) -> LayoutFlushStats {
+        self.ctx.flush_layout_dirty(root_rect, measurer)
+    }
+
+    pub fn render(
+        &mut self,
+        renderer: &mut Renderer,
+        viewport_w: f32,
+        viewport_h: f32,
+        theme: &Theme,
+    ) {
+        self.ctx.render(renderer, viewport_w, viewport_h, theme)
+    }
+}
+
+pub struct CanvasApi<'a> {
+    ctx: &'a Context,
+}
+
+impl CanvasApi<'_> {
+    pub fn export_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
+        self.ctx.export_canvas_node_layouts()
+    }
+
+    pub fn port_group_view(
+        &self,
+        owner_id: &str,
+        side: crate::canvas::CanvasPortSide,
+    ) -> crate::canvas::CanvasPortGroupView {
+        self.ctx.canvas_port_group_view(owner_id, side)
+    }
+
+    pub fn is_node_selected(&self, owner_id: &str) -> bool {
+        self.ctx.is_canvas_node_selected(owner_id)
+    }
+
+    pub fn pending_connection(&self) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.ctx.pending_canvas_connection()
+    }
+
+    pub fn hovered_port_id(&self) -> Option<String> {
+        self.ctx.hovered_canvas_port_id()
+    }
+}
+
+pub struct CanvasMutApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl CanvasMutApi<'_> {
+    pub fn sync_node_layouts(
+        &mut self,
+        identities: &[crate::canvas::CanvasNodeIdentity],
+    ) -> Vec<crate::canvas::CanvasNodeLayout> {
+        self.ctx.sync_canvas_node_layouts(identities)
+    }
+
+    pub fn export_node_layouts(&self) -> Vec<crate::canvas::CanvasNodeLayout> {
+        self.ctx.export_canvas_node_layouts()
+    }
+
+    pub fn import_node_layouts(&mut self, layouts: &[crate::canvas::CanvasNodeLayout]) {
+        self.ctx.import_canvas_node_layouts(layouts);
+    }
+
+    pub fn move_node_by(&mut self, owner_id: &str, dx: f32, dy: f32) -> bool {
+        self.ctx.move_canvas_node_by(owner_id, dx, dy)
+    }
+
+    pub fn resize_node_by(
+        &mut self,
+        owner_id: &str,
+        edge: crate::widget::resize_edge::ResizeEdge,
+        dx: f32,
+        dy: f32,
+    ) -> bool {
+        self.ctx.resize_canvas_node_by(owner_id, edge, dx, dy)
+    }
+
+    pub fn ensure_node_min_size(
+        &mut self,
+        owner_id: &str,
+        min_width: f32,
+        min_height: f32,
+    ) -> bool {
+        self.ctx
+            .ensure_canvas_node_min_size(owner_id, min_width, min_height)
+    }
+
+    pub fn apply_node_sizing(
+        &mut self,
+        owner_id: &str,
+        request: crate::canvas::CanvasNodeSizingRequest,
+    ) -> bool {
+        self.ctx.apply_canvas_node_sizing(owner_id, request)
+    }
+
+    pub fn toggle_port_group(
+        &mut self,
+        owner_id: &str,
+        side: crate::canvas::CanvasPortSide,
+    ) -> bool {
+        self.ctx.toggle_canvas_port_group(owner_id, side)
+    }
+
+    pub fn select_node(&mut self, owner_id: &str) -> bool {
+        self.ctx.select_canvas_node(owner_id)
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.ctx.clear_canvas_selection();
+    }
+
+    pub fn begin_pending_connection(
+        &mut self,
+        from_port_id: &str,
+        cursor_canvas: [f32; 2],
+    ) -> bool {
+        self.ctx
+            .begin_pending_canvas_connection(from_port_id, cursor_canvas)
+    }
+
+    pub fn update_pending_connection(&mut self, cursor_canvas: [f32; 2]) -> bool {
+        self.ctx.update_pending_canvas_connection(cursor_canvas)
+    }
+
+    pub fn end_pending_connection(&mut self) -> Option<crate::canvas::CanvasPendingConnectionView> {
+        self.ctx.end_pending_canvas_connection()
+    }
+
+    pub fn cancel_pending_connection(&mut self) -> bool {
+        self.ctx.cancel_pending_canvas_connection()
+    }
+
+    pub fn set_hovered_port(&mut self, port_id: Option<&str>) -> bool {
+        self.ctx.set_hovered_canvas_port(port_id)
+    }
+}
+
+pub struct PanelApi<'a> {
+    ctx: &'a Context,
+}
+
+impl PanelApi<'_> {
+    pub fn export_layouts(&self) -> Vec<crate::panel::PanelLayout> {
+        self.ctx.export_panel_layouts()
+    }
+
+    pub fn runtime(&self, id: &str) -> Option<crate::panel::PanelRuntime> {
+        self.ctx.panel_runtime(id)
+    }
+}
+
+pub struct PanelMutApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl PanelMutApi<'_> {
+    pub fn handle_event(&mut self, event: &PanelEvent) -> bool {
+        self.ctx.handle_panel_event(event)
+    }
+
+    pub fn ensure_runtime(
+        &mut self,
+        config: &crate::panel::PanelConfig,
+    ) -> Option<crate::panel::PanelRuntime> {
+        self.ctx.ensure_panel_runtime(config)
+    }
+
+    pub fn import_layouts(&mut self, layouts: &[crate::panel::PanelLayout]) {
+        self.ctx.import_panel_layouts(layouts);
+    }
+}
+
+pub struct ResourcesApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl ResourcesApi<'_> {
+    pub fn register_texture(
+        &mut self,
+        handle: TextureHandle,
+        view: Arc<wgpu::TextureView>,
+        size: TextureSize,
+    ) {
+        self.ctx.register_texture(handle, view, size);
+    }
+
+    pub fn register_svg_icon(&mut self, id: impl Into<IconId>, svg: impl AsRef<[u8]>) {
+        self.ctx.register_svg_icon(id, svg);
+    }
+}
+
+pub struct OverlayApi<'a> {
+    ctx: &'a Context,
+}
+
+impl OverlayApi<'_> {
+    pub fn is_open(&self) -> bool {
+        self.ctx.overlay_open()
+    }
+}
+
+pub struct OverlayMutApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl OverlayMutApi<'_> {
+    pub fn open(&mut self, request: OverlayRequest) {
+        self.ctx.open_overlay(request);
+    }
+
+    pub fn close(&mut self) {
+        self.ctx.close_overlay();
+    }
+}
+
+pub struct AnimationApi<'a> {
+    ctx: &'a Context,
+}
+
+impl AnimationApi<'_> {
+    pub fn active(&self) -> bool {
+        self.ctx.animations_active()
+    }
+}
+
+pub struct AnimationMutApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl AnimationMutApi<'_> {
+    pub fn tick(&mut self, now: Instant) -> bool {
+        self.ctx.tick_animations(now)
+    }
+}
+
+pub struct RuntimeApi<'a> {
+    ctx: &'a Context,
+}
+
+impl RuntimeApi<'_> {
+    pub fn control_intrinsics(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.ctx.control_intrinsics()
+    }
+
+    pub fn retained_control_intrinsics_snapshot(&self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.ctx.retained_control_intrinsics_snapshot()
+    }
+
+    pub fn text_box_dirty_intrinsics(&self) -> Vec<String> {
+        self.ctx.text_box_dirty_intrinsics()
+    }
+}
+
+pub struct RuntimeMutApi<'a> {
+    ctx: &'a mut Context,
+}
+
+impl RuntimeMutApi<'_> {
+    pub fn take_dirty_control_intrinsics(&mut self) -> Vec<crate::runtime::ControlIntrinsic> {
+        self.ctx.take_dirty_control_intrinsics()
+    }
+
+    pub fn take_text_box_dirty_intrinsics(&mut self) -> std::collections::BTreeSet<String> {
+        self.ctx.take_text_box_dirty_intrinsics()
+    }
+
+    pub fn sync_retained_canvas_text_boxes(
+        &mut self,
+        views: &[crate::canvas::node_template::CanvasNodeRenderView],
+        measurer: &mut TextMeasurer,
+        theme: &Theme,
+    ) {
+        self.ctx
+            .sync_retained_canvas_text_boxes(views, measurer, theme);
     }
 }
 
@@ -1551,7 +2061,10 @@ mod tests {
         assert_eq!(by_name.y, by_node.y);
         assert_eq!(by_name.w, by_node.w);
         assert_eq!(by_name.h, by_node.h);
-        assert_eq!(ctx.node_root_widget_type(field_id), Some("TextInput"));
+        assert_eq!(
+            ctx.node_root_widget_role(field_id),
+            Some(WidgetRole::TextInput)
+        );
         assert!(ctx.node_is_text_input_field(field_id));
         assert!(ctx.node_rect("missing").is_none());
     }
@@ -1613,7 +2126,10 @@ mod tests {
 
         let field_node = ctx.node_id_by_name(field_id).expect("nested field id");
 
-        assert_eq!(ctx.node_root_widget_type(field_node), Some("TextInput"));
+        assert_eq!(
+            ctx.node_root_widget_role(field_node),
+            Some(WidgetRole::TextInput)
+        );
         assert!(ctx.node_is_text_input_field(field_node));
         assert!(ctx.node_exists(widget_id));
     }

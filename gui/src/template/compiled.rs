@@ -3,16 +3,19 @@ use super::{
     TemplateRevision, TemplateSlots,
 };
 use crate::renderer::Rect;
-use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
+use crate::tree::layout::{
+    BoxStyle, Decoration, LayoutDependencyKind, LayoutDependencyScope, LeafKind,
+};
+use crate::tree::style_patch::apply_style_patch;
 use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RuntimeSlots, StableId, StylePatch, Tree, TreeNode,
+    RuntimeSlots, StableId, Tree, TreeNode,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CompiledTemplate {
+pub(crate) struct CompiledTemplate {
     pub id: TemplateId,
     pub revision: TemplateRevision,
     pub root: CompiledNode,
@@ -21,13 +24,13 @@ pub struct CompiledTemplate {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BoundaryDeclarations {
+pub(crate) struct BoundaryDeclarations {
     pub relayout: Vec<&'static str>,
     pub repaint: Vec<&'static str>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CompiledNode {
+pub(crate) struct CompiledNode {
     pub id_suffix: &'static str,
     pub absolute_id: Option<&'static str>,
     pub kind: CompiledNodeKind,
@@ -43,13 +46,17 @@ pub struct CompiledNode {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CompiledNodeKind {
+pub(crate) enum CompiledNodeKind {
     Container,
     Leaf(LeafKind),
 }
 
 impl CompiledTemplate {
-    pub fn new(id: impl Into<TemplateId>, revision: TemplateRevision, root: CompiledNode) -> Self {
+    pub(crate) fn new(
+        id: impl Into<TemplateId>,
+        revision: TemplateRevision,
+        root: CompiledNode,
+    ) -> Self {
         Self {
             id: id.into(),
             revision,
@@ -59,17 +66,17 @@ impl CompiledTemplate {
         }
     }
 
-    pub fn with_slots(mut self, slots: TemplateSlots) -> Self {
+    pub(crate) fn with_slots(mut self, slots: TemplateSlots) -> Self {
         self.slots = slots;
         self
     }
 
-    pub fn with_boundaries(mut self, boundaries: BoundaryDeclarations) -> Self {
+    pub(crate) fn with_boundaries(mut self, boundaries: BoundaryDeclarations) -> Self {
         self.boundaries = boundaries;
         self
     }
 
-    pub fn instantiate(
+    pub(crate) fn instantiate(
         &self,
         tree: &mut Tree,
         instance: InstanceId,
@@ -108,7 +115,7 @@ impl CompiledTemplate {
         })
     }
 
-    pub fn instantiate_root(
+    pub(crate) fn instantiate_root(
         &self,
         tree: &mut Tree,
         instance: InstanceId,
@@ -173,28 +180,33 @@ impl CompiledTemplate {
                     reason: "slot target node is not part of the template",
                 });
             };
-            let Some(node) = tree.get_mut(node_id) else {
-                return Err(TemplateError::UnsupportedSlot {
-                    slot: binding.name.to_string(),
-                    reason: "slot target node is not live",
-                });
+            let result = {
+                let Some(node) = tree.get_mut(node_id) else {
+                    return Err(TemplateError::UnsupportedSlot {
+                        slot: binding.name.to_string(),
+                        reason: "slot target node is not live",
+                    });
+                };
+                apply_slot_value(binding.name, binding.target, node, value)?
             };
-            apply_slot_value(binding.name, binding.target, node, value)?;
+            if let Some((kind, scope)) = result.layout_dependency {
+                tree.record_layout_dependency_change(node_id, kind, scope);
+            }
         }
         Ok(())
     }
 }
 
 impl CompiledNode {
-    pub fn container(id_suffix: &'static str, style: BoxStyle) -> Self {
+    pub(crate) fn container(id_suffix: &'static str, style: BoxStyle) -> Self {
         Self::new(id_suffix, CompiledNodeKind::Container, style)
     }
 
-    pub fn leaf(id_suffix: &'static str, leaf: LeafKind, style: BoxStyle) -> Self {
+    pub(crate) fn leaf(id_suffix: &'static str, leaf: LeafKind, style: BoxStyle) -> Self {
         Self::new(id_suffix, CompiledNodeKind::Leaf(leaf), style)
     }
 
-    pub fn new(id_suffix: &'static str, kind: CompiledNodeKind, style: BoxStyle) -> Self {
+    pub(crate) fn new(id_suffix: &'static str, kind: CompiledNodeKind, style: BoxStyle) -> Self {
         Self {
             id_suffix,
             absolute_id: None,
@@ -211,37 +223,32 @@ impl CompiledNode {
         }
     }
 
-    pub fn with_decoration(mut self, decoration: Decoration) -> Self {
+    pub(crate) fn with_decoration(mut self, decoration: Decoration) -> Self {
         self.decoration = Some(decoration);
         self
     }
 
-    pub fn with_layout_meta(mut self, layout_meta: NodeLayoutMeta) -> Self {
+    pub(crate) fn with_layout_meta(mut self, layout_meta: NodeLayoutMeta) -> Self {
         self.layout_meta = layout_meta;
         self
     }
 
-    pub fn with_paint_meta(mut self, paint_meta: NodePaintMeta) -> Self {
+    pub(crate) fn with_paint_meta(mut self, paint_meta: NodePaintMeta) -> Self {
         self.paint_meta = paint_meta;
         self
     }
 
-    pub fn with_mutation_meta(mut self, mutation_meta: NodeMutationMeta) -> Self {
+    pub(crate) fn with_mutation_meta(mut self, mutation_meta: NodeMutationMeta) -> Self {
         self.mutation_meta = mutation_meta;
         self
     }
 
-    pub fn with_children(mut self, children: Vec<CompiledNode>) -> Self {
+    pub(crate) fn with_children(mut self, children: Vec<CompiledNode>) -> Self {
         self.children = children;
         self
     }
 
-    pub fn with_props(mut self, props: NodeProps) -> Self {
-        self.props = props;
-        self
-    }
-
-    pub fn with_absolute_id(mut self, id: &'static str) -> Self {
+    pub(crate) fn with_absolute_id(mut self, id: &'static str) -> Self {
         self.absolute_id = Some(id);
         self
     }
@@ -304,7 +311,7 @@ fn apply_slot_value(
     target: SlotTarget,
     node: &mut TreeNode,
     value: &SlotValue,
-) -> Result<(), TemplateError> {
+) -> Result<SlotApplyResult, TemplateError> {
     match (target, value) {
         (SlotTarget::TextContent, SlotValue::Text(value)) => {
             let NodeKind::Leaf(LeafKind::Text { content, .. }) = &mut node.kind else {
@@ -313,31 +320,45 @@ fn apply_slot_value(
                     reason: "text slot target is not a text leaf",
                 });
             };
+            let mut result = SlotApplyResult::default();
             if content != value {
                 *content = value.clone();
-                node.layout_meta.bump_text();
                 node.paint_meta.bump_text();
+                result.layout_dependency = Some((
+                    LayoutDependencyKind::Text,
+                    LayoutDependencyScope::RelayoutBoundary,
+                ));
             }
-            Ok(())
+            Ok(result)
         }
         (SlotTarget::Rect, SlotValue::Rect(rect)) => {
             node.rect = *rect;
-            node.layout_meta.bump_explicit_rect();
-            Ok(())
+            Ok(SlotApplyResult {
+                layout_dependency: Some((
+                    LayoutDependencyKind::ExplicitRect,
+                    LayoutDependencyScope::RelayoutBoundary,
+                )),
+            })
         }
         (SlotTarget::Style, SlotValue::Style(patch)) => {
-            apply_style_patch(node, patch.clone());
-            Ok(())
+            let effect = apply_style_patch(node, patch.clone());
+            Ok(SlotApplyResult {
+                layout_dependency: effect.layout_dependency,
+            })
         }
         (SlotTarget::Visible, SlotValue::Visible(visible)) => {
             node.local_runtime.visible = *visible;
-            Ok(())
+            Ok(SlotApplyResult::default())
         }
         (SlotTarget::ZIndex, SlotValue::ZIndex(z_index)) => {
             node.style.z_index = *z_index;
-            node.layout_meta.bump_style();
             node.paint_meta.bump_paint_order();
-            Ok(())
+            Ok(SlotApplyResult {
+                layout_dependency: Some((
+                    LayoutDependencyKind::Style,
+                    LayoutDependencyScope::LocalNode,
+                )),
+            })
         }
         (SlotTarget::ConnectionEndpoints, SlotValue::Connection { from_port, to_port }) => {
             let NodeKind::Leaf(LeafKind::Connection {
@@ -353,7 +374,7 @@ fn apply_slot_value(
             *target_from = Cow::Owned(from_port.clone());
             *target_to = Cow::Owned(to_port.clone());
             node.paint_meta.bump_visual();
-            Ok(())
+            Ok(SlotApplyResult::default())
         }
         (
             SlotTarget::PendingConnection,
@@ -375,7 +396,7 @@ fn apply_slot_value(
             *target_from = Cow::Owned(from_port.clone());
             *target_cursor = *cursor_canvas;
             node.paint_meta.bump_visual();
-            Ok(())
+            Ok(SlotApplyResult::default())
         }
         _ => Err(TemplateError::UnsupportedSlot {
             slot: slot.to_string(),
@@ -384,44 +405,9 @@ fn apply_slot_value(
     }
 }
 
-fn apply_style_patch(node: &mut TreeNode, patch: StylePatch) {
-    if let Some(style) = patch.replace_box_style {
-        node.style = style;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        return;
-    }
-
-    if let Some(position) = patch.position {
-        node.style.position = position;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-    }
-    if let Some(width) = patch.width {
-        node.style.width = width;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-    }
-    if let Some(height) = patch.height {
-        node.style.height = height;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-    }
-    if let Some(z_index) = patch.z_index {
-        node.style.z_index = z_index;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_paint_order();
-    }
-    if let Some(transform) = patch.transform {
-        node.style.transform = transform;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-    }
-    if let Some(decoration) = patch.decoration {
-        node.decoration = decoration;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-    }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SlotApplyResult {
+    layout_dependency: Option<(LayoutDependencyKind, LayoutDependencyScope)>,
 }
 
 fn zero_rect() -> Rect {

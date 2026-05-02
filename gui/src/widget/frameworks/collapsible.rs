@@ -43,6 +43,10 @@ impl WidgetProps for CollapsibleProps {
         "Collapsible"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Collapsible
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

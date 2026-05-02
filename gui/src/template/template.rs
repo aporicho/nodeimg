@@ -1,5 +1,5 @@
-use super::{InstanceId, TemplateId, TemplatePayload, TemplateRevision};
-use crate::tree::{NodeId, Tree, TreeIndexError};
+use super::{InstanceId, TemplateId, TemplateMountCx, TemplatePayload, TemplateRevision};
+use crate::tree::{NodeId, TreeIndexError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TemplateInstance {
@@ -9,17 +9,17 @@ pub struct TemplateInstance {
     pub root_node: NodeId,
 }
 
-pub trait RetainedTemplate {
+pub(crate) trait RetainedTemplate {
     fn id(&self) -> TemplateId;
     fn revision(&self) -> TemplateRevision;
 
     fn instantiate(
         &self,
-        tree: &mut Tree,
-        instance: InstanceId,
+        cx: &mut TemplateMountCx<'_>,
+        instance: &InstanceId,
         parent: NodeId,
         payload: TemplatePayload,
-    ) -> Result<TemplateInstance, TemplateError>;
+    ) -> Result<NodeId, TemplateError>;
 }
 
 #[derive(Debug)]

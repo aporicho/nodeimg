@@ -23,6 +23,10 @@ impl WidgetProps for RadioProps {
         "Radio"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Radio
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

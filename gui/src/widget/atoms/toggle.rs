@@ -21,6 +21,9 @@ impl WidgetProps for ToggleProps {
     fn widget_type(&self) -> &'static str {
         "Toggle"
     }
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Toggle
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }

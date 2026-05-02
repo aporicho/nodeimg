@@ -1,7 +1,7 @@
 use super::generated;
 use super::{
     CompiledTemplate, InstanceId, RetainedTemplate, SlotValues, TemplateError, TemplateId,
-    TemplateInstance, TemplatePayload,
+    TemplateInstance, TemplateMountCx, TemplatePayload,
 };
 use crate::tree::{NodeId, Tree};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ impl TemplateRegistry {
         registry
     }
 
-    pub fn register(&mut self, template: CompiledTemplate) -> Result<(), TemplateError> {
+    pub(crate) fn register(&mut self, template: CompiledTemplate) -> Result<(), TemplateError> {
         if let Some(existing) = self.templates.get(&template.id) {
             if existing.revision != template.revision {
                 return Err(TemplateError::DuplicateTemplate {
@@ -38,7 +38,7 @@ impl TemplateRegistry {
         Ok(())
     }
 
-    pub fn register_retained<T: RetainedTemplate + 'static>(
+    pub(crate) fn register_retained<T: RetainedTemplate + 'static>(
         &mut self,
         template: T,
     ) -> Result<(), TemplateError> {
@@ -56,11 +56,13 @@ impl TemplateRegistry {
         Ok(())
     }
 
-    pub fn template(&self, template: &TemplateId) -> Option<&CompiledTemplate> {
+    #[cfg(test)]
+    pub(crate) fn template(&self, template: &TemplateId) -> Option<&CompiledTemplate> {
         self.templates.get(template)
     }
 
-    pub fn instantiate(
+    #[cfg(test)]
+    pub(crate) fn instantiate(
         &self,
         tree: &mut Tree,
         template: TemplateId,
@@ -77,7 +79,7 @@ impl TemplateRegistry {
         )
     }
 
-    pub fn instantiate_payload(
+    pub(crate) fn instantiate_payload(
         &self,
         tree: &mut Tree,
         template: TemplateId,
@@ -89,9 +91,18 @@ impl TemplateRegistry {
             return Err(TemplateError::MissingParent(parent));
         }
         if let Some(definition) = self.retained_templates.get(&template) {
-            match definition.instantiate(tree, instance.clone(), parent, payload.clone()) {
+            let mut mount = TemplateMountCx::new(tree);
+            match definition.instantiate(&mut mount, &instance, parent, payload.clone()) {
                 Err(TemplateError::UnsupportedPayload { .. }) => {}
-                result => return result,
+                Err(error) => return Err(error),
+                Ok(root) => {
+                    return Ok(mount.commit_instance(
+                        template.clone(),
+                        definition.revision(),
+                        instance,
+                        root,
+                    ));
+                }
             }
         }
         let Some(definition) = self.templates.get(&template) else {
@@ -106,7 +117,7 @@ impl TemplateRegistry {
         definition.instantiate(tree, instance, parent, slots)
     }
 
-    pub fn instantiate_root(
+    pub(crate) fn instantiate_root(
         &self,
         tree: &mut Tree,
         template: TemplateId,

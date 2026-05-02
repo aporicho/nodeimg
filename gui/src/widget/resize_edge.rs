@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::renderer::Rect;
 
 pub const DEFAULT_RESIZE_EDGE_THRESHOLD: f32 = 10.0;
@@ -21,7 +22,8 @@ pub enum ResizeEdge {
 
 /// 在 rect 的 8 个边/角附近检测具体命中的是哪个。
 /// 返回 None 表示点击在内部（非边缘）。
-pub fn detect_resize_edge(rect: Rect, x: f32, y: f32, threshold: f32) -> Option<ResizeEdge> {
+#[cfg(test)]
+pub(crate) fn detect_resize_edge(rect: Rect, x: f32, y: f32, threshold: f32) -> Option<ResizeEdge> {
     let threshold = threshold.max(0.0);
     let near_left = (x - rect.x).abs() < threshold;
     let near_right = (x - (rect.x + rect.w)).abs() < threshold;

@@ -28,7 +28,9 @@ pub const NODE_PALETTE_EMPTY_TEMPLATE: &str = "builtin::node_palette_empty";
 
 const BUILTIN_TEMPLATE_REVISION: TemplateRevision = TemplateRevision::new(1);
 
-pub fn register_builtin_templates(registry: &mut TemplateRegistry) -> Result<(), TemplateError> {
+pub(crate) fn register_builtin_templates(
+    registry: &mut TemplateRegistry,
+) -> Result<(), TemplateError> {
     registry.register(text_box_template())?;
     registry.register(canvas_root_template())?;
     registry.register(canvas_grid_template())?;
@@ -48,7 +50,7 @@ pub fn register_builtin_templates(registry: &mut TemplateRegistry) -> Result<(),
     Ok(())
 }
 
-pub fn node_palette_template() -> CompiledTemplate {
+pub(crate) fn node_palette_template() -> CompiledTemplate {
     CompiledTemplate::new(
         NODE_PALETTE_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -73,7 +75,7 @@ pub fn node_palette_template() -> CompiledTemplate {
     })
 }
 
-pub fn node_palette_category_template() -> CompiledTemplate {
+pub(crate) fn node_palette_category_template() -> CompiledTemplate {
     CompiledTemplate::new(
         NODE_PALETTE_CATEGORY_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -90,7 +92,7 @@ pub fn node_palette_category_template() -> CompiledTemplate {
     )]))
 }
 
-pub fn node_palette_item_template() -> CompiledTemplate {
+pub(crate) fn node_palette_item_template() -> CompiledTemplate {
     CompiledTemplate::new(
         NODE_PALETTE_ITEM_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -112,7 +114,7 @@ pub fn node_palette_item_template() -> CompiledTemplate {
     )]))
 }
 
-pub fn node_palette_empty_template() -> CompiledTemplate {
+pub(crate) fn node_palette_empty_template() -> CompiledTemplate {
     CompiledTemplate::new(
         NODE_PALETTE_EMPTY_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -129,7 +131,7 @@ pub fn node_palette_empty_template() -> CompiledTemplate {
     )]))
 }
 
-pub fn canvas_connection_template() -> CompiledTemplate {
+pub(crate) fn canvas_connection_template() -> CompiledTemplate {
     CompiledTemplate::new(
         CANVAS_CONNECTION_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -148,7 +150,7 @@ pub fn canvas_connection_template() -> CompiledTemplate {
     )]))
 }
 
-pub fn canvas_pending_connection_template() -> CompiledTemplate {
+pub(crate) fn canvas_pending_connection_template() -> CompiledTemplate {
     CompiledTemplate::new(
         CANVAS_PENDING_CONNECTION_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -167,7 +169,7 @@ pub fn canvas_pending_connection_template() -> CompiledTemplate {
     )]))
 }
 
-pub fn workspace_root_template() -> CompiledTemplate {
+pub(crate) fn workspace_root_template() -> CompiledTemplate {
     CompiledTemplate::new(
         WORKSPACE_ROOT_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -218,7 +220,7 @@ pub fn workspace_root_template() -> CompiledTemplate {
     })
 }
 
-pub fn text_box_template() -> CompiledTemplate {
+pub(crate) fn text_box_template() -> CompiledTemplate {
     CompiledTemplate::new(
         TEXT_BOX_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -246,7 +248,7 @@ pub fn text_box_template() -> CompiledTemplate {
     })
 }
 
-pub fn canvas_root_template() -> CompiledTemplate {
+pub(crate) fn canvas_root_template() -> CompiledTemplate {
     CompiledTemplate::new(
         CANVAS_ROOT_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -272,7 +274,7 @@ pub fn canvas_root_template() -> CompiledTemplate {
     })
 }
 
-pub fn canvas_grid_template() -> CompiledTemplate {
+pub(crate) fn canvas_grid_template() -> CompiledTemplate {
     CompiledTemplate::new(
         CANVAS_GRID_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -288,7 +290,7 @@ pub fn canvas_grid_template() -> CompiledTemplate {
     })
 }
 
-pub fn canvas_node_card_template() -> CompiledTemplate {
+pub(crate) fn canvas_node_card_template() -> CompiledTemplate {
     CompiledTemplate::new(
         CANVAS_NODE_CARD_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -319,7 +321,7 @@ pub fn canvas_node_card_template() -> CompiledTemplate {
     })
 }
 
-pub fn param_control_template() -> CompiledTemplate {
+pub(crate) fn param_control_template() -> CompiledTemplate {
     CompiledTemplate::new(
         PARAM_CONTROL_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
@@ -335,7 +337,7 @@ pub fn param_control_template() -> CompiledTemplate {
     ]))
 }
 
-pub fn panel_frame_template() -> CompiledTemplate {
+pub(crate) fn panel_frame_template() -> CompiledTemplate {
     CompiledTemplate::new(
         PANEL_FRAME_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,

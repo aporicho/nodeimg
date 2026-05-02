@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use super::node_spec::{
     node_render_spec, NodeBodyRowSpec, NodeHeaderSpec, NodePortGroupTriggerSpec, NodePortSpec,
     NodeRenderSpec,
@@ -11,7 +9,7 @@ use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
 use crate::renderer::{Border, Color, Rect};
 use crate::template::{
-    InstanceId, RetainedTemplate, TemplateError, TemplateId, TemplateInstance, TemplatePayload,
+    InstanceId, RetainedTemplate, TemplateError, TemplateId, TemplateMountCx, TemplatePayload,
     TemplateRevision, CANVAS_NODE_CARD_TEMPLATE,
 };
 use crate::theme::Theme;
@@ -21,12 +19,13 @@ use crate::tree::layout::{
 };
 use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, Tree, TreeNode,
+    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
 };
 use crate::widget::mapping::ParamControlSpec;
 use crate::widget::param_control::{
     param_control_layout_policy, ParamControlHeight, ParamControlLayoutPolicy,
 };
+use crate::widget::WidgetRole;
 
 const REVISION: TemplateRevision = TemplateRevision::new(2);
 
@@ -58,11 +57,11 @@ impl RetainedTemplate for CanvasNodeCardRetainedTemplate {
 
     fn instantiate(
         &self,
-        tree: &mut Tree,
-        instance: InstanceId,
+        cx: &mut TemplateMountCx<'_>,
+        _instance: &InstanceId,
         parent: NodeId,
         payload: TemplatePayload,
-    ) -> Result<TemplateInstance, TemplateError> {
+    ) -> Result<NodeId, TemplateError> {
         let TemplatePayload::CanvasNodeCard(data) = payload else {
             return Err(TemplateError::UnsupportedPayload {
                 template: self.id(),
@@ -70,51 +69,12 @@ impl RetainedTemplate for CanvasNodeCardRetainedTemplate {
             });
         };
         let spec = node_render_spec(&data.view.template, &data.view.state, &data.theme);
-        let mut mount = MountCx::new(tree);
-        let root = mount_node_card(&mut mount, parent, &spec, &data.theme)?;
-        Ok(TemplateInstance {
-            template: self.id(),
-            template_revision: self.revision(),
-            instance,
-            root_node: root,
-        })
-    }
-}
-
-struct MountCx<'a> {
-    tree: &'a mut Tree,
-    mounted: Vec<NodeId>,
-}
-
-impl<'a> MountCx<'a> {
-    fn new(tree: &'a mut Tree) -> Self {
-        Self {
-            tree,
-            mounted: Vec::new(),
-        }
-    }
-
-    fn child(&mut self, parent: NodeId, node: TreeNode) -> Result<NodeId, TemplateError> {
-        let id = self.tree.insert_checked(node)?;
-        self.mounted.push(id);
-        if !self.tree.append_child(parent, id) {
-            self.rollback();
-            return Err(TemplateError::MissingParent(parent));
-        }
-        Ok(id)
-    }
-
-    fn rollback(&mut self) {
-        for id in self.mounted.iter().rev().copied() {
-            self.tree.detach_from_parent(id);
-            self.tree.remove(id);
-        }
-        self.mounted.clear();
+        mount_node_card(cx, parent, &spec, &data.theme)
     }
 }
 
 fn mount_node_card(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     spec: &NodeRenderSpec,
     theme: &Theme,
@@ -174,7 +134,7 @@ fn mount_node_card(
 }
 
 fn mount_card(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     spec: &NodeRenderSpec,
     theme: &Theme,
@@ -216,7 +176,7 @@ fn mount_card(
 }
 
 fn mount_pin_column(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     trigger: &NodePortGroupTriggerSpec,
@@ -255,7 +215,7 @@ fn mount_pin_column(
 }
 
 fn mount_port_group_trigger(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     trigger: &NodePortGroupTriggerSpec,
     theme: &Theme,
@@ -330,7 +290,7 @@ fn port_group_trigger_offset(side: CanvasPortSide, metrics: NodeCardMetrics) -> 
 }
 
 fn mount_pin_row(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     side: CanvasPortSide,
     port: &NodePortSpec,
@@ -366,7 +326,7 @@ fn mount_pin_row(
 }
 
 fn mount_pin_dot(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     port: &NodePortSpec,
     theme: &Theme,
@@ -404,7 +364,7 @@ fn mount_pin_dot(
 }
 
 fn mount_pin_label(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     port: &NodePortSpec,
     theme: &Theme,
@@ -431,7 +391,7 @@ fn mount_pin_label(
 }
 
 fn mount_node_body(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     body: &super::node_spec::NodeBodySpec,
     theme: &Theme,
@@ -458,7 +418,7 @@ fn mount_node_body(
 }
 
 fn mount_body_row(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     row: &NodeBodyRowSpec,
     theme: &Theme,
@@ -564,7 +524,7 @@ fn row_flex(policy: ParamControlLayoutPolicy) -> f32 {
 }
 
 fn mount_param_control(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     control: &ParamControlSpec,
@@ -601,12 +561,20 @@ fn mount_param_control(
             value,
             false,
             1,
-            "TextInput",
+            WidgetRole::TextInput,
             theme,
             metrics,
         )?,
         ParamControlSpec::TextArea { value, min_rows } => mount_text_field(
-            cx, wrapper, &child_id, value, true, *min_rows, "TextArea", theme, metrics,
+            cx,
+            wrapper,
+            &child_id,
+            value,
+            true,
+            *min_rows,
+            WidgetRole::TextArea,
+            theme,
+            metrics,
         )?,
         ParamControlSpec::ReadOnly { value } => {
             mount_control_text(cx, wrapper, &child_id, value, theme)?
@@ -620,7 +588,7 @@ fn mount_param_control(
             &format!("{value:.precision$}"),
             false,
             1,
-            "NumberInput",
+            WidgetRole::NumberInput,
             theme,
             metrics,
         )?,
@@ -645,7 +613,7 @@ fn mount_param_control(
 }
 
 fn mount_control_text(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     text: &str,
@@ -672,13 +640,13 @@ fn mount_control_text(
 }
 
 fn mount_text_field(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     value: &str,
     multiline: bool,
     min_rows: usize,
-    role: &'static str,
+    role: WidgetRole,
     theme: &Theme,
     metrics: NodeCardMetrics,
 ) -> Result<(), TemplateError> {
@@ -802,7 +770,7 @@ fn mount_text_field(
 }
 
 fn mount_slider(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     value: f32,
@@ -867,7 +835,7 @@ fn mount_slider(
 }
 
 fn mount_toggle(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     checked: bool,
@@ -926,7 +894,7 @@ fn mount_toggle(
 }
 
 fn mount_color_control(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     rgba: [f32; 4],
@@ -988,7 +956,7 @@ fn mount_color_control(
 }
 
 fn mount_node_header(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     header: &NodeHeaderSpec,
     theme: &Theme,
@@ -1128,15 +1096,15 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 trait TreeNodeExt {
-    fn with_semantic_role(self, role: &'static str) -> Self;
+    fn with_semantic_role(self, role: WidgetRole) -> Self;
     fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
     fn with_rect_move_invalidation(self, invalidation: RectMoveInvalidation) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: &'static str) -> Self {
-        self.props.semantic_role = Some(Cow::Borrowed(role));
+    fn with_semantic_role(mut self, role: WidgetRole) -> Self {
+        self.props.semantic_role = Some(role);
         self
     }
 

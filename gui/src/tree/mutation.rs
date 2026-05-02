@@ -1,9 +1,9 @@
 use super::dirty::DirtyFlags;
-use super::layout::{BoxStyle, Decoration, LeafKind, Position, Size};
+use super::layout::{LayoutDependencyKind, LayoutDependencyScope, LeafKind};
 use super::rect_invalidation::rect_invalidation;
+use super::style_patch::{apply_style_patch, StylePatch};
 use super::{NodeId, NodeKind, Tree};
 use crate::diagnostics::render_trace::{self, RenderTraceStage, TextPayloadSummary};
-use crate::geometry::TransformSpec;
 use crate::renderer::{Point, Rect};
 use crate::template::{InstanceId, TemplateError, TemplateId, TemplatePayload, TemplateRegistry};
 
@@ -48,17 +48,6 @@ pub enum TreeMutation {
         from_port: String,
         cursor_canvas: Point,
     },
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct StylePatch {
-    pub position: Option<Position>,
-    pub width: Option<Size>,
-    pub height: Option<Size>,
-    pub z_index: Option<i32>,
-    pub transform: Option<Option<TransformSpec>>,
-    pub decoration: Option<Option<Decoration>>,
-    pub replace_box_style: Option<BoxStyle>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -143,40 +132,58 @@ impl Tree {
                 }
                 if let Some(target) = self.get_mut(node) {
                     target.rect = rect;
-                    target.layout_meta.bump_explicit_rect();
                     if invalidation.size_changed {
-                        target.layout_meta.bump_style();
                         target.paint_meta.bump_visual();
                     } else if invalidation.position_changed {
                         target.paint_meta.bump_visual();
                     }
                 }
+                let scope = if flags.contains(DirtyFlags::LAYOUT) {
+                    LayoutDependencyScope::RelayoutBoundary
+                } else {
+                    LayoutDependencyScope::LocalNode
+                };
+                self.record_layout_dependency_change(
+                    node,
+                    LayoutDependencyKind::ExplicitRect,
+                    scope,
+                );
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
             }
             TreeMutation::SetStyle { node, patch } => {
                 let target = self.get_mut(node).ok_or(MutationError::MissingNode(node))?;
-                let flags = apply_style_patch(target, patch);
+                let result = apply_style_patch(target, patch);
+                if let Some((kind, scope)) = result.layout_dependency {
+                    self.record_layout_dependency_change(node, kind, scope);
+                }
+                let flags = result.flags;
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
             }
             TreeMutation::SetText { node, value } => {
-                let target = self.get_mut(node).ok_or(MutationError::MissingNode(node))?;
-                let NodeKind::Leaf(LeafKind::Text { content, .. }) = &mut target.kind else {
-                    return Err(MutationError::UnsupportedNodeKind {
-                        node,
-                        operation: "SetText",
-                    });
-                };
-                if *content == value {
-                    return Ok(Invalidation {
-                        node,
-                        flags: DirtyFlags::NONE,
-                    });
+                {
+                    let target = self.get_mut(node).ok_or(MutationError::MissingNode(node))?;
+                    let NodeKind::Leaf(LeafKind::Text { content, .. }) = &mut target.kind else {
+                        return Err(MutationError::UnsupportedNodeKind {
+                            node,
+                            operation: "SetText",
+                        });
+                    };
+                    if *content == value {
+                        return Ok(Invalidation {
+                            node,
+                            flags: DirtyFlags::NONE,
+                        });
+                    }
+                    *content = value;
+                    target.paint_meta.bump_text();
                 }
-                *content = value;
-                target.layout_meta.bump_text();
-                target.paint_meta.bump_text();
+                self.record_layout_dependency_change(
+                    node,
+                    LayoutDependencyKind::Text,
+                    LayoutDependencyScope::RelayoutBoundary,
+                );
                 let flags = DirtyFlags::TEXT_LAYOUT | DirtyFlags::PAINT;
                 self.mark_dirty(node, flags);
                 Ok(Invalidation { node, flags })
@@ -375,66 +382,4 @@ fn log_mutation_trace(
             error,
         },
     );
-}
-
-fn apply_style_patch(node: &mut super::TreeNode, patch: StylePatch) -> DirtyFlags {
-    if let Some(style) = patch.replace_box_style {
-        if node.style == style {
-            return DirtyFlags::NONE;
-        }
-        node.style = style;
-        node.layout_meta.bump_style();
-        node.paint_meta.bump_visual();
-        return DirtyFlags::STYLE | DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
-    }
-
-    let mut flags = DirtyFlags::NONE;
-
-    if let Some(position) = patch.position {
-        if node.style.position != position {
-            node.style.position = position;
-            node.layout_meta.bump_style();
-            node.paint_meta.bump_visual();
-            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
-        }
-    }
-    if let Some(width) = patch.width {
-        if node.style.width != width {
-            node.style.width = width;
-            node.layout_meta.bump_style();
-            node.paint_meta.bump_visual();
-            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
-        }
-    }
-    if let Some(height) = patch.height {
-        if node.style.height != height {
-            node.style.height = height;
-            node.layout_meta.bump_style();
-            node.paint_meta.bump_visual();
-            flags |= DirtyFlags::LAYOUT | DirtyFlags::HIT | DirtyFlags::PAINT;
-        }
-    }
-    if let Some(z_index) = patch.z_index {
-        if node.style.z_index != z_index {
-            node.style.z_index = z_index;
-            node.paint_meta.bump_paint_order();
-            flags |= DirtyFlags::PAINT_ORDER | DirtyFlags::HIT | DirtyFlags::PAINT;
-        }
-    }
-    if let Some(transform) = patch.transform {
-        if node.style.transform != transform {
-            node.style.transform = transform;
-            node.paint_meta.bump_visual();
-            flags |= DirtyFlags::PAINT | DirtyFlags::HIT;
-        }
-    }
-    if let Some(decoration) = patch.decoration {
-        if node.decoration != decoration {
-            node.decoration = decoration;
-            node.paint_meta.bump_visual();
-            flags |= DirtyFlags::PAINT;
-        }
-    }
-
-    flags
 }

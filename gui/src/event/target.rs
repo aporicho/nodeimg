@@ -1,4 +1,5 @@
 use crate::tree::{NodeId, NodeKind, Tree};
+use crate::widget::WidgetRole;
 
 pub(crate) struct TargetResolver<'a> {
     tree: &'a Tree,
@@ -56,25 +57,22 @@ impl<'a> TargetResolver<'a> {
         self.tree.node_by_str(&owner_id)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn widget_type_for_node(&self, node_id: NodeId) -> Option<&str> {
-        let owner_id = self.owner_node(node_id)?;
-        let node = self.tree.get(owner_id)?;
-        match &node.kind {
-            NodeKind::Widget(props) => Some(props.widget_type()),
-            _ => node.props.semantic_role.as_deref(),
-        }
+    pub(crate) fn widget_role(&self, id: &str) -> Option<WidgetRole> {
+        let node = self.tree.node_by_str(id)?;
+        self.widget_role_for_resolved_node(node)
     }
 
-    pub(crate) fn widget_type(&self, id: &str) -> Option<&str> {
-        self.widget_type_for_name(id)
+    #[cfg(test)]
+    pub(crate) fn widget_role_for_node(&self, node_id: NodeId) -> Option<WidgetRole> {
+        let owner = self.owner_node(node_id)?;
+        self.widget_role_for_resolved_node(owner)
     }
 
-    pub(crate) fn widget_type_for_name(&self, id: &str) -> Option<&str> {
-        let node = self.tree.get(self.tree.node_by_str(id)?)?;
+    fn widget_role_for_resolved_node(&self, node_id: NodeId) -> Option<WidgetRole> {
+        let node = self.tree.get(node_id)?;
         match &node.kind {
-            NodeKind::Widget(props) => Some(props.widget_type()),
-            _ => node.props.semantic_role.as_deref(),
+            NodeKind::Widget(props) => Some(props.role()),
+            _ => node.props.semantic_role,
         }
     }
 }
@@ -165,7 +163,10 @@ mod tests {
         let label = node_by_name(&tree, "button::label");
 
         assert_eq!(resolver.owner_id("button::label"), "button");
-        assert_eq!(resolver.widget_type_for_node(label), Some("Button"));
+        assert_eq!(
+            resolver.widget_role_for_node(label),
+            Some(WidgetRole::Button)
+        );
     }
 
     #[test]
@@ -193,7 +194,10 @@ mod tests {
         let titlebar = node_by_name(&tree, "panel::titlebar");
 
         assert_eq!(resolver.owner_id("panel::titlebar"), "panel");
-        assert_eq!(resolver.widget_type_for_node(titlebar), Some("Panel"));
+        assert_eq!(
+            resolver.widget_role_for_node(titlebar),
+            Some(WidgetRole::Panel)
+        );
     }
 
     #[test]
@@ -212,7 +216,10 @@ mod tests {
         let field = node_by_name(&tree, "input::field");
 
         assert_eq!(resolver.owner_id("input::field"), "input");
-        assert_eq!(resolver.widget_type_for_node(field), Some("TextInput"));
+        assert_eq!(
+            resolver.widget_role_for_node(field),
+            Some(WidgetRole::TextInput)
+        );
     }
 
     #[test]
@@ -234,7 +241,10 @@ mod tests {
         let thumb = node_by_name(&tree, "slider::thumb");
 
         assert_eq!(resolver.owner_id("slider::thumb"), "slider");
-        assert_eq!(resolver.widget_type_for_node(thumb), Some("Slider"));
+        assert_eq!(
+            resolver.widget_role_for_node(thumb),
+            Some(WidgetRole::Slider)
+        );
     }
 
     #[test]

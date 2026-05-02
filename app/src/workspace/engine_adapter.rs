@@ -12,7 +12,7 @@ use gui::canvas::{
     CanvasPortConnectionState, CanvasPortSide,
 };
 use gui::renderer::Rect;
-use gui::widget::mapping::{ParamControlMap, ParamControlSpec};
+use gui::widget::{ParamControlMap, ParamControlSpec};
 use std::collections::HashMap;
 
 #[derive(Default)]

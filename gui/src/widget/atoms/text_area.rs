@@ -20,6 +20,10 @@ impl WidgetProps for TextAreaProps {
         "TextArea"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::TextArea
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

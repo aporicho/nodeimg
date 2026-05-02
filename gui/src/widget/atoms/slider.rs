@@ -25,6 +25,9 @@ impl WidgetProps for SliderProps {
     fn widget_type(&self) -> &'static str {
         "Slider"
     }
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Slider
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }

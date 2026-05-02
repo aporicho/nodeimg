@@ -1,4 +1,5 @@
 use super::{LayoutCacheKey, LayoutOutput};
+use crate::tree::NodeId;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -19,8 +20,8 @@ impl LayoutCache {
         self.entries.len()
     }
 
-    pub fn remove(&mut self, key: &LayoutCacheKey) {
-        self.entries.remove(key);
+    pub fn invalidate_node(&mut self, node: NodeId) {
+        self.entries.retain(|key, _| key.node != node);
     }
 
     pub fn clear(&mut self) {

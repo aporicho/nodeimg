@@ -1,26 +1,27 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::node_template::CanvasNodeRenderView;
-use gui::canvas::scene_diff::{scene_change_to_mutation, CanvasSceneChange};
 use gui::canvas::scene_model::{
     CanvasPendingConnectionState, CanvasSceneModel, CanvasSceneNodeState,
 };
-use gui::canvas::{canvas_node_stable_id, CanvasConnectionView, CanvasPendingConnectionView};
+use gui::canvas::{
+    canvas_node_stable_id, scene_change_to_mutation, CanvasConnectionView,
+    CanvasPendingConnectionView, CanvasSceneChange,
+};
 use gui::context::Context;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
-use gui::panel::retained::{PanelContentTemplate, PanelFrameTemplateData};
-use gui::panel::{PanelConfig, PanelId};
+use gui::layout::{Decoration, TextureHandle};
+use gui::panel::{PanelConfig, PanelContentTemplate, PanelFrameTemplateData, PanelId};
 use gui::renderer::{Border, ImageStyle, Point, Rect};
+use gui::scene::{MutationError, SceneMutation, StylePatch};
 use gui::template::{
     InstanceId, SlotValue, SlotValues, TemplateId, TemplatePayload, NODE_PALETTE_CATEGORY_TEMPLATE,
     NODE_PALETTE_EMPTY_TEMPLATE, NODE_PALETTE_ITEM_TEMPLATE, NODE_PALETTE_TEMPLATE,
     PANEL_FRAME_TEMPLATE,
 };
 use gui::theme::Theme;
-use gui::tree::layout::{Decoration, TextureHandle};
-use gui::tree::{MutationError, StylePatch, TreeMutation};
-use gui::widget::mapping::ParamControlSpec;
+use gui::widget::ParamControlSpec;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
@@ -117,11 +118,11 @@ impl WorkspaceSceneController {
         gui: &mut Context,
         input: WorkspaceSceneInput<'_>,
     ) -> Result<SceneSyncStats, MutationError> {
-        let roots = gui.ensure_retained_root(input.viewport)?;
+        let roots = gui.scene().ensure_retained_root(input.viewport)?;
         let canvas_transform =
             TransformSpec::translate_scale([input.camera.x, input.camera.y], input.camera.zoom);
         if self.canvas.set_canvas_transform(canvas_transform) {
-            gui.update_canvas_transform(canvas_transform)?;
+            gui.scene().update_canvas_transform(canvas_transform)?;
         }
 
         let mut stats = SceneSyncStats::default();
@@ -134,7 +135,7 @@ impl WorkspaceSceneController {
         let mut mutations = Vec::new();
         let grid_rect = canvas_grid_rect(input.viewport, input.camera);
         if self.canvas.set_grid_rect(grid_rect) {
-            mutations.push(TreeMutation::SetRect {
+            mutations.push(SceneMutation::SetRect {
                 node: roots.canvas_grid,
                 rect: grid_rect,
             });
@@ -172,7 +173,7 @@ impl WorkspaceSceneController {
         }
 
         stats.mutations_queued += mutations.len();
-        let invalidations = gui.apply_mutations(mutations)?;
+        let invalidations = gui.scene().apply_many(mutations)?;
         stats.mutations_effective += invalidations
             .iter()
             .filter(|invalidation| !invalidation.flags.is_empty())
@@ -199,7 +200,7 @@ impl WorkspaceSceneController {
         for view in input.canvas_nodes {
             let owner_id = view.state.owner_id.as_str();
             let stable_id = canvas_node_stable_id(owner_id);
-            if let Some(root) = gui.node_id_by_name(&stable_id) {
+            if let Some(root) = gui.query().node_id_by_name(&stable_id) {
                 self.canvas.insert_node_state(
                     owner_id.to_string(),
                     root,
@@ -218,7 +219,7 @@ impl WorkspaceSceneController {
         theme: &Theme,
         preview_image: TextureHandle,
         engine: &EnginePanelState,
-        mutations: &mut Vec<TreeMutation>,
+        mutations: &mut Vec<SceneMutation>,
     ) {
         let desired = desired_panels.iter().copied().collect::<BTreeSet<_>>();
         let panels = retained_panels(preview_image, engine);
@@ -239,8 +240,8 @@ impl WorkspaceSceneController {
                 .map(str::to_string),
         );
         for id in stale_ids {
-            if let Some(root) = gui.node_id_by_name(&id) {
-                mutations.push(TreeMutation::Unmount { node: root });
+            if let Some(root) = gui.query().node_id_by_name(&id) {
+                mutations.push(SceneMutation::Unmount { node: root });
             }
             self.workspace_scene.remove_panel(&id);
         }
@@ -249,11 +250,11 @@ impl WorkspaceSceneController {
             if !desired.contains(&panel.kind) {
                 continue;
             }
-            let Some(runtime) = gui.ensure_panel_runtime(&panel.config) else {
+            let Some(runtime) = gui.panel_mut().ensure_runtime(&panel.config) else {
                 continue;
             };
             let id = panel.config.id.as_str().to_string();
-            let root = gui.node_id_by_name(&id);
+            let root = gui.query().node_id_by_name(&id);
             let next_state = panel_applied_state(
                 runtime.visible,
                 runtime.rect,
@@ -262,7 +263,7 @@ impl WorkspaceSceneController {
             );
             if !runtime.visible {
                 if let Some(root) = root {
-                    mutations.push(TreeMutation::Unmount { node: root });
+                    mutations.push(SceneMutation::Unmount { node: root });
                 }
                 self.workspace_scene.remove_panel(&id);
                 continue;
@@ -270,13 +271,13 @@ impl WorkspaceSceneController {
             if let Some(root) = root {
                 let previous = self.workspace_scene.panel(&id);
                 if previous.is_none_or(|state| state.rect != runtime.rect) {
-                    mutations.push(TreeMutation::SetRect {
+                    mutations.push(SceneMutation::SetRect {
                         node: root,
                         rect: runtime.rect,
                     });
                 }
                 if previous.is_none_or(|state| state.z_index != runtime.z_index) {
-                    mutations.push(TreeMutation::SetZIndex {
+                    mutations.push(SceneMutation::SetZIndex {
                         node: root,
                         z_index: runtime.z_index,
                     });
@@ -286,8 +287,8 @@ impl WorkspaceSceneController {
                         .and_then(|state| state.texts.get(text_id))
                         .is_none_or(|old| old != value)
                     {
-                        if let Some(node) = gui.node_id_by_name(text_id) {
-                            mutations.push(TreeMutation::SetText {
+                        if let Some(node) = gui.query().node_id_by_name(text_id) {
+                            mutations.push(SceneMutation::SetText {
                                 node,
                                 value: value.clone(),
                             });
@@ -298,7 +299,7 @@ impl WorkspaceSceneController {
                 continue;
             }
 
-            mutations.push(TreeMutation::MountTemplate {
+            mutations.push(SceneMutation::MountTemplate {
                 parent,
                 template: TemplateId::from(PANEL_FRAME_TEMPLATE),
                 instance: InstanceId::from(id.clone()),
@@ -330,7 +331,7 @@ impl WorkspaceSceneController {
         canvas_root: usize,
         views: &[CanvasNodeRenderView],
         gui: &Context,
-        mutations: &mut Vec<TreeMutation>,
+        mutations: &mut Vec<SceneMutation>,
         stats: &mut SceneSyncStats,
         theme: &Theme,
     ) {
@@ -347,7 +348,7 @@ impl WorkspaceSceneController {
             .collect::<Vec<_>>();
         for (owner_id, root) in stale {
             self.canvas.remove_node(&owner_id);
-            mutations.push(TreeMutation::Unmount { node: root });
+            mutations.push(SceneMutation::Unmount { node: root });
             stats.nodes_removed += 1;
         }
 
@@ -365,16 +366,16 @@ impl WorkspaceSceneController {
                 continue;
             }
 
-            if let Some(root) = gui.node_id_by_name(&stable_id) {
+            if let Some(root) = gui.query().node_id_by_name(&stable_id) {
                 let previous = self.canvas.node_state(owner_id);
                 if previous.and_then(|state| state.rect) != next_state.rect {
-                    mutations.push(TreeMutation::SetRect {
+                    mutations.push(SceneMutation::SetRect {
                         node: root,
                         rect: view.state.layout.rect,
                     });
                 }
                 if previous.and_then(|state| state.z_index) != next_state.z_index {
-                    mutations.push(TreeMutation::SetZIndex {
+                    mutations.push(SceneMutation::SetZIndex {
                         node: root,
                         z_index: view.state.layout.z_index,
                     });
@@ -386,8 +387,11 @@ impl WorkspaceSceneController {
                 .and_then(|state| state.label.as_deref())
                 != next_state.label.as_deref()
             {
-                if let Some(label) = gui.node_id_by_name(&format!("{stable_id}::label_text")) {
-                    mutations.push(TreeMutation::SetText {
+                if let Some(label) = gui
+                    .query()
+                    .node_id_by_name(&format!("{stable_id}::label_text"))
+                {
+                    mutations.push(SceneMutation::SetText {
                         node: label,
                         value: view.template.title.clone(),
                     });
@@ -399,8 +403,8 @@ impl WorkspaceSceneController {
                 .and_then(|state| state.card_decoration.as_ref())
                 != next_state.card_decoration.as_ref()
             {
-                if let Some(card) = gui.node_id_by_name(&format!("{stable_id}::card")) {
-                    mutations.push(TreeMutation::SetStyle {
+                if let Some(card) = gui.query().node_id_by_name(&format!("{stable_id}::card")) {
+                    mutations.push(SceneMutation::SetStyle {
                         node: card,
                         patch: StylePatch {
                             decoration: next_state.card_decoration.clone(),
@@ -425,7 +429,7 @@ impl WorkspaceSceneController {
         connections: &[CanvasConnectionView],
         pending: Option<&CanvasPendingConnectionView>,
         gui: &Context,
-        mutations: &mut Vec<TreeMutation>,
+        mutations: &mut Vec<SceneMutation>,
         stats: &mut SceneSyncStats,
     ) {
         let desired = connections
@@ -441,7 +445,7 @@ impl WorkspaceSceneController {
             .collect::<Vec<_>>();
         for id in stale {
             self.canvas.remove_connection(&id);
-            if let Some(root) = gui.node_id_by_name(&id) {
+            if let Some(root) = gui.query().node_id_by_name(&id) {
                 mutations.push(scene_change_to_mutation(
                     CanvasSceneChange::RemoveConnection { root },
                 ));
@@ -452,11 +456,11 @@ impl WorkspaceSceneController {
         for (index, connection) in connections.iter().enumerate() {
             let id = format!("canvas_connection::{index}");
             if let Some(previous) = self.canvas.connection(&id) {
-                if let Some(node) = gui.node_id_by_name(&id) {
+                if let Some(node) = gui.query().node_id_by_name(&id) {
                     if previous.from_port != connection.from_port_id
                         || previous.to_port != connection.to_port_id
                     {
-                        mutations.push(TreeMutation::SetConnection {
+                        mutations.push(SceneMutation::SetConnection {
                             node,
                             from_port: connection.from_port_id.clone(),
                             to_port: connection.to_port_id.clone(),
@@ -485,7 +489,7 @@ impl WorkspaceSceneController {
         }
 
         let pending_id = "canvas_connection::pending";
-        match (pending, gui.node_id_by_name(pending_id)) {
+        match (pending, gui.query().node_id_by_name(pending_id)) {
             (Some(pending), Some(node)) => {
                 let state = CanvasPendingConnectionState {
                     from_port: pending.from_port_id.clone(),
@@ -543,12 +547,12 @@ impl WorkspaceSceneController {
         let Some(overlay) = &self.node_palette else {
             return Ok(0);
         };
-        if gui.node_id_by_name("node_palette").is_some() {
+        if gui.query().node_id_by_name("node_palette").is_some() {
             return Ok(0);
         }
         let rect = node_palette_rect(overlay.x, overlay.y, viewport);
 
-        gui.apply_mutation(TreeMutation::MountTemplate {
+        gui.scene().apply(SceneMutation::MountTemplate {
             parent,
             template: TemplateId::from(NODE_PALETTE_TEMPLATE),
             instance: InstanceId::from("node_palette"),
@@ -562,12 +566,12 @@ impl WorkspaceSceneController {
         &mut self,
         viewport: Rect,
         gui: &Context,
-        mutations: &mut Vec<TreeMutation>,
+        mutations: &mut Vec<SceneMutation>,
     ) {
-        let root = gui.node_id_by_name("node_palette");
+        let root = gui.query().node_id_by_name("node_palette");
         let Some(overlay) = &self.node_palette else {
             if let Some(root) = root {
-                mutations.push(TreeMutation::Unmount { node: root });
+                mutations.push(SceneMutation::Unmount { node: root });
             }
             self.workspace_scene.clear_palette();
             return;
@@ -575,13 +579,13 @@ impl WorkspaceSceneController {
         let Some(root) = root else {
             return;
         };
-        let Some(items_parent) = gui.node_id_by_name("node_palette::items") else {
+        let Some(items_parent) = gui.query().node_id_by_name("node_palette::items") else {
             return;
         };
 
         let root_rect = node_palette_rect(overlay.x, overlay.y, viewport);
         if self.workspace_scene.palette_root_rect() != Some(root_rect) {
-            mutations.push(TreeMutation::SetRect {
+            mutations.push(SceneMutation::SetRect {
                 node: root,
                 rect: root_rect,
             });
@@ -592,8 +596,8 @@ impl WorkspaceSceneController {
         if overlay.state.items.is_empty() {
             let id = "node_palette_empty".to_string();
             desired.insert(id.clone(), "No nodes available".to_string());
-            if gui.node_id_by_name(&id).is_none() {
-                mutations.push(TreeMutation::MountTemplate {
+            if gui.query().node_id_by_name(&id).is_none() {
+                mutations.push(SceneMutation::MountTemplate {
                     parent: items_parent,
                     template: TemplateId::from(NODE_PALETTE_EMPTY_TEMPLATE),
                     instance: InstanceId::from(id),
@@ -611,8 +615,8 @@ impl WorkspaceSceneController {
                 if seen_categories.insert(item.category.as_str()) {
                     let category_id = format!("node_palette::category::{}", item.category);
                     desired.insert(category_id.clone(), item.category.clone());
-                    if gui.node_id_by_name(&category_id).is_none() {
-                        mutations.push(TreeMutation::MountTemplate {
+                    if gui.query().node_id_by_name(&category_id).is_none() {
+                        mutations.push(SceneMutation::MountTemplate {
                             parent: items_parent,
                             template: TemplateId::from(NODE_PALETTE_CATEGORY_TEMPLATE),
                             instance: InstanceId::from(category_id.clone()),
@@ -623,13 +627,14 @@ impl WorkspaceSceneController {
                         });
                         self.workspace_scene
                             .set_palette_child_label(category_id, item.category.clone());
-                    } else if let Some(label) =
-                        gui.node_id_by_name(&format!("{category_id}::label"))
+                    } else if let Some(label) = gui
+                        .query()
+                        .node_id_by_name(&format!("{category_id}::label"))
                     {
                         if self.workspace_scene.palette_child_label(&category_id)
                             != Some(item.category.as_str())
                         {
-                            mutations.push(TreeMutation::SetText {
+                            mutations.push(SceneMutation::SetText {
                                 node: label,
                                 value: item.category.clone(),
                             });
@@ -642,8 +647,8 @@ impl WorkspaceSceneController {
                 let item_id = node_palette_item_id(&item.type_id);
                 let label = format!("{}  [{}]", item.name, item.source);
                 desired.insert(item_id.clone(), label.clone());
-                if gui.node_id_by_name(&item_id).is_none() {
-                    mutations.push(TreeMutation::MountTemplate {
+                if gui.query().node_id_by_name(&item_id).is_none() {
+                    mutations.push(SceneMutation::MountTemplate {
                         parent: items_parent,
                         template: TemplateId::from(NODE_PALETTE_ITEM_TEMPLATE),
                         instance: InstanceId::from(item_id.clone()),
@@ -655,9 +660,11 @@ impl WorkspaceSceneController {
                         item_id,
                         format!("{}  [{}]", item.name, item.source),
                     );
-                } else if let Some(label_node) = gui.node_id_by_name(&format!("{item_id}::label")) {
+                } else if let Some(label_node) =
+                    gui.query().node_id_by_name(&format!("{item_id}::label"))
+                {
                     if self.workspace_scene.palette_child_label(&item_id) != Some(label.as_str()) {
-                        mutations.push(TreeMutation::SetText {
+                        mutations.push(SceneMutation::SetText {
                             node: label_node,
                             value: label.clone(),
                         });
@@ -674,8 +681,8 @@ impl WorkspaceSceneController {
             .map(str::to_string)
             .collect::<Vec<_>>()
         {
-            if let Some(node) = gui.node_id_by_name(&id) {
-                mutations.push(TreeMutation::Unmount { node });
+            if let Some(node) = gui.query().node_id_by_name(&id) {
+                mutations.push(SceneMutation::Unmount { node });
             }
             self.workspace_scene.remove_palette_child(&id);
         }
@@ -684,10 +691,10 @@ impl WorkspaceSceneController {
         }
     }
 
-    fn sync_node_palette_disabled(&mut self, gui: &Context, mutations: &mut Vec<TreeMutation>) {
+    fn sync_node_palette_disabled(&mut self, gui: &Context, mutations: &mut Vec<SceneMutation>) {
         self.node_palette = None;
-        if let Some(root) = gui.node_id_by_name("node_palette") {
-            mutations.push(TreeMutation::Unmount { node: root });
+        if let Some(root) = gui.query().node_id_by_name("node_palette") {
+            mutations.push(SceneMutation::Unmount { node: root });
         }
         self.workspace_scene.clear_palette();
     }
@@ -767,7 +774,7 @@ fn sync_canvas_node_param_texts(
     next_state: &CanvasSceneNodeState,
     previous: Option<&CanvasSceneNodeState>,
     gui: &Context,
-    mutations: &mut Vec<TreeMutation>,
+    mutations: &mut Vec<SceneMutation>,
 ) {
     for (target_id, value) in &next_state.param_texts {
         if previous
@@ -776,8 +783,8 @@ fn sync_canvas_node_param_texts(
         {
             continue;
         }
-        if let Some(node) = gui.node_id_by_name(target_id) {
-            mutations.push(TreeMutation::SetText {
+        if let Some(node) = gui.query().node_id_by_name(target_id) {
+            mutations.push(SceneMutation::SetText {
                 node,
                 value: value.clone(),
             });
@@ -951,11 +958,11 @@ mod tests {
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
+    use gui::layout::TextureHandle;
     use gui::output::{GuiEvent, PanelEvent, WidgetEvent};
     use gui::renderer::TextMeasurer;
     use gui::shell::{AppEvent, Key, Modifiers, MouseButton};
     use gui::theme::light_theme;
-    use gui::tree::layout::TextureHandle;
 
     fn viewport() -> Rect {
         Rect {
@@ -997,11 +1004,14 @@ mod tests {
                 },
             )
             .expect("sync");
-        gui.flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
 
-        assert!(gui.node_exists("node_palette"));
-        assert!(gui.node_exists("node_palette::category::Generators"));
-        assert!(gui.node_exists("node_library::add::image_gen"));
+        assert!(gui.query().node_exists("node_palette"));
+        assert!(gui
+            .query()
+            .node_exists("node_palette::category::Generators"));
+        assert!(gui.query().node_exists("node_library::add::image_gen"));
         assert_eq!(gui.last_frame_stats().widget_build_calls, 0);
         assert_eq!(gui.last_frame_stats().full_tree_scans, 0);
     }
@@ -1047,8 +1057,8 @@ mod tests {
             )
             .expect("close sync");
 
-        assert!(!gui.node_exists("node_palette"));
-        assert!(!gui.node_exists("node_palette_empty"));
+        assert!(!gui.query().node_exists("node_palette"));
+        assert!(!gui.query().node_exists("node_palette_empty"));
     }
 
     #[test]
@@ -1122,7 +1132,7 @@ mod tests {
                 },
             )
             .expect("first sync");
-        assert_eq!(gui.node_rect("canvas_grid"), Some(expected_grid));
+        assert_eq!(gui.query().node_rect("canvas_grid"), Some(expected_grid));
 
         controller
             .sync(
@@ -1141,7 +1151,7 @@ mod tests {
             )
             .expect("second sync");
 
-        assert_eq!(gui.node_rect("canvas_grid"), Some(expected_grid));
+        assert_eq!(gui.query().node_rect("canvas_grid"), Some(expected_grid));
     }
 
     #[test]
@@ -1196,12 +1206,14 @@ mod tests {
 
         assert!(first.mutations_queued > 0);
         assert_eq!(second.mutations_queued, 0);
-        assert!(gui.node_exists("canvas_grid"));
-        assert!(gui.node_exists("canvas_node::diagnostic_node::retained_clean_room"));
-        assert!(gui.node_exists("toolbar"));
-        assert!(!gui.node_exists("preview"));
-        assert!(!gui.node_exists("engine"));
-        assert!(!gui.node_exists("node_palette"));
+        assert!(gui.query().node_exists("canvas_grid"));
+        assert!(gui
+            .query()
+            .node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(gui.query().node_exists("toolbar"));
+        assert!(!gui.query().node_exists("preview"));
+        assert!(!gui.query().node_exists("engine"));
+        assert!(!gui.query().node_exists("node_palette"));
     }
 
     #[test]
@@ -1237,14 +1249,17 @@ mod tests {
                 },
             )
             .expect("initial clean room sync");
-        gui.flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
 
-        let toolbar = gui.node_id_by_name("toolbar").expect("toolbar");
+        let toolbar = gui.query().node_id_by_name("toolbar").expect("toolbar");
         let titlebar = gui
+            .query()
             .node_id_by_name("toolbar::titlebar")
             .expect("toolbar titlebar");
-        let before_root = gui.node_rect("toolbar").expect("toolbar rect");
+        let before_root = gui.query().node_rect("toolbar").expect("toolbar rect");
         let before_titlebar = gui
+            .query()
             .node_rect("toolbar::titlebar")
             .expect("toolbar titlebar rect");
         let drag_start_x = before_titlebar.x + 12.0;
@@ -1252,17 +1267,17 @@ mod tests {
         let dx = 260.0;
         let dy = 120.0;
 
-        assert!(gui.handle_panel_event(&PanelEvent::DragStart {
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragStart {
             id: "toolbar".to_string(),
             x: drag_start_x,
             y: drag_start_y,
         }));
-        assert!(gui.handle_panel_event(&PanelEvent::DragMove {
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragMove {
             id: "toolbar".to_string(),
             x: drag_start_x + dx,
             y: drag_start_y + dy,
         }));
-        assert!(gui.handle_panel_event(&PanelEvent::DragEnd {
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragEnd {
             id: "toolbar".to_string(),
             x: drag_start_x + dx,
             y: drag_start_y + dy,
@@ -1284,10 +1299,15 @@ mod tests {
                 },
             )
             .expect("drag sync");
-        gui.flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
 
-        let after_root = gui.node_rect("toolbar").expect("moved toolbar rect");
+        let after_root = gui
+            .query()
+            .node_rect("toolbar")
+            .expect("moved toolbar rect");
         let after_titlebar = gui
+            .query()
             .node_rect("toolbar::titlebar")
             .expect("moved toolbar titlebar rect");
 
@@ -1297,14 +1317,78 @@ mod tests {
         assert_eq!(after_titlebar.x, before_titlebar.x + dx);
         assert_eq!(after_titlebar.y, before_titlebar.y + dy);
         assert!(gui
+            .query()
             .hit_test(after_titlebar.x + 12.0, after_titlebar.y + 10.0)
             .contains(titlebar));
         assert!(!gui
+            .query()
             .hit_test(before_titlebar.x + 12.0, before_titlebar.y + 10.0)
             .contains(toolbar));
-        assert!(!gui.node_exists("preview"));
-        assert!(!gui.node_exists("engine"));
-        assert!(!gui.node_exists("node_palette"));
+
+        let second_drag_start_x = after_titlebar.x + 12.0;
+        let second_drag_start_y = after_titlebar.y + 10.0;
+        let second_dx = -90.0;
+        let second_dy = 44.0;
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragStart {
+            id: "toolbar".to_string(),
+            x: second_drag_start_x,
+            y: second_drag_start_y,
+        }));
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragMove {
+            id: "toolbar".to_string(),
+            x: second_drag_start_x + second_dx,
+            y: second_drag_start_y + second_dy,
+        }));
+        assert!(gui.panel_mut().handle_event(&PanelEvent::DragEnd {
+            id: "toolbar".to_string(),
+            x: second_drag_start_x + second_dx,
+            y: second_drag_start_y + second_dy,
+        }));
+
+        let second_sync = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("second drag sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let final_root = gui
+            .query()
+            .node_rect("toolbar")
+            .expect("final toolbar rect");
+        let final_titlebar = gui
+            .query()
+            .node_rect("toolbar::titlebar")
+            .expect("final toolbar titlebar rect");
+
+        assert!(second_sync.mutations_queued > 0);
+        assert_eq!(final_root.x, after_root.x + second_dx);
+        assert_eq!(final_root.y, after_root.y + second_dy);
+        assert_eq!(final_titlebar.x, after_titlebar.x + second_dx);
+        assert_eq!(final_titlebar.y, after_titlebar.y + second_dy);
+        assert!(gui
+            .query()
+            .hit_test(final_titlebar.x + 12.0, final_titlebar.y + 10.0)
+            .contains(titlebar));
+        assert!(!gui
+            .query()
+            .hit_test(after_titlebar.x + 12.0, after_titlebar.y + 10.0)
+            .contains(toolbar));
+        assert!(!gui.query().node_exists("preview"));
+        assert!(!gui.query().node_exists("engine"));
+        assert!(!gui.query().node_exists("node_palette"));
     }
 
     #[test]
@@ -1352,9 +1436,11 @@ mod tests {
                 },
             )
             .expect("full sync");
-        assert!(gui.node_exists("canvas_node::showcase_node::solo_control"));
-        assert!(gui.node_exists("toolbar"));
-        assert!(gui.node_exists("node_palette"));
+        assert!(gui
+            .query()
+            .node_exists("canvas_node::showcase_node::solo_control"));
+        assert!(gui.query().node_exists("toolbar"));
+        assert!(gui.query().node_exists("node_palette"));
 
         let clean_identity = diagnostic_scene::diagnostic_node_identity();
         let clean_node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
@@ -1382,12 +1468,16 @@ mod tests {
             )
             .expect("clean room sync");
 
-        assert!(gui.node_exists("canvas_node::diagnostic_node::retained_clean_room"));
-        assert!(!gui.node_exists("canvas_node::showcase_node::solo_control"));
-        assert!(gui.node_exists("toolbar"));
-        assert!(!gui.node_exists("preview"));
-        assert!(!gui.node_exists("engine"));
-        assert!(!gui.node_exists("node_palette"));
+        assert!(gui
+            .query()
+            .node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(!gui
+            .query()
+            .node_exists("canvas_node::showcase_node::solo_control"));
+        assert!(gui.query().node_exists("toolbar"));
+        assert!(!gui.query().node_exists("preview"));
+        assert!(!gui.query().node_exists("engine"));
+        assert!(!gui.query().node_exists("node_palette"));
         assert!(!controller.node_palette_open());
     }
 
@@ -1432,35 +1522,38 @@ mod tests {
                 },
             )
             .expect("sync");
-        gui.flush_layout_dirty(viewport(), &mut measurer);
-        gui.sync_retained_canvas_text_boxes(&nodes, &mut measurer, &theme);
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut measurer);
+        gui.runtime_mut()
+            .sync_retained_canvas_text_boxes(&nodes, &mut measurer, &theme);
 
         let field_id =
             "canvas_node::showcase_node::text_area_control::body::param::0::control::widget::field";
-        let field = gui.node_rect(field_id).expect("field rect");
+        let field = gui.query().node_rect(field_id).expect("field rect");
         let (x, y) = camera.canvas_to_screen(field.x + 8.0, field.y + 8.0);
-        let chain = gui.hit_test(x, y);
+        let query = gui.query();
+        let chain = query.hit_test(x, y);
         assert_eq!(
-            chain.leaf().and_then(|node| gui.node_name(node)),
+            chain.leaf().and_then(|node| query.node_name(node)),
             Some(field_id)
         );
 
-        let click = gui.handle_event(&AppEvent::MousePress {
+        let click = gui.input().handle_event(&AppEvent::MousePress {
             x,
             y,
             button: MouseButton::Left,
         });
         assert!(click.consumed);
-        let _ = gui.handle_event(&AppEvent::MouseRelease {
+        let _ = gui.input().handle_event(&AppEvent::MouseRelease {
             x,
             y,
             button: MouseButton::Left,
         });
-        let _ = gui.handle_event(&AppEvent::KeyPress {
+        let _ = gui.input().handle_event(&AppEvent::KeyPress {
             key: Key::End,
             modifiers: Modifiers::default(),
         });
-        let input = gui.handle_event(&AppEvent::TextInput {
+        let input = gui.input().handle_event(&AppEvent::TextInput {
             text: "!".to_string(),
         });
 

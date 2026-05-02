@@ -3,8 +3,8 @@ use super::frame_stats::FrameStats;
 use super::hit_order::HitOrderCache;
 use super::index::{TreeIndex, TreeIndexError};
 use super::layout::{
-    LayoutCache, LayoutConstraints, LayoutDirtyQueues, LayoutDirtyReason, LayoutInput,
-    LayoutOutput, RelayoutBoundaryReason,
+    LayoutCache, LayoutConstraints, LayoutDependencyKind, LayoutDependencyScope, LayoutDirtyQueues,
+    LayoutDirtyReason, LayoutInput, LayoutOutput, RelayoutBoundaryReason,
 };
 use super::node::{NodeId, TreeNode};
 use super::paint_cache::PaintCache;
@@ -259,6 +259,7 @@ impl Tree {
         self.get_mut(id)?.runtime_slots.remove::<T>()
     }
 
+    #[cfg(test)]
     pub(crate) fn take_retained_runtime_slots(&mut self, id: &str) -> Option<RuntimeSlots> {
         self.retained_runtime.take(id)
     }
@@ -313,19 +314,36 @@ impl Tree {
         if let Some(parent_id) = self.parents.remove(&child) {
             if let Some(parent) = self.get_mut(parent_id) {
                 parent.children.retain(|candidate| *candidate != child);
-                parent.layout_meta.bump_children();
                 parent.paint_meta.bump_paint_order();
             }
+            self.record_layout_dependency_change(
+                parent_id,
+                LayoutDependencyKind::Children,
+                LayoutDependencyScope::RelayoutBoundary,
+            );
             return;
         }
 
-        for node in self.nodes.iter_mut().filter_map(|node| node.as_mut()) {
+        let mut changed_parents = Vec::new();
+        for (parent_id, node) in self
+            .nodes
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(node_id, node)| node.as_mut().map(|node| (node_id, node)))
+        {
             let before = node.children.len();
             node.children.retain(|candidate| *candidate != child);
             if node.children.len() != before {
-                node.layout_meta.bump_children();
                 node.paint_meta.bump_paint_order();
+                changed_parents.push(parent_id);
             }
+        }
+        for parent_id in changed_parents {
+            self.record_layout_dependency_change(
+                parent_id,
+                LayoutDependencyKind::Children,
+                LayoutDependencyScope::RelayoutBoundary,
+            );
         }
         if self.root == Some(child) {
             self.root = None;
@@ -340,14 +358,19 @@ impl Tree {
             return false;
         };
         parent_node.children.push(child);
-        parent_node.layout_meta.bump_children();
         parent_node.paint_meta.bump_paint_order();
         self.parents.insert(child, parent);
+        self.record_layout_dependency_change(
+            parent,
+            LayoutDependencyKind::Children,
+            LayoutDependencyScope::RelayoutBoundary,
+        );
         self.hit_order_cache.borrow_mut().clear();
         self.paint_order_cache.borrow_mut().clear();
         true
     }
 
+    #[cfg(test)]
     pub(crate) fn set_children(&mut self, parent: NodeId, children: Vec<NodeId>) -> bool {
         if self.get(parent).is_none() {
             return false;
@@ -360,12 +383,20 @@ impl Tree {
             self.parents.remove(&child);
         }
         self.reparent_children(parent, &children);
+        let mut changed = false;
         if let Some(parent_node) = self.get_mut(parent) {
             if parent_node.children != children {
-                parent_node.layout_meta.bump_children();
                 parent_node.paint_meta.bump_paint_order();
+                changed = true;
             }
             parent_node.children = children;
+        }
+        if changed {
+            self.record_layout_dependency_change(
+                parent,
+                LayoutDependencyKind::Children,
+                LayoutDependencyScope::RelayoutBoundary,
+            );
         }
         self.hit_order_cache.borrow_mut().clear();
         self.paint_order_cache.borrow_mut().clear();
@@ -439,6 +470,34 @@ impl Tree {
                 return self.root.or(Some(current));
             };
             current = parent;
+        }
+    }
+
+    pub(crate) fn record_layout_dependency_change(
+        &mut self,
+        node: NodeId,
+        kind: LayoutDependencyKind,
+        scope: LayoutDependencyScope,
+    ) {
+        let Some(target) = self.get_mut(node) else {
+            return;
+        };
+        match kind {
+            LayoutDependencyKind::Style => target.layout_meta.bump_style(),
+            LayoutDependencyKind::Text => target.layout_meta.bump_text(),
+            LayoutDependencyKind::Children => target.layout_meta.bump_children(),
+            LayoutDependencyKind::ExplicitRect => target.layout_meta.bump_explicit_rect(),
+        }
+
+        if scope == LayoutDependencyScope::LocalNode {
+            return;
+        }
+
+        if let Some(boundary) = self.nearest_relayout_boundary(node) {
+            if let Some(boundary_node) = self.get_mut(boundary) {
+                boundary_node.layout_meta.bump_layout_dependency();
+            }
+            self.layout_cache.invalidate_node(boundary);
         }
     }
 
@@ -752,18 +811,11 @@ impl Tree {
         constraints: LayoutConstraints,
     ) -> Option<LayoutInput> {
         let tree_node = self.get(node)?;
-        let text_revision = matches!(
-            tree_node.kind,
-            super::NodeKind::Leaf(super::layout::LeafKind::Text { .. })
-        )
-        .then_some(tree_node.layout_meta.text_revision);
         Some(LayoutInput {
             node,
             constraints,
             available_content_width: constraints.max_width,
-            style_revision: tree_node.layout_meta.style_revision,
-            text_revision,
-            children_revision: tree_node.layout_meta.children_revision,
+            layout_dependency_revision: tree_node.layout_meta.layout_dependency_revision,
         })
     }
 
@@ -931,7 +983,7 @@ impl Tree {
         let dirty = self.snapshot_dirty_flags(node_id);
         let paint_boundary = RepaintBoundaryId(node_id);
         let normal = format!(
-            "{indent}node={node_id} stable_id={:?} kind={} parent={parent:?} children={:?} rect={:?} visible={} dirty={} layout_dirty_boundary={} layout_dirty_text={} paint_dirty_boundary={} paint_dirty_order={} composite_dirty={} layout_boundary={:?} paint_boundary={:?} layout_rev=(style:{} text:{} children:{} rect:{}) paint_rev=(visual:{} text:{} order:{} fragment:{}) runtime_slots={}",
+            "{indent}node={node_id} stable_id={:?} kind={} parent={parent:?} children={:?} rect={:?} visible={} dirty={} layout_dirty_boundary={} layout_dirty_text={} paint_dirty_boundary={} paint_dirty_order={} composite_dirty={} layout_boundary={:?} paint_boundary={:?} layout_rev=(style:{} text:{} children:{} rect:{} dependency:{}) paint_rev=(visual:{} text:{} order:{} fragment:{}) runtime_slots={}",
             node.id.as_ref(),
             normal_kind_summary(&node.kind),
             node.children,
@@ -949,6 +1001,7 @@ impl Tree {
             node.layout_meta.text_revision.get(),
             node.layout_meta.children_revision.get(),
             node.layout_meta.explicit_rect_revision.get(),
+            node.layout_meta.layout_dependency_revision.get(),
             node.paint_meta.visual_revision.get(),
             node.paint_meta.text_paint_revision.get(),
             node.paint_meta.paint_order_revision.get(),
@@ -1006,6 +1059,7 @@ impl Tree {
         flags
     }
 
+    #[cfg(test)]
     pub(crate) fn record_widget_build_call(&self) {
         self.frame_stats.borrow_mut().widget_build_calls += 1;
     }
@@ -1018,6 +1072,7 @@ impl Tree {
         self.frame_stats.borrow_mut().full_tree_scans += 1;
     }
 
+    #[cfg(test)]
     pub(crate) fn record_reconcile_child_match(&self) {
         self.frame_stats.borrow_mut().reconcile_child_matches += 1;
     }
@@ -1826,7 +1881,10 @@ mod tests {
     use super::*;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
-    use crate::tree::layout::{BoxStyle, LeafKind, RelayoutBoundaryReason, Size, TextLayout};
+    use crate::tree::layout::{
+        BoxStyle, LayoutConstraints, LayoutOutput, LeafKind, RelayoutBoundaryReason, Size,
+        TextLayout,
+    };
     use crate::tree::{
         reconcile, Desc, DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps,
         StylePatch, TreeDumpLevel, TreeMutation, TreeSnapshotOptions,
@@ -1906,6 +1964,16 @@ mod tests {
             paint_meta: Default::default(),
             mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
+        }
+    }
+
+    fn layout_output(rect: Rect) -> LayoutOutput {
+        LayoutOutput {
+            rect,
+            content_rect: rect,
+            intrinsic_width: rect.w,
+            intrinsic_height: rect.h,
+            baseline: None,
         }
     }
 
@@ -2189,6 +2257,130 @@ mod tests {
 
         assert!(dirty.boundaries.contains(&boundary));
         assert!(!dirty.boundaries.contains(&root));
+    }
+
+    #[test]
+    fn set_rect_move_invalidates_cached_boundary_layout_input() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut panel_node = container_node("panel");
+        panel_node
+            .layout_meta
+            .set_boundary(RelayoutBoundaryReason::Panel);
+        panel_node.mutation_meta.rect_move =
+            crate::tree::RectMoveInvalidation::LayoutAndBoundaryPlacement;
+        let panel = tree.insert_checked(panel_node).expect("panel");
+        let child = tree.insert_checked(container_node("child")).expect("child");
+        tree.append_child(root, panel);
+        tree.append_child(panel, child);
+        let constraints = LayoutConstraints::from_available(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 180.0,
+            h: 120.0,
+        });
+        let input = tree
+            .layout_input_for(panel, constraints)
+            .expect("layout input");
+        tree.layout_cache_set(
+            input,
+            layout_output(Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 180.0,
+                h: 120.0,
+            }),
+        );
+        let before_dependency = tree
+            .get(panel)
+            .expect("panel")
+            .layout_meta
+            .layout_dependency_revision;
+
+        tree.apply_mutation(
+            &crate::template::TemplateRegistry::new(),
+            TreeMutation::SetRect {
+                node: panel,
+                rect: Rect {
+                    x: 24.0,
+                    y: 18.0,
+                    w: 0.0,
+                    h: 0.0,
+                },
+            },
+        )
+        .expect("move panel");
+
+        let after_dependency = tree
+            .get(panel)
+            .expect("panel")
+            .layout_meta
+            .layout_dependency_revision;
+        let moved_input = tree
+            .layout_input_for(panel, constraints)
+            .expect("moved layout input");
+        assert!(after_dependency > before_dependency);
+        assert!(tree.layout_cache_get(input).is_none());
+        assert!(tree.layout_cache_get(moved_input).is_none());
+    }
+
+    #[test]
+    fn child_style_change_invalidates_cached_ancestor_boundary_layout_input() {
+        let mut tree = Tree::new();
+        let root = tree.insert_checked(container_node("root")).expect("root");
+        tree.set_root(root);
+        let mut boundary_node = container_node("boundary");
+        boundary_node
+            .layout_meta
+            .set_boundary(RelayoutBoundaryReason::Panel);
+        let boundary = tree.insert_checked(boundary_node).expect("boundary");
+        let child = tree.insert_checked(container_node("child")).expect("child");
+        tree.append_child(root, boundary);
+        tree.append_child(boundary, child);
+        let constraints = LayoutConstraints::from_available(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 240.0,
+            h: 160.0,
+        });
+        let input = tree
+            .layout_input_for(boundary, constraints)
+            .expect("layout input");
+        tree.layout_cache_set(
+            input,
+            layout_output(Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 240.0,
+                h: 160.0,
+            }),
+        );
+        let before_dependency = tree
+            .get(boundary)
+            .expect("boundary")
+            .layout_meta
+            .layout_dependency_revision;
+
+        tree.apply_mutation(
+            &crate::template::TemplateRegistry::new(),
+            TreeMutation::SetStyle {
+                node: child,
+                patch: StylePatch {
+                    width: Some(Size::Fixed(80.0)),
+                    ..StylePatch::default()
+                },
+            },
+        )
+        .expect("style child");
+
+        let after_dependency = tree
+            .get(boundary)
+            .expect("boundary")
+            .layout_meta
+            .layout_dependency_revision;
+        assert!(after_dependency > before_dependency);
+        assert!(tree.layout_cache_get(input).is_none());
     }
 
     #[test]

@@ -2,13 +2,6 @@ use crate::renderer::Rect;
 use crate::tree::{NodeId, Revision};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SizeMode {
-    Fixed(f32),
-    Fill,
-    Hug,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutConstraints {
     pub min_width: f32,
     pub max_width: f32,
@@ -41,9 +34,7 @@ pub struct LayoutInput {
     pub node: NodeId,
     pub constraints: LayoutConstraints,
     pub available_content_width: f32,
-    pub style_revision: Revision,
-    pub text_revision: Option<Revision>,
-    pub children_revision: Revision,
+    pub layout_dependency_revision: Revision,
 }
 
 impl LayoutInput {
@@ -52,9 +43,7 @@ impl LayoutInput {
             node: self.node,
             constraints: self.constraints.key(),
             available_content_width: LayoutScalar::from_f32(self.available_content_width),
-            style_revision: self.style_revision,
-            text_revision: self.text_revision,
-            children_revision: self.children_revision,
+            layout_dependency_revision: self.layout_dependency_revision,
         }
     }
 }
@@ -102,7 +91,5 @@ pub struct LayoutCacheKey {
     pub node: NodeId,
     pub constraints: LayoutConstraintsKey,
     pub available_content_width: LayoutScalar,
-    pub style_revision: Revision,
-    pub text_revision: Option<Revision>,
-    pub children_revision: Revision,
+    pub layout_dependency_revision: Revision,
 }

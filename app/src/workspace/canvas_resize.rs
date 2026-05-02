@@ -1,7 +1,7 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::canvas_node_event_owner_id;
 use gui::context::Context;
-use gui::widget::resize_edge::ResizeEdge;
+use gui::widget::ResizeEdge;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CanvasNodeResizeSession {
@@ -44,7 +44,7 @@ impl CanvasNodeResizeController {
             last_canvas_x: canvas_x,
             last_canvas_y: canvas_y,
         });
-        let resized = gui.resize_canvas_node_by(owner_id, edge, 0.0, 0.0);
+        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, 0.0, 0.0);
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             stable_id,
@@ -112,7 +112,7 @@ impl CanvasNodeResizeController {
         let dy = canvas_y - active.last_canvas_y;
         active.last_canvas_x = canvas_x;
         active.last_canvas_y = canvas_y;
-        let resized = gui.resize_canvas_node_by(owner_id, edge, dx, dy);
+        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, dx, dy);
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             stable_id,
@@ -182,7 +182,7 @@ impl CanvasNodeResizeController {
         let prev_canvas_y = active.last_canvas_y;
         let dx = canvas_x - prev_canvas_x;
         let dy = canvas_y - prev_canvas_y;
-        let resized = gui.resize_canvas_node_by(owner_id, edge, dx, dy);
+        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, dx, dy);
         self.active = None;
         tracing::trace!(
             target: "nodeimg::render_trace::node",
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn resize_changes_canvas_node_in_canvas_space() {
         let mut gui = Context::new();
-        gui.sync_canvas_node_layouts(&[CanvasNodeIdentity {
+        gui.canvas_mut().sync_node_layouts(&[CanvasNodeIdentity {
             owner_id: "engine_node::1".to_string(),
             default_rect: Rect {
                 x: 10.0,
@@ -251,7 +251,7 @@ mod tests {
             180.0,
         ));
 
-        let layout = gui.export_canvas_node_layouts().remove(0);
+        let layout = gui.canvas().export_node_layouts().remove(0);
         assert_eq!(layout.rect.w, 334.0);
         assert_eq!(layout.rect.h, 172.0);
     }
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn resize_can_shrink_canvas_node_until_min_size() {
         let mut gui = Context::new();
-        gui.sync_canvas_node_layouts(&[CanvasNodeIdentity {
+        gui.canvas_mut().sync_node_layouts(&[CanvasNodeIdentity {
             owner_id: "engine_node::1".to_string(),
             default_rect: Rect {
                 x: 10.0,
@@ -287,7 +287,7 @@ mod tests {
             160.0,
             150.0,
         ));
-        let layout = gui.export_canvas_node_layouts().remove(0);
+        let layout = gui.canvas().export_node_layouts().remove(0);
         assert_eq!(layout.rect.w, 380.0);
         assert_eq!(layout.rect.h, 170.0);
 
@@ -299,7 +299,7 @@ mod tests {
             -200.0,
             -100.0,
         ));
-        let layout = gui.export_canvas_node_layouts().remove(0);
+        let layout = gui.canvas().export_node_layouts().remove(0);
         assert_eq!(layout.rect.w, 304.0);
         assert_eq!(layout.rect.h, 132.0);
     }

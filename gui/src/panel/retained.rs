@@ -4,7 +4,7 @@ use super::{PanelConfig, PanelRuntime};
 use crate::gesture::Gesture;
 use crate::renderer::{Border, ImageStyle, Rect};
 use crate::template::{
-    InstanceId, RetainedTemplate, TemplateError, TemplateId, TemplateInstance, TemplatePayload,
+    InstanceId, RetainedTemplate, TemplateError, TemplateId, TemplateMountCx, TemplatePayload,
     TemplateRevision, PANEL_FRAME_TEMPLATE,
 };
 use crate::theme::Theme;
@@ -14,8 +14,9 @@ use crate::tree::layout::{
 };
 use crate::tree::{
     NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, Tree, TreeNode,
+    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
 };
+use crate::widget::WidgetRole;
 
 const REVISION: TemplateRevision = TemplateRevision::new(2);
 
@@ -75,62 +76,23 @@ impl RetainedTemplate for PanelFrameRetainedTemplate {
 
     fn instantiate(
         &self,
-        tree: &mut Tree,
-        instance: InstanceId,
+        cx: &mut TemplateMountCx<'_>,
+        _instance: &InstanceId,
         parent: NodeId,
         payload: TemplatePayload,
-    ) -> Result<TemplateInstance, TemplateError> {
+    ) -> Result<NodeId, TemplateError> {
         let TemplatePayload::PanelFrame(data) = payload else {
             return Err(TemplateError::UnsupportedPayload {
                 template: self.id(),
                 reason: "panel frame template requires panel frame payload",
             });
         };
-        let mut mount = MountCx::new(tree);
-        let root = mount_panel(&mut mount, parent, &data)?;
-        Ok(TemplateInstance {
-            template: self.id(),
-            template_revision: self.revision(),
-            instance,
-            root_node: root,
-        })
-    }
-}
-
-struct MountCx<'a> {
-    tree: &'a mut Tree,
-    mounted: Vec<NodeId>,
-}
-
-impl<'a> MountCx<'a> {
-    fn new(tree: &'a mut Tree) -> Self {
-        Self {
-            tree,
-            mounted: Vec::new(),
-        }
-    }
-
-    fn child(&mut self, parent: NodeId, node: TreeNode) -> Result<NodeId, TemplateError> {
-        let id = self.tree.insert_checked(node)?;
-        self.mounted.push(id);
-        if !self.tree.append_child(parent, id) {
-            self.rollback();
-            return Err(TemplateError::MissingParent(parent));
-        }
-        Ok(id)
-    }
-
-    fn rollback(&mut self) {
-        for id in self.mounted.iter().rev().copied() {
-            self.tree.detach_from_parent(id);
-            self.tree.remove(id);
-        }
-        self.mounted.clear();
+        mount_panel(cx, parent, &data)
     }
 }
 
 fn mount_panel(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     data: &PanelFrameTemplateData,
 ) -> Result<NodeId, TemplateError> {
@@ -164,7 +126,7 @@ fn mount_panel(
                 shadow: None,
             }),
         )
-        .with_semantic_role("Panel")
+        .with_semantic_role(WidgetRole::Panel)
         .with_layout_boundary(RelayoutBoundaryReason::Panel)
         .with_paint_boundary(RepaintBoundaryReason::PanelFrame)
         .with_rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),
@@ -194,7 +156,7 @@ fn mount_panel(
 }
 
 fn mount_titlebar(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     data: &PanelFrameTemplateData,
 ) -> Result<(), TemplateError> {
@@ -248,7 +210,7 @@ fn mount_titlebar(
 }
 
 fn mount_panel_content(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     data: &PanelFrameTemplateData,
 ) -> Result<(), TemplateError> {
@@ -301,7 +263,7 @@ fn mount_panel_content(
 }
 
 fn mount_button(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     label: &str,
@@ -338,7 +300,7 @@ fn mount_button(
                 shadow: None,
             }),
         )
-        .with_semantic_role("Button"),
+        .with_semantic_role(WidgetRole::Button),
     )?;
     cx.child(
         button,
@@ -365,7 +327,7 @@ fn mount_button(
 }
 
 fn mount_engine_group(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     status: &str,
@@ -414,7 +376,7 @@ fn mount_engine_group(
 }
 
 fn mount_label(
-    cx: &mut MountCx<'_>,
+    cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     text: &str,
@@ -493,7 +455,7 @@ fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 trait TreeNodeExt {
-    fn with_semantic_role(self, role: &'static str) -> Self;
+    fn with_semantic_role(self, role: WidgetRole) -> Self;
     fn with_owner(self, owner: String) -> Self;
     fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
@@ -501,8 +463,8 @@ trait TreeNodeExt {
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: &'static str) -> Self {
-        self.props.semantic_role = Some(Cow::Borrowed(role));
+    fn with_semantic_role(mut self, role: WidgetRole) -> Self {
+        self.props.semantic_role = Some(role);
         self
     }
 

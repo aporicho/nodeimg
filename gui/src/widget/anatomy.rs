@@ -4,6 +4,7 @@ pub fn part_id(root: &str, part: &str) -> String {
     format!("{root}{PART_SEPARATOR}{part}")
 }
 
+#[cfg(test)]
 pub fn owner_id(id: &str) -> &str {
     id.split(PART_SEPARATOR).next().unwrap_or(id)
 }
@@ -16,10 +17,6 @@ pub struct Anatomy<'a> {
 impl<'a> Anatomy<'a> {
     pub fn new(root: &'a str) -> Self {
         Self { root }
-    }
-
-    pub fn root(&self) -> &'a str {
-        self.root
     }
 
     pub fn part(&self, part: &str) -> String {

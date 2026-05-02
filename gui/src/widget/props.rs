@@ -4,6 +4,53 @@ use crate::tree::Desc;
 use std::any::Any;
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WidgetRole {
+    #[default]
+    Generic,
+    Button,
+    Checkbox,
+    Collapsible,
+    Dropdown,
+    NumberInput,
+    Panel,
+    Radio,
+    Slider,
+    TextArea,
+    TextInput,
+    Toggle,
+}
+
+impl WidgetRole {
+    pub fn is_focusable(self) -> bool {
+        matches!(
+            self,
+            Self::Button
+                | Self::Checkbox
+                | Self::Collapsible
+                | Self::Dropdown
+                | Self::NumberInput
+                | Self::Radio
+                | Self::Slider
+                | Self::TextArea
+                | Self::TextInput
+                | Self::Toggle
+        )
+    }
+
+    pub fn is_panel(self) -> bool {
+        matches!(self, Self::Panel)
+    }
+
+    pub fn is_text_input(self) -> bool {
+        matches!(self, Self::TextInput)
+    }
+
+    pub fn is_text_area(self) -> bool {
+        matches!(self, Self::TextArea)
+    }
+}
+
 /// build() 的返回值。提供 Widget 节点的根样式、装饰和展开后的子树。
 pub struct WidgetBuild {
     pub style: BoxStyle,
@@ -23,6 +70,9 @@ pub struct WidgetBuildCx<'a> {
 /// state through `TreeMutation`; it must not call `build()` as glue.
 pub trait WidgetProps: 'static {
     fn widget_type(&self) -> &'static str;
+    fn role(&self) -> WidgetRole {
+        WidgetRole::Generic
+    }
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn WidgetProps>;
     fn props_eq(&self, other: &dyn WidgetProps) -> bool;

@@ -1,26 +1,22 @@
 pub mod camera;
-pub mod connection;
-pub mod connection_paint_cache;
-pub mod endpoint_cache;
+pub(crate) mod connection;
 mod layout;
-pub mod legacy_desc;
 pub mod navigation;
-pub mod node_card;
+#[cfg(test)]
+pub(crate) mod node_card;
 pub(crate) mod node_sizing;
 pub(crate) mod node_spec;
 pub(crate) mod node_style;
 pub mod node_template;
 pub mod pan;
 pub mod port;
-pub mod retained_node_card;
+pub(crate) mod retained_node_card;
 pub(crate) mod runtime;
-pub mod scene_diff;
+pub(crate) mod scene_diff;
 pub mod scene_model;
 pub mod template;
 
-pub use connection::{connection_layer, CanvasConnectionView};
-pub use connection_paint_cache::{CanvasConnectionPaintCache, CanvasConnectionPaintDirty};
-pub use endpoint_cache::CanvasEndpointCache;
+pub use connection::CanvasConnectionView;
 pub use layout::{
     canvas_node_event_owner_id, canvas_node_owner_id, canvas_node_stable_id, CanvasNodeIdentity,
     CanvasNodeLayout,
@@ -34,3 +30,4 @@ pub use port::{
     CanvasPendingConnectionView, CanvasPortConnectionState, CanvasPortGroupView, CanvasPortRef,
     CanvasPortSide,
 };
+pub use scene_diff::{scene_change_to_mutation, CanvasSceneChange};

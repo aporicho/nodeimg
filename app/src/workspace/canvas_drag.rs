@@ -32,7 +32,7 @@ impl CanvasNodeDragController {
             last_canvas_x: canvas_x,
             last_canvas_y: canvas_y,
         });
-        gui.move_canvas_node_by(owner_id, 0.0, 0.0)
+        gui.canvas_mut().move_node_by(owner_id, 0.0, 0.0)
     }
 
     pub(crate) fn drag(
@@ -58,7 +58,7 @@ impl CanvasNodeDragController {
         let dy = canvas_y - active.last_canvas_y;
         active.last_canvas_x = canvas_x;
         active.last_canvas_y = canvas_y;
-        gui.move_canvas_node_by(owner_id, dx, dy)
+        gui.canvas_mut().move_node_by(owner_id, dx, dy)
     }
 
     pub(crate) fn end(
@@ -81,7 +81,7 @@ impl CanvasNodeDragController {
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
         let dx = canvas_x - active.last_canvas_x;
         let dy = canvas_y - active.last_canvas_y;
-        let moved = gui.move_canvas_node_by(owner_id, dx, dy);
+        let moved = gui.canvas_mut().move_node_by(owner_id, dx, dy);
         self.active = None;
         moved
     }
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn drag_moves_canvas_node_in_canvas_space() {
         let mut gui = Context::new();
-        gui.sync_canvas_node_layouts(&[CanvasNodeIdentity {
+        gui.canvas_mut().sync_node_layouts(&[CanvasNodeIdentity {
             owner_id: "engine_node::1".to_string(),
             default_rect: Rect {
                 x: 10.0,
@@ -131,7 +131,7 @@ mod tests {
             160.0
         ));
 
-        let layout = gui.export_canvas_node_layouts().remove(0);
+        let layout = gui.canvas().export_node_layouts().remove(0);
         assert_eq!(layout.rect.x, 30.0);
         assert_eq!(layout.rect.y, 50.0);
     }

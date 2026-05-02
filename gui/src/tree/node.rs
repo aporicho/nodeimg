@@ -74,6 +74,7 @@ pub struct NodeLayoutMeta {
     pub text_revision: Revision,
     pub children_revision: Revision,
     pub explicit_rect_revision: Revision,
+    pub layout_dependency_revision: Revision,
 }
 
 impl NodeLayoutMeta {
@@ -103,6 +104,10 @@ impl NodeLayoutMeta {
     pub fn bump_explicit_rect(&mut self) {
         self.explicit_rect_revision = self.explicit_rect_revision.next();
     }
+
+    pub fn bump_layout_dependency(&mut self) {
+        self.layout_dependency_revision = self.layout_dependency_revision.next();
+    }
 }
 
 impl Default for NodeLayoutMeta {
@@ -113,6 +118,7 @@ impl Default for NodeLayoutMeta {
             text_revision: Revision::ZERO,
             children_revision: Revision::ZERO,
             explicit_rect_revision: Revision::ZERO,
+            layout_dependency_revision: Revision::ZERO,
         }
     }
 }

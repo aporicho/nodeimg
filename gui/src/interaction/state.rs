@@ -4,6 +4,7 @@ use crate::tree::{NodeId, Tree};
 
 use super::focus::FocusState;
 use super::reducer;
+#[cfg(test)]
 use super::target;
 use super::WidgetVisualState;
 
@@ -25,6 +26,7 @@ impl InteractionState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn sync_with_tree(&mut self, tree: &Tree) {
         self.hovered = self.hovered.filter(|&id| tree.get(id).is_some());
         self.pressed = self.pressed.filter(|&id| tree.get(id).is_some());

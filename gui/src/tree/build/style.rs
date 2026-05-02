@@ -1,9 +1,8 @@
+#[cfg(test)]
 use crate::geometry::TransformSpec;
 use crate::gesture::Gesture;
 use crate::tree::build::{ContainerBuilder, LeafBuilder};
-use crate::tree::layout::{
-    Align, BoxStyle, Direction, Edges, Inset, Justify, Overflow, Position, Size,
-};
+use crate::tree::layout::{Align, BoxStyle, Edges, Justify, Overflow, Position, Size};
 use crate::widget::build::WidgetBuildBuilder;
 
 pub trait StyleBuilder: Sized {
@@ -51,10 +50,12 @@ pub trait StyleBuilder: Sized {
         self.height(Size::Auto)
     }
 
+    #[cfg(test)]
     fn min_width(self, width: f32) -> Self {
         self.map_style(|style| style.min_width = width)
     }
 
+    #[cfg(test)]
     fn max_width(self, width: f32) -> Self {
         self.map_style(|style| style.max_width = width)
     }
@@ -63,6 +64,7 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.min_height = height)
     }
 
+    #[cfg(test)]
     fn max_height(self, height: f32) -> Self {
         self.map_style(|style| style.max_height = height)
     }
@@ -79,10 +81,12 @@ pub trait StyleBuilder: Sized {
         self.padding(Edges::symmetric(vertical, horizontal))
     }
 
+    #[cfg(test)]
     fn margin(self, margin: Edges) -> Self {
         self.map_style(|style| style.margin = margin)
     }
 
+    #[cfg(test)]
     fn margin_all(self, margin: f32) -> Self {
         self.margin(Edges::all(margin))
     }
@@ -91,14 +95,11 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.gap = gap)
     }
 
-    fn direction(self, direction: Direction) -> Self {
-        self.map_style(|style| style.direction = direction)
-    }
-
     fn align_items(self, align: Align) -> Self {
         self.map_style(|style| style.align_items = align)
     }
 
+    #[cfg(test)]
     fn align_self(self, align: Align) -> Self {
         self.map_style(|style| style.align_self = Some(align))
     }
@@ -119,6 +120,7 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.overflow = overflow)
     }
 
+    #[cfg(test)]
     fn relative(self) -> Self {
         self.map_style(|style| style.position = Position::relative())
     }
@@ -127,14 +129,11 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.position = Position::absolute_xy(x, y))
     }
 
-    fn absolute_inset(self, inset: Inset) -> Self {
-        self.map_style(|style| style.position = Position::absolute_inset(inset))
-    }
-
     fn z_index(self, z_index: i32) -> Self {
         self.map_style(|style| style.z_index = z_index)
     }
 
+    #[cfg(test)]
     fn transform(self, transform: TransformSpec) -> Self {
         self.map_style(|style| style.transform = Some(transform))
     }
@@ -151,6 +150,7 @@ pub trait StyleBuilder: Sized {
         self.map_style(|style| style.resizable = resizable)
     }
 
+    #[cfg(test)]
     fn resize_edge_threshold(self, threshold: f32) -> Self {
         self.map_style(|style| style.resize_edge_threshold = threshold)
     }

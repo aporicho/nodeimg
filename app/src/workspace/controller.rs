@@ -25,7 +25,7 @@ use gui::canvas::{
 };
 use gui::context::Context;
 use gui::theme::Theme;
-use gui::widget::resize_edge::ResizeEdge;
+use gui::widget::ResizeEdge;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
@@ -107,12 +107,12 @@ impl WorkspaceController {
         composition: WorkspaceUiComposition,
     ) -> Vec<CanvasNodeRenderView> {
         let identities = self.canvas_node_identities(composition);
-        let mut layouts = gui.sync_canvas_node_layouts(&identities);
+        let mut layouts = gui.canvas_mut().sync_node_layouts(&identities);
 
         let mut views = self.canvas_node_render_views_for_layouts(layouts.clone(), composition);
         let mut resized_to_fit = false;
-        let dirty_intrinsics = gui.take_dirty_control_intrinsics();
-        let control_intrinsics = gui.retained_control_intrinsics_snapshot();
+        let dirty_intrinsics = gui.runtime_mut().take_dirty_control_intrinsics();
+        let control_intrinsics = gui.runtime().retained_control_intrinsics_snapshot();
         if !dirty_intrinsics.is_empty() || !control_intrinsics.is_empty() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -131,7 +131,7 @@ impl WorkspaceController {
                 theme,
             );
             let sizing_changed = request.missing_auto_height_intrinsics == 0
-                && gui.apply_canvas_node_sizing(owner_id, request);
+                && gui.canvas_mut().apply_node_sizing(owner_id, request);
             let height_delta = request.target_height - view.state.layout.rect.h;
             if sizing_changed || height_delta.abs() > 0.5 {
                 tracing::trace!(
@@ -168,7 +168,7 @@ impl WorkspaceController {
                 target: "nodeimg::render_trace::node",
                 "resync canvas node layouts after sizing request"
             );
-            layouts = gui.sync_canvas_node_layouts(&identities);
+            layouts = gui.canvas_mut().sync_node_layouts(&identities);
             views = self.canvas_node_render_views_for_layouts(layouts, composition);
         }
         self.decorate_canvas_node_render_views(gui, &mut views);
@@ -230,14 +230,16 @@ impl WorkspaceController {
     }
 
     fn decorate_canvas_node_render_views(&self, gui: &Context, views: &mut [CanvasNodeRenderView]) {
-        let pending_connection = gui.pending_canvas_connection();
-        let hovered_port_id = gui.hovered_canvas_port_id();
+        let pending_connection = gui.canvas().pending_connection();
+        let hovered_port_id = gui.canvas().hovered_port_id();
         for view in views {
-            view.state.selected = gui.is_canvas_node_selected(&view.state.owner_id);
-            view.state.input_group =
-                gui.canvas_port_group_view(&view.state.owner_id, CanvasPortSide::Input);
-            view.state.output_group =
-                gui.canvas_port_group_view(&view.state.owner_id, CanvasPortSide::Output);
+            view.state.selected = gui.canvas().is_node_selected(&view.state.owner_id);
+            view.state.input_group = gui
+                .canvas()
+                .port_group_view(&view.state.owner_id, CanvasPortSide::Input);
+            view.state.output_group = gui
+                .canvas()
+                .port_group_view(&view.state.owner_id, CanvasPortSide::Output);
             if let Some(pending) = pending_connection.as_ref() {
                 let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
                     continue;
@@ -358,7 +360,7 @@ impl WorkspaceController {
         let Some((owner_id, side)) = parse_canvas_port_group_trigger_id(id) else {
             return false;
         };
-        gui.toggle_canvas_port_group(owner_id, side);
+        gui.canvas_mut().toggle_port_group(owner_id, side);
         true
     }
 
@@ -366,11 +368,11 @@ impl WorkspaceController {
         let Some(owner_id) = canvas_node_event_owner_id(id) else {
             return false;
         };
-        gui.select_canvas_node(owner_id)
+        gui.canvas_mut().select_node(owner_id)
     }
 
     pub(crate) fn clear_canvas_selection(&mut self, gui: &mut Context) {
-        gui.clear_canvas_selection();
+        gui.canvas_mut().clear_selection();
     }
 
     pub(crate) fn begin_canvas_port_connection(
@@ -385,7 +387,8 @@ impl WorkspaceController {
             return false;
         };
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        gui.begin_pending_canvas_connection(port_id, [canvas_x, canvas_y])
+        gui.canvas_mut()
+            .begin_pending_connection(port_id, [canvas_x, canvas_y])
     }
 
     pub(crate) fn update_canvas_port_connection(
@@ -396,11 +399,12 @@ impl WorkspaceController {
         y: f32,
     ) -> bool {
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        gui.update_pending_canvas_connection([canvas_x, canvas_y])
+        gui.canvas_mut()
+            .update_pending_connection([canvas_x, canvas_y])
     }
 
     pub(crate) fn end_canvas_port_connection(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
-        let Some(pending) = gui.end_pending_canvas_connection() else {
+        let Some(pending) = gui.canvas_mut().end_pending_connection() else {
             return false;
         };
         let Some(from) = parse_canvas_port_id(&pending.from_port_id) else {
@@ -423,7 +427,7 @@ impl WorkspaceController {
     }
 
     pub(crate) fn cancel_canvas_port_connection(&mut self, gui: &mut Context) -> bool {
-        if !gui.cancel_pending_canvas_connection() {
+        if !gui.canvas_mut().cancel_pending_connection() {
             return false;
         }
         self.last_engine_action = "Connection cancelled".to_string();
@@ -432,7 +436,7 @@ impl WorkspaceController {
 
     pub(crate) fn update_canvas_hover(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
         let port_id = self.port_id_at(gui, x, y);
-        gui.set_hovered_canvas_port(port_id.as_deref())
+        gui.canvas_mut().set_hovered_port(port_id.as_deref())
     }
 
     fn input_port_at(&self, gui: &Context, x: f32, y: f32) -> Option<CanvasPortRef> {
@@ -443,9 +447,10 @@ impl WorkspaceController {
     }
 
     fn port_id_at(&self, gui: &Context, x: f32, y: f32) -> Option<String> {
-        let chain = gui.hit_test(x, y);
+        let query = gui.query();
+        let chain = query.hit_test(x, y);
         let port_id = chain.iter().find_map(|node_id| {
-            let id = gui.node_name(node_id)?;
+            let id = query.node_name(node_id)?;
             canvas_port_event_target_id(id).map(str::to_string)
         });
         port_id
@@ -650,7 +655,8 @@ mod tests {
             "canvas_node::engine_node::1::port_group::input::trigger",
         ));
         assert!(
-            gui.canvas_port_group_view("engine_node::1", CanvasPortSide::Input)
+            gui.canvas()
+                .port_group_view("engine_node::1", CanvasPortSide::Input)
                 .open
         );
         assert!(!controller.toggle_canvas_port_group(&mut gui, "slider"));
@@ -737,7 +743,8 @@ mod tests {
             .find(|view| view.state.owner_id == showcase_node::TEXT_AREA_OWNER_ID)
             .expect("text area showcase view");
         let runtime_layout = gui
-            .export_canvas_node_layouts()
+            .canvas()
+            .export_node_layouts()
             .into_iter()
             .find(|layout| layout.owner_id == showcase_node::TEXT_AREA_OWNER_ID)
             .expect("text area runtime layout");
@@ -760,19 +767,21 @@ mod tests {
             20.0,
         ));
         assert_eq!(
-            gui.pending_canvas_connection()
+            gui.canvas()
+                .pending_connection()
                 .map(|pending| pending.from_port_id),
             Some("canvas_node::engine_node::1::port::output::image".to_string())
         );
 
         assert!(controller.update_canvas_port_connection(&mut gui, &camera, 30.0, 40.0));
         assert_eq!(
-            gui.pending_canvas_connection()
+            gui.canvas()
+                .pending_connection()
                 .map(|pending| pending.cursor_canvas),
             Some([30.0, 40.0])
         );
         assert!(controller.end_canvas_port_connection(&mut gui, 30.0, 40.0));
-        assert!(gui.pending_canvas_connection().is_none());
+        assert!(gui.canvas().pending_connection().is_none());
     }
 
     #[test]
@@ -820,7 +829,7 @@ mod tests {
 
         controller.add_node_from_library("image_gen");
         controller.add_node_from_library("color_adjust");
-        assert!(gui.begin_pending_canvas_connection(
+        assert!(gui.canvas_mut().begin_pending_connection(
             "canvas_node::engine_node::0::port::output::image",
             [0.0, 0.0],
         ));
@@ -848,13 +857,13 @@ mod tests {
 
         controller.add_node_from_library("image_gen");
         controller.add_node_from_library("color_adjust");
-        assert!(gui.begin_pending_canvas_connection(
+        assert!(gui.canvas_mut().begin_pending_connection(
             "canvas_node::engine_node::0::port::output::image",
             [0.0, 0.0],
         ));
-        assert!(
-            gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
-        );
+        assert!(gui
+            .canvas_mut()
+            .set_hovered_port(Some("canvas_node::engine_node::1::port::input::image")));
 
         let views =
             controller.canvas_node_render_views(&mut gui, &theme, WorkspaceUiComposition::full());
@@ -871,17 +880,17 @@ mod tests {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
 
-        assert!(gui.begin_pending_canvas_connection(
+        assert!(gui.canvas_mut().begin_pending_connection(
             "canvas_node::engine_node::0::port::output::image",
             [0.0, 0.0],
         ));
-        assert!(
-            gui.set_hovered_canvas_port(Some("canvas_node::engine_node::1::port::input::image"))
-        );
+        assert!(gui
+            .canvas_mut()
+            .set_hovered_port(Some("canvas_node::engine_node::1::port::input::image")));
 
         assert!(controller.cancel_canvas_port_connection(&mut gui));
-        assert!(gui.pending_canvas_connection().is_none());
-        assert!(gui.hovered_canvas_port_id().is_none());
+        assert!(gui.canvas().pending_connection().is_none());
+        assert!(gui.canvas().hovered_port_id().is_none());
         assert!(!controller.cancel_canvas_port_connection(&mut gui));
         assert_eq!(
             controller.engine_panel_state().last_action,

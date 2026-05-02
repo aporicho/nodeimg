@@ -1,3 +1,4 @@
+#[cfg(test)]
 mod builder;
 mod dismiss;
 mod placement;

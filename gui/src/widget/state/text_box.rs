@@ -12,7 +12,7 @@ use crate::widget::atoms::text_area::TextAreaProps;
 use crate::widget::atoms::text_box::text_box_value_style;
 use crate::widget::atoms::text_box::{TextBoxFont, TextBoxMode, TextBoxProps};
 use crate::widget::atoms::text_input::TextInputProps;
-use crate::widget::TextEditState;
+use crate::widget::{TextEditState, WidgetRole};
 
 use super::text_box_registry::TextBoxRegistry;
 
@@ -847,10 +847,12 @@ fn text_box_owner_from_retained_node(tree: &Tree, id: &str) -> Option<String> {
     None
 }
 
-fn retained_text_box_role<'a>(tree: &'a Tree, id: &str) -> Option<&'a str> {
+fn retained_text_box_role(tree: &Tree, id: &str) -> Option<WidgetRole> {
     let node = tree.get(tree.node_by_str(id)?)?;
-    match node.props.semantic_role.as_deref()? {
-        "TextInput" | "TextArea" | "NumberInput" => Some(node.props.semantic_role.as_deref()?),
+    match node.props.semantic_role? {
+        role @ (WidgetRole::TextInput | WidgetRole::TextArea | WidgetRole::NumberInput) => {
+            Some(role)
+        }
         _ => None,
     }
 }

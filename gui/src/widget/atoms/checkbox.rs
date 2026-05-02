@@ -23,6 +23,10 @@ impl WidgetProps for CheckboxProps {
         "Checkbox"
     }
 
+    fn role(&self) -> crate::widget::WidgetRole {
+        crate::widget::WidgetRole::Checkbox
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
