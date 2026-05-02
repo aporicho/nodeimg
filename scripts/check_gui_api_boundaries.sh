@@ -70,6 +70,7 @@ check_missing_path "old flat canvas retained node card module" gui/src/canvas/re
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
+check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
 check_missing_path "old flat Tree implementation module" gui/src/tree/tree.rs
 check_missing_path "old flat tree hit query module" gui/src/tree/hit.rs
 check_missing_path "old flat tree hit order module" gui/src/tree/hit_order.rs
@@ -234,6 +235,11 @@ check_no_match \
     "control text box state module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/control/state/text_box/mod.rs
+
+check_no_match \
+    "control text box system module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/systems/text_box/mod.rs
 
 check_no_match \
     "Tree must not expose canvas or panel runtime APIs" \
