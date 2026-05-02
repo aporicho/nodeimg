@@ -3,11 +3,14 @@ use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
 use crate::workspace::scene_controller::{
     WorkspaceSceneController, WorkspaceSceneFeatures, WorkspaceSceneInput,
 };
+use crate::workspace::scene_sync::{
+    WorkspaceSceneDirtyReason, WorkspaceSceneSyncGate, WorkspaceSceneSyncKey,
+};
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
-use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
+use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, HitChain, PlatformEffect};
 use gui::control::ResizeEdge;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::gesture::Gesture;
@@ -99,6 +102,7 @@ pub struct AppShell {
     navigation: CanvasNavigationController,
     workspace: WorkspaceController,
     scene_controller: WorkspaceSceneController,
+    scene_sync: WorkspaceSceneSyncGate,
     last_canvas_click: Option<CanvasClick>,
     mouse_x: f32,
     mouse_y: f32,
@@ -124,6 +128,7 @@ impl App for AppShell {
             navigation: CanvasNavigationController::new(),
             workspace: WorkspaceController::new(),
             scene_controller: WorkspaceSceneController::default(),
+            scene_sync: WorkspaceSceneSyncGate::new(),
             last_canvas_click: None,
             mouse_x: 0.0,
             mouse_y: 0.0,
@@ -162,7 +167,7 @@ impl App for AppShell {
         let viewport = viewport_rect(ctx);
         self.sync_workspace_scene_until_controls_stable(viewport, renderer);
         ctx.apply_ime_request(self.gui.input().ime_request());
-        self.update_hover_cursor(self.mouse_x, self.mouse_y, ctx);
+        self.update_hover_cursor_from_chain(self.mouse_x, self.mouse_y, None, ctx);
         if self.gui.animations().active() {
             ctx.request_redraw();
         }
@@ -256,7 +261,24 @@ impl AppShell {
         viewport: Rect,
         renderer: &mut Renderer,
     ) {
-        let canvas_nodes = self.sync_workspace_scene(viewport, renderer, true);
+        let composition = WorkspaceUiComposition::for_app_mode(self.mode);
+        let key = WorkspaceSceneSyncKey::new(viewport, &self.camera, composition.name());
+        let decision = self
+            .scene_sync
+            .begin_frame(key, self.gui.controls().has_dirty_intrinsics());
+        if !decision.should_sync {
+            self.flush_workspace_layout(viewport, renderer);
+            return;
+        }
+
+        tracing::trace!(
+            target: "nodeimg::render_trace::node",
+            reasons = ?decision.reasons,
+            "sync retained workspace scene"
+        );
+
+        let canvas_nodes = self.sync_workspace_scene(viewport, true);
+        self.flush_workspace_layout(viewport, renderer);
         self.gui.controls_mut().sync_canvas_text_boxes(
             &canvas_nodes,
             renderer.text_measurer(),
@@ -264,19 +286,21 @@ impl AppShell {
         );
 
         if self.gui.controls().has_dirty_intrinsics() {
-            let stabilized_nodes = self.sync_workspace_scene(viewport, renderer, false);
+            let stabilized_nodes = self.sync_workspace_scene(viewport, false);
+            self.flush_workspace_layout(viewport, renderer);
             self.gui.controls_mut().sync_canvas_text_boxes(
                 &stabilized_nodes,
                 renderer.text_measurer(),
                 &self.theme,
             );
         }
+
+        self.scene_sync.finish_synced(key);
     }
 
     fn sync_workspace_scene(
         &mut self,
         viewport: Rect,
-        renderer: &mut Renderer,
         trace_app_update: bool,
     ) -> Vec<CanvasNodeRenderView> {
         let composition = WorkspaceUiComposition::for_app_mode(self.mode);
@@ -325,10 +349,13 @@ impl AppShell {
                 "failed to sync retained workspace scene"
             );
         }
+        canvas_nodes
+    }
+
+    fn flush_workspace_layout(&mut self, viewport: Rect, renderer: &mut Renderer) {
         self.gui
             .rendering()
             .flush_layout_dirty(viewport, renderer.text_measurer());
-        canvas_nodes
     }
 
     fn handle_global_shortcut(&mut self, event: &AppEvent) -> bool {
@@ -339,7 +366,9 @@ impl AppShell {
         let next_mode = toggle_app_mode(self.mode, DEVELOPER_MODE_ENABLED);
         if next_mode != self.mode {
             self.mode = next_mode;
+            self.scene_sync.mark(WorkspaceSceneDirtyReason::Composition);
             self.gui.overlay_mut().close();
+            self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
             tracing::info!("app mode switched to {:?}", self.mode);
         }
         true
@@ -352,13 +381,23 @@ impl AppShell {
             } if !consumed => {
                 if self.scene_controller.node_palette_open() {
                     self.scene_controller.close_overlay();
+                    self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
                     return;
                 }
-                let _ = self.workspace.cancel_canvas_port_connection(&mut self.gui);
+                let cancelled = self.workspace.cancel_canvas_port_connection(&mut self.gui);
+                self.scene_sync
+                    .mark_if(cancelled, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.scene_sync
+                    .mark_if(cancelled, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppEvent::MouseMove { x, y } => {
-                self.workspace.update_canvas_hover(&mut self.gui, x, y);
-                self.update_hover_cursor(x, y, ctx);
+                let chain = self.gui.query().hit_test(x, y);
+                let changed = self
+                    .workspace
+                    .update_canvas_hover_from_chain(&mut self.gui, &chain);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
+                self.update_hover_cursor_from_chain(x, y, Some(&chain), ctx);
             }
             AppEvent::MouseRelease {
                 x,
@@ -392,9 +431,14 @@ impl AppShell {
         let mut handled_node_adds = Vec::new();
         for action in output.actions {
             let result = self.handle_gui_action(action);
+            self.scene_sync.mark_if(
+                result.handled_node_add.is_some(),
+                WorkspaceSceneDirtyReason::EngineGraph,
+            );
             if result.close_overlay {
                 self.scene_controller.close_overlay();
                 self.gui.overlay_mut().close();
+                self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
             }
             if let Some(type_id) = result.handled_node_add {
                 handled_node_adds.push(type_id);
@@ -406,6 +450,8 @@ impl AppShell {
                 continue;
             }
             if self.try_handle_panel_control_event(&event) {
+                self.scene_sync
+                    .mark(WorkspaceSceneDirtyReason::PanelRuntime);
                 continue;
             }
             self.handle_gui_event(event);
@@ -493,20 +539,31 @@ impl AppShell {
         match message {
             AppMessage::ControlClicked(id) => {
                 if self.workspace.toggle_canvas_port_group(&mut self.gui, &id) {
+                    self.scene_sync
+                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 if self.workspace.select_canvas_node(&mut self.gui, &id) {
+                    self.scene_sync
+                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
                 if let Some(type_id) = node_library_add_type_id(&id) {
                     let result = self.workspace.add_node_from_library(type_id);
+                    self.scene_sync.mark_if(
+                        result.handled_node_add.is_some(),
+                        WorkspaceSceneDirtyReason::EngineGraph,
+                    );
                     if result.close_overlay {
                         self.scene_controller.close_overlay();
                         self.gui.overlay_mut().close();
+                        self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
                     }
                     return;
                 }
-                let _ = self.workspace.handle_image_demo_button(&id);
+                let changed = self.workspace.handle_image_demo_button(&id);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::ControlDragStart { id, x, y } => {
                 if self.workspace.begin_canvas_port_connection(
@@ -516,36 +573,49 @@ impl AppShell {
                     x,
                     y,
                 ) {
+                    self.scene_sync
+                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
-                let _ =
+                let changed =
                     self.workspace
                         .start_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlDragMove { id, x, y } => {
                 if self
                     .workspace
                     .update_canvas_port_connection(&mut self.gui, &self.camera, x, y)
                 {
+                    self.scene_sync
+                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
                     return;
                 }
-                let _ = self
-                    .workspace
-                    .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y);
+                let changed =
+                    self.workspace
+                        .drag_canvas_node(&mut self.gui, &self.camera, &id, x, y);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlDragEnd { id, x, y } => {
                 if self
                     .workspace
                     .end_canvas_port_connection(&mut self.gui, x, y)
                 {
+                    self.scene_sync
+                        .mark(WorkspaceSceneDirtyReason::CanvasRuntime);
+                    self.scene_sync.mark(WorkspaceSceneDirtyReason::EngineGraph);
                     return;
                 }
-                let _ = self
-                    .workspace
-                    .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+                let changed =
+                    self.workspace
+                        .end_canvas_node_drag(&mut self.gui, &self.camera, &id, x, y);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlResizeStart { id, edge, x, y } => {
-                let _ = self.workspace.start_canvas_node_resize(
+                let changed = self.workspace.start_canvas_node_resize(
                     &mut self.gui,
                     &self.camera,
                     &id,
@@ -553,14 +623,18 @@ impl AppShell {
                     x,
                     y,
                 );
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlResizeMove { id, edge, x, y } => {
-                let _ =
+                let changed =
                     self.workspace
                         .resize_canvas_node(&mut self.gui, &self.camera, &id, edge, x, y);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlResizeEnd { id, edge, x, y } => {
-                let _ = self.workspace.end_canvas_node_resize(
+                let changed = self.workspace.end_canvas_node_resize(
                     &mut self.gui,
                     &self.camera,
                     &id,
@@ -568,9 +642,13 @@ impl AppShell {
                     x,
                     y,
                 );
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
             }
             AppMessage::ControlTextChanged { id, value } => {
-                let _ = self.workspace.update_text_area_showcase_value(&id, value);
+                let changed = self.workspace.update_text_area_showcase_value(&id, value);
+                self.scene_sync
+                    .mark_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::LongPress(id) => {
                 tracing::info!("LongPress: {}", id);
@@ -578,7 +656,13 @@ impl AppShell {
         }
     }
 
-    fn update_hover_cursor(&self, x: f32, y: f32, ctx: &mut AppContext) {
+    fn update_hover_cursor_from_chain(
+        &self,
+        x: f32,
+        y: f32,
+        chain: Option<&HitChain>,
+        ctx: &mut AppContext,
+    ) {
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             x,
@@ -614,7 +698,13 @@ impl AppShell {
             return;
         }
 
-        let chain = query.hit_test(x, y);
+        let fallback;
+        let chain = if let Some(chain) = chain {
+            chain
+        } else {
+            fallback = query.hit_test(x, y);
+            &fallback
+        };
         if chain.is_empty() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
@@ -700,7 +790,9 @@ impl AppShell {
             self.last_canvas_click = None;
             return;
         }
-        self.workspace.clear_canvas_selection(&mut self.gui);
+        let changed = self.workspace.clear_canvas_selection(&mut self.gui);
+        self.scene_sync
+            .mark_if(changed, WorkspaceSceneDirtyReason::CanvasRuntime);
 
         let now = Instant::now();
         let double_click = self.last_canvas_click.is_some_and(|last| {
@@ -736,6 +828,8 @@ impl AppShell {
         let state = self.node_palette_state();
         self.scene_controller.open_node_palette(x, y, state);
         self.workspace.note_node_library_opened();
+        self.scene_sync.mark(WorkspaceSceneDirtyReason::Overlay);
+        self.scene_sync.mark(WorkspaceSceneDirtyReason::EngineGraph);
     }
 
     fn node_palette_state(&self) -> crate::workspace::node_palette::NodePaletteState {

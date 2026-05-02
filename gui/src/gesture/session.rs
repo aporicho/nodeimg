@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use crate::animation::AnimationStore;
+use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::{hit_test_with_animations, resize_hit_at_screen_point, HitChain, Tree};
 
@@ -48,21 +49,26 @@ impl GestureSession {
         tree: &Tree,
         animations: Option<&AnimationStore>,
         event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
     ) -> GestureSessionUpdate {
         match *event {
             AppEvent::MousePress { x, y, button }
                 if button == MouseButton::Left && self.arena.is_none() =>
             {
                 if let Some(root) = tree.root() {
-                    if let Some(hit) = resize_hit_at_screen_point(tree, root, x, y, animations) {
-                        if let Some(arena) = arena_from_resize_hit(tree, hit, x, y) {
+                    let resize_hit = hit
+                        .filter(|hit| hit.matches_point(x, y))
+                        .and_then(PointerHitSnapshot::resize_hit)
+                        .or_else(|| resize_hit_at_screen_point(tree, root, x, y, animations));
+                    if let Some(resize_hit) = resize_hit {
+                        if let Some(arena) = arena_from_resize_hit(tree, resize_hit, x, y) {
                             self.arena = Some(arena);
                             return GestureSessionUpdate::consumed();
                         }
                     }
                 }
 
-                let chain = hit_chain(tree, animations, x, y);
+                let chain = hit_chain(tree, animations, hit, x, y);
                 if let Some(arena) = arena_from_hit_chain(tree, &chain, x, y, self.last_tap_time) {
                     self.arena = Some(arena);
                     return GestureSessionUpdate::consumed();
@@ -123,7 +129,16 @@ impl Default for GestureSession {
     }
 }
 
-fn hit_chain(tree: &Tree, animations: Option<&AnimationStore>, x: f32, y: f32) -> HitChain {
+fn hit_chain(
+    tree: &Tree,
+    animations: Option<&AnimationStore>,
+    hit: Option<&PointerHitSnapshot>,
+    x: f32,
+    y: f32,
+) -> HitChain {
+    if let Some(hit) = hit.filter(|hit| hit.matches_point(x, y)) {
+        return hit.chain().clone();
+    }
     let Some(root) = tree.root() else {
         return HitChain::empty();
     };

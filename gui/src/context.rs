@@ -5,6 +5,7 @@ use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBu
 use crate::control::{ControlIntrinsic, ControlRole, ResizeEdge};
 use crate::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use crate::diagnostics::tree_dump::{self, TreeDumpController, TreeDumpPhase, TreeDumpPoint};
+use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::event::router;
 use crate::event::signal_output;
 use crate::gesture::{Gesture, GestureSession, GestureSessionUpdate};
@@ -20,8 +21,8 @@ use crate::template::{InstanceId, SlotValue, SlotValues, TemplateId, WORKSPACE_R
 use crate::theme::Theme;
 use crate::tree::layout::{LayoutConstraints, LayoutFlushStats, LayoutOutput, TextureHandle};
 use crate::tree::{
-    hit_test_with_animations, resize_hit_at_screen_point, FrameStats, HitChain, Invalidation,
-    MutationError, NodeId, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree, TreeMutation,
+    hit_test_with_animations, resize_hit_at_screen_point, FrameStats, Invalidation, MutationError,
+    NodeId, PaintDirtyReason, RepaintBoundaryId, StylePatch, Tree, TreeMutation,
     TreeSnapshotOptions,
 };
 
@@ -29,6 +30,7 @@ pub use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OverlayEvent, P
 pub use crate::overlay::{
     DropdownOverlayContent, OverlayContent, OverlayPlacement, OverlayRequest,
 };
+pub use crate::tree::HitChain;
 
 /// GUI 中心对象。持有统一的控件树与框架级交互 session。
 pub struct Context {
@@ -717,8 +719,8 @@ impl Context {
         self.tree.select_canvas_node(owner_id)
     }
 
-    pub(crate) fn clear_canvas_selection(&mut self) {
-        self.tree.clear_canvas_selection();
+    pub(crate) fn clear_canvas_selection(&mut self) -> bool {
+        self.tree.clear_canvas_selection()
     }
 
     pub(crate) fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
@@ -937,27 +939,41 @@ impl Context {
         self.interaction.blur();
     }
 
-    pub(crate) fn handle_interaction_event(&mut self, event: &AppEvent) {
+    pub(crate) fn pointer_hit_snapshot(&self, event: &AppEvent) -> Option<PointerHitSnapshot> {
+        PointerHitSnapshot::from_event(&self.tree, Some(&self.animations), event)
+    }
+
+    pub(crate) fn handle_interaction_event(
+        &mut self,
+        event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
+    ) {
         self.interaction
-            .handle_event(&self.tree, Some(&self.animations), event);
+            .handle_event(&self.tree, Some(&self.animations), event, hit);
     }
 
     pub(crate) fn handle_runtime_pre_gesture_event(
         &mut self,
         event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
     ) -> RuntimeEventResult {
         self.systems.handle_pre_gesture_event(
             RuntimeEventCx {
                 tree: &mut self.tree,
                 interaction: &mut self.interaction,
                 animations: Some(&self.animations),
+                pointer_hit: hit,
             },
             event,
         )
     }
 
-    pub(crate) fn handle_gesture_event(&mut self, event: &AppEvent) -> FrameworkOutput {
-        let update = self.handle_gesture_session_event(event);
+    pub(crate) fn handle_gesture_event(
+        &mut self,
+        event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
+    ) -> FrameworkOutput {
+        let update = self.handle_gesture_session_event(event, hit);
         let output = update
             .signal
             .as_ref()
@@ -969,9 +985,10 @@ impl Context {
     pub(crate) fn handle_gesture_session_event(
         &mut self,
         event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
     ) -> GestureSessionUpdate {
         self.gesture_session
-            .handle_event(&self.tree, Some(&self.animations), event)
+            .handle_event(&self.tree, Some(&self.animations), event, hit)
     }
 
     pub(crate) fn cancel_gesture(&mut self) {
@@ -1306,8 +1323,8 @@ impl CanvasMutApi<'_> {
         self.ctx.select_canvas_node(owner_id)
     }
 
-    pub fn clear_selection(&mut self) {
-        self.ctx.clear_canvas_selection();
+    pub fn clear_selection(&mut self) -> bool {
+        self.ctx.clear_canvas_selection()
     }
 
     pub fn begin_pending_connection(

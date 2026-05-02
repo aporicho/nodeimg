@@ -23,7 +23,7 @@ use gui::canvas::{
     CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState,
     CanvasPortRef, CanvasPortSide,
 };
-use gui::context::Context;
+use gui::context::{Context, HitChain};
 use gui::control::ResizeEdge;
 use gui::theme::Theme;
 
@@ -371,8 +371,8 @@ impl WorkspaceController {
         gui.canvas_mut().select_node(owner_id)
     }
 
-    pub(crate) fn clear_canvas_selection(&mut self, gui: &mut Context) {
-        gui.canvas_mut().clear_selection();
+    pub(crate) fn clear_canvas_selection(&mut self, gui: &mut Context) -> bool {
+        gui.canvas_mut().clear_selection()
     }
 
     pub(crate) fn begin_canvas_port_connection(
@@ -434,8 +434,12 @@ impl WorkspaceController {
         true
     }
 
-    pub(crate) fn update_canvas_hover(&mut self, gui: &mut Context, x: f32, y: f32) -> bool {
-        let port_id = self.port_id_at(gui, x, y);
+    pub(crate) fn update_canvas_hover_from_chain(
+        &mut self,
+        gui: &mut Context,
+        chain: &HitChain,
+    ) -> bool {
+        let port_id = self.port_id_at_chain(gui, chain);
         gui.canvas_mut().set_hovered_port(port_id.as_deref())
     }
 
@@ -449,11 +453,15 @@ impl WorkspaceController {
     fn port_id_at(&self, gui: &Context, x: f32, y: f32) -> Option<String> {
         let query = gui.query();
         let chain = query.hit_test(x, y);
-        let port_id = chain.iter().find_map(|node_id| {
+        self.port_id_at_chain(gui, &chain)
+    }
+
+    fn port_id_at_chain(&self, gui: &Context, chain: &HitChain) -> Option<String> {
+        let query = gui.query();
+        chain.iter().find_map(|node_id| {
             let id = query.node_name(node_id)?;
             canvas_port_event_target_id(id).map(str::to_string)
-        });
-        port_id
+        })
     }
 
     fn connect_canvas_ports(

@@ -1,4 +1,5 @@
 use crate::animation::AnimationStore;
+use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::shell::AppEvent;
 use crate::tree::{NodeId, Tree};
 
@@ -29,8 +30,9 @@ impl InteractionState {
         tree: &Tree,
         animations: Option<&AnimationStore>,
         event: &AppEvent,
+        hit: Option<&PointerHitSnapshot>,
     ) {
-        reducer::apply_event(self, tree, animations, event);
+        reducer::apply_event(self, tree, animations, event, hit);
     }
 
     pub fn visual_state(&self, node_id: NodeId, disabled: bool) -> ControlVisualState {

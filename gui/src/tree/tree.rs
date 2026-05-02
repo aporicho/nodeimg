@@ -1428,9 +1428,9 @@ impl Tree {
         true
     }
 
-    pub(crate) fn clear_canvas_selection(&mut self) {
-        self.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
-            .clear();
+    pub(crate) fn clear_canvas_selection(&mut self) -> bool {
+        self.runtime_slot_by_stable_id_mut::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
+            .is_some_and(CanvasInteractionRuntime::clear)
     }
 
     pub(crate) fn is_canvas_node_selected(&self, owner_id: &str) -> bool {
@@ -2958,5 +2958,25 @@ mod tests {
         );
         assert!(tree.pending_canvas_connection().is_none());
         assert!(tree.hovered_canvas_port_id().is_none());
+    }
+
+    #[test]
+    fn clear_canvas_selection_reports_only_real_changes() {
+        let mut tree = Tree::new();
+        tree.sync_canvas_node_layouts(&[CanvasNodeIdentity {
+            owner_id: "engine_node::1".to_string(),
+            default_rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 80.0,
+            },
+        }]);
+
+        assert!(!tree.clear_canvas_selection());
+        assert!(tree.select_canvas_node("engine_node::1"));
+        assert!(tree.clear_canvas_selection());
+        assert!(!tree.is_canvas_node_selected("engine_node::1"));
+        assert!(!tree.clear_canvas_selection());
     }
 }

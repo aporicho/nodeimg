@@ -1,19 +1,22 @@
 use crate::context::Context;
+use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::output::FrameworkOutput;
 use crate::shell::AppEvent;
 use crate::tree::layout::Overflow;
 use crate::tree::NodeId;
 
 pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
-    ctx.handle_interaction_event(event);
-    let scroll_consumed = handle_scroll_event(ctx, event);
-    let runtime_result = ctx.handle_runtime_pre_gesture_event(event);
+    let pointer_hit = ctx.pointer_hit_snapshot(event);
+    let pointer_hit = pointer_hit.as_ref();
+    ctx.handle_interaction_event(event, pointer_hit);
+    let scroll_consumed = handle_scroll_event(ctx, event, pointer_hit);
+    let runtime_result = ctx.handle_runtime_pre_gesture_event(event, pointer_hit);
     if runtime_result.cancel_gesture {
         ctx.cancel_gesture();
         return finalize_output(runtime_result.output.with_consumed(scroll_consumed));
     }
 
-    let gesture_output = ctx.handle_gesture_event(event);
+    let gesture_output = ctx.handle_gesture_event(event, pointer_hit);
     finalize_output(
         runtime_result
             .output
@@ -27,24 +30,41 @@ fn finalize_output(mut output: FrameworkOutput) -> FrameworkOutput {
     output
 }
 
-fn handle_scroll_event(ctx: &mut Context, event: &AppEvent) -> bool {
+fn handle_scroll_event(
+    ctx: &mut Context,
+    event: &AppEvent,
+    hit: Option<&PointerHitSnapshot>,
+) -> bool {
     let Some((x, y, delta)) = scroll_event_delta(event) else {
         return false;
     };
-    let Some(node_id) = scroll_target_at(ctx, x, y) else {
+    let Some(node_id) = scroll_target_at(ctx, hit, x, y) else {
         return false;
     };
     ctx.tree.scroll(node_id, delta);
     true
 }
 
-fn scroll_target_at(ctx: &Context, x: f32, y: f32) -> Option<NodeId> {
-    ctx.hit_test(x, y).iter().find(|&node_id| {
+fn scroll_target_at(
+    ctx: &Context,
+    hit: Option<&PointerHitSnapshot>,
+    x: f32,
+    y: f32,
+) -> Option<NodeId> {
+    let fallback;
+    let chain = if let Some(hit) = hit.filter(|hit| hit.matches_point(x, y)) {
+        hit.chain()
+    } else {
+        fallback = ctx.hit_test(x, y);
+        &fallback
+    };
+    let target = chain.iter().find(|&node_id| {
         ctx.tree
             .get(node_id)
             .map(|node| node.style.overflow == Overflow::Scroll)
             .unwrap_or(false)
-    })
+    });
+    target
 }
 
 fn scroll_event_delta(event: &AppEvent) -> Option<(f32, f32, f32)> {

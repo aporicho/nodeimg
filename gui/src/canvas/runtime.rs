@@ -77,8 +77,12 @@ impl CanvasInteractionRuntime {
         self.selected_owner_ids.insert(owner_id.to_string());
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) -> bool {
+        if self.selected_owner_ids.is_empty() {
+            return false;
+        }
         self.selected_owner_ids.clear();
+        true
     }
 
     pub(crate) fn is_selected(&self, owner_id: &str) -> bool {

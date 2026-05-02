@@ -4,6 +4,7 @@ use crate::context::ImeRequest;
 use crate::control::state::TextBoxStore;
 use crate::control::systems::{SystemCx, TextBoxSystem};
 use crate::control::ControlIntrinsic;
+use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;
@@ -17,6 +18,7 @@ pub(crate) struct RuntimeEventCx<'a> {
     pub(crate) tree: &'a mut Tree,
     pub(crate) interaction: &'a mut InteractionState,
     pub(crate) animations: Option<&'a AnimationStore>,
+    pub(crate) pointer_hit: Option<&'a PointerHitSnapshot>,
 }
 
 #[derive(Debug, Default)]
@@ -56,7 +58,7 @@ impl RuntimeSystems {
         }
 
         let text_output = {
-            let text_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction);
+            let text_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction, cx.pointer_hit);
             self.text_box.handle_event(text_cx, event)
         };
 
