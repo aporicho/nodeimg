@@ -1,6 +1,5 @@
 mod app;
 mod context;
-mod cursor;
 mod event;
 mod gpu;
 mod runner;
@@ -10,6 +9,5 @@ mod window;
 
 pub use app::App;
 pub use context::AppContext;
-pub use cursor::{CursorState, CursorStyle};
 pub use event::{AppEvent, Key, Modifiers, MouseButton};
 pub use runner::run;

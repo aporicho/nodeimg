@@ -958,6 +958,8 @@ mod tests {
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
+    use gui::control::ResizeEdge;
+    use gui::cursor::CursorKind;
     use gui::layout::TextureHandle;
     use gui::output::{ControlEvent, GuiEvent};
     use gui::renderer::TextMeasurer;
@@ -1261,10 +1263,22 @@ mod tests {
             .query()
             .node_rect("toolbar::titlebar")
             .expect("toolbar titlebar rect");
-        let drag_start_x = before_titlebar.x + 12.0;
-        let drag_start_y = before_titlebar.y + 10.0;
+        let drag_start_x = before_titlebar.x + before_titlebar.w * 0.5;
+        let drag_start_y = before_titlebar.y + before_titlebar.h - 4.0;
         let dx = 260.0;
         let dy = 120.0;
+        let titlebar_hit = gui.query().pointer_hit_at(drag_start_x, drag_start_y);
+        let resize_hit = gui.query().pointer_hit_at(
+            before_root.x + before_root.w,
+            before_root.y + before_root.h * 0.5,
+        );
+
+        assert!(titlebar_hit.chain().contains(titlebar));
+        assert_eq!(gui.query().cursor_for_hit(&titlebar_hit), CursorKind::Move);
+        assert_eq!(
+            gui.query().cursor_for_hit(&resize_hit),
+            CursorKind::Resize(ResizeEdge::Right)
+        );
 
         assert!(gui
             .panel_mut()

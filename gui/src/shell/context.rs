@@ -4,8 +4,8 @@ use winit::dpi::PhysicalSize;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::window::Window;
 
-use super::cursor::CursorState;
 use crate::context::ImeRequest;
+use crate::cursor::{CursorKind, CursorState};
 
 pub struct AppContext {
     pub device: wgpu::Device,
@@ -14,7 +14,7 @@ pub struct AppContext {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
     pub scale_factor: f64,
-    pub cursor: CursorState,
+    pub(crate) cursor: CursorState,
     pub(crate) ime_allowed: bool,
     pub(crate) clipboard: Option<Clipboard>,
     pub(crate) redraw_requested: bool,
@@ -23,6 +23,18 @@ pub struct AppContext {
 impl AppContext {
     pub fn request_redraw(&mut self) {
         self.redraw_requested = true;
+    }
+
+    pub fn set_cursor(&mut self, cursor: CursorKind) {
+        self.cursor.set(cursor);
+    }
+
+    pub fn cursor(&self) -> CursorKind {
+        self.cursor.desired()
+    }
+
+    pub(crate) fn apply_cursor(&mut self) {
+        self.cursor.apply_to_window(&self.window);
     }
 
     pub(crate) fn take_redraw_request(&mut self) -> bool {

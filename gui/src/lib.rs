@@ -3,6 +3,7 @@ pub mod animation;
 pub mod canvas;
 pub mod context;
 pub mod control;
+pub mod cursor;
 pub mod diagnostics;
 pub(crate) mod event;
 pub mod geometry;

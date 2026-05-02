@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use crate::animation::{AnimationBuilder, AnimationId, AnimationStore, TimelineBuilder};
 use crate::control::{ControlIntrinsic, ControlRole, ResizeEdge};
+use crate::cursor::{resolve_cursor, CursorHitDescriptor, CursorHitNode, CursorKind};
 use crate::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use crate::diagnostics::tree_dump::{self, TreeDumpController, TreeDumpPhase, TreeDumpPoint};
 use crate::event::pointer_hit::PointerHitSnapshot;
@@ -862,27 +863,6 @@ impl Context {
             .map(|node| node.scroll_offset())
     }
 
-    pub(crate) fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
-        self.tree
-            .get(node_id)
-            .map(|node| node.style.gestures.contains(&gesture))
-            .unwrap_or(false)
-    }
-
-    pub(crate) fn node_is_draggable(&self, node_id: NodeId) -> bool {
-        self.tree
-            .get(node_id)
-            .map(|node| node.style.draggable)
-            .unwrap_or(false)
-    }
-
-    pub(crate) fn node_is_resizable(&self, node_id: NodeId) -> bool {
-        self.tree
-            .get(node_id)
-            .map(|node| node.style.resizable)
-            .unwrap_or(false)
-    }
-
     pub(crate) fn resize_hit_at_screen_point(
         &self,
         x: f32,
@@ -922,6 +902,39 @@ impl Context {
         )
     }
 
+    pub(crate) fn cursor_for_hit(&self, hit: &PointerHitQueryResult) -> CursorKind {
+        let desc = self.cursor_hit_descriptor(hit);
+        resolve_cursor(&desc)
+    }
+
+    pub(crate) fn cursor_at(&self, x: f32, y: f32) -> CursorKind {
+        let hit = self.pointer_hit_at(x, y);
+        self.cursor_for_hit(&hit)
+    }
+
+    fn cursor_hit_descriptor(&self, hit: &PointerHitQueryResult) -> CursorHitDescriptor {
+        let nodes_from_leaf_to_root = hit
+            .chain()
+            .iter()
+            .filter_map(|node_id| {
+                let node = self.tree.get(node_id)?;
+                let gestures = &node.style.gestures;
+                Some(CursorHitNode {
+                    role: self.node_root_control_role(node_id),
+                    draggable: node.style.draggable,
+                    has_tap: gestures.contains(&Gesture::Tap),
+                    has_double_tap: gestures.contains(&Gesture::DoubleTap),
+                    has_drag: gestures.contains(&Gesture::Drag),
+                })
+            })
+            .collect();
+
+        CursorHitDescriptor {
+            resize_edge: hit.resize_hit().map(|(_, edge)| edge),
+            nodes_from_leaf_to_root,
+        }
+    }
+
     pub(crate) fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
         let mut candidate = self.node_name(node_id)?;
 
@@ -937,22 +950,6 @@ impl Context {
             let (prefix, _) = candidate.rsplit_once("::")?;
             candidate = prefix;
         }
-    }
-
-    pub(crate) fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
-        self.node_name(node_id)
-            .is_some_and(|id| id.ends_with("::field"))
-            && self
-                .node_root_control_role(node_id)
-                .is_some_and(ControlRole::is_text_input)
-    }
-
-    pub(crate) fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
-        self.node_name(node_id)
-            .is_some_and(|id| id.ends_with("::field"))
-            && self
-                .node_root_control_role(node_id)
-                .is_some_and(ControlRole::is_text_area)
     }
 
     pub(crate) fn focused_node(&self) -> Option<NodeId> {
@@ -1180,18 +1177,6 @@ impl QueryApi<'_> {
         self.ctx.node_scroll_offset(id)
     }
 
-    pub fn node_has_gesture(&self, node_id: NodeId, gesture: Gesture) -> bool {
-        self.ctx.node_has_gesture(node_id, gesture)
-    }
-
-    pub fn node_is_draggable(&self, node_id: NodeId) -> bool {
-        self.ctx.node_is_draggable(node_id)
-    }
-
-    pub fn node_is_resizable(&self, node_id: NodeId) -> bool {
-        self.ctx.node_is_resizable(node_id)
-    }
-
     pub fn hit_test(&self, x: f32, y: f32) -> HitChain {
         self.ctx.hit_test(x, y)
     }
@@ -1204,16 +1189,12 @@ impl QueryApi<'_> {
         self.ctx.pointer_hit_at(x, y)
     }
 
-    pub fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
-        self.ctx.node_root_control_role(node_id)
+    pub fn cursor_for_hit(&self, hit: &PointerHitQueryResult) -> CursorKind {
+        self.ctx.cursor_for_hit(hit)
     }
 
-    pub fn node_is_text_input_field(&self, node_id: NodeId) -> bool {
-        self.ctx.node_is_text_input_field(node_id)
-    }
-
-    pub fn node_is_text_area_field(&self, node_id: NodeId) -> bool {
-        self.ctx.node_is_text_area_field(node_id)
+    pub fn cursor_at(&self, x: f32, y: f32) -> CursorKind {
+        self.ctx.cursor_at(x, y)
     }
 
     pub fn focused_node(&self) -> Option<NodeId> {
@@ -1586,7 +1567,7 @@ fn layout_output_from_tree(tree: &Tree, node: NodeId) -> Option<LayoutOutput> {
 mod tests {
     use super::*;
     use crate::tree::layout::BoxStyle;
-    use crate::tree::{NodeKind, RuntimeSlots, TreeNode};
+    use crate::tree::{NodeKind, NodeProps, RuntimeSlots, TreeNode};
 
     fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
         TreeNode {
@@ -1605,6 +1586,23 @@ mod tests {
             paint_meta: Default::default(),
             mutation_meta: Default::default(),
             runtime_slots: RuntimeSlots::default(),
+        }
+    }
+
+    fn node_with_style(id: &'static str, rect: Rect, style: BoxStyle) -> TreeNode {
+        TreeNode {
+            style,
+            ..hittable_node(id, rect)
+        }
+    }
+
+    fn node_with_role(id: &'static str, rect: Rect, role: ControlRole) -> TreeNode {
+        TreeNode {
+            props: NodeProps {
+                semantic_role: Some(role),
+                ..Default::default()
+            },
+            ..hittable_node(id, rect)
         }
     }
 
@@ -1627,5 +1625,123 @@ mod tests {
         assert!(hit.matches_point(20.0, 30.0));
         assert_eq!(hit.chain().leaf(), Some(root));
         assert!(hit.resize_hit().is_none());
+    }
+
+    #[test]
+    fn cursor_for_hit_prefers_resize_hit() {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(node_with_style(
+            "resizable",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+            BoxStyle {
+                hittable: true,
+                resizable: true,
+                ..Default::default()
+            },
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(100.0, 50.0);
+
+        assert_eq!(
+            ctx.query().cursor_for_hit(&hit),
+            CursorKind::Resize(ResizeEdge::Right)
+        );
+    }
+
+    #[test]
+    fn cursor_for_hit_reports_draggable_as_move() {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(node_with_style(
+            "titlebar",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 32.0,
+            },
+            BoxStyle {
+                hittable: true,
+                draggable: true,
+                gestures: vec![Gesture::Tap, Gesture::Drag],
+                ..Default::default()
+            },
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+        assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Move);
+        assert_eq!(ctx.query().cursor_at(20.0, 10.0), CursorKind::Move);
+    }
+
+    #[test]
+    fn cursor_for_hit_reports_clickable_as_pointer() {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(node_with_role(
+            "button",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 80.0,
+                h: 28.0,
+            },
+            ControlRole::Button,
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+        assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Pointer);
+    }
+
+    #[test]
+    fn cursor_for_hit_reports_text_roles_as_text() {
+        for role in [
+            ControlRole::TextInput,
+            ControlRole::TextArea,
+            ControlRole::NumberInput,
+        ] {
+            let mut ctx = Context::new();
+            let root = ctx.tree.insert(node_with_role(
+                "field",
+                Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 100.0,
+                    h: 28.0,
+                },
+                role,
+            ));
+            ctx.tree.set_root(root);
+
+            let hit = ctx.query().pointer_hit_at(20.0, 10.0);
+
+            assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Text);
+        }
+    }
+
+    #[test]
+    fn cursor_for_hit_defaults_for_plain_hittable_node() {
+        let mut ctx = Context::new();
+        let root = ctx.tree.insert(hittable_node(
+            "plain",
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+        ));
+        ctx.tree.set_root(root);
+
+        let hit = ctx.query().pointer_hit_at(20.0, 30.0);
+
+        assert_eq!(ctx.query().cursor_for_hit(&hit), CursorKind::Default);
     }
 }

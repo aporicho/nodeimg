@@ -13,15 +13,13 @@ use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
-use gui::context::{
-    Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect, PointerHitQueryResult,
-};
+use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
 use gui::control::ResizeEdge;
+use gui::cursor::CursorKind;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
-use gui::gesture::Gesture;
 use gui::layout::TextureHandle;
 use gui::renderer::{Rect, Renderer, TextureSize};
-use gui::shell::{App, AppContext, AppEvent, CursorStyle, Key, MouseButton};
+use gui::shell::{App, AppContext, AppEvent, Key, MouseButton};
 use gui::theme::{light_theme, Theme};
 use std::time::{Duration, Instant};
 
@@ -163,7 +161,7 @@ impl App for AppShell {
             self.cursor_refresh
                 .mark(WorkspaceCursorDirtyReason::Navigation);
             if self.navigation.is_panning() {
-                ctx.cursor.set(CursorStyle::Move);
+                ctx.set_cursor(CursorKind::Move);
                 let viewport = viewport_rect(ctx);
                 let key = self.cursor_refresh_key(viewport);
                 self.cursor_refresh.finish_refreshed(key);
@@ -184,7 +182,7 @@ impl App for AppShell {
         let viewport = viewport_rect(ctx);
         self.sync_workspace_scene_until_controls_stable(viewport, renderer);
         ctx.apply_ime_request(self.gui.input().ime_request());
-        self.refresh_hover_cursor_if_needed(viewport, ctx);
+        self.refresh_workspace_cursor_if_needed(viewport, ctx);
         if self.gui.animations().active() {
             ctx.request_redraw();
         }
@@ -441,7 +439,12 @@ impl AppShell {
                     changed,
                     WorkspaceSceneDirtyReason::CanvasRuntime,
                 );
-                self.update_hover_cursor_from_hit(&hit, ctx);
+                let cursor = if self.navigation.is_panning() {
+                    CursorKind::Move
+                } else {
+                    self.gui.query().cursor_for_hit(&hit)
+                };
+                ctx.set_cursor(cursor);
                 let viewport = viewport_rect(ctx);
                 let key = self.cursor_refresh_key(viewport);
                 self.cursor_refresh.finish_refreshed(key);
@@ -707,7 +710,7 @@ impl AppShell {
         }
     }
 
-    fn refresh_hover_cursor_if_needed(&mut self, viewport: Rect, ctx: &mut AppContext) {
+    fn refresh_workspace_cursor_if_needed(&mut self, viewport: Rect, ctx: &mut AppContext) {
         let key = self.cursor_refresh_key(viewport);
         let decision = self.cursor_refresh.begin_frame(key);
         if !decision.should_refresh {
@@ -717,145 +720,34 @@ impl AppShell {
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             reasons = ?decision.reasons,
-            "refresh hover cursor"
+            "refresh workspace cursor"
         );
 
-        self.update_hover_cursor(self.mouse_x, self.mouse_y, None, ctx);
+        ctx.set_cursor(self.workspace_cursor_at(self.mouse_x, self.mouse_y));
         self.cursor_refresh.finish_refreshed(key);
     }
 
-    fn update_hover_cursor_from_hit(&self, hit: &PointerHitQueryResult, ctx: &mut AppContext) {
-        self.update_hover_cursor(hit.x(), hit.y(), Some(hit), ctx);
-    }
-
-    fn update_hover_cursor(
-        &self,
-        x: f32,
-        y: f32,
-        hit: Option<&PointerHitQueryResult>,
-        ctx: &mut AppContext,
-    ) {
-        tracing::trace!(
-            target: "nodeimg::render_trace::node",
-            x,
-            y,
-            panning = self.navigation.is_panning(),
-            "update hover cursor"
-        );
+    fn workspace_cursor_at(&self, x: f32, y: f32) -> CursorKind {
         if self.navigation.is_panning() {
             tracing::trace!(
                 target: "nodeimg::render_trace::node",
                 x,
                 y,
-                cursor = ?CursorStyle::Move,
-                "hover cursor set while canvas is panning"
+                cursor = ?CursorKind::Move,
+                "workspace cursor set while canvas is panning"
             );
-            ctx.cursor.set(CursorStyle::Move);
-            return;
+            return CursorKind::Move;
         }
 
-        let fallback;
-        let hit = if let Some(hit) = hit {
-            hit
-        } else {
-            fallback = self.gui.query().pointer_hit_at(x, y);
-            &fallback
-        };
-        let query = self.gui.query();
-        if let Some((node_id, edge)) = hit.resize_hit() {
-            let cursor = cursor_for_resize_edge(edge);
-            tracing::trace!(
-                target: "nodeimg::render_trace::node",
-                x,
-                y,
-                node_id = ?query.node_name(node_id),
-                edge = ?edge,
-                cursor = ?cursor,
-                "hover cursor set from resize hit"
-            );
-            ctx.cursor.set(cursor);
-            return;
-        }
-
-        let chain = hit.chain();
-        if chain.is_empty() {
-            tracing::trace!(
-                target: "nodeimg::render_trace::node",
-                x,
-                y,
-                "hover cursor no-op: empty hit chain and no resize hit"
-            );
-            return;
-        }
+        let cursor = self.gui.query().cursor_at(x, y);
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             x,
             y,
-            chain_len = chain.len(),
-            leaf = ?chain.leaf().and_then(|node_id| query.node_name(node_id)),
-            root = ?chain.root().and_then(|node_id| query.node_name(node_id)),
-            "hover cursor falling back to ordinary hit chain"
+            cursor = ?cursor,
+            "workspace cursor resolved from gui cursor query"
         );
-
-        for node_id in chain.iter() {
-            if query.node_name(node_id).is_none() {
-                continue;
-            }
-
-            if query.node_is_text_input_field(node_id) || query.node_is_text_area_field(node_id) {
-                tracing::trace!(
-                    target: "nodeimg::render_trace::node",
-                    x,
-                    y,
-                    node_id = ?query.node_name(node_id),
-                    cursor = ?CursorStyle::Text,
-                    "hover cursor set from text field hit"
-                );
-                ctx.cursor.set(CursorStyle::Text);
-                return;
-            }
-
-            if query.node_is_draggable(node_id) {
-                tracing::trace!(
-                    target: "nodeimg::render_trace::node",
-                    x,
-                    y,
-                    node_id = ?query.node_name(node_id),
-                    cursor = ?CursorStyle::Move,
-                    "hover cursor set from draggable hit"
-                );
-                ctx.cursor.set(CursorStyle::Move);
-                return;
-            }
-
-            if query.node_has_gesture(node_id, Gesture::Drag) {
-                tracing::trace!(
-                    target: "nodeimg::render_trace::node",
-                    x,
-                    y,
-                    node_id = ?query.node_name(node_id),
-                    cursor = ?CursorStyle::Pointer,
-                    "hover cursor set from drag gesture hit"
-                );
-                ctx.cursor.set(CursorStyle::Pointer);
-                return;
-            }
-
-            if query.node_has_gesture(node_id, Gesture::Tap)
-                || query.node_has_gesture(node_id, Gesture::DoubleTap)
-            {
-                tracing::trace!(
-                    target: "nodeimg::render_trace::node",
-                    x,
-                    y,
-                    node_id = ?query.node_name(node_id),
-                    cursor = ?CursorStyle::Pointer,
-                    "hover cursor set from tap gesture hit"
-                );
-                ctx.cursor.set(CursorStyle::Pointer);
-                return;
-            }
-        }
+        cursor
     }
 
     fn handle_canvas_release(&mut self, x: f32, y: f32) {
@@ -944,19 +836,6 @@ fn viewport_rect(ctx: &AppContext) -> Rect {
         y: 0.0,
         w: ctx.size.width as f32 / ctx.scale_factor as f32,
         h: ctx.size.height as f32 / ctx.scale_factor as f32,
-    }
-}
-
-fn cursor_for_resize_edge(edge: ResizeEdge) -> CursorStyle {
-    match edge {
-        ResizeEdge::Top => CursorStyle::ResizeN,
-        ResizeEdge::Bottom => CursorStyle::ResizeS,
-        ResizeEdge::Left => CursorStyle::ResizeW,
-        ResizeEdge::Right => CursorStyle::ResizeE,
-        ResizeEdge::TopLeft => CursorStyle::ResizeNW,
-        ResizeEdge::TopRight => CursorStyle::ResizeNE,
-        ResizeEdge::BottomLeft => CursorStyle::ResizeSW,
-        ResizeEdge::BottomRight => CursorStyle::ResizeSE,
     }
 }
 

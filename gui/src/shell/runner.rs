@@ -61,7 +61,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
             surface_config,
             size,
             scale_factor,
-            cursor: super::cursor::CursorState::new(),
+            cursor: crate::cursor::CursorState::new(),
             ime_allowed: false,
             clipboard: Clipboard::new().ok(),
             redraw_requested: true,
@@ -127,9 +127,8 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     redraw_requested: state.ctx.redraw_requested,
                 },
             );
-            state.ctx.cursor.reset();
             state.app.update(&mut state.renderer, &mut state.ctx);
-            state.ctx.cursor.apply(&state.ctx.window);
+            state.ctx.apply_cursor();
 
             let output = match state.surface.get_current_texture() {
                 Ok(tex) => tex,
