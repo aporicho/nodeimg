@@ -7,7 +7,7 @@ pub enum TemplatePayload {
     Slots(SlotValues),
     CanvasNodeCard(crate::canvas::retained_node_card::CanvasNodeCardTemplateData),
     DropdownOverlay(crate::overlay::retained::DropdownOverlayTemplateData),
-    PanelFrame(crate::panel::retained::PanelFrameTemplateData),
+    PanelFrame(crate::panel::PanelFrameTemplateData),
 }
 
 impl TemplatePayload {

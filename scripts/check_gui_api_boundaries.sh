@@ -68,6 +68,7 @@ check_missing_path "legacy full-tree desc diff" gui/src/tree/diff.rs
 check_missing_path "legacy Desc canvas node-card builder" gui/src/canvas/node_card.rs
 check_missing_path "old flat canvas retained node card module" gui/src/canvas/retained_node_card.rs
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
+check_missing_path "old flat panel retained module" gui/src/panel/retained.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
 check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
@@ -170,6 +171,11 @@ check_no_match \
     app/src/workspace/scene_controller.rs
 
 check_no_match \
+    "template payload must use panel facade instead of retained internals for panel data API" \
+    'panel::retained::PanelFrameTemplateData' \
+    gui/src/template/payload.rs
+
+check_no_match \
     "panel drag/resize must use ControlEvent, not a parallel PanelEvent channel" \
     'PanelEvent|GuiEvent::Panel' \
     app/src \
@@ -234,6 +240,11 @@ check_no_match \
     "canvas retained node card controls module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/canvas/retained_node_card/controls/mod.rs
+
+check_no_match \
+    "panel retained module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/panel/retained/mod.rs
 
 check_no_match \
     "control text box state module root must only declare and re-export submodules" \
