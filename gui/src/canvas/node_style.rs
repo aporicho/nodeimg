@@ -1,4 +1,4 @@
-use crate::control::ParamControlMetrics;
+use crate::control::ControlMetrics;
 use crate::renderer::Rect;
 use crate::theme::Theme;
 
@@ -23,12 +23,12 @@ pub(crate) struct NodeCardMetrics {
     pub title_lift: f32,
     pub card_radius: f32,
     pub row_radius: f32,
-    pub control: ParamControlMetrics,
+    pub control: ControlMetrics,
 }
 
 impl NodeCardMetrics {
     pub(crate) fn from_theme(theme: &Theme) -> Self {
-        let mut control = ParamControlMetrics::from_theme(theme);
+        let mut control = ControlMetrics::from_theme(theme);
         control.control_width = 256.0;
         Self {
             card_width: 304.0,

@@ -86,7 +86,7 @@ TextBoxTemplate
 CanvasRootTemplate
 CanvasGridTemplate
 CanvasNodeCardTemplate
-ParamControlTemplate
+ControlTemplate
 PanelFrameTemplate
 ```
 

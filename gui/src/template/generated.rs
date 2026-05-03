@@ -19,7 +19,7 @@ pub const CANVAS_NODE_CARD_TEMPLATE: &str = "builtin::canvas_node_card";
 pub const WORKSPACE_ROOT_TEMPLATE: &str = "builtin::workspace_root";
 pub const CANVAS_CONNECTION_TEMPLATE: &str = "builtin::canvas_connection";
 pub const CANVAS_PENDING_CONNECTION_TEMPLATE: &str = "builtin::canvas_pending_connection";
-pub const PARAM_CONTROL_TEMPLATE: &str = "builtin::param_control";
+pub const CONTROL_TEMPLATE: &str = "builtin::control";
 pub const PANEL_FRAME_TEMPLATE: &str = "builtin::panel_frame";
 pub const DROPDOWN_OVERLAY_TEMPLATE: &str = "builtin::dropdown_overlay";
 pub const NODE_PALETTE_TEMPLATE: &str = "builtin::node_palette";
@@ -39,7 +39,7 @@ pub(crate) fn register_builtin_templates(
     registry.register(workspace_root_template())?;
     registry.register(canvas_connection_template())?;
     registry.register(canvas_pending_connection_template())?;
-    registry.register(param_control_template())?;
+    registry.register(control_template())?;
     registry.register(panel_frame_template())?;
     registry.register(node_palette_template())?;
     registry.register(node_palette_category_template())?;
@@ -323,11 +323,11 @@ pub(crate) fn canvas_node_card_template() -> CompiledTemplate {
     })
 }
 
-pub(crate) fn param_control_template() -> CompiledTemplate {
+pub(crate) fn control_template() -> CompiledTemplate {
     CompiledTemplate::new(
-        PARAM_CONTROL_TEMPLATE,
+        CONTROL_TEMPLATE,
         BUILTIN_TEMPLATE_REVISION,
-        container("", param_control_style(), None).with_children(vec![
+        container("", control_style(), None).with_children(vec![
             text_leaf("::label", "", default_text_style()),
             text_leaf("::value", "", default_text_style()),
         ]),
@@ -618,7 +618,7 @@ fn canvas_node_label_style() -> BoxStyle {
     }
 }
 
-fn param_control_style() -> BoxStyle {
+fn control_style() -> BoxStyle {
     BoxStyle {
         direction: Direction::Row,
         width: Size::Fill,

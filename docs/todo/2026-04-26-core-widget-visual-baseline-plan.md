@@ -50,8 +50,8 @@ TextInput / NumberInput
 
 ## Rules
 
-- 控件缺陷优先修在 `gui/src/widget/atoms/*`、`gui/src/widget/painters/*`、`gui/src/theme/*`。
-- 节点内参数控件走 `gui/src/widget/param_control.rs` 的紧凑形态，不在节点卡片里手写控件外观。
+- 控件缺陷优先修在 `gui/src/control/templates/*`、`gui/src/control/text_box/*`、`gui/src/theme/*`。
+- 节点内参数控件走 `gui/src/control` 的统一 `ControlSpec` / template 形态，不在节点卡片里手写控件外观。
 - 节点卡片参数行只提供控件槽位，不统一渲染 `param.name` 或 `default_value`；需要 label/value 时由控件自身决定位置。
 - 不为了某个节点临时绕过通用控件。
 - 每个控件必须覆盖普通、hover、pressed/focused、disabled 的关键状态；没有对应状态时要显式说明。
@@ -79,11 +79,10 @@ TextInput / NumberInput
 
 代码入口：
 
-- `gui/src/widget/atoms/text_input.rs`
-- `gui/src/widget/atoms/number_input.rs`
-- `gui/src/widget/painters/text_input.rs`
-- `gui/src/widget/systems/text_input.rs`
-- `gui/src/widget/state/text_input.rs`
+- `gui/src/control/templates/text_field.rs`
+- `gui/src/control/text_box/runtime.rs`
+- `gui/src/control/text_box/system.rs`
+- `gui/src/control/text_box/painter.rs`
 
 Checklist：
 
@@ -93,7 +92,7 @@ Checklist：
 - [ ] Disabled 态：不可编辑且视觉降级一致。
 - [ ] Number formatting：精度、step、min/max 显示稳定。
 - [ ] 长文本：横向滚动、caret 可见、省略策略不破布局。
-- [ ] 节点内：`ParamControlSpec::Text` 和 `ParamControlSpec::Number` 在节点卡片内不撑宽。
+- [ ] 节点内：`ControlSpec::Text` 和 `ControlSpec::Number` 在节点卡片内不撑宽。
 - [ ] 节点内：TextInput-only showcase 节点只有一个可点击输入框，不出现节点层参数名/默认值。
 - [ ] 测试：现有 text input / number input 单测通过，并补足必要的结构断言。
 
@@ -226,7 +225,7 @@ Checklist：
 第一批控件全部完成后：
 
 - [ ] 整理重复颜色、圆角、高度、间距到 theme tokens。
-- [ ] 更新 `ParamControlMetrics`，让节点内控件走统一 compact 规格。
+- [ ] 更新 `ControlMetrics`，让节点内控件走统一 compact 规格。
 - [ ] 回到 `gui/src/canvas/node_card.rs` 做节点卡片外壳视觉统一。
 - [ ] 复查 `docs/todo/2026-04-24-gui-visual-audit-plan.md` 中 basic widgets 相关行。
 

@@ -1,5 +1,5 @@
 use crate::animation::AnimationStore;
-use crate::control::state::TextBoxStore;
+use crate::control::TextBoxStore;
 use crate::interaction::InteractionState;
 use crate::theme::Theme;
 

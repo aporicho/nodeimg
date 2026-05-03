@@ -2,8 +2,7 @@ use super::node_style::NodeCardMetrics;
 use super::node_template::{CanvasNodeParamTemplate, CanvasNodeTemplate};
 use super::{canvas_node_stable_id, CanvasNodeLayout};
 use crate::control::{
-    param_control_kind, param_control_layout_policy, param_control_min_height, ControlIntrinsic,
-    ParamControlSpec,
+    control_kind, control_layout_policy, control_min_height, ControlIntrinsic, ControlSpec,
 };
 use crate::theme::Theme;
 
@@ -110,8 +109,8 @@ fn body_min_height(
         + metrics.row_gap * row_count.saturating_sub(1) as f32
 }
 
-fn row_min_height(control: &ParamControlSpec, metrics: NodeCardMetrics, theme: &Theme) -> f32 {
-    param_control_min_height(control, theme, metrics.control).max(metrics.param_row_height)
+fn row_min_height(control: &ControlSpec, metrics: NodeCardMetrics, theme: &Theme) -> f32 {
+    control_min_height(control, theme, metrics.control).max(metrics.param_row_height)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -134,11 +133,11 @@ fn body_desired_height(
         };
     }
 
-    let rows = params.iter().enumerate().fold(
-        BodyDesiredHeight::default(),
-        |mut total, (index, param)| {
+    let rows = params
+        .iter()
+        .fold(BodyDesiredHeight::default(), |mut total, param| {
             let row = row_desired_height(
-                index,
+                &param.key,
                 &param.control,
                 owner_id,
                 control_intrinsics,
@@ -150,8 +149,7 @@ fn body_desired_height(
                 total.missing_auto_height_intrinsics += 1;
             }
             total
-        },
-    );
+        });
     BodyDesiredHeight {
         height: rows.height + metrics.row_gap * params.len().saturating_sub(1) as f32,
         missing_auto_height_intrinsics: rows.missing_auto_height_intrinsics,
@@ -165,18 +163,18 @@ struct RowDesiredHeight {
 }
 
 fn row_desired_height(
-    index: usize,
-    control: &ParamControlSpec,
+    param_key: &str,
+    control: &ControlSpec,
     owner_id: &str,
     control_intrinsics: &[ControlIntrinsic],
     metrics: NodeCardMetrics,
     theme: &Theme,
 ) -> RowDesiredHeight {
     let min_height = row_min_height(control, metrics, theme);
-    let policy = param_control_layout_policy(control, theme, metrics.control);
-    let control_kind = param_control_kind(control);
+    let policy = control_layout_policy(control, theme, metrics.control);
+    let control_kind = control_kind(control);
     let control_id = format!(
-        "{}::body::param::{index}::control::content",
+        "{}::body::param::{param_key}::control::content",
         canvas_node_stable_id(owner_id)
     );
     let intrinsic = control_intrinsics
@@ -193,7 +191,7 @@ fn row_desired_height(
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     owner_id,
-                    index,
+                    param_key,
                     control_id = %intrinsic.control_id,
                     control_kind = ?control_kind,
                     row_min_h = min_height,
@@ -214,7 +212,7 @@ fn row_desired_height(
                 tracing::trace!(
                     target: "nodeimg::render_trace::node",
                     owner_id,
-                    index,
+                    param_key,
                     expected_control_id = %control_id,
                     control_kind = ?control_kind,
                     total_intrinsic_count = control_intrinsics.len(),
@@ -250,7 +248,7 @@ mod tests {
                 "",
                 "",
                 "",
-                ParamControlSpec::TextArea {
+                ControlSpec::TextArea {
                     value: "hello".to_string(),
                     min_rows: 5,
                 },
@@ -275,7 +273,8 @@ mod tests {
             user_min_height: None,
         };
         let intrinsics = vec![ControlIntrinsic {
-            control_id: "canvas_node::engine_node::7::body::param::0::control::content".to_string(),
+            control_id: "canvas_node::engine_node::7::body::param::prompt::control::content"
+                .to_string(),
             current_size: [252.0, 72.0],
             min_size: [252.0, 72.0],
             desired_size: [252.0, 220.0],

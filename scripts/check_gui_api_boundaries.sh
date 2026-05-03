@@ -73,6 +73,14 @@ check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat overlay retained module" gui/src/overlay/retained.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
 check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
+check_missing_path "old control state module tree" gui/src/control/state
+check_missing_path "old control systems module tree" gui/src/control/systems
+check_missing_path "old control mapping module" gui/src/control/mapping.rs
+check_missing_path "old control param layout module" gui/src/control/param_layout.rs
+check_missing_path "old control painter module" gui/src/control/painter.rs
+check_missing_path "old canvas retained control template module tree" gui/src/canvas/retained_node_card/controls
+check_missing_path "old panel retained control composer" gui/src/panel/retained/controls.rs
+check_missing_path "old panel retained text helper" gui/src/panel/retained/text.rs
 check_missing_path "old flat renderer display backend module" gui/src/renderer/display_backend.rs
 check_missing_path "old flat renderer prepare module" gui/src/renderer/prepare.rs
 check_missing_path "old flat renderer dispatch module" gui/src/renderer/dispatch.rs
@@ -88,6 +96,7 @@ check_missing_path "old flat tree paint module" gui/src/tree/paint.rs
 check_missing_path "old flat tree layout arrange module" gui/src/tree/layout/arrange.rs
 check_missing_path "old flat panel runtime module" gui/src/panel/runtime.rs
 check_missing_path "old panel reducer test holder" gui/src/panel/reducer.rs
+check_missing_path "old GUI business panel instances directory" gui/src/panel/instances
 check_missing_path "old flat canvas runtime module" gui/src/canvas/runtime.rs
 
 check_no_match \
@@ -155,7 +164,7 @@ check_no_match \
     gui/src/tree/mutation.rs \
     gui/src/tree/retained_runtime.rs \
     gui/src/tree/dirty.rs \
-    gui/src/control/state/text_box_registry.rs
+    gui/src/control/text_box/registry.rs
 
 check_no_match \
     "app production retained path must not call legacy desc builders" \
@@ -188,6 +197,23 @@ check_no_match \
     'PanelEvent|GuiEvent::Panel' \
     app/src \
     gui/src
+
+check_no_match \
+    "app panels must be registered through app/src/panels registry" \
+    'WorkspacePanelComposition|retained_panels\(' \
+    app/src/workspace
+
+check_no_match \
+    "GUI panel content template must stay generic, not app-business-specific" \
+    'PanelContentTemplate::(Toolbar|Preview|Engine)' \
+    gui/src \
+    app/src
+
+check_no_match \
+    "controls must use unified ControlSpec API, not legacy param-control or panel-body names" \
+    'ParamControlSpec|ParamControlMap|ParamControlMetrics|ParamControlKind|ParamControlHeight|ParamControlLayoutPolicy|param_control_(layout_policy|min_height|kind|template)|PARAM_CONTROL_TEMPLATE|PanelBodyNode' \
+    gui/src \
+    app/src
 
 check_no_match \
     "control intrinsic API must not expose snapshot aliases" \
@@ -245,9 +271,14 @@ check_no_match \
     gui/src/canvas/retained_node_card/mod.rs
 
 check_no_match \
-    "canvas retained node card controls module root must only declare and re-export submodules" \
+    "control module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
-    gui/src/canvas/retained_node_card/controls/mod.rs
+    gui/src/control/mod.rs
+
+check_no_match \
+    "control templates module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/templates/mod.rs
 
 check_no_match \
     "panel retained module root must only declare and re-export submodules" \
@@ -260,14 +291,9 @@ check_no_match \
     gui/src/overlay/retained/mod.rs
 
 check_no_match \
-    "control text box state module root must only declare and re-export submodules" \
+    "control text box module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
-    gui/src/control/state/text_box/mod.rs
-
-check_no_match \
-    "control text box system module root must only declare and re-export submodules" \
-    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
-    gui/src/control/systems/text_box/mod.rs
+    gui/src/control/text_box/mod.rs
 
 check_no_match \
     "renderer display backend module root must only declare and re-export submodules" \

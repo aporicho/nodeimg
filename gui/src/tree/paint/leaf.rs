@@ -1,6 +1,6 @@
 use super::icon_svg::svg_style_from_icon;
-use crate::control::painter::paint_text_leaf_override;
-use crate::control::state::TextBoxStore;
+use crate::control::paint_text_leaf_override;
+use crate::control::TextBoxStore;
 use crate::geometry::{Point, Rect};
 use crate::interaction::InteractionState;
 use crate::paint::{

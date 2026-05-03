@@ -4,8 +4,8 @@ use super::{
 };
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::node_template::{CanvasNodeInstanceState, CanvasNodeTemplate};
-use crate::control::param_control_min_height;
-use crate::control::ParamControlSpec;
+use crate::control::control_min_height;
+use crate::control::ControlSpec;
 use crate::renderer::Color;
 use crate::theme::Theme;
 
@@ -58,7 +58,7 @@ pub(crate) enum NodeBodyRowSpec {
     Param {
         id: String,
         control_id: String,
-        control: ParamControlSpec,
+        control: ControlSpec,
     },
 }
 
@@ -149,7 +149,7 @@ fn node_content_min_height(
 fn row_min_height(row: &NodeBodyRowSpec, metrics: NodeCardMetrics, theme: &Theme) -> f32 {
     match row {
         NodeBodyRowSpec::Param { control, .. } => {
-            param_control_min_height(control, theme, metrics.control).max(metrics.param_row_height)
+            control_min_height(control, theme, metrics.control).max(metrics.param_row_height)
         }
         _ => metrics.param_row_height,
     }
@@ -198,9 +198,8 @@ fn body_rows(body_id: &str, template: &CanvasNodeTemplate) -> Vec<NodeBodyRowSpe
     template
         .params
         .iter()
-        .enumerate()
-        .map(|(index, param)| {
-            let id = format!("{body_id}::param::{index}");
+        .map(|param| {
+            let id = format!("{body_id}::param::{}", param.key);
             NodeBodyRowSpec::Param {
                 control_id: format!("{id}::control"),
                 id,
@@ -245,7 +244,7 @@ mod tests {
     use crate::canvas::node_template::{
         CanvasNodeParamTemplate, CanvasNodePortState, CanvasNodePortTemplate,
     };
-    use crate::control::ParamControlSpec;
+    use crate::control::ControlSpec;
     use crate::renderer::Rect;
     use crate::theme::light_theme;
 
@@ -298,12 +297,12 @@ mod tests {
         else {
             panic!("expected param row");
         };
-        assert_eq!(id, "canvas_node::engine_node::7::body::param::0");
+        assert_eq!(id, "canvas_node::engine_node::7::body::param::prompt");
         assert_eq!(
             control_id,
-            "canvas_node::engine_node::7::body::param::0::control"
+            "canvas_node::engine_node::7::body::param::prompt::control"
         );
-        assert!(matches!(control, ParamControlSpec::ReadOnly { .. }));
+        assert!(matches!(control, ControlSpec::ReadOnly { .. }));
     }
 
     #[test]
@@ -358,7 +357,7 @@ mod tests {
                 "prompt",
                 "string",
                 "text",
-                ParamControlSpec::default(),
+                ControlSpec::default(),
             )],
         };
         let state = CanvasNodeInstanceState {

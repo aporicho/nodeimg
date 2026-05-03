@@ -1,4 +1,3 @@
-use crate::control::ControlRole;
 use crate::renderer::Rect;
 use crate::tree::layout::{BoxStyle, Decoration, LeafKind, RelayoutBoundaryReason};
 use crate::tree::{
@@ -41,18 +40,12 @@ pub(super) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 }
 
 pub(super) trait TreeNodeExt {
-    fn with_semantic_role(self, role: ControlRole) -> Self;
     fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
     fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
     fn with_rect_move_invalidation(self, invalidation: RectMoveInvalidation) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: ControlRole) -> Self {
-        self.props.semantic_role = Some(role);
-        self
-    }
-
     fn with_layout_boundary(mut self, reason: RelayoutBoundaryReason) -> Self {
         self.layout_meta.set_boundary(reason);
         self

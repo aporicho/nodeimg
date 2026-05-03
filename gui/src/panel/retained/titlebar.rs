@@ -1,9 +1,10 @@
 use super::data::PanelFrameTemplateData;
 use super::node_factory::{container, leaf, TreeNodeExt};
-use super::text::ellipsis_text_layout;
 use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
-use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size};
+use crate::tree::layout::{
+    Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size, TextLayout, TextOverflow,
+};
 use crate::tree::NodeId;
 
 pub(in crate::panel::retained) fn mount_titlebar(
@@ -58,4 +59,11 @@ pub(in crate::panel::retained) fn mount_titlebar(
         ),
     )?;
     Ok(())
+}
+
+fn ellipsis_text_layout() -> TextLayout {
+    TextLayout {
+        overflow: TextOverflow::Ellipsis,
+        ..TextLayout::default()
+    }
 }

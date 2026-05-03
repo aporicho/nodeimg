@@ -8,13 +8,13 @@ use gui::canvas::{
     CanvasPendingConnectionView, CanvasSceneChange,
 };
 use gui::context::Context;
-use gui::control::ParamControlSpec;
+use gui::control::ControlSpec;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
 use gui::layout::{Decoration, TextureHandle};
-use gui::panel::{PanelConfig, PanelContentTemplate, PanelFrameTemplateData, PanelId};
-use gui::renderer::{Border, ImageStyle, Point, Rect};
+use gui::panel::PanelFrameTemplateData;
+use gui::renderer::{Border, Point, Rect};
 use gui::scene::{MutationError, SceneMutation, StylePatch};
 use gui::template::{
     InstanceId, SlotValue, SlotValues, TemplateId, TemplatePayload, NODE_PALETTE_CATEGORY_TEMPLATE,
@@ -24,10 +24,10 @@ use gui::template::{
 use gui::theme::Theme;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::image_demo::{ADD_IMAGE_DEMO_GRAPH_ID, RUN_IMAGE_DEMO_ID};
-use crate::panels::EnginePanelState;
+use crate::panels::{
+    registered_panels, EnginePanelState, PanelAppliedSnapshot, PanelRenderInput, PanelWorkspaceMode,
+};
 
-use super::composition::WorkspacePanelComposition;
 #[cfg(test)]
 use super::composition::WorkspaceUiComposition;
 use super::node_palette::{node_palette_item_id, NodePaletteState};
@@ -74,19 +74,19 @@ pub(crate) struct WorkspaceSceneInput<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct WorkspaceSceneFeatures {
     pub(crate) composition: &'static str,
-    pub(crate) panels: &'static [WorkspacePanelComposition],
+    pub(crate) panel_mode: PanelWorkspaceMode,
     pub(crate) node_palette_enabled: bool,
 }
 
 impl WorkspaceSceneFeatures {
     pub(crate) fn new(
         composition: &'static str,
-        panels: &'static [WorkspacePanelComposition],
+        panel_mode: PanelWorkspaceMode,
         node_palette_enabled: bool,
     ) -> Self {
         Self {
             composition,
-            panels,
+            panel_mode,
             node_palette_enabled,
         }
     }
@@ -96,7 +96,7 @@ impl WorkspaceSceneFeatures {
         let composition = WorkspaceUiComposition::full();
         Self::new(
             composition.name(),
-            composition.panels(),
+            composition.panel_mode(),
             composition.node_palette_enabled(),
         )
     }
@@ -106,7 +106,7 @@ impl WorkspaceSceneFeatures {
         let composition = WorkspaceUiComposition::clean_room();
         Self::new(
             composition.name(),
-            composition.panels(),
+            composition.panel_mode(),
             composition.node_palette_enabled(),
         )
     }
@@ -160,10 +160,12 @@ impl WorkspaceSceneController {
         self.sync_panels(
             roots.panel_root,
             gui,
-            input.features.panels,
+            input.features.panel_mode,
             input.theme,
-            input.preview_image,
-            input.engine_panel,
+            PanelRenderInput {
+                preview_image: input.preview_image,
+                engine_panel: input.engine_panel,
+            },
             &mut mutations,
         );
         if input.features.node_palette_enabled {
@@ -183,7 +185,7 @@ impl WorkspaceSceneController {
             SceneSyncTraceSummary {
                 viewport: RectSummary::from(input.viewport),
                 composition: input.features.composition,
-                panels: input.features.panels,
+                panel_mode: input.features.panel_mode,
                 node_palette_enabled: input.features.node_palette_enabled,
                 desired_nodes: input.canvas_nodes.len(),
                 desired_connections: input.canvas_connections.len(),
@@ -215,22 +217,20 @@ impl WorkspaceSceneController {
         &mut self,
         parent: usize,
         gui: &mut Context,
-        desired_panels: &[WorkspacePanelComposition],
+        panel_mode: PanelWorkspaceMode,
         theme: &Theme,
-        preview_image: TextureHandle,
-        engine: &EnginePanelState,
+        panel_input: PanelRenderInput<'_>,
         mutations: &mut Vec<SceneMutation>,
     ) {
-        let desired = desired_panels.iter().copied().collect::<BTreeSet<_>>();
-        let panels = retained_panels(preview_image, engine);
+        let panels = registered_panels(panel_input);
         let desired_ids = panels
             .iter()
-            .filter(|panel| desired.contains(&panel.kind))
+            .filter(|panel| panel.modes.contains(panel_mode))
             .map(|panel| panel.config.id.as_str().to_string())
             .collect::<BTreeSet<_>>();
         let mut stale_ids = panels
             .iter()
-            .filter(|panel| !desired.contains(&panel.kind))
+            .filter(|panel| !panel.modes.contains(panel_mode))
             .map(|panel| panel.config.id.as_str().to_string())
             .collect::<BTreeSet<_>>();
         stale_ids.extend(
@@ -247,19 +247,20 @@ impl WorkspaceSceneController {
         }
 
         for panel in panels {
-            if !desired.contains(&panel.kind) {
+            if !panel.modes.contains(panel_mode) {
                 continue;
             }
-            let Some(runtime) = gui.panel_mut().ensure_runtime(&panel.config) else {
+            let config = panel.runtime_config(theme);
+            let Some(runtime) = gui.panel_mut().ensure_runtime(&config) else {
                 continue;
             };
-            let id = panel.config.id.as_str().to_string();
+            let id = config.id.as_str().to_string();
             let root = gui.query().node_id_by_name(&id);
             let next_state = panel_applied_state(
                 runtime.visible,
                 runtime.rect,
                 runtime.z_index,
-                &panel.content,
+                &panel.applied,
             );
             if !runtime.visible {
                 if let Some(root) = root {
@@ -304,7 +305,7 @@ impl WorkspaceSceneController {
                 template: TemplateId::from(PANEL_FRAME_TEMPLATE),
                 instance: InstanceId::from(id.clone()),
                 payload: TemplatePayload::PanelFrame(PanelFrameTemplateData::new(
-                    panel.config,
+                    config,
                     runtime,
                     panel.content,
                     theme,
@@ -705,7 +706,7 @@ impl WorkspaceSceneController {
 struct SceneSyncTraceSummary {
     viewport: RectSummary,
     composition: &'static str,
-    panels: &'static [WorkspacePanelComposition],
+    panel_mode: PanelWorkspaceMode,
     node_palette_enabled: bool,
     desired_nodes: usize,
     desired_connections: usize,
@@ -797,25 +798,25 @@ fn canvas_node_param_texts(
     view: &CanvasNodeRenderView,
 ) -> BTreeMap<String, String> {
     let mut texts = BTreeMap::new();
-    for (index, param) in view.template.params.iter().enumerate() {
-        let control_id = format!("{stable_id}::body::param::{index}::control::content");
+    for param in &view.template.params {
+        let control_id = format!("{stable_id}::body::param::{}::control::content", param.key);
         let (target_id, value) = match &param.control {
-            ParamControlSpec::Text { value } | ParamControlSpec::TextArea { value, .. } => {
+            ControlSpec::Text { value } | ControlSpec::TextArea { value, .. } => {
                 (format!("{control_id}::value"), value.clone())
             }
-            ParamControlSpec::Number {
+            ControlSpec::Number {
                 value, precision, ..
             } => (
                 format!("{control_id}::value"),
                 format!("{value:.precision$}"),
             ),
-            ParamControlSpec::ReadOnly { value } => (control_id, value.clone()),
-            ParamControlSpec::Select { options, selected } => (
+            ControlSpec::ReadOnly { value } => (control_id, value.clone()),
+            ControlSpec::Select { options, selected } => (
                 control_id,
                 options.get(*selected).cloned().unwrap_or_default(),
             ),
-            ParamControlSpec::FilePath { path, .. } => (control_id, path.clone()),
-            ParamControlSpec::Color { rgba } => (
+            ControlSpec::FilePath { path, .. } => (control_id, path.clone()),
+            ControlSpec::Color { rgba } => (
                 format!("{control_id}::value"),
                 format!(
                     "#{:02X}{:02X}{:02X}",
@@ -824,7 +825,12 @@ fn canvas_node_param_texts(
                     (rgba[2].clamp(0.0, 1.0) * 255.0) as u8
                 ),
             ),
-            ParamControlSpec::Slider { .. } | ParamControlSpec::Toggle { .. } => continue,
+            ControlSpec::Button { .. }
+            | ControlSpec::Image { .. }
+            | ControlSpec::Group { .. }
+            | ControlSpec::Label { .. }
+            | ControlSpec::Slider { .. }
+            | ControlSpec::Toggle { .. } => continue,
         };
         texts.insert(target_id, value);
     }
@@ -835,120 +841,14 @@ fn panel_applied_state(
     visible: bool,
     rect: Rect,
     z_index: i32,
-    content: &PanelContentTemplate,
+    applied: &PanelAppliedSnapshot,
 ) -> PanelAppliedState {
-    let mut texts = BTreeMap::new();
-    if let PanelContentTemplate::Engine {
-        status,
-        catalog,
-        last_action,
-        ..
-    } = content
-    {
-        texts.insert("engine_status".to_string(), status.clone());
-        texts.insert("engine_catalog".to_string(), catalog.clone());
-        texts.insert("engine_last_action".to_string(), last_action.clone());
-    }
     PanelAppliedState {
         visible,
         rect,
         z_index,
-        texts,
+        texts: applied.texts.clone(),
     }
-}
-
-struct RetainedPanelSpec {
-    kind: WorkspacePanelComposition,
-    config: PanelConfig,
-    content: PanelContentTemplate,
-}
-
-fn retained_panels(
-    preview_image: TextureHandle,
-    engine: &EnginePanelState,
-) -> Vec<RetainedPanelSpec> {
-    vec![
-        RetainedPanelSpec {
-            kind: WorkspacePanelComposition::Toolbar,
-            config: PanelConfig {
-                id: PanelId::new("toolbar"),
-                title: std::borrow::Cow::Borrowed("Toolbar"),
-                default_rect: Rect {
-                    x: 28.0,
-                    y: 28.0,
-                    w: 180.0,
-                    h: 82.0,
-                },
-                min_size: [156.0, 72.0],
-                titlebar_visible: true,
-                draggable: true,
-                resizable: true,
-                closable: false,
-                initially_visible: true,
-            },
-            content: PanelContentTemplate::Toolbar {
-                add_graph_id: ADD_IMAGE_DEMO_GRAPH_ID.to_string(),
-                run_graph_id: RUN_IMAGE_DEMO_ID.to_string(),
-            },
-        },
-        RetainedPanelSpec {
-            kind: WorkspacePanelComposition::Preview,
-            config: PanelConfig {
-                id: PanelId::new("preview"),
-                title: std::borrow::Cow::Borrowed("Preview"),
-                default_rect: Rect {
-                    x: 180.0,
-                    y: 28.0,
-                    w: 360.0,
-                    h: 224.0,
-                },
-                min_size: [260.0, 180.0],
-                titlebar_visible: true,
-                draggable: true,
-                resizable: true,
-                closable: false,
-                initially_visible: true,
-            },
-            content: PanelContentTemplate::Preview {
-                image_id: "preview_image".to_string(),
-                texture: preview_image,
-                image_style: ImageStyle::default(),
-            },
-        },
-        RetainedPanelSpec {
-            kind: WorkspacePanelComposition::Engine,
-            config: PanelConfig {
-                id: PanelId::new("engine"),
-                title: std::borrow::Cow::Borrowed("Engine"),
-                default_rect: Rect {
-                    x: 28.0,
-                    y: 96.0,
-                    w: 300.0,
-                    h: 150.0,
-                },
-                min_size: [260.0, 132.0],
-                titlebar_visible: true,
-                draggable: true,
-                resizable: true,
-                closable: false,
-                initially_visible: true,
-            },
-            content: PanelContentTemplate::Engine {
-                group_id: "engine_status_group".to_string(),
-                status: format!(
-                    "Status: {} | Nodes: {} | Connections: {}",
-                    engine.execution_status, engine.node_count, engine.connection_count
-                ),
-                catalog: format!(
-                    "Catalog: {} definitions | Graph v{}{}",
-                    engine.node_def_count,
-                    engine.graph_version,
-                    if engine.dirty { " *" } else { "" }
-                ),
-                last_action: format!("Last: {}", engine.last_action),
-            },
-        },
-    ]
 }
 
 #[cfg(test)]
@@ -1212,9 +1112,19 @@ mod tests {
             .query()
             .node_exists("canvas_node::diagnostic_node::retained_clean_room"));
         assert!(gui.query().node_exists("toolbar"));
-        assert!(!gui.query().node_exists("preview"));
+        assert!(gui.query().node_exists("preview"));
         assert!(!gui.query().node_exists("engine"));
         assert!(!gui.query().node_exists("node_palette"));
+
+        let toolbar = registered_panels(PanelRenderInput {
+            preview_image: TextureHandle(1),
+            engine_panel: &engine_panel,
+        })
+        .into_iter()
+        .find(|panel| panel.config.id.as_str() == "toolbar")
+        .expect("toolbar panel should be registered");
+        let toolbar_runtime = gui.panel().runtime("toolbar").expect("toolbar runtime");
+        assert!(toolbar_runtime.rect.h >= toolbar.runtime_config(&theme).min_size[1]);
     }
 
     #[test]
@@ -1411,7 +1321,7 @@ mod tests {
             .query()
             .hit_test(after_titlebar.x + 12.0, after_titlebar.y + 10.0)
             .contains(toolbar));
-        assert!(!gui.query().node_exists("preview"));
+        assert!(gui.query().node_exists("preview"));
         assert!(!gui.query().node_exists("engine"));
         assert!(!gui.query().node_exists("node_palette"));
     }
@@ -1513,10 +1423,19 @@ mod tests {
         let after_root = gui.query().node_rect("toolbar").expect("toolbar rect");
         let expected_right = before_root.x + before_root.w;
         let expected_bottom = before_root.y + before_root.h;
+        let toolbar_min_size = registered_panels(PanelRenderInput {
+            preview_image: TextureHandle(1),
+            engine_panel: &engine_panel,
+        })
+        .into_iter()
+        .find(|panel| panel.config.id.as_str() == "toolbar")
+        .expect("toolbar panel should be registered")
+        .runtime_config(&theme)
+        .min_size;
 
         assert!(sync.mutations_queued > 0);
-        assert_eq!(after_root.w, 156.0);
-        assert_eq!(after_root.h, 72.0);
+        assert_eq!(after_root.w, toolbar_min_size[0]);
+        assert_eq!(after_root.h, toolbar_min_size[1]);
         assert_eq!(after_root.x + after_root.w, expected_right);
         assert_eq!(after_root.y + after_root.h, expected_bottom);
 
@@ -1678,7 +1597,7 @@ mod tests {
             .query()
             .node_exists("canvas_node::showcase_node::solo_control"));
         assert!(gui.query().node_exists("toolbar"));
-        assert!(!gui.query().node_exists("preview"));
+        assert!(gui.query().node_exists("preview"));
         assert!(!gui.query().node_exists("engine"));
         assert!(!gui.query().node_exists("node_palette"));
         assert!(!controller.node_palette_open());
@@ -1730,15 +1649,16 @@ mod tests {
         gui.controls_mut()
             .sync_canvas_text_boxes(&nodes, &mut measurer, &theme);
 
-        let field_id =
-            "canvas_node::showcase_node::text_area_control::body::param::0::control::content::field";
-        let field = gui.query().node_rect(field_id).expect("field rect");
+        let control_id =
+            "canvas_node::showcase_node::text_area_control::body::param::Prompt::control::content";
+        let field_id = format!("{control_id}::field");
+        let field = gui.query().node_rect(&field_id).expect("field rect");
         let (x, y) = camera.canvas_to_screen(field.x + 8.0, field.y + 8.0);
         let query = gui.query();
         let chain = query.hit_test(x, y);
         assert_eq!(
             chain.leaf().and_then(|node| query.node_name(node)),
-            Some(field_id)
+            Some(field_id.as_str())
         );
 
         let click = gui.input().handle_event(&AppEvent::MousePress {
@@ -1763,8 +1683,7 @@ mod tests {
         assert!(input.events.iter().any(|event| matches!(
             event,
             GuiEvent::Control(ControlEvent::TextChanged { id, value })
-                if id == "canvas_node::showcase_node::text_area_control::body::param::0::control::content"
-                    && value == "hello!"
+                if id == control_id && value == "hello!"
         )));
     }
 

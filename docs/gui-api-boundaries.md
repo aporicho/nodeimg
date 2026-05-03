@@ -13,7 +13,8 @@ Do not reach into implementation modules to solve feature work.
   `MutationError`, and `StylePatch`.
 - `gui::layout` for layout/style value types shared with app code.
 - `gui::control` for control-facing value types such as `ControlRole`,
-  `ControlIntrinsic`, `ParamControlSpec`, `ParamControlMap`, and `ResizeEdge`.
+  `ControlIntrinsic`, `ControlSpec`, `ControlNode`, `ControlSpecMap`, and
+  `ResizeEdge`.
 - Public domain modules that are intentionally part of the framework surface:
   `gui::canvas`, `gui::panel`, `gui::renderer`, `gui::shell`,
   `gui::theme`, `gui::template`, `gui::output`, and diagnostics modules.
@@ -31,6 +32,8 @@ App code must not import these GUI internals:
 - `gui::control::state`
 - `gui::control::systems`
 - `gui::control::painter`
+- `gui::control::text_box`
+- `gui::control::templates`
 
 If app code needs a value currently hidden behind one of those paths, expose it
 through a facade first. Prefer `Context` capability APIs for behavior, and
@@ -49,9 +52,9 @@ through scene controllers.
 Semantic roles are typed with `ControlRole`; string semantic roles are not part
 of the API.
 
-Control intrinsics are keyed by `ControlIntrinsic::control_id`. Parameter
-control internals use the `::content` stable-id segment; the removed `::widget`
-segment must not be reintroduced.
+Control intrinsics are keyed by `ControlIntrinsic::control_id`. Control
+internals use the `::content` stable-id segment; the removed `::widget` segment
+must not be reintroduced.
 
 ## Automated Gate
 

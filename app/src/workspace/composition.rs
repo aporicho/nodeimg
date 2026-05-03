@@ -1,4 +1,5 @@
 use crate::app_shell::AppMode;
+use crate::panels::PanelWorkspaceMode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WorkspaceUiCompositionKind {
@@ -11,7 +12,7 @@ pub(crate) struct WorkspaceUiComposition {
     kind: WorkspaceUiCompositionKind,
     canvas_nodes: CanvasNodeComposition,
     connections: bool,
-    panels: &'static [WorkspacePanelComposition],
+    panel_mode: PanelWorkspaceMode,
     node_palette: bool,
 }
 
@@ -21,27 +22,13 @@ pub(crate) enum CanvasNodeComposition {
     EngineAndShowcase,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum WorkspacePanelComposition {
-    Toolbar,
-    Preview,
-    Engine,
-}
-
-const CLEAN_ROOM_PANELS: &[WorkspacePanelComposition] = &[WorkspacePanelComposition::Toolbar];
-const FULL_PANELS: &[WorkspacePanelComposition] = &[
-    WorkspacePanelComposition::Toolbar,
-    WorkspacePanelComposition::Preview,
-    WorkspacePanelComposition::Engine,
-];
-
 impl WorkspaceUiComposition {
     pub(crate) fn clean_room() -> Self {
         Self {
             kind: WorkspaceUiCompositionKind::CleanRoom,
             canvas_nodes: CanvasNodeComposition::DiagnosticMinimal,
             connections: false,
-            panels: CLEAN_ROOM_PANELS,
+            panel_mode: PanelWorkspaceMode::CleanRoom,
             node_palette: false,
         }
     }
@@ -51,7 +38,7 @@ impl WorkspaceUiComposition {
             kind: WorkspaceUiCompositionKind::Full,
             canvas_nodes: CanvasNodeComposition::EngineAndShowcase,
             connections: true,
-            panels: FULL_PANELS,
+            panel_mode: PanelWorkspaceMode::Full,
             node_palette: true,
         }
     }
@@ -78,8 +65,8 @@ impl WorkspaceUiComposition {
         self.connections
     }
 
-    pub(crate) fn panels(self) -> &'static [WorkspacePanelComposition] {
-        self.panels
+    pub(crate) fn panel_mode(self) -> PanelWorkspaceMode {
+        self.panel_mode
     }
 
     pub(crate) fn node_palette_enabled(self) -> bool {
@@ -102,16 +89,12 @@ mod tests {
             WorkspaceUiComposition::full()
         );
         assert_eq!(
-            WorkspaceUiComposition::clean_room().panels(),
-            &[WorkspacePanelComposition::Toolbar]
+            WorkspaceUiComposition::clean_room().panel_mode(),
+            PanelWorkspaceMode::CleanRoom
         );
         assert_eq!(
-            WorkspaceUiComposition::full().panels(),
-            &[
-                WorkspacePanelComposition::Toolbar,
-                WorkspacePanelComposition::Preview,
-                WorkspacePanelComposition::Engine
-            ]
+            WorkspaceUiComposition::full().panel_mode(),
+            PanelWorkspaceMode::Full
         );
     }
 }

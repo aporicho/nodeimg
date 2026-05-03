@@ -1,9 +1,7 @@
 use crate::animation::AnimationStore;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
-use crate::control::state::TextBoxStore;
-use crate::control::systems::{SystemCx, TextBoxSystem};
-use crate::control::ControlIntrinsic;
+use crate::control::{ControlIntrinsic, SystemCx, TextBoxStore, TextBoxSystem};
 use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;

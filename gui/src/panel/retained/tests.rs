@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::data::{PanelContentTemplate, PanelFrameTemplateData};
 use super::node_factory::{container, zero_rect};
-use crate::control::ControlRole;
+use crate::control::{ControlNode, ControlRole};
 use crate::gesture::Gesture;
 use crate::panel::{PanelConfig, PanelId, PanelRuntime};
 use crate::renderer::Rect;
@@ -60,10 +60,10 @@ fn panel_frame_template_mounts_root_titlebar_content_and_toolbar_actions() {
                     z_index: 42,
                     collapsed: false,
                 },
-                PanelContentTemplate::Toolbar {
-                    add_graph_id: "toolbar::add".to_string(),
-                    run_graph_id: "toolbar::run".to_string(),
-                },
+                PanelContentTemplate::new(vec![
+                    ControlNode::button("toolbar::add", "Add Image Demo"),
+                    ControlNode::button("toolbar::run", "Run Image Demo"),
+                ]),
                 &theme,
             )),
         )

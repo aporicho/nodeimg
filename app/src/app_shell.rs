@@ -352,7 +352,7 @@ impl AppShell {
                 engine_panel: &engine_panel,
                 features: WorkspaceSceneFeatures::new(
                     composition.name(),
-                    composition.panels(),
+                    composition.panel_mode(),
                     composition.node_palette_enabled(),
                 ),
             },

@@ -5,7 +5,7 @@ use gui::canvas::node_template::{
 use gui::canvas::{
     CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide,
 };
-use gui::control::ParamControlSpec;
+use gui::control::ControlSpec;
 use gui::renderer::Rect;
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
@@ -78,7 +78,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Readonly",
                 "image",
                 "image",
-                ParamControlSpec::ReadOnly {
+                ControlSpec::ReadOnly {
                     value: "image".to_string(),
                 },
             ),
@@ -87,7 +87,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Prompt",
                 "string",
                 "A long prompt value",
-                ParamControlSpec::Text {
+                ControlSpec::Text {
                     value: "A long prompt value".to_string(),
                 },
             ),
@@ -96,7 +96,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Seed",
                 "int",
                 "42",
-                ParamControlSpec::Number {
+                ControlSpec::Number {
                     value: 42.0,
                     min: 0.0,
                     max: 9999.0,
@@ -109,7 +109,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Strength",
                 "float",
                 "0.65",
-                ParamControlSpec::Slider {
+                ControlSpec::Slider {
                     value: 0.65,
                     min: 0.0,
                     max: 1.0,
@@ -121,14 +121,14 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Enabled",
                 "bool",
                 "true",
-                ParamControlSpec::Toggle { checked: true },
+                ControlSpec::Toggle { checked: true },
             ),
             CanvasNodeParamTemplate::new(
                 "Sampler",
                 "Sampler",
                 "enum",
                 "Euler",
-                ParamControlSpec::Select {
+                ControlSpec::Select {
                     options: vec![
                         "Euler".to_string(),
                         "DPM++ 2M".to_string(),
@@ -142,7 +142,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Tint",
                 "color",
                 "#FF8040",
-                ParamControlSpec::Color {
+                ControlSpec::Color {
                     rgba: [1.0, 0.5, 0.25, 1.0],
                 },
             ),
@@ -151,7 +151,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Output",
                 "file_path",
                 "*.png",
-                ParamControlSpec::FilePath {
+                ControlSpec::FilePath {
                     path: String::new(),
                     extensions: vec!["png".to_string(), "jpg".to_string()],
                 },
@@ -176,7 +176,7 @@ pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
             "Strength",
             "float",
             "0.65",
-            ParamControlSpec::Slider {
+            ControlSpec::Slider {
                 value: 0.65,
                 min: 0.0,
                 max: 1.0,
@@ -199,7 +199,7 @@ pub(crate) fn text_area_node_template(value: &str) -> CanvasNodeTemplate {
             "",
             "",
             "",
-            ParamControlSpec::TextArea {
+            ControlSpec::TextArea {
                 value: value.to_string(),
                 min_rows: 5,
             },
@@ -244,41 +244,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn showcase_node_contains_all_current_param_control_shapes() {
+    fn showcase_node_contains_all_current_control_shapes() {
         let template = showcase_node_template();
 
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::ReadOnly { .. })));
+            .any(|param| matches!(param.control, ControlSpec::ReadOnly { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Text { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Text { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Number { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Number { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Slider { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Slider { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Toggle { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Toggle { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Select { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Select { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::Color { .. })));
+            .any(|param| matches!(param.control, ControlSpec::Color { .. })));
         assert!(template
             .params
             .iter()
-            .any(|param| matches!(param.control, ParamControlSpec::FilePath { .. })));
+            .any(|param| matches!(param.control, ControlSpec::FilePath { .. })));
     }
 
     #[test]
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(view.template.params.len(), 1);
         assert!(matches!(
             view.template.params[0].control,
-            ParamControlSpec::Slider { .. }
+            ControlSpec::Slider { .. }
         ));
         assert_eq!(view.template.inputs.len(), 1);
         assert_eq!(view.template.outputs.len(), 1);
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(view.template.params.len(), 1);
         assert!(matches!(
             view.template.params[0].control,
-            ParamControlSpec::TextArea { min_rows: 5, .. }
+            ControlSpec::TextArea { min_rows: 5, .. }
         ));
         assert!(view.template.params[0].name.is_empty());
         assert!(view.template.params[0].default_value.is_empty());

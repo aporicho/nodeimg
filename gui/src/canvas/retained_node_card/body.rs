@@ -1,9 +1,9 @@
-use super::controls::mount_param_control;
 use super::node_factory::{container, leaf};
 use super::style::ellipsis_text_layout;
 use crate::canvas::node_spec::{NodeBodyRowSpec, NodeBodySpec};
 use crate::canvas::node_style::NodeCardMetrics;
-use crate::control::{param_control_layout_policy, ParamControlHeight, ParamControlLayoutPolicy};
+use crate::control::templates::mount_control;
+use crate::control::{control_layout_policy, ControlHeight, ControlLayoutPolicy};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
@@ -79,7 +79,7 @@ fn mount_body_row(
             control_id,
             control,
         } => {
-            let policy = param_control_layout_policy(control, theme, metrics.control);
+            let policy = control_layout_policy(control, theme, metrics.control);
             let row = cx.child(
                 parent,
                 body_row(
@@ -91,7 +91,7 @@ fn mount_body_row(
                     row_flex(policy),
                 ),
             )?;
-            mount_param_control(cx, row, control_id, control, theme, metrics, policy)?;
+            mount_control(cx, row, control_id, control, theme, metrics.control, policy)?;
         }
     }
     Ok(())
@@ -131,13 +131,13 @@ fn body_row(
     )
 }
 
-fn row_height(policy: ParamControlLayoutPolicy, metrics: NodeCardMetrics) -> Size {
+fn row_height(policy: ControlLayoutPolicy, metrics: NodeCardMetrics) -> Size {
     match policy.height {
-        ParamControlHeight::Fixed(height) => Size::Fixed(metrics.param_row_height.max(height)),
-        ParamControlHeight::Fill { .. } => Size::Fill,
+        ControlHeight::Fixed(height) => Size::Fixed(metrics.param_row_height.max(height)),
+        ControlHeight::Fill { .. } => Size::Fill,
     }
 }
 
-fn row_flex(policy: ParamControlLayoutPolicy) -> f32 {
+fn row_flex(policy: ControlLayoutPolicy) -> f32 {
     policy.fills_parent_height().then_some(1.0).unwrap_or(0.0)
 }

@@ -1,7 +1,7 @@
 use super::leaf::paint_leaf;
 use super::traversal::PaintTraversal;
 use crate::animation::{visual_affine, AnimationStore};
-use crate::control::state::TextBoxStore;
+use crate::control::TextBoxStore;
 use crate::geometry::Affine2D;
 use crate::interaction::InteractionState;
 use crate::paint::{ClipShape, Color, LayerPaint, PaintCommand, RecordingPaintTarget, RectStyle};
