@@ -77,6 +77,7 @@ check_missing_path "old flat renderer display backend module" gui/src/renderer/d
 check_missing_path "old flat renderer prepare module" gui/src/renderer/prepare.rs
 check_missing_path "old flat renderer dispatch module" gui/src/renderer/dispatch.rs
 check_missing_path "old flat renderer core module" gui/src/renderer/core.rs
+check_missing_path "old flat renderer svg vector module" gui/src/renderer/svg/vector.rs
 check_missing_path "old flat Tree implementation module" gui/src/tree/tree.rs
 check_missing_path "old flat tree hit query module" gui/src/tree/hit.rs
 check_missing_path "old flat tree hit order module" gui/src/tree/hit_order.rs
@@ -287,6 +288,11 @@ check_no_match \
     "renderer core module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/renderer/core/mod.rs
+
+check_no_match \
+    "renderer svg vector module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/renderer/svg/vector/mod.rs
 
 check_no_match \
     "Tree must not expose canvas or panel runtime APIs" \
