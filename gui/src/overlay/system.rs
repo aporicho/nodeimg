@@ -86,16 +86,15 @@ impl OverlaySystem {
             return Ok(());
         };
         remove_overlay_root(tree, state.root.take());
-        let payload = TemplatePayload::DropdownOverlay(
-            crate::overlay::retained::DropdownOverlayTemplateData::new(
+        let payload =
+            TemplatePayload::DropdownOverlay(crate::overlay::DropdownOverlayTemplateData::new(
                 state.request.id.clone(),
                 state.last_x,
                 state.last_y,
                 state.last_width,
                 state.request.content.clone(),
                 theme,
-            ),
-        );
+            ));
         let root_id = format!("__overlay::{}", state.request.id);
         tree.apply_mutation(
             registry,

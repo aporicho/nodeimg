@@ -70,6 +70,7 @@ check_missing_path "old flat canvas retained node card module" gui/src/canvas/re
 check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "old flat panel retained module" gui/src/panel/retained.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
+check_missing_path "old flat overlay retained module" gui/src/overlay/retained.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
 check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
 check_missing_path "old flat renderer display backend module" gui/src/renderer/display_backend.rs
@@ -176,6 +177,12 @@ check_no_match \
     gui/src/template/payload.rs
 
 check_no_match \
+    "template payload and overlay system must use overlay facade instead of retained internals for overlay data API" \
+    'overlay::retained::DropdownOverlayTemplateData' \
+    gui/src/template/payload.rs \
+    gui/src/overlay/system.rs
+
+check_no_match \
     "panel drag/resize must use ControlEvent, not a parallel PanelEvent channel" \
     'PanelEvent|GuiEvent::Panel' \
     app/src \
@@ -245,6 +252,11 @@ check_no_match \
     "panel retained module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/panel/retained/mod.rs
+
+check_no_match \
+    "overlay retained module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/overlay/retained/mod.rs
 
 check_no_match \
     "control text box state module root must only declare and re-export submodules" \
