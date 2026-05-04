@@ -1,4 +1,4 @@
-use super::runtime_policy::RuntimeSlotPolicy;
+use super::runtime_policy::{RuntimeRetention, RuntimeSlotPolicy};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;
@@ -61,6 +61,18 @@ impl RuntimeSlots {
             .value
             .downcast_mut::<T>()
             .expect("runtime slot type id must match stored value")
+    }
+
+    pub(crate) fn fill_missing_from(&mut self, other: RuntimeSlots) {
+        for (type_id, entry) in other.slots {
+            self.slots.entry(type_id).or_insert(entry);
+        }
+    }
+
+    pub(crate) fn retained_when_node_missing(mut self) -> Option<Self> {
+        self.slots
+            .retain(|_, entry| entry.policy.retention != RuntimeRetention::DropWhenNodeMissing);
+        (!self.slots.is_empty()).then_some(self)
     }
 
     pub fn remove<T: RuntimeSlot>(&mut self) -> Option<T> {

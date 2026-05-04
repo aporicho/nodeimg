@@ -1,7 +1,7 @@
 use crate::control::ResizeEdge;
 use crate::panel::PanelConfig;
 use crate::renderer::Rect;
-use crate::tree::RuntimeSlot;
+use crate::tree::{PersistenceClass, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, UndoClass};
 
 #[derive(Clone, Debug)]
 pub struct PanelRuntime {
@@ -41,7 +41,15 @@ impl Default for PanelRuntime {
     }
 }
 
-impl RuntimeSlot for PanelRuntime {}
+impl RuntimeSlot for PanelRuntime {
+    fn default_policy() -> RuntimeSlotPolicy {
+        RuntimeSlotPolicy {
+            retention: RuntimeRetention::KeepWhileStableNodeExists,
+            persistence: PersistenceClass::ProjectLayout,
+            undo: UndoClass::Undoable,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct PanelPointerSession {
@@ -67,4 +75,12 @@ pub(crate) struct PanelRootRuntime {
     pub(crate) active_resize: Option<PanelResizeSession>,
 }
 
-impl RuntimeSlot for PanelRootRuntime {}
+impl RuntimeSlot for PanelRootRuntime {
+    fn default_policy() -> RuntimeSlotPolicy {
+        RuntimeSlotPolicy {
+            retention: RuntimeRetention::KeepForSession,
+            persistence: PersistenceClass::SessionOnly,
+            undo: UndoClass::NonUndoable,
+        }
+    }
+}

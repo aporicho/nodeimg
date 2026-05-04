@@ -5,8 +5,9 @@ use crate::tree::layout::{
 };
 use crate::tree::{
     DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps, RepaintBoundaryId,
-    RepaintBoundaryReason, RuntimeSlot, RuntimeSlots, StableId, StylePatch, TreeDumpLevel,
-    TreeIndexError, TreeMutation, TreeNode, TreeSnapshotOptions,
+    RepaintBoundaryReason, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, RuntimeSlots,
+    StableId, StylePatch, TreeDumpLevel, TreeIndexError, TreeMutation, TreeNode,
+    TreeSnapshotOptions,
 };
 
 #[derive(Debug, Default)]
@@ -15,6 +16,20 @@ struct TestRuntime {
 }
 
 impl RuntimeSlot for TestRuntime {}
+
+#[derive(Debug, Default)]
+struct RetainedTestRuntime {
+    value: usize,
+}
+
+impl RuntimeSlot for RetainedTestRuntime {
+    fn default_policy() -> RuntimeSlotPolicy {
+        RuntimeSlotPolicy {
+            retention: RuntimeRetention::KeepWhileStableNodeExists,
+            ..RuntimeSlotPolicy::default()
+        }
+    }
+}
 
 fn container_node(id: &'static str) -> TreeNode {
     TreeNode {
@@ -212,6 +227,46 @@ fn runtime_slot_roundtrips_by_type() {
         .expect("removed runtime");
     assert_eq!(removed.value, 42);
     assert!(tree.runtime_slot::<TestRuntime>(root).is_none());
+}
+
+#[test]
+fn declarative_runtime_slot_overrides_retained_slot_on_insert() {
+    let mut tree = Tree::new();
+    let root = tree.insert(container_node("root"));
+    tree.set_root(root);
+    tree.ensure_runtime_slot::<RetainedTestRuntime>(root)
+        .expect("slot")
+        .value = 1;
+    tree.remove(root);
+
+    let mut replacement = container_node("root");
+    replacement
+        .runtime_slots
+        .ensure::<RetainedTestRuntime>()
+        .value = 2;
+    let replacement = tree.insert(replacement);
+
+    assert_eq!(
+        tree.runtime_slot::<RetainedTestRuntime>(replacement)
+            .expect("runtime slot")
+            .value,
+        2
+    );
+}
+
+#[test]
+fn drop_when_node_missing_runtime_slot_is_not_retained() {
+    let mut tree = Tree::new();
+    let root = tree.insert(container_node("root"));
+    tree.set_root(root);
+    tree.ensure_runtime_slot::<TestRuntime>(root)
+        .expect("slot")
+        .value = 1;
+
+    tree.remove(root);
+    let replacement = tree.insert(container_node("root"));
+
+    assert!(tree.runtime_slot::<TestRuntime>(replacement).is_none());
 }
 
 #[test]

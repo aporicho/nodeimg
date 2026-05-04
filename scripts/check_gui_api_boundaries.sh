@@ -56,6 +56,7 @@ check_required_match "gui text module remains crate-private" '^pub\(crate\) mod 
 check_required_match "gui control facade is public" '^pub mod control;' gui/src/lib.rs
 check_required_match "gui layout facade is public" '^pub mod layout;' gui/src/lib.rs
 check_required_match "gui scene facade is public" '^pub mod scene;' gui/src/lib.rs
+check_required_match "non-text controls use a dedicated interaction runtime" 'ControlInteractionSystem' gui/src/control/interaction/mod.rs gui/src/runtime/systems.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs

@@ -116,8 +116,11 @@ fn mount_control_content(
             metrics,
         ),
         ControlSpec::Slider {
-            value, min, max, ..
-        } => mount_slider(cx, parent, id, *value, *min, *max, theme, metrics),
+            value,
+            min,
+            max,
+            step,
+        } => mount_slider(cx, parent, id, *value, *min, *max, *step, theme, metrics),
         ControlSpec::Toggle { checked } => mount_toggle(cx, parent, id, *checked, theme, metrics),
         ControlSpec::Select { options, selected } => {
             let value = options.get(*selected).cloned().unwrap_or_default();

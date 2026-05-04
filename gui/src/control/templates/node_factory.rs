@@ -3,7 +3,7 @@ use crate::renderer::Rect;
 use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
 use crate::tree::{
     NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RuntimeSlots, StableId, TreeNode,
+    RuntimeSlot, RuntimeSlots, StableId, TreeNode,
 };
 
 pub(super) fn container(id: String, style: BoxStyle, decoration: Option<Decoration>) -> TreeNode {
@@ -42,11 +42,18 @@ pub(super) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
 
 pub(super) trait TreeNodeExt {
     fn with_semantic_role(self, role: ControlRole) -> Self;
+    fn with_runtime_slot<T: RuntimeSlot>(self, slot: T) -> Self;
 }
 
 impl TreeNodeExt for TreeNode {
     fn with_semantic_role(mut self, role: ControlRole) -> Self {
         self.props.semantic_role = Some(role);
+        self
+    }
+
+    fn with_runtime_slot<T: RuntimeSlot>(mut self, slot: T) -> Self {
+        self.runtime_slots
+            .ensure_with_policy::<T>(T::default_policy(), || slot);
         self
     }
 }

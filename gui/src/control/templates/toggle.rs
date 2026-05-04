@@ -1,5 +1,5 @@
-use super::node_factory::container;
-use crate::control::ControlMetrics;
+use super::node_factory::{container, TreeNodeExt};
+use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
 use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
@@ -38,7 +38,9 @@ pub(super) fn mount_toggle(
                 radius: [height * 0.5; 4],
                 shadow: None,
             }),
-        ),
+        )
+        .with_semantic_role(ControlRole::Toggle)
+        .with_runtime_slot(ControlInteractionSpec::toggle(checked)),
     )?;
     let knob = height - 4.0;
     cx.child(

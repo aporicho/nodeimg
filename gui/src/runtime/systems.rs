@@ -1,7 +1,9 @@
 use crate::animation::AnimationStore;
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
-use crate::control::{ControlIntrinsic, SystemCx, TextBoxStore, TextBoxSystem};
+use crate::control::{
+    ControlInteractionSystem, ControlIntrinsic, SystemCx, TextBoxStore, TextBoxSystem,
+};
 use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
@@ -28,6 +30,7 @@ pub(crate) struct RuntimeEventResult {
 pub(crate) struct RuntimeSystems {
     overlay: OverlaySystem,
     text_box: TextBoxSystem,
+    control_interaction: ControlInteractionSystem,
 }
 
 impl RuntimeSystems {
@@ -35,6 +38,7 @@ impl RuntimeSystems {
         Self {
             overlay: OverlaySystem::new(),
             text_box: TextBoxSystem::new(),
+            control_interaction: ControlInteractionSystem::new(),
         }
     }
 
@@ -60,11 +64,22 @@ impl RuntimeSystems {
             self.text_box.handle_event(text_cx, event)
         };
 
-        let cancel_gesture = output_has_pre_gesture_work(&text_output);
+        if output_has_pre_gesture_work(&text_output) {
+            return RuntimeEventResult {
+                output: text_output,
+                cancel_gesture: true,
+            };
+        }
+
+        let control_output = {
+            let control_cx = SystemCx::new(cx.tree, cx.animations, cx.interaction, cx.pointer_hit);
+            self.control_interaction
+                .handle_pre_gesture_event(control_cx, event)
+        };
 
         RuntimeEventResult {
-            output: text_output,
-            cancel_gesture,
+            cancel_gesture: control_output.cancel_gesture,
+            output: text_output.merge(control_output.output),
         }
     }
 

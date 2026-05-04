@@ -1,5 +1,5 @@
-use super::node_factory::container;
-use crate::control::ControlMetrics;
+use super::node_factory::{container, TreeNodeExt};
+use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Position, Size};
@@ -12,6 +12,7 @@ pub(super) fn mount_slider(
     value: f32,
     min: f32,
     max: f32,
+    step: f32,
     theme: &Theme,
     metrics: ControlMetrics,
 ) -> Result<(), TemplateError> {
@@ -24,10 +25,13 @@ pub(super) fn mount_slider(
                 height: Size::Fixed(metrics.control_height),
                 direction: Direction::Row,
                 align_items: Align::Center,
+                hittable: true,
                 ..BoxStyle::default()
             },
             None,
-        ),
+        )
+        .with_semantic_role(ControlRole::Slider)
+        .with_runtime_slot(ControlInteractionSpec::slider(value, min, max, step)),
     )?;
     let track = cx.child(
         root,

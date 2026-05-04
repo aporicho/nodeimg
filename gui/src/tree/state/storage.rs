@@ -21,7 +21,11 @@ impl Tree {
     ) -> Result<NodeId, TreeIndexError> {
         let retained_slots = self.retained_runtime.take(node.id.as_ref());
         if let Some(slots) = retained_slots {
-            node.runtime_slots = slots;
+            if node.runtime_slots.is_empty() {
+                node.runtime_slots = slots;
+            } else {
+                node.runtime_slots.fill_missing_from(slots);
+            }
         }
         if let Some(id) = self.free.pop() {
             self.index.remove_node(id);
@@ -80,9 +84,9 @@ impl Tree {
                     self.parents.remove(&child_id);
                     self.remove(child_id);
                 }
-                if !node.runtime_slots.is_empty() {
+                if let Some(runtime_slots) = node.runtime_slots.retained_when_node_missing() {
                     self.retained_runtime
-                        .preserve(node.id.as_ref().to_string(), node.runtime_slots);
+                        .preserve(node.id.as_ref().to_string(), runtime_slots);
                 }
                 self.free.push(id);
             }

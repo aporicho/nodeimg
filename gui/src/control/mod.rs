@@ -1,3 +1,4 @@
+mod interaction;
 mod intrinsic;
 mod layout;
 mod resize_edge;
@@ -8,6 +9,7 @@ pub(crate) mod templates;
 pub(crate) mod text_box;
 mod value;
 
+pub(crate) use interaction::{ControlInteractionSpec, ControlInteractionSystem};
 pub use intrinsic::ControlIntrinsic;
 pub use layout::{
     control_kind, control_layout_policy, control_list_min_height, control_min_height,
