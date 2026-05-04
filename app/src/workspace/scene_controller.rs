@@ -858,6 +858,7 @@ mod tests {
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
+    use gui::control::ControlValue;
     use gui::control::ResizeEdge;
     use gui::cursor::CursorKind;
     use gui::layout::TextureHandle;
@@ -1682,8 +1683,10 @@ mod tests {
 
         assert!(input.events.iter().any(|event| matches!(
             event,
-            GuiEvent::Control(ControlEvent::TextChanged { id, value })
-                if id == control_id && value == "hello!"
+            GuiEvent::Control(ControlEvent::ValueChanged {
+                id,
+                value: ControlValue::Text(value)
+            }) if id == control_id && value == "hello!"
         )));
     }
 

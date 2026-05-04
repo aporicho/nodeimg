@@ -1,5 +1,5 @@
 use crate::action::GuiAction;
-use crate::control::ResizeEdge;
+use crate::control::{ControlValue, ResizeEdge};
 
 #[derive(Debug, Clone)]
 pub enum PlatformEffect {
@@ -24,17 +24,9 @@ pub enum ControlEvent {
     LongPress {
         id: String,
     },
-    TextChanged {
+    ValueChanged {
         id: String,
-        value: String,
-    },
-    NumberChanged {
-        id: String,
-        value: f32,
-    },
-    SelectionChanged {
-        id: String,
-        selected: usize,
+        value: ControlValue,
     },
     DragStart {
         id: String,

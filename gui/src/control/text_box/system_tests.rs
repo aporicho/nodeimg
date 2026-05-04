@@ -1,7 +1,9 @@
 use super::model::TextBoxValueKind;
 use super::number::parse_number_text;
+use super::output::{changed_number_output, changed_text_output};
 use super::retained_spec::retained_control_text_box_spec;
-use crate::control::{ControlSpec, TextBoxFont, TextBoxMode};
+use crate::control::{ControlSpec, ControlValue, TextBoxFont, TextBoxMode};
+use crate::output::{ControlEvent, GuiEvent};
 use crate::theme::dark_theme;
 
 #[test]
@@ -10,6 +12,32 @@ fn parse_number_text_rejects_incomplete_numbers() {
     assert_eq!(parse_number_text("-"), None);
     assert_eq!(parse_number_text("+."), None);
     assert_eq!(parse_number_text(" 42.5 "), Some(42.5));
+}
+
+#[test]
+fn text_output_uses_unified_value_changed_event() {
+    let output = changed_text_output("control::text", "hello");
+
+    assert!(output.events.iter().any(|event| matches!(
+        event,
+        GuiEvent::Control(ControlEvent::ValueChanged {
+            id,
+            value: ControlValue::Text(value)
+        }) if id == "control::text" && value == "hello"
+    )));
+}
+
+#[test]
+fn number_output_uses_unified_value_changed_event() {
+    let output = changed_number_output("control::number", 2.5, 1.0);
+
+    assert!(output.events.iter().any(|event| matches!(
+        event,
+        GuiEvent::Control(ControlEvent::ValueChanged {
+            id,
+            value: ControlValue::Number(value)
+        }) if id == "control::number" && (*value - 2.5).abs() < f32::EPSILON
+    )));
 }
 
 #[test]

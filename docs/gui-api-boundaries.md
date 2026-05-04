@@ -13,8 +13,8 @@ Do not reach into implementation modules to solve feature work.
   `MutationError`, and `StylePatch`.
 - `gui::layout` for layout/style value types shared with app code.
 - `gui::control` for control-facing value types such as `ControlRole`,
-  `ControlIntrinsic`, `ControlSpec`, `ControlNode`, `ControlSpecMap`, and
-  `ResizeEdge`.
+  `ControlIntrinsic`, `ControlSpec`, `ControlNode`, `ControlSpecMap`,
+  `ControlValue`, and `ResizeEdge`.
 - Public domain modules that are intentionally part of the framework surface:
   `gui::canvas`, `gui::panel`, `gui::renderer`, `gui::shell`,
   `gui::theme`, `gui::template`, `gui::output`, and diagnostics modules.

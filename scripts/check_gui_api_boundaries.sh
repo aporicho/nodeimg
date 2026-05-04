@@ -216,6 +216,12 @@ check_no_match \
     app/src
 
 check_no_match \
+    "control value changes must use ControlValue and ValueChanged, not split value events" \
+    'ControlEvent::(TextChanged|NumberChanged|SelectionChanged)|(TextChanged|NumberChanged|SelectionChanged)[[:space:]]*\{|ControlTextChanged' \
+    gui/src \
+    app/src
+
+check_no_match \
     "control intrinsic API must not expose snapshot aliases" \
     'intrinsics_snapshot|control_intrinsics_snapshot' \
     app/src \

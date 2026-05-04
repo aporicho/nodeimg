@@ -6,6 +6,7 @@ mod spec;
 mod system_context;
 pub(crate) mod templates;
 pub(crate) mod text_box;
+mod value;
 
 pub use intrinsic::ControlIntrinsic;
 pub use layout::{
@@ -21,3 +22,4 @@ pub(crate) use system_context::SystemCx;
 pub(crate) use text_box::painter::paint_text_leaf_override;
 pub use text_box::{format_number, TextBoxFont, TextBoxMode};
 pub(crate) use text_box::{text_box_value_style, TextBoxStore, TextBoxSystem};
+pub use value::ControlValue;

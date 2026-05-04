@@ -14,7 +14,7 @@ use gui::canvas::camera::Camera;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
-use gui::control::ResizeEdge;
+use gui::control::{ControlValue, ResizeEdge};
 use gui::cursor::CursorKind;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::layout::TextureHandle;
@@ -66,9 +66,9 @@ enum AppMessage {
         x: f32,
         y: f32,
     },
-    ControlTextChanged {
+    ControlValueChanged {
         id: String,
-        value: String,
+        value: ControlValue,
     },
     LongPress(String),
 }
@@ -582,11 +582,11 @@ impl AppShell {
             ControlEvent::ResizeEnd { id, edge, x, y } => {
                 AppMessage::ControlResizeEnd { id, edge, x, y }
             }
-            ControlEvent::TextChanged { id, value } => AppMessage::ControlTextChanged { id, value },
+            ControlEvent::ValueChanged { id, value } => {
+                AppMessage::ControlValueChanged { id, value }
+            }
             ControlEvent::LongPress { id } => AppMessage::LongPress(id),
-            ControlEvent::DoubleClick { .. }
-            | ControlEvent::NumberChanged { .. }
-            | ControlEvent::SelectionChanged { .. } => return None,
+            ControlEvent::DoubleClick { .. } => return None,
         })
     }
 
@@ -710,8 +710,17 @@ impl AppShell {
                     WorkspaceSceneDirtyReason::CanvasRuntime,
                 );
             }
-            AppMessage::ControlTextChanged { id, value } => {
-                let changed = self.workspace.update_text_area_showcase_value(&id, value);
+            AppMessage::ControlValueChanged { id, value } => {
+                let changed = match value {
+                    ControlValue::Text(value) => {
+                        self.workspace.update_text_area_showcase_value(&id, value)
+                    }
+                    ControlValue::Number(_)
+                    | ControlValue::Bool(_)
+                    | ControlValue::Selection(_)
+                    | ControlValue::Color(_)
+                    | ControlValue::FilePath(_) => false,
+                };
                 self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::LongPress(id) => {

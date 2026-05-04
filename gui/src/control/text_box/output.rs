@@ -1,7 +1,7 @@
 use super::model::TextBoxValueKind;
 use super::number::live_number_output;
 use super::system::TextBoxSystem;
-use crate::control::SystemCx;
+use crate::control::{ControlValue, SystemCx};
 use crate::output::{ControlEvent, FrameworkOutput, OutputBuilder};
 use crate::tree::Tree;
 
@@ -34,9 +34,9 @@ pub(super) fn output_for_editor(
 
 pub(super) fn changed_text_output(control_id: &str, value: &str) -> FrameworkOutput {
     OutputBuilder::new()
-        .control(ControlEvent::TextChanged {
+        .control(ControlEvent::ValueChanged {
             id: control_id.to_string(),
-            value: value.to_string(),
+            value: ControlValue::Text(value.to_string()),
         })
         .finish()
 }
@@ -50,9 +50,9 @@ pub(super) fn changed_number_output(
         FrameworkOutput::default()
     } else {
         OutputBuilder::new()
-            .control(ControlEvent::NumberChanged {
+            .control(ControlEvent::ValueChanged {
                 id: control_id.to_string(),
-                value,
+                value: ControlValue::Number(value),
             })
             .finish()
     }
