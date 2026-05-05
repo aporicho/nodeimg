@@ -6,7 +6,7 @@ use crate::tree::{
     RuntimeSlot, RuntimeSlots, StableId, TreeNode,
 };
 
-pub(super) fn container(id: String, style: BoxStyle, decoration: Option<Decoration>) -> TreeNode {
+pub(crate) fn container(id: String, style: BoxStyle, decoration: Option<Decoration>) -> TreeNode {
     TreeNode {
         id: StableId::from(id),
         props: NodeProps::default(),
@@ -23,7 +23,7 @@ pub(super) fn container(id: String, style: BoxStyle, decoration: Option<Decorati
     }
 }
 
-pub(super) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
+pub(crate) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
     TreeNode {
         id: StableId::from(id),
         props: NodeProps::default(),
@@ -40,7 +40,7 @@ pub(super) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
     }
 }
 
-pub(super) trait TreeNodeExt {
+pub(crate) trait TreeNodeExt {
     fn with_semantic_role(self, role: ControlRole) -> Self;
     fn with_runtime_slot<T: RuntimeSlot>(self, slot: T) -> Self;
 }

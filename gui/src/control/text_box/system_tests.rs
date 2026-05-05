@@ -41,7 +41,7 @@ fn number_output_uses_unified_value_changed_event() {
 }
 
 #[test]
-fn retained_spec_maps_text_area_to_multiline_text_box() {
+fn retained_spec_builds_text_area_as_multiline_text_box() {
     let theme = dark_theme();
     let spec = retained_control_text_box_spec(
         &ControlSpec::TextArea {
@@ -59,7 +59,7 @@ fn retained_spec_maps_text_area_to_multiline_text_box() {
 }
 
 #[test]
-fn retained_spec_maps_number_to_mono_number_text_box() {
+fn retained_spec_builds_number_as_mono_number_text_box() {
     let theme = dark_theme();
     let spec = retained_control_text_box_spec(
         &ControlSpec::Number {

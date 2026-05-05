@@ -4,14 +4,14 @@ use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, LeafKind, Size, TextLayout, TextOverflow};
 use crate::tree::NodeId;
 
-pub(super) fn ellipsis_text_layout() -> TextLayout {
+pub(crate) fn ellipsis_text_layout() -> TextLayout {
     TextLayout {
         overflow: TextOverflow::Ellipsis,
         ..TextLayout::default()
     }
 }
 
-pub(super) fn label_style() -> BoxStyle {
+pub(crate) fn label_style() -> BoxStyle {
     BoxStyle {
         width: Size::Fill,
         height: Size::Auto,
@@ -20,7 +20,7 @@ pub(super) fn label_style() -> BoxStyle {
     }
 }
 
-pub(super) fn mount_control_text(
+pub(crate) fn mount_control_text(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

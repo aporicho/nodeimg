@@ -1,5 +1,4 @@
-use super::node_factory::container;
-use super::text::mount_control_text;
+use crate::control::mount::{container, mount_control_text};
 use crate::control::ControlMetrics;
 use crate::renderer::{Border, Color};
 use crate::template::{TemplateError, TemplateMountCx};
@@ -7,7 +6,7 @@ use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Size};
 use crate::tree::NodeId;
 
-pub(super) fn mount_color_control(
+pub(crate) fn mount_color_control(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

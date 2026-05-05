@@ -1,6 +1,6 @@
-use super::mount::mount_control_node;
-use super::node_factory::{container, leaf};
-use super::text::{ellipsis_text_layout, label_style};
+use crate::control::mount::{
+    container, ellipsis_text_layout, label_style, leaf, mount_control_node,
+};
 use crate::control::{ControlMetrics, ControlNode};
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
@@ -8,7 +8,7 @@ use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, Decoration, Edges, LeafKind, Size};
 use crate::tree::NodeId;
 
-pub(super) fn mount_group(
+pub(crate) fn mount_group(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

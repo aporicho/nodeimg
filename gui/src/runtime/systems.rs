@@ -1,8 +1,8 @@
 use crate::animation::AnimationStore;
-use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::context::ImeRequest;
 use crate::control::{
-    ControlInteractionSystem, ControlIntrinsic, SystemCx, TextBoxStore, TextBoxSystem,
+    ControlInteractionSystem, ControlIntrinsic, ControlTextBoxSyncItem, SystemCx, TextBoxStore,
+    TextBoxSystem,
 };
 use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::interaction::InteractionState;
@@ -137,16 +137,16 @@ impl RuntimeSystems {
         self.text_box.store().has_dirty_intrinsics()
     }
 
-    pub(crate) fn sync_canvas_text_boxes(
+    pub(crate) fn sync_text_boxes(
         &mut self,
         tree: &Tree,
-        views: &[CanvasNodeRenderView],
+        items: &[ControlTextBoxSyncItem<'_>],
         measurer: &mut crate::renderer::TextMeasurer,
         theme: &crate::theme::Theme,
         focused: Option<NodeId>,
     ) {
         self.text_box
-            .sync_canvas_text_boxes(tree, views, measurer, theme, focused);
+            .sync_text_boxes(tree, items, measurer, theme, focused);
     }
 }
 

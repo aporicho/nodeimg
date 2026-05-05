@@ -1,5 +1,5 @@
 use super::node_factory::{container, leaf, TreeNodeExt};
-use super::text::ellipsis_text_layout;
+use super::text_leaf::ellipsis_text_layout;
 use crate::control::ControlMetrics;
 use crate::control::ControlRole;
 use crate::gesture::Gesture;
@@ -11,7 +11,7 @@ use crate::tree::layout::{
 };
 use crate::tree::NodeId;
 
-pub(super) fn mount_text_field(
+pub(crate) fn mount_text_field(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

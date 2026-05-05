@@ -1,39 +1,33 @@
 use super::retained_spec::retained_control_text_box_spec;
+use super::sync_item::ControlTextBoxSyncItem;
 use super::system::TextBoxSystem;
-use crate::canvas::canvas_node_stable_id;
-use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::control::SystemCx;
 use crate::renderer::TextMeasurer;
 use crate::theme::Theme;
 use crate::tree::{NodeId, Tree};
 
 impl TextBoxSystem {
-    pub(crate) fn sync_canvas_text_boxes(
+    pub(crate) fn sync_text_boxes(
         &mut self,
         tree: &Tree,
-        views: &[CanvasNodeRenderView],
+        items: &[ControlTextBoxSyncItem<'_>],
         measurer: &mut TextMeasurer,
         theme: &Theme,
         focused: Option<NodeId>,
     ) {
         let focused_control_id = self.focused_control_id(tree, focused);
-        for view in views {
-            let stable_id = canvas_node_stable_id(&view.state.owner_id);
-            for param in &view.template.params {
-                let control_id =
-                    format!("{stable_id}::body::param::{}::control::content", param.key);
-                let Some(spec) = retained_control_text_box_spec(&param.control, theme) else {
-                    continue;
-                };
-                self.store.sync_text_box(
-                    tree,
-                    measurer,
-                    theme,
-                    control_id,
-                    spec,
-                    focused_control_id.as_deref(),
-                );
-            }
+        for item in items {
+            let Some(spec) = retained_control_text_box_spec(item.control, theme) else {
+                continue;
+            };
+            self.store.sync_text_box(
+                tree,
+                measurer,
+                theme,
+                item.control_id.clone(),
+                spec,
+                focused_control_id.as_deref(),
+            );
         }
         self.sync_sessions(tree, focused, None);
     }

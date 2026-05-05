@@ -1,10 +1,10 @@
-use super::node_factory::leaf;
+use crate::control::mount::leaf;
 use crate::renderer::ImageStyle;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::tree::layout::{BoxStyle, LeafKind, Size, TextureHandle};
 use crate::tree::NodeId;
 
-pub(super) fn mount_image(
+pub(crate) fn mount_image(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

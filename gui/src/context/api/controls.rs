@@ -1,5 +1,5 @@
 use super::super::Context;
-use crate::control::ControlIntrinsic;
+use crate::control::{ControlIntrinsic, ControlTextBoxSyncItem};
 use crate::renderer::TextMeasurer;
 use crate::theme::Theme;
 
@@ -26,12 +26,12 @@ impl ControlsMutApi<'_> {
         self.ctx.take_dirty_control_intrinsics()
     }
 
-    pub fn sync_canvas_text_boxes(
+    pub fn sync_text_boxes(
         &mut self,
-        views: &[crate::canvas::node_template::CanvasNodeRenderView],
+        items: &[ControlTextBoxSyncItem<'_>],
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
-        self.ctx.sync_canvas_text_boxes(views, measurer, theme);
+        self.ctx.sync_text_boxes(items, measurer, theme);
     }
 }

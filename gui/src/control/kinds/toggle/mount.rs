@@ -1,4 +1,4 @@
-use super::node_factory::{container, TreeNodeExt};
+use crate::control::mount::{container, TreeNodeExt};
 use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
 use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
@@ -6,11 +6,12 @@ use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, Decoration, Position, Size};
 use crate::tree::NodeId;
 
-pub(super) fn mount_toggle(
+pub(crate) fn mount_toggle(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,
     checked: bool,
+    interaction: ControlInteractionSpec,
     theme: &Theme,
     metrics: ControlMetrics,
 ) -> Result<(), TemplateError> {
@@ -40,7 +41,7 @@ pub(super) fn mount_toggle(
             }),
         )
         .with_semantic_role(ControlRole::Toggle)
-        .with_runtime_slot(ControlInteractionSpec::toggle(checked)),
+        .with_runtime_slot(interaction),
     )?;
     let knob = height - 4.0;
     cx.child(

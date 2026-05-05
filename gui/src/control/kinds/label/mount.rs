@@ -1,11 +1,10 @@
-use super::node_factory::leaf;
-use super::text::{ellipsis_text_layout, label_style};
+use crate::control::mount::{ellipsis_text_layout, label_style, leaf};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::LeafKind;
 use crate::tree::NodeId;
 
-pub(super) fn mount_label(
+pub(crate) fn mount_label(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

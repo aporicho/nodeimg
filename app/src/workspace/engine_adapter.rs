@@ -11,7 +11,7 @@ use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortConnectionState, CanvasPortSide,
 };
-use gui::control::{ControlSpec, ControlSpecMap};
+use gui::control::ControlSpec;
 use gui::renderer::Rect;
 use std::collections::HashMap;
 
@@ -319,15 +319,15 @@ fn canvas_node_param_templates(
                 param.name.clone(),
                 param.data_type.to_string(),
                 value,
-                EngineControlSpecMap.control_for_param(param),
+                EngineControlMapper.control_for_param(param),
             )
         })
         .collect()
 }
 
-struct EngineControlSpecMap;
+struct EngineControlMapper;
 
-impl ControlSpecMap<engine::node_manager::ParamDef> for EngineControlSpecMap {
+impl EngineControlMapper {
     fn control_for_param(&self, param: &engine::node_manager::ParamDef) -> ControlSpec {
         if let Some(constraint) = &param.constraint {
             match constraint.type_id.as_str() {
@@ -351,7 +351,7 @@ impl ControlSpecMap<engine::node_manager::ParamDef> for EngineControlSpecMap {
                         .iter()
                         .position(|option| option == selected_value)
                         .unwrap_or(0);
-                    return ControlSpec::Select { options, selected };
+                    return ControlSpec::select(options, selected);
                 }
                 "range" => {
                     let min = constraint
@@ -365,22 +365,11 @@ impl ControlSpecMap<engine::node_manager::ParamDef> for EngineControlSpecMap {
                         .and_then(|value| value.as_f64())
                         .unwrap_or(1.0) as f32;
                     return match &param.default_value {
-                        types::Value::Float(value) => ControlSpec::Slider {
-                            value: *value,
-                            min,
-                            max,
-                            step: 0.01,
-                        },
-                        types::Value::Int(value) => ControlSpec::Number {
-                            value: *value as f32,
-                            min,
-                            max,
-                            step: 1.0,
-                            precision: 0,
-                        },
-                        _ => ControlSpec::ReadOnly {
-                            value: compact_value(&param.default_value),
-                        },
+                        types::Value::Float(value) => ControlSpec::slider(*value, min, max, 0.01),
+                        types::Value::Int(value) => {
+                            ControlSpec::number(*value as f32, min, max, 1.0, 0)
+                        }
+                        _ => ControlSpec::read_only(compact_value(&param.default_value)),
                     };
                 }
                 "file_path" => {
@@ -399,35 +388,23 @@ impl ControlSpecMap<engine::node_manager::ParamDef> for EngineControlSpecMap {
                         types::Value::String(value) => value.clone(),
                         _ => String::new(),
                     };
-                    return ControlSpec::FilePath { path, extensions };
+                    return ControlSpec::file_path(path, extensions);
                 }
                 _ => {}
             }
         }
 
         match &param.default_value {
-            types::Value::Float(value) => ControlSpec::Number {
-                value: *value,
-                min: f32::MIN,
-                max: f32::MAX,
-                step: 0.01,
-                precision: 2,
-            },
-            types::Value::Int(value) => ControlSpec::Number {
-                value: *value as f32,
-                min: i32::MIN as f32,
-                max: i32::MAX as f32,
-                step: 1.0,
-                precision: 0,
-            },
-            types::Value::Bool(value) => ControlSpec::Toggle { checked: *value },
-            types::Value::Color(rgba) => ControlSpec::Color { rgba: *rgba },
-            types::Value::String(value) => ControlSpec::Text {
-                value: value.clone(),
-            },
-            types::Value::Image(_) | types::Value::Handle(_) => ControlSpec::ReadOnly {
-                value: compact_value(&param.default_value),
-            },
+            types::Value::Float(value) => ControlSpec::number(*value, f32::MIN, f32::MAX, 0.01, 2),
+            types::Value::Int(value) => {
+                ControlSpec::number(*value as f32, i32::MIN as f32, i32::MAX as f32, 1.0, 0)
+            }
+            types::Value::Bool(value) => ControlSpec::toggle(*value),
+            types::Value::Color(rgba) => ControlSpec::color(*rgba),
+            types::Value::String(value) => ControlSpec::text(value.clone()),
+            types::Value::Image(_) | types::Value::Handle(_) => {
+                ControlSpec::read_only(compact_value(&param.default_value))
+            }
         }
     }
 }
@@ -582,8 +559,8 @@ mod tests {
     }
 
     #[test]
-    fn engine_control_spec_map_uses_value_shape() {
-        let mapper = EngineControlSpecMap;
+    fn engine_control_mapper_uses_value_shape() {
+        let mapper = EngineControlMapper;
 
         assert!(matches!(
             mapper.control_for_param(&test_param(
@@ -620,8 +597,8 @@ mod tests {
     }
 
     #[test]
-    fn engine_control_spec_map_uses_constraints() {
-        let mapper = EngineControlSpecMap;
+    fn engine_control_mapper_uses_constraints() {
+        let mapper = EngineControlMapper;
 
         assert!(matches!(
             mapper.control_for_param(&test_param(

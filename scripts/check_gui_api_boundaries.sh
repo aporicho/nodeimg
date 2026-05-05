@@ -57,6 +57,10 @@ check_required_match "gui control facade is public" '^pub mod control;' gui/src/
 check_required_match "gui layout facade is public" '^pub mod layout;' gui/src/lib.rs
 check_required_match "gui scene facade is public" '^pub mod scene;' gui/src/lib.rs
 check_required_match "non-text controls use a dedicated interaction runtime" 'ControlInteractionSystem' gui/src/control/interaction/mod.rs gui/src/runtime/systems.rs
+check_required_match "control spec module has a facade" '^pub use model::ControlSpec;' gui/src/control/spec/mod.rs
+check_required_match "control layout module has a facade" '^pub use measure::' gui/src/control/layout/mod.rs
+check_required_match "control mount module has a facade" '^pub\(crate\) use wrapper::' gui/src/control/mount/mod.rs
+check_required_match "control kinds have a single registry" 'pub\(crate\) fn control_kind' gui/src/control/kinds/registry.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -79,6 +83,9 @@ check_missing_path "old control systems module tree" gui/src/control/systems
 check_missing_path "old control mapping module" gui/src/control/mapping.rs
 check_missing_path "old control param layout module" gui/src/control/param_layout.rs
 check_missing_path "old control painter module" gui/src/control/painter.rs
+check_missing_path "old flat control spec module" gui/src/control/spec.rs
+check_missing_path "old flat control layout module" gui/src/control/layout.rs
+check_missing_path "old control template module tree" gui/src/control/templates
 check_missing_path "old canvas retained control template module tree" gui/src/canvas/retained_node_card/controls
 check_missing_path "old panel retained control composer" gui/src/panel/retained/controls.rs
 check_missing_path "old panel retained text helper" gui/src/panel/retained/text.rs
@@ -212,9 +219,14 @@ check_no_match \
 
 check_no_match \
     "controls must use unified ControlSpec API, not legacy param-control or panel-body names" \
-    'ParamControlSpec|ParamControlMap|ParamControlMetrics|ParamControlKind|ParamControlHeight|ParamControlLayoutPolicy|param_control_(layout_policy|min_height|kind|template)|PARAM_CONTROL_TEMPLATE|PanelBodyNode' \
+    'ParamControlSpec|ParamControlMap|ParamControlMetrics|ParamControlKind|ParamControlHeight|ParamControlLayoutPolicy|param_control_(layout_policy|min_height|kind|template)|PARAM_CONTROL_TEMPLATE|PanelBodyNode|ControlSpecMap' \
     gui/src \
     app/src
+
+check_no_match \
+    "control module must not depend on canvas business/editor modules" \
+    'crate::canvas|gui::canvas' \
+    gui/src/control
 
 check_no_match \
     "control value changes must use ControlValue and ValueChanged, not split value events" \
@@ -283,9 +295,24 @@ check_no_match \
     gui/src/control/mod.rs
 
 check_no_match \
-    "control templates module root must only declare and re-export submodules" \
+    "control spec module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
-    gui/src/control/templates/mod.rs
+    gui/src/control/spec/mod.rs
+
+check_no_match \
+    "control layout module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/layout/mod.rs
+
+check_no_match \
+    "control mount module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/mount/mod.rs
+
+check_no_match \
+    "control kinds module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/kinds/mod.rs
 
 check_no_match \
     "panel retained module root must only declare and re-export submodules" \

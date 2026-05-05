@@ -1,5 +1,5 @@
 use super::data::PanelFrameTemplateData;
-use crate::control::templates::mount_control_node;
+use crate::control::mount::mount_control_node;
 use crate::control::ControlMetrics;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::tree::NodeId;

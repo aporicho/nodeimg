@@ -1,5 +1,4 @@
-use super::node_factory::{container, leaf, TreeNodeExt};
-use super::text::ellipsis_text_layout;
+use crate::control::mount::{container, ellipsis_text_layout, leaf, TreeNodeExt};
 use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::renderer::Border;
@@ -8,7 +7,7 @@ use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size};
 use crate::tree::NodeId;
 
-pub(super) fn mount_button(
+pub(crate) fn mount_button(
     cx: &mut TemplateMountCx<'_>,
     parent: NodeId,
     id: &str,

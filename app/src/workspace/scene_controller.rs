@@ -858,6 +858,7 @@ mod tests {
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
+    use gui::control::ControlTextBoxSyncItem;
     use gui::control::ControlValue;
     use gui::control::ResizeEdge;
     use gui::cursor::CursorKind;
@@ -874,6 +875,23 @@ mod tests {
             w: 900.0,
             h: 700.0,
         }
+    }
+
+    fn canvas_text_box_sync_items(
+        nodes: &[CanvasNodeRenderView],
+    ) -> Vec<ControlTextBoxSyncItem<'_>> {
+        nodes
+            .iter()
+            .flat_map(|view| {
+                let stable_id = canvas_node_stable_id(&view.state.owner_id);
+                view.template.params.iter().map(move |param| {
+                    ControlTextBoxSyncItem::new(
+                        format!("{stable_id}::body::param::{}::control::content", param.key),
+                        &param.control,
+                    )
+                })
+            })
+            .collect()
     }
 
     #[test]
@@ -1647,8 +1665,9 @@ mod tests {
             .expect("sync");
         gui.rendering()
             .flush_layout_dirty(viewport(), &mut measurer);
+        let text_box_sync_items = canvas_text_box_sync_items(&nodes);
         gui.controls_mut()
-            .sync_canvas_text_boxes(&nodes, &mut measurer, &theme);
+            .sync_text_boxes(&text_box_sync_items, &mut measurer, &theme);
 
         let control_id =
             "canvas_node::showcase_node::text_area_control::body::param::Prompt::control::content";

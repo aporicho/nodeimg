@@ -2,7 +2,7 @@ use super::node_factory::{container, leaf};
 use super::style::ellipsis_text_layout;
 use crate::canvas::node_spec::{NodeBodyRowSpec, NodeBodySpec};
 use crate::canvas::node_style::NodeCardMetrics;
-use crate::control::templates::mount_control;
+use crate::control::mount::mount_control;
 use crate::control::{control_layout_policy, ControlHeight, ControlLayoutPolicy};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;

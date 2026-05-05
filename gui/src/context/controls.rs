@@ -1,5 +1,5 @@
 use super::Context;
-use crate::control::ControlIntrinsic;
+use crate::control::{ControlIntrinsic, ControlTextBoxSyncItem};
 use crate::diagnostics::render_trace::{self, RenderTraceStage};
 use crate::renderer::TextMeasurer;
 use crate::theme::Theme;
@@ -7,7 +7,7 @@ use crate::theme::Theme;
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 struct TextRuntimeTraceSummary {
-    views: usize,
+    controls: usize,
     dirty_intrinsics_before: usize,
     dirty_intrinsics_after: usize,
 }
@@ -21,16 +21,16 @@ impl Context {
         self.systems.take_dirty_control_intrinsics()
     }
 
-    pub(crate) fn sync_canvas_text_boxes(
+    pub(crate) fn sync_text_boxes(
         &mut self,
-        views: &[crate::canvas::node_template::CanvasNodeRenderView],
+        items: &[ControlTextBoxSyncItem<'_>],
         measurer: &mut TextMeasurer,
         theme: &Theme,
     ) {
         let before_dirty = self.systems.dirty_control_intrinsic_ids().len();
-        self.systems.sync_canvas_text_boxes(
+        self.systems.sync_text_boxes(
             &self.tree,
-            views,
+            items,
             measurer,
             theme,
             self.interaction.focused(),
@@ -38,7 +38,7 @@ impl Context {
         render_trace::debug_stage(
             RenderTraceStage::TextRuntimeSync,
             TextRuntimeTraceSummary {
-                views: views.len(),
+                controls: items.len(),
                 dirty_intrinsics_before: before_dirty,
                 dirty_intrinsics_after: self.systems.dirty_control_intrinsic_ids().len(),
             },

@@ -11,10 +11,11 @@ use crate::workspace::scene_sync::{
 };
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
+use gui::canvas::canvas_node_stable_id;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
-use gui::control::{ControlValue, ResizeEdge};
+use gui::control::{ControlTextBoxSyncItem, ControlValue, ResizeEdge};
 use gui::cursor::CursorKind;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::layout::TextureHandle;
@@ -294,8 +295,9 @@ impl AppShell {
 
         let canvas_nodes = self.sync_workspace_scene(viewport, true);
         self.flush_workspace_layout(viewport, renderer);
-        self.gui.controls_mut().sync_canvas_text_boxes(
-            &canvas_nodes,
+        let text_box_sync_items = canvas_text_box_sync_items(&canvas_nodes);
+        self.gui.controls_mut().sync_text_boxes(
+            &text_box_sync_items,
             renderer.text_measurer(),
             &self.theme,
         );
@@ -303,8 +305,9 @@ impl AppShell {
         if self.gui.controls().has_dirty_intrinsics() {
             let stabilized_nodes = self.sync_workspace_scene(viewport, false);
             self.flush_workspace_layout(viewport, renderer);
-            self.gui.controls_mut().sync_canvas_text_boxes(
-                &stabilized_nodes,
+            let text_box_sync_items = canvas_text_box_sync_items(&stabilized_nodes);
+            self.gui.controls_mut().sync_text_boxes(
+                &text_box_sync_items,
                 renderer.text_measurer(),
                 &self.theme,
             );
@@ -818,6 +821,21 @@ impl AppShell {
     fn node_palette_state(&self) -> crate::workspace::node_palette::NodePaletteState {
         self.workspace.node_palette_state()
     }
+}
+
+fn canvas_text_box_sync_items(nodes: &[CanvasNodeRenderView]) -> Vec<ControlTextBoxSyncItem<'_>> {
+    nodes
+        .iter()
+        .flat_map(|view| {
+            let stable_id = canvas_node_stable_id(&view.state.owner_id);
+            view.template.params.iter().map(move |param| {
+                ControlTextBoxSyncItem::new(
+                    format!("{stable_id}::body::param::{}::control::content", param.key),
+                    &param.control,
+                )
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy)]
