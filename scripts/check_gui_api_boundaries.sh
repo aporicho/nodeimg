@@ -61,6 +61,9 @@ check_required_match "control spec module has a facade" '^pub use model::Control
 check_required_match "control layout module has a facade" '^pub use measure::' gui/src/control/layout/mod.rs
 check_required_match "control mount module has a facade" '^pub\(crate\) use wrapper::' gui/src/control/mount/mod.rs
 check_required_match "control kinds have a single registry" 'pub\(crate\) fn control_kind' gui/src/control/kinds/registry.rs
+check_required_match "control kind descriptor API exists" 'struct ControlKindDescriptor' gui/src/control/kinds/descriptor.rs
+check_required_match "control registry dispatches through descriptors" 'CONTROL_DESCRIPTORS' gui/src/control/kinds/registry.rs
+check_required_match "workspace owns canvas text-box sync adaptation" 'ControlTextBoxSyncItem' app/src/workspace/control_sync.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -78,6 +81,7 @@ check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat overlay retained module" gui/src/overlay/retained.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
 check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
+check_missing_path "old flat control text box runtime module" gui/src/control/text_box/runtime.rs
 check_missing_path "old control state module tree" gui/src/control/state
 check_missing_path "old control systems module tree" gui/src/control/systems
 check_missing_path "old control mapping module" gui/src/control/mapping.rs
@@ -229,6 +233,16 @@ check_no_match \
     gui/src/control
 
 check_no_match \
+    "control registry must not import concrete control mount functions" \
+    'mount_(button|color_control|file_path|group|image|label|number|read_only|select|slider|text|text_area|toggle)' \
+    gui/src/control/kinds/registry.rs
+
+check_no_match \
+    "app shell must not own canvas text-box sync item construction" \
+    'fn canvas_text_box_sync_items|ControlTextBoxSyncItem|canvas_node_stable_id' \
+    app/src/app_shell.rs
+
+check_no_match \
     "control value changes must use ControlValue and ValueChanged, not split value events" \
     'ControlEvent::(TextChanged|NumberChanged|SelectionChanged)|(TextChanged|NumberChanged|SelectionChanged)[[:space:]]*\{|ControlTextChanged' \
     gui/src \
@@ -328,6 +342,11 @@ check_no_match \
     "control text box module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/control/text_box/mod.rs
+
+check_no_match \
+    "control text box runtime module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/control/text_box/runtime/mod.rs
 
 check_no_match \
     "renderer display backend module root must only declare and re-export submodules" \

@@ -1,4 +1,5 @@
 use crate::workspace::composition::WorkspaceUiComposition;
+use crate::workspace::control_sync::canvas_text_box_sync_items;
 use crate::workspace::controller::{WorkspaceActionResult, WorkspaceController};
 use crate::workspace::cursor_refresh::{
     WorkspaceCursorDirtyReason, WorkspaceCursorRefreshGate, WorkspaceCursorRefreshKey,
@@ -11,11 +12,10 @@ use crate::workspace::scene_sync::{
 };
 use gui::action::{node_library_add_type_id, GuiAction};
 use gui::canvas::camera::Camera;
-use gui::canvas::canvas_node_stable_id;
 use gui::canvas::navigation::CanvasNavigationController;
 use gui::canvas::node_template::CanvasNodeRenderView;
 use gui::context::{Context, ControlEvent, FrameworkOutput, GuiEvent, PlatformEffect};
-use gui::control::{ControlTextBoxSyncItem, ControlValue, ResizeEdge};
+use gui::control::{ControlValue, ResizeEdge};
 use gui::cursor::CursorKind;
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage, TARGET_RENDER};
 use gui::layout::TextureHandle;
@@ -821,21 +821,6 @@ impl AppShell {
     fn node_palette_state(&self) -> crate::workspace::node_palette::NodePaletteState {
         self.workspace.node_palette_state()
     }
-}
-
-fn canvas_text_box_sync_items(nodes: &[CanvasNodeRenderView]) -> Vec<ControlTextBoxSyncItem<'_>> {
-    nodes
-        .iter()
-        .flat_map(|view| {
-            let stable_id = canvas_node_stable_id(&view.state.owner_id);
-            view.template.params.iter().map(move |param| {
-                ControlTextBoxSyncItem::new(
-                    format!("{stable_id}::body::param::{}::control::content", param.key),
-                    &param.control,
-                )
-            })
-        })
-        .collect()
 }
 
 #[derive(Clone, Copy)]

@@ -1,3 +1,4 @@
+mod descriptor;
 mod mount;
 
-pub(super) use mount::mount_label;
+pub(super) use descriptor::DESCRIPTOR;

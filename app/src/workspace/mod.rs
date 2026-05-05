@@ -1,6 +1,7 @@
 pub(crate) mod canvas_drag;
 pub(crate) mod canvas_resize;
 pub(crate) mod composition;
+pub(crate) mod control_sync;
 pub(crate) mod controller;
 pub(crate) mod cursor_refresh;
 pub(crate) mod diagnostic_scene;

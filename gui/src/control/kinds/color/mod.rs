@@ -1,3 +1,4 @@
+mod descriptor;
 mod mount;
 
-pub(super) use mount::mount_color_control;
+pub(super) use descriptor::DESCRIPTOR;
