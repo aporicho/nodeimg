@@ -1,5 +1,5 @@
 use crate::context::Context;
-use crate::event::pointer_hit::PointerHitSnapshot;
+use crate::input::PointerHitSnapshot;
 use crate::output::FrameworkOutput;
 use crate::shell::AppEvent;
 use crate::tree::layout::Overflow;
@@ -51,13 +51,7 @@ fn scroll_target_at(
     x: f32,
     y: f32,
 ) -> Option<NodeId> {
-    let fallback;
-    let chain = if let Some(hit) = hit.filter(|hit| hit.matches_point(x, y)) {
-        hit.chain()
-    } else {
-        fallback = ctx.hit_test(x, y);
-        &fallback
-    };
+    let chain = ctx.pointer_hit_resolver().chain_at(hit, x, y);
     let target = chain.iter().find(|&node_id| {
         ctx.tree
             .get(node_id)

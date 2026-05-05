@@ -1,5 +1,5 @@
 use crate::animation::AnimationStore;
-use crate::event::pointer_hit::PointerHitSnapshot;
+use crate::input::PointerHitSnapshot;
 use crate::shell::AppEvent;
 use crate::tree::{NodeId, Tree};
 

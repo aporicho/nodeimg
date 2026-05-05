@@ -1,48 +1,11 @@
 use super::Context;
 use crate::control::ResizeEdge;
 use crate::cursor::{resolve_cursor, CursorKind};
+use crate::input::{PointerHitRequest, PointerHitResolver, PointerHitSnapshot};
 use crate::renderer::Rect;
 use crate::tree::{
     hit_test_with_animations, resize_hit_at_screen_point, HitChain, NodeId, TargetChain,
 };
-
-pub struct PointerHitQueryResult {
-    x: f32,
-    y: f32,
-    chain: HitChain,
-    resize_hit: Option<(NodeId, ResizeEdge)>,
-}
-
-impl PointerHitQueryResult {
-    fn new(x: f32, y: f32, chain: HitChain, resize_hit: Option<(NodeId, ResizeEdge)>) -> Self {
-        Self {
-            x,
-            y,
-            chain,
-            resize_hit,
-        }
-    }
-
-    pub fn x(&self) -> f32 {
-        self.x
-    }
-
-    pub fn y(&self) -> f32 {
-        self.y
-    }
-
-    pub fn matches_point(&self, x: f32, y: f32) -> bool {
-        self.x == x && self.y == y
-    }
-
-    pub fn chain(&self) -> &HitChain {
-        &self.chain
-    }
-
-    pub fn resize_hit(&self) -> Option<(NodeId, ResizeEdge)> {
-        self.resize_hit
-    }
-}
 
 impl Context {
     pub(crate) fn hit_test(&self, x: f32, y: f32) -> HitChain {
@@ -113,16 +76,12 @@ impl Context {
         hit.map(|hit| (hit.node_id, hit.edge))
     }
 
-    pub(crate) fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitQueryResult {
-        PointerHitQueryResult::new(
-            x,
-            y,
-            self.hit_test(x, y),
-            self.resize_hit_at_screen_point(x, y),
-        )
+    pub(crate) fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitSnapshot {
+        PointerHitResolver::new(&self.tree, Some(&self.animations))
+            .snapshot_for_request(PointerHitRequest::new(x, y, true))
     }
 
-    pub(crate) fn cursor_for_hit(&self, hit: &PointerHitQueryResult) -> CursorKind {
+    pub(crate) fn cursor_for_hit(&self, hit: &PointerHitSnapshot) -> CursorKind {
         let targets = TargetChain::from_hit_chain(&self.tree, hit.chain());
         resolve_cursor(hit.resize_hit().map(|(_, edge)| edge), &targets)
     }

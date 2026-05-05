@@ -1,8 +1,8 @@
 use super::Context;
-use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::event::router;
 use crate::event::signal_output;
 use crate::gesture::GestureSessionUpdate;
+use crate::input::{PointerHitRequest, PointerHitResolver, PointerHitSnapshot};
 use crate::output::FrameworkOutput;
 use crate::renderer::Rect;
 use crate::runtime::{RuntimeEventCx, RuntimeEventResult};
@@ -58,7 +58,12 @@ impl Context {
     }
 
     pub(crate) fn pointer_hit_snapshot(&self, event: &AppEvent) -> Option<PointerHitSnapshot> {
-        PointerHitSnapshot::from_event(&self.tree, Some(&self.animations), event)
+        PointerHitRequest::from_event(event)
+            .map(|request| self.pointer_hit_resolver().snapshot_for_request(request))
+    }
+
+    pub(crate) fn pointer_hit_resolver(&self) -> PointerHitResolver<'_> {
+        PointerHitResolver::new(&self.tree, Some(&self.animations))
     }
 
     pub(crate) fn handle_interaction_event(

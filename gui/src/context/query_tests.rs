@@ -37,7 +37,7 @@ fn node_with_role(id: &'static str, rect: Rect, role: SemanticRole) -> TreeNode 
 }
 
 #[test]
-fn pointer_hit_query_result_captures_point_and_chain() {
+fn pointer_hit_snapshot_captures_point_and_chain() {
     let mut ctx = Context::new();
     let root = ctx.tree.insert(hittable_node(
         "root",

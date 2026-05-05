@@ -9,6 +9,7 @@ pub(crate) mod event;
 pub mod geometry;
 pub mod gesture;
 pub mod icon;
+pub(crate) mod input;
 pub mod interaction;
 pub mod layout;
 pub mod output;

@@ -1,4 +1,4 @@
-use super::super::{Context, HitChain, PointerHitQueryResult};
+use super::super::{Context, HitChain, PointerHitSnapshot};
 use crate::control::ResizeEdge;
 use crate::cursor::CursorKind;
 use crate::renderer::Rect;
@@ -45,11 +45,11 @@ impl QueryApi<'_> {
         self.ctx.resize_hit_at_screen_point(x, y)
     }
 
-    pub fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitQueryResult {
+    pub fn pointer_hit_at(&self, x: f32, y: f32) -> PointerHitSnapshot {
         self.ctx.pointer_hit_at(x, y)
     }
 
-    pub fn cursor_for_hit(&self, hit: &PointerHitQueryResult) -> CursorKind {
+    pub fn cursor_for_hit(&self, hit: &PointerHitSnapshot) -> CursorKind {
         self.ctx.cursor_for_hit(hit)
     }
 

@@ -1,8 +1,8 @@
 use crate::animation::AnimationStore;
-use crate::event::pointer_hit::PointerHitSnapshot;
+use crate::input::{PointerHitResolver, PointerHitSnapshot};
 use crate::interaction::InteractionState;
 use crate::renderer::Point;
-use crate::tree::{hit_test_with_animations, HitChain, NodeId, Tree};
+use crate::tree::{HitChain, NodeId, Tree};
 
 pub(crate) struct SystemCx<'a> {
     tree: &'a Tree,
@@ -39,13 +39,7 @@ impl<'a> SystemCx<'a> {
     }
 
     pub(crate) fn hit_chain(&self, x: f32, y: f32) -> HitChain {
-        if let Some(hit) = self.pointer_hit.filter(|hit| hit.matches_point(x, y)) {
-            return hit.chain().clone();
-        }
-        let Some(root) = self.tree.root() else {
-            return HitChain::empty();
-        };
-        hit_test_with_animations(self.tree, root, x, y, self.animations)
+        PointerHitResolver::new(self.tree, self.animations).chain_at(self.pointer_hit, x, y)
     }
 
     pub(crate) fn node_name(&self, node_id: NodeId) -> Option<&str> {

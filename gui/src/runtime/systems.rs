@@ -4,7 +4,7 @@ use crate::control::{
     ControlInteractionSystem, ControlIntrinsic, ControlTextBoxSyncItem, SystemCx, TextBoxStore,
     TextBoxSystem,
 };
-use crate::event::pointer_hit::PointerHitSnapshot;
+use crate::input::PointerHitSnapshot;
 use crate::interaction::InteractionState;
 use crate::output::FrameworkOutput;
 use crate::overlay::OverlayRequest;

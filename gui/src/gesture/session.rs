@@ -1,9 +1,9 @@
 use std::time::Instant;
 
 use crate::animation::AnimationStore;
-use crate::event::pointer_hit::PointerHitSnapshot;
+use crate::input::{PointerHitResolver, PointerHitSnapshot};
 use crate::shell::{AppEvent, MouseButton};
-use crate::tree::{hit_test_with_animations, resize_hit_at_screen_point, HitChain, Tree};
+use crate::tree::Tree;
 
 use super::arena::GestureArena;
 use super::factory::{arena_from_hit_chain, arena_from_resize_hit};
@@ -55,20 +55,15 @@ impl GestureSession {
             AppEvent::MousePress { x, y, button }
                 if button == MouseButton::Left && self.arena.is_none() =>
             {
-                if let Some(root) = tree.root() {
-                    let resize_hit = hit
-                        .filter(|hit| hit.matches_point(x, y))
-                        .and_then(PointerHitSnapshot::resize_hit)
-                        .or_else(|| resize_hit_at_screen_point(tree, root, x, y, animations));
-                    if let Some(resize_hit) = resize_hit {
-                        if let Some(arena) = arena_from_resize_hit(tree, resize_hit, x, y) {
-                            self.arena = Some(arena);
-                            return GestureSessionUpdate::consumed();
-                        }
+                let resolver = PointerHitResolver::new(tree, animations);
+                if let Some(resize_hit) = resolver.resize_hit_at(hit, x, y) {
+                    if let Some(arena) = arena_from_resize_hit(tree, resize_hit, x, y) {
+                        self.arena = Some(arena);
+                        return GestureSessionUpdate::consumed();
                     }
                 }
 
-                let chain = hit_chain(tree, animations, hit, x, y);
+                let chain = resolver.chain_at(hit, x, y);
                 if let Some(arena) = arena_from_hit_chain(tree, &chain, x, y, self.last_tap_time) {
                     self.arena = Some(arena);
                     return GestureSessionUpdate::consumed();
@@ -127,20 +122,4 @@ impl Default for GestureSession {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn hit_chain(
-    tree: &Tree,
-    animations: Option<&AnimationStore>,
-    hit: Option<&PointerHitSnapshot>,
-    x: f32,
-    y: f32,
-) -> HitChain {
-    if let Some(hit) = hit.filter(|hit| hit.matches_point(x, y)) {
-        return hit.chain().clone();
-    }
-    let Some(root) = tree.root() else {
-        return HitChain::empty();
-    };
-    hit_test_with_animations(tree, root, x, y, animations)
 }

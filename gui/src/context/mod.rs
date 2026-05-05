@@ -23,9 +23,9 @@ pub use api::{
 };
 pub use core::Context;
 pub use input::ImeRequest;
-pub use query::PointerHitQueryResult;
 pub use roots::RetainedRootIds;
 
+pub use crate::input::PointerHitSnapshot;
 pub use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OverlayEvent, PlatformEffect};
 pub use crate::overlay::{
     DropdownOverlayContent, OverlayContent, OverlayPlacement, OverlayRequest,

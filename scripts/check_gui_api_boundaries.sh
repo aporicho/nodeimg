@@ -52,6 +52,7 @@ fi
 check_required_match "gui tree module remains crate-private" '^pub\(crate\) mod tree;' gui/src/lib.rs
 check_required_match "gui runtime module remains crate-private" '^pub\(crate\) mod runtime;' gui/src/lib.rs
 check_required_match "gui event module remains crate-private" '^pub\(crate\) mod event;' gui/src/lib.rs
+check_required_match "gui input module remains crate-private" '^pub\(crate\) mod input;' gui/src/lib.rs
 check_required_match "gui text module remains crate-private" '^pub\(crate\) mod text;' gui/src/lib.rs
 check_required_match "gui control facade is public" '^pub mod control;' gui/src/lib.rs
 check_required_match "gui layout facade is public" '^pub mod layout;' gui/src/lib.rs
@@ -72,12 +73,16 @@ check_required_match "tree target module has a TargetChain facade" '^pub\(crate\
 check_required_match "tree target module has a TargetDescriptor facade" '^pub\(crate\) use descriptor::TargetDescriptor;' gui/src/tree/target/mod.rs
 check_required_match "tree target module has an owner resolver facade" '^pub\(crate\) use owner::TargetOwnerResolver;' gui/src/tree/target/mod.rs
 check_required_match "tree facade exports target API internally" '^pub\(crate\) use target::\{TargetChain, TargetDescriptor, TargetOwnerResolver\};' gui/src/tree/mod.rs
+check_required_match "input pointer hit module has a request facade" '^pub\(crate\) use request::PointerHitRequest;' gui/src/input/pointer_hit/mod.rs
+check_required_match "input pointer hit module has a resolver facade" '^pub\(crate\) use resolver::PointerHitResolver;' gui/src/input/pointer_hit/mod.rs
+check_required_match "input pointer hit module has a snapshot facade" '^pub use snapshot::PointerHitSnapshot;' gui/src/input/pointer_hit/mod.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
 check_missing_path "old desc tree module" gui/src/tree/desc.rs
 check_missing_path "old desc build module" gui/src/tree/build
 check_missing_path "old event gesture adapter module" gui/src/event/gesture_adapter.rs
+check_missing_path "old event-owned pointer hit module" gui/src/event/pointer_hit.rs
 check_missing_path "old text intrinsic module" gui/src/text/intrinsic.rs
 check_missing_path "legacy full-tree desc reconciler" gui/src/tree/legacy_desc.rs
 check_missing_path "legacy full-tree desc diff" gui/src/tree/diff.rs
@@ -319,6 +324,14 @@ check_no_match \
     gui/src/gesture
 
 check_no_match \
+    "input consumers must use PointerHitResolver instead of direct tree hit fallback" \
+    'hit_test_with_animations|resize_hit_at_screen_point' \
+    gui/src/event \
+    gui/src/interaction \
+    gui/src/gesture \
+    gui/src/control/system_context.rs
+
+check_no_match \
     "backend resource creation must stay out of tree/template/control layers" \
     'create_buffer|wgpu::|BackendCommandEncoder|RenderPass' \
     gui/src/template \
@@ -364,6 +377,11 @@ check_no_match \
     "control module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/control/mod.rs
+
+check_no_match \
+    "input pointer hit module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/input/pointer_hit/mod.rs
 
 check_no_match \
     "control spec module root must only declare and re-export submodules" \
