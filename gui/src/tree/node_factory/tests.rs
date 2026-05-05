@@ -1,8 +1,8 @@
 use super::TreeNodeBuilder;
-use crate::control::ControlRole;
 use crate::renderer::Rect;
 use crate::renderer::{Color, TextStyle};
 use crate::tree::layout::{BoxStyle, LeafKind, RelayoutBoundaryReason, TextLayout};
+use crate::tree::SemanticRole;
 use crate::tree::{RectMoveInvalidation, RepaintBoundaryReason};
 
 #[test]
@@ -40,14 +40,14 @@ fn builder_sets_standard_metadata() {
         },
         BoxStyle::default(),
     )
-    .semantic_role(ControlRole::Button)
+    .semantic_role(SemanticRole::Button)
     .owner("owner")
     .layout_boundary(RelayoutBoundaryReason::Root)
     .paint_boundary(RepaintBoundaryReason::Root)
     .rect_move_invalidation(RectMoveInvalidation::Repaint)
     .build();
 
-    assert_eq!(node.props.semantic_role, Some(ControlRole::Button));
+    assert_eq!(node.props.semantic_role, Some(SemanticRole::Button));
     assert_eq!(node.props.owner_id.as_deref(), Some("owner"));
     assert_eq!(
         node.layout_meta.boundary,

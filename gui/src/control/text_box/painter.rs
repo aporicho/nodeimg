@@ -197,9 +197,7 @@ fn retained_text_box_owner<'a>(tree: &Tree, node_id: &'a str) -> Option<&'a str>
     for candidate in part_candidates(node_id) {
         let node = tree.get(tree.node_by_str(candidate)?)?;
         if node.props.semantic_role.is_some_and(|role| {
-            role.is_text_input()
-                || role.is_text_area()
-                || matches!(role, crate::control::ControlRole::NumberInput)
+            role.is_text_input() || role.is_text_area() || role.is_number_input()
         }) {
             return Some(candidate);
         }

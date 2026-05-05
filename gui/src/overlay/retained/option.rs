@@ -1,6 +1,5 @@
 use super::node_factory::{container, leaf};
 use super::text::ellipsis_text_layout;
-use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
 use crate::interaction::ControlVisualState;
@@ -12,6 +11,7 @@ use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Overflow, Size,
 };
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(in crate::overlay::retained) fn mount_option(
     cx: &mut TemplateMountCx<'_>,
@@ -61,7 +61,7 @@ pub(in crate::overlay::retained) fn mount_option(
                 shadow: None,
             }),
         )
-        .semantic_role(ControlRole::Button),
+        .semantic_role(SemanticRole::Button),
     )?;
     let marker = cx.child(
         option_root,

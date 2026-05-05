@@ -1,11 +1,11 @@
 use crate::control::mount::{container, ellipsis_text_layout, leaf};
-use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size};
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(crate) fn mount_button(
     cx: &mut TemplateMountCx<'_>,
@@ -45,7 +45,7 @@ pub(crate) fn mount_button(
                 shadow: None,
             }),
         )
-        .semantic_role(ControlRole::Button),
+        .semantic_role(SemanticRole::Button),
     )?;
     cx.child(
         button,

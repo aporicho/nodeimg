@@ -45,6 +45,7 @@ pub use node::{NodeKind, TreeNode};
 pub(crate) use node_factory::TreeNodeBuilder;
 pub(crate) use paint::PaintCx;
 pub use paint_cache::PaintCache;
+pub(crate) use props::SemanticRole;
 pub use repaint::{PaintDirtyQueues, PaintDirtyReason, RepaintBoundaryId, RepaintBoundaryReason};
 pub use revision::Revision;
 pub use runtime_policy::{PersistenceClass, RuntimeRetention, RuntimeSlotPolicy, UndoClass};

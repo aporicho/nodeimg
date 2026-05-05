@@ -5,7 +5,6 @@ pub(crate) mod kinds;
 mod layout;
 pub(crate) mod mount;
 mod resize_edge;
-mod role;
 mod spec;
 mod system_context;
 pub(crate) mod text_box;
@@ -21,7 +20,6 @@ pub use layout::{
 #[cfg(test)]
 pub(crate) use resize_edge::detect_resize_edge;
 pub use resize_edge::{ResizeEdge, DEFAULT_RESIZE_EDGE_THRESHOLD};
-pub use role::ControlRole;
 pub use spec::{ControlNode, ControlSpec};
 pub(crate) use system_context::SystemCx;
 pub(crate) use text_box::painter::paint_text_leaf_override;

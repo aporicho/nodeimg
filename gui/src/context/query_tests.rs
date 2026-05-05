@@ -1,9 +1,10 @@
 use super::*;
-use crate::control::{ControlRole, ResizeEdge};
+use crate::control::ResizeEdge;
 use crate::cursor::CursorKind;
 use crate::gesture::Gesture;
 use crate::renderer::Rect;
 use crate::tree::layout::BoxStyle;
+use crate::tree::SemanticRole;
 use crate::tree::{TreeNode, TreeNodeBuilder};
 
 fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
@@ -22,7 +23,7 @@ fn node_with_style(id: &'static str, rect: Rect, style: BoxStyle) -> TreeNode {
     TreeNodeBuilder::container(id, style).rect(rect).build()
 }
 
-fn node_with_role(id: &'static str, rect: Rect, role: ControlRole) -> TreeNode {
+fn node_with_role(id: &'static str, rect: Rect, role: SemanticRole) -> TreeNode {
     TreeNodeBuilder::container(
         id,
         BoxStyle {
@@ -120,7 +121,7 @@ fn cursor_for_hit_reports_clickable_as_pointer() {
             w: 80.0,
             h: 28.0,
         },
-        ControlRole::Button,
+        SemanticRole::Button,
     ));
     ctx.tree.set_root(root);
 
@@ -132,9 +133,9 @@ fn cursor_for_hit_reports_clickable_as_pointer() {
 #[test]
 fn cursor_for_hit_reports_text_roles_as_text() {
     for role in [
-        ControlRole::TextInput,
-        ControlRole::TextArea,
-        ControlRole::NumberInput,
+        SemanticRole::TextInput,
+        SemanticRole::TextArea,
+        SemanticRole::NumberInput,
     ] {
         let mut ctx = Context::new();
         let root = ctx.tree.insert(node_with_role(

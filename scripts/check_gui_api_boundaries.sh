@@ -66,6 +66,8 @@ check_required_match "control registry dispatches through descriptors" 'CONTROL_
 check_required_match "workspace owns canvas text-box sync adaptation" 'ControlTextBoxSyncItem' app/src/workspace/control_sync.rs
 check_required_match "tree node construction has a standard builder module" 'pub\(crate\) use builder::TreeNodeBuilder;' gui/src/tree/node_factory/mod.rs
 check_required_match "tree facade exports the standard node builder internally" 'pub\(crate\) use node_factory::TreeNodeBuilder;' gui/src/tree/mod.rs
+check_required_match "tree props module owns semantic role facade" '^pub\(crate\) use semantic_role::SemanticRole;' gui/src/tree/props/mod.rs
+check_required_match "tree facade exports semantic role internally" '^pub\(crate\) use props::SemanticRole;' gui/src/tree/mod.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -89,6 +91,7 @@ check_missing_path "old control systems module tree" gui/src/control/systems
 check_missing_path "old control mapping module" gui/src/control/mapping.rs
 check_missing_path "old control param layout module" gui/src/control/param_layout.rs
 check_missing_path "old control painter module" gui/src/control/painter.rs
+check_missing_path "old control-owned semantic role module" gui/src/control/role.rs
 check_missing_path "old flat control spec module" gui/src/control/spec.rs
 check_missing_path "old flat control layout module" gui/src/control/layout.rs
 check_missing_path "old control template module tree" gui/src/control/templates
@@ -131,8 +134,8 @@ check_no_match \
     gui/src
 
 check_no_match \
-    "semantic roles must use ControlRole instead of string roles" \
-    '\.with_semantic_role\("|from_semantic_role|semantic_role: Option<Cow' \
+    "semantic roles must use tree SemanticRole instead of old ControlRole or string roles" \
+    'ControlRole|\.with_semantic_role\("|from_semantic_role|semantic_role: Option<Cow' \
     app/src \
     gui/src
 

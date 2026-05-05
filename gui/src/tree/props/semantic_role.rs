@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ControlRole {
+pub enum SemanticRole {
     #[default]
     Generic,
     Button,
@@ -15,7 +15,7 @@ pub enum ControlRole {
     Toggle,
 }
 
-impl ControlRole {
+impl SemanticRole {
     pub fn is_focusable(self) -> bool {
         matches!(
             self,
@@ -42,5 +42,9 @@ impl ControlRole {
 
     pub fn is_text_area(self) -> bool {
         matches!(self, Self::TextArea)
+    }
+
+    pub fn is_number_input(self) -> bool {
+        matches!(self, Self::NumberInput)
     }
 }

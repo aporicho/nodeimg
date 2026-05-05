@@ -1,9 +1,10 @@
 use crate::control::mount::container;
-use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
+use crate::control::{ControlInteractionSpec, ControlMetrics};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Position, Size};
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(crate) fn mount_slider(
     cx: &mut TemplateMountCx<'_>,
@@ -30,7 +31,7 @@ pub(crate) fn mount_slider(
             },
             None,
         )
-        .semantic_role(ControlRole::Slider)
+        .semantic_role(SemanticRole::Slider)
         .runtime_slot(interaction),
     )?;
     let track = cx.child(

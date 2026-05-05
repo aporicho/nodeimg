@@ -2,12 +2,12 @@ use super::content::mount_panel_content;
 use super::data::PanelFrameTemplateData;
 use super::node_factory::container;
 use super::titlebar::mount_titlebar;
-use crate::control::ControlRole;
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::tree::layout::{
     BoxStyle, Decoration, Edges, Overflow, Position, RelayoutBoundaryReason, Size,
 };
+use crate::tree::SemanticRole;
 use crate::tree::{NodeId, RectMoveInvalidation, RepaintBoundaryReason};
 
 pub(in crate::panel::retained) fn mount_panel(
@@ -45,7 +45,7 @@ pub(in crate::panel::retained) fn mount_panel(
                 shadow: None,
             }),
         )
-        .semantic_role(ControlRole::Panel)
+        .semantic_role(SemanticRole::Panel)
         .layout_boundary(RelayoutBoundaryReason::Panel)
         .paint_boundary(RepaintBoundaryReason::PanelFrame)
         .rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),

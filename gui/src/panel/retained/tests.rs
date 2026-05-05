@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::data::{PanelContentTemplate, PanelFrameTemplateData};
 use super::node_factory::container;
-use crate::control::{ControlNode, ControlRole};
+use crate::control::ControlNode;
 use crate::gesture::Gesture;
 use crate::panel::{PanelConfig, PanelId, PanelRuntime};
 use crate::renderer::Rect;
@@ -11,6 +11,7 @@ use crate::template::{
 };
 use crate::theme::light_theme;
 use crate::tree::layout::{BoxStyle, Position, RelayoutBoundaryReason, Size};
+use crate::tree::SemanticRole;
 use crate::tree::{RectMoveInvalidation, RepaintBoundaryReason, Tree};
 
 #[test]
@@ -80,7 +81,7 @@ fn panel_frame_template_mounts_root_titlebar_content_and_toolbar_actions() {
     assert_eq!(root_node.style.z_index, 42);
     assert!(root_node.style.hittable);
     assert!(root_node.style.resizable);
-    assert_eq!(root_node.props.semantic_role, Some(ControlRole::Panel));
+    assert_eq!(root_node.props.semantic_role, Some(SemanticRole::Panel));
     assert_eq!(
         root_node.layout_meta.boundary,
         Some(RelayoutBoundaryReason::Panel)

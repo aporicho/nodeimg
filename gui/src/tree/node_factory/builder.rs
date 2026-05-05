@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use crate::control::ControlRole;
 use crate::renderer::Rect;
 use crate::tree::layout::{BoxStyle, Decoration, LeafKind, RelayoutBoundaryReason};
 use crate::tree::mutation_meta::NodeMutationMeta;
@@ -8,6 +7,7 @@ use crate::tree::node::{NodeKind, NodeLayoutMeta, NodeLocalRuntime, TreeNode};
 use crate::tree::props::NodeProps;
 use crate::tree::repaint::{NodePaintMeta, RepaintBoundaryReason};
 use crate::tree::runtime_slots::{RuntimeSlot, RuntimeSlots};
+use crate::tree::SemanticRole;
 use crate::tree::{RectMoveInvalidation, StableId};
 
 pub(crate) struct TreeNodeBuilder {
@@ -57,7 +57,7 @@ impl TreeNodeBuilder {
         self
     }
 
-    pub(crate) fn semantic_role(mut self, role: ControlRole) -> Self {
+    pub(crate) fn semantic_role(mut self, role: SemanticRole) -> Self {
         self.node.props.semantic_role = Some(role);
         self
     }

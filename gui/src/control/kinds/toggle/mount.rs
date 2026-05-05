@@ -1,10 +1,11 @@
 use crate::control::mount::container;
-use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
+use crate::control::{ControlInteractionSpec, ControlMetrics};
 use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, Decoration, Position, Size};
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(crate) fn mount_toggle(
     cx: &mut TemplateMountCx<'_>,
@@ -40,7 +41,7 @@ pub(crate) fn mount_toggle(
                 shadow: None,
             }),
         )
-        .semantic_role(ControlRole::Toggle)
+        .semantic_role(SemanticRole::Toggle)
         .runtime_slot(interaction),
     )?;
     let knob = height - 4.0;

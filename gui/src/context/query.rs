@@ -1,8 +1,9 @@
 use super::Context;
-use crate::control::{ControlRole, ResizeEdge};
+use crate::control::ResizeEdge;
 use crate::cursor::{resolve_cursor, CursorHitDescriptor, CursorHitNode, CursorKind};
 use crate::gesture::Gesture;
 use crate::renderer::Rect;
+use crate::tree::SemanticRole;
 use crate::tree::{hit_test_with_animations, resize_hit_at_screen_point, HitChain, NodeId};
 
 pub struct PointerHitQueryResult {
@@ -139,7 +140,7 @@ impl Context {
                 let node = self.tree.get(node_id)?;
                 let gestures = &node.style.gestures;
                 Some(CursorHitNode {
-                    role: self.node_root_control_role(node_id),
+                    role: self.node_root_semantic_role(node_id),
                     draggable: node.style.draggable,
                     has_tap: gestures.contains(&Gesture::Tap),
                     has_double_tap: gestures.contains(&Gesture::DoubleTap),
@@ -154,7 +155,7 @@ impl Context {
         }
     }
 
-    pub(crate) fn node_root_control_role(&self, node_id: NodeId) -> Option<ControlRole> {
+    pub(crate) fn node_root_semantic_role(&self, node_id: NodeId) -> Option<SemanticRole> {
         let mut candidate = self.node_name(node_id)?;
 
         loop {

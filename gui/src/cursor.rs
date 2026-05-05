@@ -1,4 +1,5 @@
-use crate::control::{ControlRole, ResizeEdge};
+use crate::control::ResizeEdge;
+use crate::tree::SemanticRole;
 use winit::window::CursorIcon;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +78,7 @@ impl Default for CursorState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CursorHitNode {
-    pub(crate) role: Option<ControlRole>,
+    pub(crate) role: Option<SemanticRole>,
     pub(crate) draggable: bool,
     pub(crate) has_tap: bool,
     pub(crate) has_double_tap: bool,
@@ -96,13 +97,13 @@ pub(crate) fn resolve_cursor(desc: &CursorHitDescriptor) -> CursorKind {
     }
 
     for node in &desc.nodes_from_leaf_to_root {
-        if node.role.is_some_and(control_role_uses_text_cursor) {
+        if node.role.is_some_and(semantic_role_uses_text_cursor) {
             return CursorKind::Text;
         }
         if node.draggable {
             return CursorKind::Move;
         }
-        if node.role.is_some_and(control_role_uses_pointer_cursor)
+        if node.role.is_some_and(semantic_role_uses_pointer_cursor)
             || node.has_tap
             || node.has_double_tap
             || node.has_drag
@@ -114,23 +115,23 @@ pub(crate) fn resolve_cursor(desc: &CursorHitDescriptor) -> CursorKind {
     CursorKind::Default
 }
 
-fn control_role_uses_text_cursor(role: ControlRole) -> bool {
+fn semantic_role_uses_text_cursor(role: SemanticRole) -> bool {
     matches!(
         role,
-        ControlRole::TextInput | ControlRole::TextArea | ControlRole::NumberInput
+        SemanticRole::TextInput | SemanticRole::TextArea | SemanticRole::NumberInput
     )
 }
 
-fn control_role_uses_pointer_cursor(role: ControlRole) -> bool {
+fn semantic_role_uses_pointer_cursor(role: SemanticRole) -> bool {
     matches!(
         role,
-        ControlRole::Button
-            | ControlRole::Checkbox
-            | ControlRole::Collapsible
-            | ControlRole::Dropdown
-            | ControlRole::Radio
-            | ControlRole::Slider
-            | ControlRole::Toggle
+        SemanticRole::Button
+            | SemanticRole::Checkbox
+            | SemanticRole::Collapsible
+            | SemanticRole::Dropdown
+            | SemanticRole::Radio
+            | SemanticRole::Slider
+            | SemanticRole::Toggle
     )
 }
 
@@ -138,7 +139,7 @@ fn control_role_uses_pointer_cursor(role: ControlRole) -> bool {
 mod tests {
     use super::*;
 
-    fn node(role: Option<ControlRole>) -> CursorHitNode {
+    fn node(role: Option<SemanticRole>) -> CursorHitNode {
         CursorHitNode {
             role,
             draggable: false,
@@ -182,7 +183,7 @@ mod tests {
 
     #[test]
     fn interactive_role_resolves_to_pointer() {
-        let desc = descriptor(vec![node(Some(ControlRole::Button))]);
+        let desc = descriptor(vec![node(Some(SemanticRole::Button))]);
 
         assert_eq!(resolve_cursor(&desc), CursorKind::Pointer);
     }
@@ -200,9 +201,9 @@ mod tests {
     #[test]
     fn text_roles_resolve_to_text() {
         for role in [
-            ControlRole::TextInput,
-            ControlRole::TextArea,
-            ControlRole::NumberInput,
+            SemanticRole::TextInput,
+            SemanticRole::TextArea,
+            SemanticRole::NumberInput,
         ] {
             let desc = descriptor(vec![node(Some(role))]);
 

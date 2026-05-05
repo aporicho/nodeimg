@@ -1,11 +1,13 @@
-use crate::action::ActionId;
-use crate::control::ControlRole;
 use std::borrow::Cow;
+
+use crate::action::ActionId;
+
+use super::SemanticRole;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeProps {
     pub action_id: Option<ActionId>,
-    pub semantic_role: Option<ControlRole>,
+    pub semantic_role: Option<SemanticRole>,
     pub owner_id: Option<Cow<'static, str>>,
     pub enabled: bool,
 }

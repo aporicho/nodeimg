@@ -1,8 +1,9 @@
 use crate::control::mount::mount_text_field;
-use crate::control::{ControlMetrics, ControlRole};
+use crate::control::ControlMetrics;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(crate) fn mount_number(
     cx: &mut TemplateMountCx<'_>,
@@ -20,7 +21,7 @@ pub(crate) fn mount_number(
         &format!("{value:.precision$}"),
         false,
         1,
-        ControlRole::NumberInput,
+        SemanticRole::NumberInput,
         theme,
         metrics,
     )

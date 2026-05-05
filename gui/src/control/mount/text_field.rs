@@ -1,7 +1,6 @@
 use super::node_factory::{container, leaf};
 use super::text_leaf::ellipsis_text_layout;
 use crate::control::ControlMetrics;
-use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::renderer::{Border, TextStyle};
 use crate::template::{TemplateError, TemplateMountCx};
@@ -10,6 +9,7 @@ use crate::tree::layout::{
     BoxStyle, Decoration, Edges, Inset, LeafKind, Overflow, Position, Size, TextLayout,
 };
 use crate::tree::NodeId;
+use crate::tree::SemanticRole;
 
 pub(crate) fn mount_text_field(
     cx: &mut TemplateMountCx<'_>,
@@ -18,7 +18,7 @@ pub(crate) fn mount_text_field(
     value: &str,
     multiline: bool,
     min_rows: usize,
-    role: ControlRole,
+    role: SemanticRole,
     theme: &Theme,
     metrics: ControlMetrics,
 ) -> Result<(), TemplateError> {

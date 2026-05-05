@@ -1,4 +1,3 @@
-use crate::control::ControlRole;
 use crate::output::ControlEvent;
 use crate::tree::Tree;
 
@@ -35,5 +34,5 @@ pub(crate) fn apply_panel_control_event(tree: &mut Tree, event: &ControlEvent) -
 fn is_panel_control(tree: &Tree, id: &str) -> bool {
     tree.node_by_str(id)
         .and_then(|node_id| tree.get(node_id))
-        .is_some_and(|node| node.props.semantic_role == Some(ControlRole::Panel))
+        .is_some_and(|node| node.props.semantic_role.is_some_and(|role| role.is_panel()))
 }
