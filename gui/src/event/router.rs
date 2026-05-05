@@ -1,9 +1,7 @@
 use crate::context::Context;
-use crate::input::PointerHitSnapshot;
+use crate::input::{PointerHitSnapshot, ScrollRequest};
 use crate::output::FrameworkOutput;
 use crate::shell::AppEvent;
-use crate::tree::layout::Overflow;
-use crate::tree::NodeId;
 
 pub(crate) fn handle_event(ctx: &mut Context, event: &AppEvent) -> FrameworkOutput {
     let pointer_hit = ctx.pointer_hit_snapshot(event);
@@ -35,36 +33,12 @@ fn handle_scroll_event(
     event: &AppEvent,
     hit: Option<&PointerHitSnapshot>,
 ) -> bool {
-    let Some((x, y, delta)) = scroll_event_delta(event) else {
+    let Some(request) = ScrollRequest::from_event(event) else {
         return false;
     };
-    let Some(node_id) = scroll_target_at(ctx, hit, x, y) else {
+    let Some(node_id) = ctx.scroll_target_for_request(hit, request) else {
         return false;
     };
-    ctx.tree.scroll(node_id, delta);
+    ctx.tree.scroll(node_id, request.delta_y());
     true
-}
-
-fn scroll_target_at(
-    ctx: &Context,
-    hit: Option<&PointerHitSnapshot>,
-    x: f32,
-    y: f32,
-) -> Option<NodeId> {
-    let chain = ctx.pointer_hit_resolver().chain_at(hit, x, y);
-    let target = chain.iter().find(|&node_id| {
-        ctx.tree
-            .get(node_id)
-            .map(|node| node.style.overflow == Overflow::Scroll)
-            .unwrap_or(false)
-    });
-    target
-}
-
-fn scroll_event_delta(event: &AppEvent) -> Option<(f32, f32, f32)> {
-    match *event {
-        AppEvent::ScrollLine { x, y, delta_y, .. } => Some((x, y, -delta_y * 32.0)),
-        AppEvent::ScrollPixel { x, y, delta_y, .. } => Some((x, y, -delta_y)),
-        _ => None,
-    }
 }

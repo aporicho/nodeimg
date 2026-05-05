@@ -76,6 +76,8 @@ check_required_match "tree facade exports target API internally" '^pub\(crate\) 
 check_required_match "input pointer hit module has a request facade" '^pub\(crate\) use request::PointerHitRequest;' gui/src/input/pointer_hit/mod.rs
 check_required_match "input pointer hit module has a resolver facade" '^pub\(crate\) use resolver::PointerHitResolver;' gui/src/input/pointer_hit/mod.rs
 check_required_match "input pointer hit module has a snapshot facade" '^pub use snapshot::PointerHitSnapshot;' gui/src/input/pointer_hit/mod.rs
+check_required_match "input scroll module has a request facade" '^pub\(crate\) use request::ScrollRequest;' gui/src/input/scroll/mod.rs
+check_required_match "input scroll module has a resolver facade" '^pub\(crate\) use resolver::ScrollTargetResolver;' gui/src/input/scroll/mod.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -329,6 +331,7 @@ check_no_match \
     gui/src/event \
     gui/src/interaction \
     gui/src/gesture \
+    gui/src/overlay \
     gui/src/control/system_context.rs
 
 check_no_match \
@@ -382,6 +385,11 @@ check_no_match \
     "input pointer hit module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/input/pointer_hit/mod.rs
+
+check_no_match \
+    "input scroll module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/input/scroll/mod.rs
 
 check_no_match \
     "control spec module root must only declare and re-export submodules" \

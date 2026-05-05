@@ -48,10 +48,13 @@ impl RuntimeSystems {
         event: &AppEvent,
     ) -> RuntimeEventResult {
         {
-            if self
-                .overlay
-                .handle_event(cx.tree, cx.animations, cx.interaction, event)
-            {
+            if self.overlay.handle_event(
+                cx.tree,
+                cx.animations,
+                cx.interaction,
+                cx.pointer_hit,
+                event,
+            ) {
                 return RuntimeEventResult {
                     output: FrameworkOutput::consumed(),
                     cancel_gesture: true,

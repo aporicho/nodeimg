@@ -2,7 +2,9 @@ use super::Context;
 use crate::event::router;
 use crate::event::signal_output;
 use crate::gesture::GestureSessionUpdate;
-use crate::input::{PointerHitRequest, PointerHitResolver, PointerHitSnapshot};
+use crate::input::{
+    PointerHitRequest, PointerHitResolver, PointerHitSnapshot, ScrollRequest, ScrollTargetResolver,
+};
 use crate::output::FrameworkOutput;
 use crate::renderer::Rect;
 use crate::runtime::{RuntimeEventCx, RuntimeEventResult};
@@ -64,6 +66,15 @@ impl Context {
 
     pub(crate) fn pointer_hit_resolver(&self) -> PointerHitResolver<'_> {
         PointerHitResolver::new(&self.tree, Some(&self.animations))
+    }
+
+    pub(crate) fn scroll_target_for_request(
+        &self,
+        hit: Option<&PointerHitSnapshot>,
+        request: ScrollRequest,
+    ) -> Option<NodeId> {
+        ScrollTargetResolver::new(&self.tree, Some(&self.animations))
+            .target_for_request(hit, request)
     }
 
     pub(crate) fn handle_interaction_event(
