@@ -68,6 +68,10 @@ check_required_match "tree node construction has a standard builder module" 'pub
 check_required_match "tree facade exports the standard node builder internally" 'pub\(crate\) use node_factory::TreeNodeBuilder;' gui/src/tree/mod.rs
 check_required_match "tree props module owns semantic role facade" '^pub\(crate\) use semantic_role::SemanticRole;' gui/src/tree/props/mod.rs
 check_required_match "tree facade exports semantic role internally" '^pub\(crate\) use props::SemanticRole;' gui/src/tree/mod.rs
+check_required_match "tree target module has a TargetChain facade" '^pub\(crate\) use chain::TargetChain;' gui/src/tree/target/mod.rs
+check_required_match "tree target module has a TargetDescriptor facade" '^pub\(crate\) use descriptor::TargetDescriptor;' gui/src/tree/target/mod.rs
+check_required_match "tree target module has an owner resolver facade" '^pub\(crate\) use owner::TargetOwnerResolver;' gui/src/tree/target/mod.rs
+check_required_match "tree facade exports target API internally" '^pub\(crate\) use target::\{TargetChain, TargetDescriptor, TargetOwnerResolver\};' gui/src/tree/mod.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -83,6 +87,8 @@ check_missing_path "legacy Desc panel root composer" gui/src/panel/root.rs
 check_missing_path "old flat panel retained module" gui/src/panel/retained.rs
 check_missing_path "legacy Desc overlay composer" gui/src/overlay/builder.rs
 check_missing_path "old flat overlay retained module" gui/src/overlay/retained.rs
+check_missing_path "old event target resolver module" gui/src/event/target.rs
+check_missing_path "old interaction target selection module" gui/src/interaction/target.rs
 check_missing_path "old flat control text box state module" gui/src/control/state/text_box.rs
 check_missing_path "old flat control text box system module" gui/src/control/systems/text_box.rs
 check_missing_path "old flat control text box runtime module" gui/src/control/text_box/runtime.rs
@@ -304,6 +310,15 @@ check_no_match \
     app/src
 
 check_no_match \
+    "event interaction cursor gesture and context modules must use tree target API for target semantics" \
+    'props\.(semantic_role|owner_id|enabled|action_id)|style\.(gestures|draggable|resizable)' \
+    gui/src/event \
+    gui/src/interaction \
+    gui/src/context \
+    gui/src/cursor.rs \
+    gui/src/gesture
+
+check_no_match \
     "backend resource creation must stay out of tree/template/control layers" \
     'create_buffer|wgpu::|BackendCommandEncoder|RenderPass' \
     gui/src/template \
@@ -329,6 +344,11 @@ check_no_match \
     "tree paint module root must only declare and re-export submodules" \
     '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
     gui/src/tree/paint/mod.rs
+
+check_no_match \
+    "tree target module root must only declare and re-export submodules" \
+    '^[[:space:]]*(pub[[:space:]]+)?(struct|enum|fn|impl)[[:space:]]' \
+    gui/src/tree/target/mod.rs
 
 check_no_match \
     "tree layout arrange module root must only declare and re-export submodules" \

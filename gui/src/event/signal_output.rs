@@ -1,9 +1,8 @@
 use crate::action::dispatch_control_click;
 use crate::control::ResizeEdge;
-use crate::event::target::TargetResolver;
 use crate::gesture::GestureSignal;
 use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OutputBuilder};
-use crate::tree::Tree;
+use crate::tree::{TargetOwnerResolver, Tree};
 
 #[derive(Clone, Copy)]
 enum DragPhase {
@@ -32,7 +31,7 @@ pub(crate) fn gesture_signal_output(tree: &Tree, signal: &GestureSignal) -> Fram
 }
 
 fn gesture_signal_event(tree: &Tree, signal: &GestureSignal) -> GuiEvent {
-    let resolver = TargetResolver::new(tree);
+    let resolver = TargetOwnerResolver::new(tree);
     match signal {
         GestureSignal::Click(id) => GuiEvent::Control(ControlEvent::Click {
             id: resolver.owner_id(id),
@@ -61,7 +60,7 @@ fn gesture_signal_event(tree: &Tree, signal: &GestureSignal) -> GuiEvent {
 }
 
 fn drag_event(
-    resolver: &TargetResolver<'_>,
+    resolver: &TargetOwnerResolver<'_>,
     id: &str,
     x: f32,
     y: f32,
@@ -76,7 +75,7 @@ fn drag_event(
 }
 
 fn resize_event(
-    resolver: &TargetResolver<'_>,
+    resolver: &TargetOwnerResolver<'_>,
     id: &str,
     edge: ResizeEdge,
     x: f32,

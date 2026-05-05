@@ -1,10 +1,10 @@
 use super::Context;
 use crate::control::ResizeEdge;
-use crate::cursor::{resolve_cursor, CursorHitDescriptor, CursorHitNode, CursorKind};
-use crate::gesture::Gesture;
+use crate::cursor::{resolve_cursor, CursorKind};
 use crate::renderer::Rect;
-use crate::tree::SemanticRole;
-use crate::tree::{hit_test_with_animations, resize_hit_at_screen_point, HitChain, NodeId};
+use crate::tree::{
+    hit_test_with_animations, resize_hit_at_screen_point, HitChain, NodeId, TargetChain,
+};
 
 pub struct PointerHitQueryResult {
     x: f32,
@@ -123,53 +123,13 @@ impl Context {
     }
 
     pub(crate) fn cursor_for_hit(&self, hit: &PointerHitQueryResult) -> CursorKind {
-        let desc = self.cursor_hit_descriptor(hit);
-        resolve_cursor(&desc)
+        let targets = TargetChain::from_hit_chain(&self.tree, hit.chain());
+        resolve_cursor(hit.resize_hit().map(|(_, edge)| edge), &targets)
     }
 
     pub(crate) fn cursor_at(&self, x: f32, y: f32) -> CursorKind {
         let hit = self.pointer_hit_at(x, y);
         self.cursor_for_hit(&hit)
-    }
-
-    fn cursor_hit_descriptor(&self, hit: &PointerHitQueryResult) -> CursorHitDescriptor {
-        let nodes_from_leaf_to_root = hit
-            .chain()
-            .iter()
-            .filter_map(|node_id| {
-                let node = self.tree.get(node_id)?;
-                let gestures = &node.style.gestures;
-                Some(CursorHitNode {
-                    role: self.node_root_semantic_role(node_id),
-                    draggable: node.style.draggable,
-                    has_tap: gestures.contains(&Gesture::Tap),
-                    has_double_tap: gestures.contains(&Gesture::DoubleTap),
-                    has_drag: gestures.contains(&Gesture::Drag),
-                })
-            })
-            .collect();
-
-        CursorHitDescriptor {
-            resize_edge: hit.resize_hit().map(|(_, edge)| edge),
-            nodes_from_leaf_to_root,
-        }
-    }
-
-    pub(crate) fn node_root_semantic_role(&self, node_id: NodeId) -> Option<SemanticRole> {
-        let mut candidate = self.node_name(node_id)?;
-
-        loop {
-            if let Some(root_id) = self.node_id_by_name(candidate) {
-                if let Some(root_node) = self.tree.get(root_id) {
-                    if let Some(role) = root_node.props.semantic_role {
-                        return Some(role);
-                    }
-                }
-            }
-
-            let (prefix, _) = candidate.rsplit_once("::")?;
-            candidate = prefix;
-        }
     }
 
     pub(crate) fn focused_node(&self) -> Option<NodeId> {

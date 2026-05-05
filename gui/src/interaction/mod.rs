@@ -1,7 +1,6 @@
 mod focus;
 mod reducer;
 mod state;
-mod target;
 mod visual;
 
 pub use state::InteractionState;

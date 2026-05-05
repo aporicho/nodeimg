@@ -3,7 +3,7 @@ use std::time::Instant;
 use super::arena::GestureArena;
 use super::resize::ResizeRecognizer;
 use super::{DragRecognizer, Gesture, GestureRecognizer, LongPressRecognizer, TapRecognizer};
-use crate::tree::{HitChain, ResizeHit, Tree};
+use crate::tree::{HitChain, ResizeHit, TargetChain, TargetDescriptor, Tree};
 
 /// 根据命中链自动创建手势竞技场。
 ///
@@ -19,41 +19,36 @@ pub(crate) fn arena_from_hit_chain(
     last_tap_time: Option<Instant>,
 ) -> Option<GestureArena> {
     let mut arena = GestureArena::new();
-    let first_control_index = first_control_index(tree, chain);
+    let targets = TargetChain::from_hit_chain(tree, chain);
 
-    for (index, node_id) in chain.iter().enumerate() {
-        let Some(node) = tree.get(node_id) else {
-            continue;
-        };
-        let target_id = node.id.to_string();
-        let gestures = &node.style.gestures;
-        let allow_semantic_drag = allows_semantic_drag(index, first_control_index);
+    for (index, target) in targets.iter().enumerate() {
+        let target_id = target.stable_id().to_string();
+        let allow_semantic_drag = targets.allows_semantic_drag(index);
         tracing::debug!(
             target: "gui::gesture",
-            node_id = %node.id,
+            node_id = %target.stable_id(),
             index,
-            draggable = node.style.draggable,
-            resizable = node.style.resizable,
+            draggable = target.is_draggable(),
+            resizable = target.is_resizable(),
             allow_semantic_drag,
-            gestures = ?gestures,
             "inspect hit-chain node for gestures"
         );
 
-        if gestures.contains(&Gesture::Tap) || gestures.contains(&Gesture::DoubleTap) {
+        if target.has_gesture(Gesture::Tap) || target.has_gesture(Gesture::DoubleTap) {
             let mut rec = TapRecognizer::new(target_id.clone(), last_tap_time);
             if rec.on_pointer_down(x, y) {
                 arena.add(Box::new(rec));
             }
         }
 
-        if gestures.contains(&Gesture::Drag) || (node.style.draggable && allow_semantic_drag) {
+        if target.has_gesture(Gesture::Drag) || (target.is_draggable() && allow_semantic_drag) {
             let mut rec = DragRecognizer::new(target_id.clone());
             if rec.on_pointer_down(x, y) {
                 arena.add(Box::new(rec));
             }
         }
 
-        if gestures.contains(&Gesture::LongPress) {
+        if target.has_gesture(Gesture::LongPress) {
             let mut rec = LongPressRecognizer::new(target_id.clone());
             if rec.on_pointer_down(x, y) {
                 arena.add(Box::new(rec));
@@ -74,14 +69,14 @@ pub(crate) fn arena_from_resize_hit(
     x: f32,
     y: f32,
 ) -> Option<GestureArena> {
-    let node = tree.get(hit.node_id)?;
-    let target_id = node.id.to_string();
+    let target = TargetDescriptor::from_node(tree, hit.node_id)?;
+    let target_id = target.stable_id().to_string();
     let mut arena = GestureArena::new();
     let mut rec = ResizeRecognizer::new(target_id.clone(), hit.edge);
     if rec.on_pointer_down(x, y) {
         tracing::debug!(
             target: "gui::gesture",
-            node_id = %node.id,
+            node_id = %target.stable_id(),
             resize_edge = ?hit.edge,
             "add resize recognizer from interaction hit"
         );
@@ -93,18 +88,4 @@ pub(crate) fn arena_from_resize_hit(
     } else {
         Some(arena)
     }
-}
-
-fn first_control_index(tree: &Tree, chain: &HitChain) -> Option<usize> {
-    chain.iter().enumerate().find_map(|(index, node_id)| {
-        tree.get(node_id)
-            .is_some_and(|node| node.props.semantic_role.is_some())
-            .then_some(index)
-    })
-}
-
-fn allows_semantic_drag(index: usize, first_control_index: Option<usize>) -> bool {
-    first_control_index
-        .map(|control_index| index <= control_index)
-        .unwrap_or(true)
 }

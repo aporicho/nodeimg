@@ -1,10 +1,9 @@
 use crate::animation::AnimationStore;
 use crate::event::pointer_hit::PointerHitSnapshot;
 use crate::shell::{AppEvent, Key, MouseButton};
-use crate::tree::{HitChain, Tree};
+use crate::tree::{HitChain, TargetChain, Tree};
 
 use super::state::InteractionState;
-use super::target;
 
 pub(crate) fn apply_event(
     store: &mut InteractionState,
@@ -17,7 +16,8 @@ pub(crate) fn apply_event(
         AppEvent::MouseMove { x, y } => {
             if store.captured().is_none() {
                 let chain = hit_chain(tree, animations, hit, x, y);
-                store.set_hovered(target::input_target(tree, &chain));
+                let targets = TargetChain::from_hit_chain(tree, &chain);
+                store.set_hovered(targets.input_target());
             }
         }
         AppEvent::MousePress {
@@ -26,8 +26,9 @@ pub(crate) fn apply_event(
             button: MouseButton::Left,
         } => {
             let chain = hit_chain(tree, animations, hit, x, y);
-            let input_target = target::input_target(tree, &chain);
-            let focus_target = target::interactive_target(tree, &chain);
+            let targets = TargetChain::from_hit_chain(tree, &chain);
+            let input_target = targets.input_target();
+            let focus_target = targets.focus_target();
             store.set_hovered(input_target);
             store.set_pressed(input_target);
             store.set_captured(input_target);

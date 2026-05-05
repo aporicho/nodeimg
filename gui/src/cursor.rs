@@ -1,5 +1,6 @@
 use crate::control::ResizeEdge;
-use crate::tree::SemanticRole;
+use crate::gesture::Gesture;
+use crate::tree::TargetChain;
 use winit::window::CursorIcon;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,37 +77,22 @@ impl Default for CursorState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CursorHitNode {
-    pub(crate) role: Option<SemanticRole>,
-    pub(crate) draggable: bool,
-    pub(crate) has_tap: bool,
-    pub(crate) has_double_tap: bool,
-    pub(crate) has_drag: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CursorHitDescriptor {
-    pub(crate) resize_edge: Option<ResizeEdge>,
-    pub(crate) nodes_from_leaf_to_root: Vec<CursorHitNode>,
-}
-
-pub(crate) fn resolve_cursor(desc: &CursorHitDescriptor) -> CursorKind {
-    if let Some(edge) = desc.resize_edge {
+pub(crate) fn resolve_cursor(resize_edge: Option<ResizeEdge>, targets: &TargetChain) -> CursorKind {
+    if let Some(edge) = resize_edge {
         return CursorKind::Resize(edge);
     }
 
-    for node in &desc.nodes_from_leaf_to_root {
-        if node.role.is_some_and(semantic_role_uses_text_cursor) {
+    for target in targets.iter() {
+        if target.uses_text_cursor() {
             return CursorKind::Text;
         }
-        if node.draggable {
+        if target.is_draggable() {
             return CursorKind::Move;
         }
-        if node.role.is_some_and(semantic_role_uses_pointer_cursor)
-            || node.has_tap
-            || node.has_double_tap
-            || node.has_drag
+        if target.uses_pointer_cursor()
+            || target.has_gesture(Gesture::Tap)
+            || target.has_gesture(Gesture::DoubleTap)
+            || target.has_gesture(Gesture::Drag)
         {
             return CursorKind::Pointer;
         }
@@ -115,87 +101,128 @@ pub(crate) fn resolve_cursor(desc: &CursorHitDescriptor) -> CursorKind {
     CursorKind::Default
 }
 
-fn semantic_role_uses_text_cursor(role: SemanticRole) -> bool {
-    matches!(
-        role,
-        SemanticRole::TextInput | SemanticRole::TextArea | SemanticRole::NumberInput
-    )
-}
-
-fn semantic_role_uses_pointer_cursor(role: SemanticRole) -> bool {
-    matches!(
-        role,
-        SemanticRole::Button
-            | SemanticRole::Checkbox
-            | SemanticRole::Collapsible
-            | SemanticRole::Dropdown
-            | SemanticRole::Radio
-            | SemanticRole::Slider
-            | SemanticRole::Toggle
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::renderer::Rect;
+    use crate::tree::layout::BoxStyle;
+    use crate::tree::{HitChain, SemanticRole, Tree, TreeNode, TreeNodeBuilder};
 
-    fn node(role: Option<SemanticRole>) -> CursorHitNode {
-        CursorHitNode {
-            role,
-            draggable: false,
-            has_tap: false,
-            has_double_tap: false,
-            has_drag: false,
+    fn node(id: &'static str, role: Option<SemanticRole>, style: BoxStyle) -> TreeNode {
+        let mut builder = TreeNodeBuilder::container(id, style).rect(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 40.0,
+        });
+        if let Some(role) = role {
+            builder = builder.semantic_role(role);
         }
+        builder.build()
     }
 
-    fn descriptor(nodes_from_leaf_to_root: Vec<CursorHitNode>) -> CursorHitDescriptor {
-        CursorHitDescriptor {
-            resize_edge: None,
-            nodes_from_leaf_to_root,
-        }
+    fn targets(nodes_from_leaf_to_root: Vec<TreeNode>) -> (Tree, HitChain) {
+        let mut tree = Tree::new();
+        let ids = nodes_from_leaf_to_root
+            .into_iter()
+            .map(|node| tree.insert(node))
+            .collect();
+        (tree, HitChain::new(ids))
+    }
+
+    fn resolve_for_nodes(resize_edge: Option<ResizeEdge>, nodes: Vec<TreeNode>) -> CursorKind {
+        let (tree, chain) = targets(nodes);
+        let targets = TargetChain::from_hit_chain(&tree, &chain);
+        resolve_cursor(resize_edge, &targets)
+    }
+
+    fn plain_node() -> TreeNode {
+        node("plain", None, BoxStyle::default())
+    }
+
+    fn role_node(role: SemanticRole) -> TreeNode {
+        node(
+            "role",
+            Some(role),
+            BoxStyle {
+                hittable: true,
+                ..Default::default()
+            },
+        )
+    }
+
+    fn draggable_node() -> TreeNode {
+        node(
+            "drag",
+            None,
+            BoxStyle {
+                draggable: true,
+                gestures: vec![Gesture::Tap, Gesture::Drag],
+                ..Default::default()
+            },
+        )
+    }
+
+    fn gesture_node() -> TreeNode {
+        node(
+            "tap",
+            None,
+            BoxStyle {
+                gestures: vec![Gesture::Tap],
+                ..Default::default()
+            },
+        )
+    }
+
+    fn text_child_node() -> (Tree, HitChain) {
+        let mut tree = Tree::new();
+        tree.insert(node(
+            "field",
+            Some(SemanticRole::TextInput),
+            BoxStyle::default(),
+        ));
+        let child = tree.insert(node("field::value", None, BoxStyle::default()));
+        (tree, HitChain::new(vec![child]))
+    }
+
+    #[test]
+    fn cursor_uses_semantic_root_role_for_prefixed_parts() {
+        let (tree, chain) = text_child_node();
+        let targets = TargetChain::from_hit_chain(&tree, &chain);
+
+        assert_eq!(resolve_cursor(None, &targets), CursorKind::Text);
     }
 
     #[test]
     fn resize_cursor_has_priority_over_draggable() {
-        let desc = CursorHitDescriptor {
-            resize_edge: Some(ResizeEdge::Right),
-            nodes_from_leaf_to_root: vec![CursorHitNode {
-                draggable: true,
-                ..node(None)
-            }],
-        };
-
-        assert_eq!(resolve_cursor(&desc), CursorKind::Resize(ResizeEdge::Right));
+        assert_eq!(
+            resolve_for_nodes(Some(ResizeEdge::Right), vec![draggable_node()]),
+            CursorKind::Resize(ResizeEdge::Right)
+        );
     }
 
     #[test]
     fn draggable_node_resolves_to_move() {
-        let desc = descriptor(vec![CursorHitNode {
-            draggable: true,
-            has_tap: true,
-            has_drag: true,
-            ..node(None)
-        }]);
-
-        assert_eq!(resolve_cursor(&desc), CursorKind::Move);
+        assert_eq!(
+            resolve_for_nodes(None, vec![draggable_node()]),
+            CursorKind::Move
+        );
     }
 
     #[test]
     fn interactive_role_resolves_to_pointer() {
-        let desc = descriptor(vec![node(Some(SemanticRole::Button))]);
-
-        assert_eq!(resolve_cursor(&desc), CursorKind::Pointer);
+        assert_eq!(
+            resolve_for_nodes(None, vec![role_node(SemanticRole::Button)]),
+            CursorKind::Pointer
+        );
     }
 
     #[test]
     fn gesture_resolves_to_pointer() {
-        let desc = descriptor(vec![CursorHitNode {
-            has_tap: true,
-            ..node(None)
-        }]);
-
-        assert_eq!(resolve_cursor(&desc), CursorKind::Pointer);
+        assert_eq!(
+            resolve_for_nodes(None, vec![gesture_node()]),
+            CursorKind::Pointer
+        );
     }
 
     #[test]
@@ -205,17 +232,19 @@ mod tests {
             SemanticRole::TextArea,
             SemanticRole::NumberInput,
         ] {
-            let desc = descriptor(vec![node(Some(role))]);
-
-            assert_eq!(resolve_cursor(&desc), CursorKind::Text);
+            assert_eq!(
+                resolve_for_nodes(None, vec![role_node(role)]),
+                CursorKind::Text
+            );
         }
     }
 
     #[test]
     fn plain_hit_resolves_to_default() {
-        let desc = descriptor(vec![node(None)]);
-
-        assert_eq!(resolve_cursor(&desc), CursorKind::Default);
+        assert_eq!(
+            resolve_for_nodes(None, vec![plain_node()]),
+            CursorKind::Default
+        );
     }
 
     #[test]

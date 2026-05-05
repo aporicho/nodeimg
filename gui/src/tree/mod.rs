@@ -28,6 +28,7 @@ mod snapshot;
 mod stacking;
 mod state;
 pub(crate) mod style_patch;
+mod target;
 pub(crate) mod text_layout;
 
 pub use dirty::{DirtyFlags, DirtyQueues};
@@ -53,3 +54,4 @@ pub use runtime_slots::{RuntimeSlot, RuntimeSlots};
 pub use snapshot::{TreeDumpLevel, TreeSnapshot, TreeSnapshotMaxNodes, TreeSnapshotOptions};
 pub use state::Tree;
 pub use style_patch::StylePatch;
+pub(crate) use target::{TargetChain, TargetDescriptor, TargetOwnerResolver};
