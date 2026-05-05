@@ -65,8 +65,10 @@ check_required_match "control kinds have a single registry" 'pub\(crate\) fn con
 check_required_match "control kind descriptor API exists" 'struct ControlKindDescriptor' gui/src/control/kinds/descriptor.rs
 check_required_match "control registry dispatches through descriptors" 'CONTROL_DESCRIPTORS' gui/src/control/kinds/registry.rs
 check_required_match "workspace owns canvas text-box sync adaptation" 'ControlTextBoxSyncItem' app/src/workspace/control_sync.rs
+check_required_match "resize edge primitive lives in geometry" '^pub use resize_edge::\{ResizeEdge, DEFAULT_RESIZE_EDGE_THRESHOLD\};' gui/src/geometry/mod.rs
 check_required_match "tree node construction has a standard builder module" 'pub\(crate\) use builder::TreeNodeBuilder;' gui/src/tree/node_factory/mod.rs
 check_required_match "tree facade exports the standard node builder internally" 'pub\(crate\) use node_factory::TreeNodeBuilder;' gui/src/tree/mod.rs
+check_required_match "tree layout owns declarative gesture primitive" '^pub use gesture::Gesture;' gui/src/tree/layout/mod.rs
 check_required_match "tree props module owns semantic role facade" '^pub\(crate\) use semantic_role::SemanticRole;' gui/src/tree/props/mod.rs
 check_required_match "tree facade exports semantic role internally" '^pub\(crate\) use props::SemanticRole;' gui/src/tree/mod.rs
 check_required_match "tree target module has a TargetChain facade" '^pub\(crate\) use chain::TargetChain;' gui/src/tree/target/mod.rs
@@ -104,6 +106,7 @@ check_missing_path "old control systems module tree" gui/src/control/systems
 check_missing_path "old control mapping module" gui/src/control/mapping.rs
 check_missing_path "old control param layout module" gui/src/control/param_layout.rs
 check_missing_path "old control painter module" gui/src/control/painter.rs
+check_missing_path "old control-owned resize edge primitive" gui/src/control/resize_edge.rs
 check_missing_path "old control-owned semantic role module" gui/src/control/role.rs
 check_missing_path "old flat control spec module" gui/src/control/spec.rs
 check_missing_path "old flat control layout module" gui/src/control/layout.rs
@@ -122,6 +125,7 @@ check_missing_path "old flat tree hit order module" gui/src/tree/hit_order.rs
 check_missing_path "old flat tree leaf hit shape module" gui/src/tree/hit_shape.rs
 check_missing_path "old flat tree interaction hit module" gui/src/tree/interaction_hit.rs
 check_missing_path "old flat tree container shape module" gui/src/tree/shape.rs
+check_missing_path "old gesture-owned declarative gesture primitive" gui/src/gesture/kind.rs
 check_missing_path "old flat tree paint module" gui/src/tree/paint.rs
 check_missing_path "old flat tree layout arrange module" gui/src/tree/layout/arrange.rs
 check_missing_path "old flat panel runtime module" gui/src/panel/runtime.rs
@@ -251,6 +255,18 @@ check_no_match \
     gui/src/control
 
 check_no_match \
+    "resize edge primitive must be consumed from geometry, not control" \
+    '((crate|gui)::control::ResizeEdge([,;}[:space:]]|$)|(crate|gui)::control::\{[^}]*ResizeEdge|control::DEFAULT_RESIZE_EDGE_THRESHOLD|control::\{[^}]*DEFAULT_RESIZE_EDGE_THRESHOLD)' \
+    gui/src \
+    app/src
+
+check_no_match \
+    "declarative gesture primitive must be consumed from layout, not gesture runtime" \
+    '((crate|gui)::gesture::Gesture([,;}[:space:]]|$)|(crate|gui)::gesture::\{[^}]*Gesture([,;}[:space:]]|$))' \
+    gui/src \
+    app/src
+
+check_no_match \
     "control registry must not import concrete control mount functions" \
     'mount_(button|color_control|file_path|group|image|label|number|read_only|select|slider|text|text_area|toggle)' \
     gui/src/control/kinds/registry.rs
@@ -345,6 +361,13 @@ check_no_match \
     "tree module must not depend on canvas or panel domains" \
     'crate::(canvas|panel)|super::(canvas|panel)' \
     gui/src/tree
+
+check_no_match \
+    "tree interaction primitives must not depend on control or gesture runtime modules" \
+    'crate::(control|gesture)|super::(control|gesture)' \
+    gui/src/tree/layout \
+    gui/src/tree/hit \
+    gui/src/tree/target
 
 check_no_match \
     "old flat tree hit modules must not be referenced" \

@@ -1,6 +1,6 @@
 use super::model::{PanelResizeSession, PanelRootRuntime};
 use super::store::{bring_to_front, panel_state, panel_state_mut, PANEL_ROOT_ID};
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::{requested_resize_height, requested_resize_width, resize_rect_by_edge};
 use crate::tree::Tree;
 

@@ -2,7 +2,7 @@ use super::{
     end_drag, end_resize, export_layouts, import_layouts, move_drag, move_resize, panel_state,
     start_drag, start_resize,
 };
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::panel::{PanelConfig, PanelId};
 use crate::renderer::Rect;
 use crate::tree::Tree;

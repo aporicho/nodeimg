@@ -1,4 +1,4 @@
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::renderer::Rect;
 
 pub(crate) fn resize_rect_by_edge(

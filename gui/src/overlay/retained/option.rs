@@ -1,12 +1,12 @@
 use super::node_factory::{container, leaf};
 use super::text::ellipsis_text_layout;
-use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
 use crate::interaction::ControlVisualState;
 use crate::overlay::DropdownOverlayContent;
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Overflow, Size,
 };

@@ -24,7 +24,7 @@ use gui::canvas::{
     CanvasPortRef, CanvasPortSide,
 };
 use gui::context::{Context, HitChain};
-use gui::control::ResizeEdge;
+use gui::geometry::ResizeEdge;
 use gui::theme::Theme;
 
 pub(crate) struct WorkspaceController {

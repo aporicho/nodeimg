@@ -1,4 +1,4 @@
-use crate::gesture::Gesture;
+use crate::tree::layout::Gesture;
 use crate::tree::{NodeId, SemanticRole, Tree};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,9 +1,9 @@
 use super::*;
-use crate::control::ResizeEdge;
 use crate::cursor::CursorKind;
-use crate::gesture::Gesture;
+use crate::geometry::ResizeEdge;
 use crate::renderer::Rect;
 use crate::tree::layout::BoxStyle;
+use crate::tree::layout::Gesture;
 use crate::tree::SemanticRole;
 use crate::tree::{TreeNode, TreeNodeBuilder};
 

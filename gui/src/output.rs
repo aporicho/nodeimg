@@ -1,5 +1,6 @@
 use crate::action::GuiAction;
-use crate::control::{ControlValue, ResizeEdge};
+use crate::control::ControlValue;
+use crate::geometry::ResizeEdge;
 
 #[derive(Debug, Clone)]
 pub enum PlatformEffect {

@@ -1,4 +1,4 @@
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::{Point, Rect};
 
 #[derive(Debug, Clone, Copy, PartialEq)]

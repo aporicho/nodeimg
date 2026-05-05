@@ -1,10 +1,12 @@
-use crate::control::DEFAULT_RESIZE_EDGE_THRESHOLD;
 use crate::geometry::TransformSpec;
+use crate::geometry::DEFAULT_RESIZE_EDGE_THRESHOLD;
 use crate::icon::IconSpec;
 pub use crate::paint::TextureHandle;
 use crate::renderer::{Border, Color, PathData, PathStyle, Point, Rect, Stroke, TextStyle};
 use crate::tree::paint_target::{CustomPaintCx, PaintTarget};
 use std::sync::Arc;
+
+use super::Gesture;
 
 /// 自定义绘制回调。与 Flutter CustomPainter 对齐。
 pub trait CustomPainter: std::fmt::Debug + Send + Sync {
@@ -71,7 +73,7 @@ pub struct BoxStyle {
     /// resize 边缘热区半径，单位为屏幕/布局逻辑像素。
     pub resize_edge_threshold: f32,
     /// 命中后注册哪些手势识别器。
-    pub gestures: Vec<crate::gesture::Gesture>,
+    pub gestures: Vec<Gesture>,
 }
 
 impl Default for BoxStyle {

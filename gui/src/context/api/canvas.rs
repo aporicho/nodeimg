@@ -1,5 +1,5 @@
 use super::super::Context;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 
 pub struct CanvasApi<'a> {
     pub(in crate::context) ctx: &'a Context,

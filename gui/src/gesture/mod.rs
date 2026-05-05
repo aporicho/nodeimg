@@ -1,7 +1,6 @@
 mod arena;
 mod drag;
 mod factory;
-mod kind;
 mod long_press;
 mod recognizer;
 pub mod resize;
@@ -10,7 +9,6 @@ mod signal;
 mod tap;
 
 pub use drag::DragRecognizer;
-pub use kind::Gesture;
 pub use long_press::LongPressRecognizer;
 pub(crate) use recognizer::GestureRecognizer;
 pub(crate) use session::{GestureSession, GestureSessionUpdate};

@@ -3,13 +3,13 @@ use std::borrow::Cow;
 use super::data::{PanelContentTemplate, PanelFrameTemplateData};
 use super::node_factory::container;
 use crate::control::ControlNode;
-use crate::gesture::Gesture;
 use crate::panel::{PanelConfig, PanelId, PanelRuntime};
 use crate::renderer::Rect;
 use crate::template::{
     InstanceId, TemplateId, TemplatePayload, TemplateRegistry, PANEL_FRAME_TEMPLATE,
 };
 use crate::theme::light_theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{BoxStyle, Position, RelayoutBoundaryReason, Size};
 use crate::tree::SemanticRole;
 use crate::tree::{RectMoveInvalidation, RepaintBoundaryReason, Tree};

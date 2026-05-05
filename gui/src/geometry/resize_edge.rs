@@ -3,11 +3,7 @@ use crate::renderer::Rect;
 
 pub const DEFAULT_RESIZE_EDGE_THRESHOLD: f32 = 10.0;
 
-/// Resize 手势命中的边或角。
-///
-/// 8 个方向覆盖矩形的所有可 resize 位置。TopLeft / TopRight / BottomLeft /
-/// BottomRight 是角（两个方向同时 resize），Top / Bottom / Left / Right 是
-/// 单方向边。
+/// Resize gesture edge or corner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResizeEdge {
     Top,
@@ -20,8 +16,6 @@ pub enum ResizeEdge {
     BottomRight,
 }
 
-/// 在 rect 的 8 个边/角附近检测具体命中的是哪个。
-/// 返回 None 表示点击在内部（非边缘）。
 #[cfg(test)]
 pub(crate) fn detect_resize_edge(rect: Rect, x: f32, y: f32, threshold: f32) -> Option<ResizeEdge> {
     let threshold = threshold.max(0.0);

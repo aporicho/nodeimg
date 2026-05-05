@@ -1,5 +1,5 @@
-use crate::control::ResizeEdge;
-use crate::gesture::Gesture;
+use crate::geometry::ResizeEdge;
+use crate::tree::layout::Gesture;
 use crate::tree::TargetChain;
 use winit::window::CursorIcon;
 

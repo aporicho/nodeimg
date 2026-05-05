@@ -2,7 +2,8 @@ use std::time::Instant;
 
 use super::arena::GestureArena;
 use super::resize::ResizeRecognizer;
-use super::{DragRecognizer, Gesture, GestureRecognizer, LongPressRecognizer, TapRecognizer};
+use super::{DragRecognizer, GestureRecognizer, LongPressRecognizer, TapRecognizer};
+use crate::tree::layout::Gesture;
 use crate::tree::{HitChain, ResizeHit, TargetChain, TargetDescriptor, Tree};
 
 /// 根据命中链自动创建手势竞技场。

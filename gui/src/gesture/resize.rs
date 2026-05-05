@@ -1,6 +1,6 @@
 use super::recognizer::{GestureDisposition, GestureRecognizer};
 use super::signal::GestureSignal;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 
 const MOVE_THRESHOLD: f32 = 3.0;
 
@@ -100,7 +100,7 @@ impl GestureRecognizer for ResizeRecognizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::{detect_resize_edge, DEFAULT_RESIZE_EDGE_THRESHOLD};
+    use crate::geometry::{detect_resize_edge, DEFAULT_RESIZE_EDGE_THRESHOLD};
     use crate::renderer::Rect;
 
     fn rect_100() -> Rect {

@@ -239,7 +239,7 @@ fn hit_hittable_explicit_true() {
 
 #[test]
 fn hit_gestures_makes_hittable() {
-    use crate::gesture::Gesture;
+    use crate::tree::layout::Gesture;
     let mut tree = Tree::new();
     let root = tree.insert(container_with_rect(
         BoxStyle {

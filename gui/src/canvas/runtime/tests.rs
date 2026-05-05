@@ -6,7 +6,7 @@ use super::{
     toggle_port_group, update_pending_connection,
 };
 use crate::canvas::{CanvasNodeIdentity, CanvasNodeLayout, CanvasPortSide};
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::renderer::Rect;
 use crate::tree::Tree;
 

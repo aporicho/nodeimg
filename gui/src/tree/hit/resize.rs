@@ -1,8 +1,8 @@
 use super::container_shape::ContainerShape;
 use crate::animation::{visual_affine, AnimationStore};
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::{Point, Rect};
-use crate::gesture::Gesture;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::Overflow;
 use crate::tree::node::{NodeId, TreeNode};
 use crate::tree::paint_space::PaintSpace;

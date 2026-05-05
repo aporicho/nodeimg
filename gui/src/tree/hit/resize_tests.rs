@@ -1,5 +1,5 @@
 use super::resize::resize_hit_at_screen_point;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::TransformSpec;
 use crate::renderer::{Color, Rect};
 use crate::tree::layout::{BoxStyle, Decoration, Overflow};

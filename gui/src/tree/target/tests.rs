@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
-use crate::gesture::Gesture;
 use crate::renderer::Rect;
 use crate::tree::layout::BoxStyle;
+use crate::tree::layout::Gesture;
 use crate::tree::{
     HitChain, SemanticRole, TargetChain, TargetDescriptor, TargetOwnerResolver, Tree,
     TreeNodeBuilder,

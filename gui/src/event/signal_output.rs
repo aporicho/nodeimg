@@ -1,5 +1,5 @@
 use crate::action::dispatch_control_click;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::gesture::GestureSignal;
 use crate::output::{ControlEvent, FrameworkOutput, GuiEvent, OutputBuilder};
 use crate::tree::{TargetOwnerResolver, Tree};

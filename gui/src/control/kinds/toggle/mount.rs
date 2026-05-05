@@ -1,8 +1,8 @@
 use crate::control::mount::container;
 use crate::control::{ControlInteractionSpec, ControlMetrics};
-use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{BoxStyle, Decoration, Position, Size};
 use crate::tree::NodeId;
 use crate::tree::SemanticRole;

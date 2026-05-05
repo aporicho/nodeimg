@@ -1,5 +1,5 @@
 use super::container_shape::ContainerShape;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::{Point, Rect};
 
 fn rect_100() -> Rect {

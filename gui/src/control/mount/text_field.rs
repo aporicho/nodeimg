@@ -1,10 +1,10 @@
 use super::node_factory::{container, leaf};
 use super::text_leaf::ellipsis_text_layout;
 use crate::control::ControlMetrics;
-use crate::gesture::Gesture;
 use crate::renderer::{Border, TextStyle};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     BoxStyle, Decoration, Edges, Inset, LeafKind, Overflow, Position, Size, TextLayout,
 };

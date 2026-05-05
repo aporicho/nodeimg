@@ -5,9 +5,9 @@ use super::node_factory::container;
 use super::ports::mount_pin_column;
 use crate::canvas::node_spec::NodeRenderSpec;
 use crate::canvas::CanvasPortSide;
-use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     Align, BoxStyle, Direction, Overflow, Position, RelayoutBoundaryReason, Size,
 };

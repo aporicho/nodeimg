@@ -3,11 +3,11 @@ use super::style::{ellipsis_text_layout, port_border_color, port_state_color};
 use crate::canvas::node_spec::{NodePortGroupTriggerSpec, NodePortSpec};
 use crate::canvas::node_style::NodeCardMetrics;
 use crate::canvas::{CanvasPortConnectionState, CanvasPortSide};
-use crate::gesture::Gesture;
 use crate::icon::{names, IconSpec};
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, LeafKind, Overflow, Position, Size,
 };

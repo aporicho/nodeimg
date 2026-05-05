@@ -1,5 +1,5 @@
 use super::Context;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 
 impl Context {
     pub(crate) fn sync_canvas_node_layouts(

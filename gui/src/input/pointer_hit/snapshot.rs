@@ -1,4 +1,4 @@
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::tree::{HitChain, NodeId, ResizeHit};
 
 #[derive(Debug, Clone)]

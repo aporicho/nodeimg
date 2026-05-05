@@ -1,4 +1,4 @@
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::panel::PanelConfig;
 use crate::renderer::Rect;
 use crate::tree::{PersistenceClass, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, UndoClass};

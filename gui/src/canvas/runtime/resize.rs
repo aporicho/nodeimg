@@ -1,7 +1,7 @@
 use super::connection_layer;
 use super::model::CanvasNodeRuntime;
 use crate::canvas::{canvas_node_stable_id, CanvasNodeSizingRequest};
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::geometry::{
     is_vertical_resize_edge, requested_resize_height, requested_resize_width, resize_rect_by_edge,
 };

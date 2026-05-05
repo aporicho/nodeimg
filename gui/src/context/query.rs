@@ -1,6 +1,6 @@
 use super::Context;
-use crate::control::ResizeEdge;
 use crate::cursor::{resolve_cursor, CursorKind};
+use crate::geometry::ResizeEdge;
 use crate::input::{PointerHitRequest, PointerHitResolver, PointerHitSnapshot};
 use crate::renderer::Rect;
 use crate::tree::{

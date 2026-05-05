@@ -1,8 +1,8 @@
 use crate::control::mount::{container, ellipsis_text_layout, leaf};
-use crate::gesture::Gesture;
 use crate::renderer::Border;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, Edges, Justify, LeafKind, Size};
 use crate::tree::NodeId;
 use crate::tree::SemanticRole;

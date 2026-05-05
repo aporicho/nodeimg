@@ -1,5 +1,5 @@
 use super::*;
-use crate::control::ResizeEdge;
+use crate::geometry::ResizeEdge;
 use crate::renderer::Rect;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::layout::BoxStyle;

@@ -1,7 +1,7 @@
 use super::data::PanelFrameTemplateData;
 use super::node_factory::{container, leaf};
-use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Edges, LeafKind, Size, TextLayout, TextOverflow,
 };

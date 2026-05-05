@@ -860,8 +860,8 @@ mod tests {
     use crate::workspace::showcase_node;
     use gui::canvas::CanvasNodeLayout;
     use gui::control::ControlValue;
-    use gui::control::ResizeEdge;
     use gui::cursor::CursorKind;
+    use gui::geometry::ResizeEdge;
     use gui::layout::TextureHandle;
     use gui::output::{ControlEvent, GuiEvent};
     use gui::renderer::TextMeasurer;

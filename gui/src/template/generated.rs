@@ -2,8 +2,8 @@ use super::{
     BoundaryDeclarations, CompiledNode, CompiledTemplate, SlotBinding, SlotTarget, TemplateError,
     TemplateRegistry, TemplateRevision, TemplateSlots,
 };
-use crate::gesture::Gesture;
 use crate::renderer::{Color, Point, TextStyle};
+use crate::tree::layout::Gesture;
 use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Inset, Justify, LeafKind, Overflow, Position,
     RelayoutBoundaryReason, Size, TextLayout,
