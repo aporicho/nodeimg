@@ -57,16 +57,7 @@ pub(super) fn build_display_list_for_test(
 ) -> Result<DisplayList, PaintBuildError> {
     let mut target = RecordingPaintTarget::new();
     let mut traversal = PaintTraversal::Full;
-    paint_to_target(
-        tree,
-        root,
-        &mut target,
-        None,
-        None,
-        None,
-        theme,
-        &mut traversal,
-    );
+    paint_to_target(tree, root, &mut target, None, None, theme, &mut traversal);
     target.display_list()
 }
 
@@ -86,7 +77,6 @@ pub(super) fn paint_tree_with_animations(
         root,
         &mut target,
         None,
-        None,
         Some(animations),
         &Theme::default(),
         &mut traversal,
@@ -103,8 +93,7 @@ pub(super) fn paint_single_leaf(kind: LeafKind, rect: Rect) -> DisplayList {
 
 pub(super) fn paint_cx<'a>(theme: &'a Theme) -> PaintCx<'a> {
     PaintCx {
-        interaction: None,
-        text_boxes: None,
+        text_override: None,
         animations: None,
         theme,
     }

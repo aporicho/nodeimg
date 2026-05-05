@@ -130,12 +130,16 @@ impl Context {
             },
         );
 
+        let text_override = crate::control::TextBoxPaintOverride::new(
+            &self.interaction,
+            self.systems.text_box_store(),
+        );
+
         for boundary in rebuild.iter().copied() {
             let rebuilt = match self.tree.rebuild_paint_fragment(
                 boundary,
                 crate::tree::PaintCx {
-                    interaction: Some(&self.interaction),
-                    text_boxes: Some(self.systems.text_box_store()),
+                    text_override: Some(&text_override),
                     animations: Some(&self.animations),
                     theme,
                 },

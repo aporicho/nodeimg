@@ -4,31 +4,30 @@ use crate::paint::ClipShape;
 use crate::renderer::{Point, Rect, RectStyle, TextStyle};
 use crate::theme::Theme;
 use crate::tree::paint_target::PaintTarget;
-use crate::tree::{NodeId, Tree};
+use crate::tree::{NodeId, TextLeafPaintRequest, Tree};
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn paint_text_leaf_override(
-    tree: &Tree,
-    node_id: NodeId,
+pub(super) fn paint_text_box_leaf(
     target: &mut dyn PaintTarget,
-    node_rect: Rect,
-    interaction: Option<&InteractionState>,
-    text_boxes: Option<&TextBoxStore>,
-    theme: &Theme,
-    text_style: &TextStyle,
+    request: TextLeafPaintRequest<'_>,
+    interaction: &InteractionState,
+    text_boxes: &TextBoxStore,
 ) -> bool {
-    let Some((control_id, focused)) = text_box_control_id(tree, node_id, interaction) else {
+    let Some((control_id, focused)) =
+        text_box_control_id(request.tree(), request.node_id(), interaction)
+    else {
         return false;
     };
-    let Some(runtime) = text_boxes.and_then(|store| store.text_box(control_id.as_ref())) else {
+    let Some(runtime) = text_boxes.text_box(control_id.as_ref()) else {
         tracing::trace!(
             target: "gui::control::text_box",
             control_id = %control_id,
-            has_store = text_boxes.is_some(),
             "skip text box paint leaf: runtime missing"
         );
         return false;
     };
+    let node_rect = request.node_rect();
+    let text_style = request.text_style();
+    let theme = request.theme();
     let clip_rect = rect_to_node_local(runtime.clip_rect(), node_rect);
 
     target.push_clip(ClipShape::Rect(clip_rect));
@@ -52,9 +51,9 @@ pub(crate) fn paint_text_leaf_override(
     }
 
     if runtime.has_preedit() && !runtime.is_multiline() {
-        paint_single_line_preedit(runtime, target, node_rect, clip_rect, text_style, theme);
+        paint_single_line_preedit(runtime, target, node_rect, clip_rect, &text_style, theme);
     } else {
-        paint_runtime_text(runtime, target, node_rect, clip_rect, text_style);
+        paint_runtime_text(runtime, target, node_rect, clip_rect, &text_style);
         if let Some((point, preedit_text)) = runtime.preedit_origin_and_text() {
             target.draw_text_clipped(
                 Point {
@@ -62,7 +61,7 @@ pub(crate) fn paint_text_leaf_override(
                     y: point.y - node_rect.y,
                 },
                 preedit_text,
-                *text_style,
+                text_style,
                 clip_rect,
             );
         }
@@ -178,7 +177,7 @@ fn paint_single_line_preedit(
 fn text_box_control_id(
     tree: &Tree,
     node_id: NodeId,
-    interaction: Option<&InteractionState>,
+    interaction: &InteractionState,
 ) -> Option<(String, bool)> {
     let node = tree.get(node_id)?;
     let node_id_str = node.id.as_ref();
@@ -187,9 +186,7 @@ fn text_box_control_id(
     }
     let control_id = retained_text_box_owner(tree, node_id_str)?;
     let root_node_id = tree.node_by_str(control_id)?;
-    let focused = interaction
-        .map(|state| state.focused() == Some(root_node_id))
-        .unwrap_or(false);
+    let focused = interaction.focused() == Some(root_node_id);
     Some((control_id.to_string(), focused))
 }
 

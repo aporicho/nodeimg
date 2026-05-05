@@ -1,9 +1,8 @@
 use super::leaf::paint_leaf;
+use super::text_override::TextLeafPaintOverride;
 use super::traversal::PaintTraversal;
 use crate::animation::{visual_affine, AnimationStore};
-use crate::control::TextBoxStore;
 use crate::geometry::Affine2D;
-use crate::interaction::InteractionState;
 use crate::paint::{ClipShape, Color, LayerPaint, PaintCommand, RecordingPaintTarget, RectStyle};
 use crate::theme::Theme;
 use crate::tree::layout::Overflow;
@@ -17,8 +16,7 @@ pub(crate) fn paint_to_target(
     tree: &Tree,
     root: NodeId,
     target: &mut dyn PaintTarget,
-    interaction: Option<&InteractionState>,
-    text_boxes: Option<&TextBoxStore>,
+    text_override: Option<&dyn TextLeafPaintOverride>,
     animations: Option<&AnimationStore>,
     theme: &Theme,
     traversal: &mut PaintTraversal<'_>,
@@ -28,8 +26,7 @@ pub(crate) fn paint_to_target(
         root,
         target,
         PaintSpace::root(),
-        interaction,
-        text_boxes,
+        text_override,
         animations,
         theme,
         None,
@@ -43,8 +40,7 @@ fn paint_node(
     node_id: NodeId,
     target: &mut dyn PaintTarget,
     current_space: PaintSpace,
-    interaction: Option<&InteractionState>,
-    text_boxes: Option<&TextBoxStore>,
+    text_override: Option<&dyn TextLeafPaintOverride>,
     animations: Option<&AnimationStore>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
@@ -94,8 +90,7 @@ fn paint_node(
                 node_id,
                 &mut layer_target,
                 current_space,
-                interaction,
-                text_boxes,
+                text_override,
                 animations,
                 theme,
                 inherited_text_color,
@@ -130,8 +125,7 @@ fn paint_node(
         node_id,
         target,
         current_space,
-        interaction,
-        text_boxes,
+        text_override,
         animations,
         theme,
         inherited_text_color,
@@ -145,8 +139,7 @@ fn paint_node_inner(
     node_id: NodeId,
     target: &mut dyn PaintTarget,
     current_space: PaintSpace,
-    interaction: Option<&InteractionState>,
-    text_boxes: Option<&TextBoxStore>,
+    text_override: Option<&dyn TextLeafPaintOverride>,
     animations: Option<&AnimationStore>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
@@ -198,8 +191,7 @@ fn paint_node_inner(
             node.rect,
             node_space,
             current_space,
-            interaction,
-            text_boxes,
+            text_override,
             theme,
             child_text_color,
         );
@@ -214,8 +206,7 @@ fn paint_node_inner(
                 child_id,
                 target,
                 child_space,
-                interaction,
-                text_boxes,
+                text_override,
                 animations,
                 theme,
                 child_text_color,
@@ -235,8 +226,7 @@ fn paint_node_inner(
                 child_id,
                 target,
                 current_space,
-                interaction,
-                text_boxes,
+                text_override,
                 animations,
                 theme,
                 child_text_color,

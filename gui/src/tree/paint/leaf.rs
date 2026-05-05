@@ -1,8 +1,6 @@
 use super::icon_svg::svg_style_from_icon;
-use crate::control::paint_text_leaf_override;
-use crate::control::TextBoxStore;
+use super::text_override::{TextLeafPaintOverride, TextLeafPaintRequest};
 use crate::geometry::{Point, Rect};
-use crate::interaction::InteractionState;
 use crate::paint::{
     CirclePaint, Color, GridPaint, PathData, PathStyle, Stroke, SvgSourceKey, TextStyle,
 };
@@ -25,8 +23,7 @@ pub(super) fn paint_leaf(
     node_rect: Rect,
     node_space: NodePaintSpace,
     current_space: PaintSpace,
-    interaction: Option<&InteractionState>,
-    text_boxes: Option<&TextBoxStore>,
+    text_override: Option<&dyn TextLeafPaintOverride>,
     theme: &Theme,
     inherited_text_color: Option<Color>,
 ) {
@@ -39,16 +36,15 @@ pub(super) fn paint_leaf(
             layout,
         } => {
             let text_style = with_inherited_text_color(*style, inherited_text_color);
-            if !paint_text_leaf_override(
-                tree,
-                node_id,
-                target,
-                node_rect,
-                interaction,
-                text_boxes,
-                theme,
-                &text_style,
-            ) {
+            let was_overridden = text_override
+                .map(|paint_override| {
+                    paint_override.paint_text_leaf(
+                        target,
+                        TextLeafPaintRequest::new(tree, node_id, node_rect, theme, text_style),
+                    )
+                })
+                .unwrap_or(false);
+            if !was_overridden {
                 let resolved =
                     resolve_text_paint(content, &text_style, *layout, local_rect, |text, style| {
                         target.measure_text(text, style)

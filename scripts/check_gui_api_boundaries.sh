@@ -75,6 +75,9 @@ check_required_match "tree target module has a TargetChain facade" '^pub\(crate\
 check_required_match "tree target module has a TargetDescriptor facade" '^pub\(crate\) use descriptor::TargetDescriptor;' gui/src/tree/target/mod.rs
 check_required_match "tree target module has an owner resolver facade" '^pub\(crate\) use owner::TargetOwnerResolver;' gui/src/tree/target/mod.rs
 check_required_match "tree facade exports target API internally" '^pub\(crate\) use target::\{TargetChain, TargetDescriptor, TargetOwnerResolver\};' gui/src/tree/mod.rs
+check_required_match "tree paint has a text leaf override API" '^pub\(crate\) use text_override::\{TextLeafPaintOverride, TextLeafPaintRequest\};' gui/src/tree/paint/mod.rs
+check_required_match "tree facade exports text leaf override API internally" '^pub\(crate\) use paint::\{PaintCx, TextLeafPaintOverride, TextLeafPaintRequest\};' gui/src/tree/mod.rs
+check_required_match "control text box exposes a paint override adapter" '^pub\(crate\) use paint_override::TextBoxPaintOverride;' gui/src/control/text_box/mod.rs
 check_required_match "input pointer hit module has a request facade" '^pub\(crate\) use request::PointerHitRequest;' gui/src/input/pointer_hit/mod.rs
 check_required_match "input pointer hit module has a resolver facade" '^pub\(crate\) use resolver::PointerHitResolver;' gui/src/input/pointer_hit/mod.rs
 check_required_match "input pointer hit module has a snapshot facade" '^pub use snapshot::PointerHitSnapshot;' gui/src/input/pointer_hit/mod.rs
@@ -361,6 +364,11 @@ check_no_match \
     "tree module must not depend on canvas or panel domains" \
     'crate::(canvas|panel)|super::(canvas|panel)' \
     gui/src/tree
+
+check_no_match \
+    "tree paint must use text override API instead of control text-box runtime" \
+    'crate::control|crate::interaction|TextBoxStore|paint_text_leaf_override' \
+    gui/src/tree/paint
 
 check_no_match \
     "tree interaction primitives must not depend on control or gesture runtime modules" \

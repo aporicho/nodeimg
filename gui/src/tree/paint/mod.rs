@@ -3,6 +3,7 @@ mod fragment;
 mod icon_svg;
 mod leaf;
 mod node;
+mod text_override;
 mod traversal;
 
 #[cfg(test)]
@@ -22,5 +23,6 @@ pub(crate) use context::PaintCx;
 pub(crate) use fragment::build_paint_fragment;
 #[cfg(test)]
 pub(crate) use node::paint_to_target;
+pub(crate) use text_override::{TextLeafPaintOverride, TextLeafPaintRequest};
 #[cfg(test)]
 pub(crate) use traversal::PaintTraversal;

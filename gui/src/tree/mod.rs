@@ -44,7 +44,7 @@ pub use mutation::{Invalidation, MutationError, TreeMutation};
 pub use mutation_meta::RectMoveInvalidation;
 pub use node::{NodeKind, TreeNode};
 pub(crate) use node_factory::TreeNodeBuilder;
-pub(crate) use paint::PaintCx;
+pub(crate) use paint::{PaintCx, TextLeafPaintOverride, TextLeafPaintRequest};
 pub use paint_cache::PaintCache;
 pub(crate) use props::SemanticRole;
 pub use repaint::{PaintDirtyQueues, PaintDirtyReason, RepaintBoundaryId, RepaintBoundaryReason};
