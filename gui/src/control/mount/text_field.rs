@@ -1,4 +1,4 @@
-use super::node_factory::{container, leaf, TreeNodeExt};
+use super::node_factory::{container, leaf};
 use super::text_leaf::ellipsis_text_layout;
 use crate::control::ControlMetrics;
 use crate::control::ControlRole;
@@ -45,7 +45,7 @@ pub(crate) fn mount_text_field(
             },
             None,
         )
-        .with_semantic_role(role),
+        .semantic_role(role),
     )?;
     let field = cx.child(
         root,

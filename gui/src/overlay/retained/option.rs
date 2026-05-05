@@ -1,4 +1,4 @@
-use super::node_factory::{container, leaf, TreeNodeExt};
+use super::node_factory::{container, leaf};
 use super::text::ellipsis_text_layout;
 use crate::control::ControlRole;
 use crate::gesture::Gesture;
@@ -61,7 +61,7 @@ pub(in crate::overlay::retained) fn mount_option(
                 shadow: None,
             }),
         )
-        .with_semantic_role(ControlRole::Button),
+        .semantic_role(ControlRole::Button),
     )?;
     let marker = cx.child(
         option_root,

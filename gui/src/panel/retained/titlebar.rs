@@ -1,5 +1,5 @@
 use super::data::PanelFrameTemplateData;
-use super::node_factory::{container, leaf, TreeNodeExt};
+use super::node_factory::{container, leaf};
 use crate::gesture::Gesture;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::tree::layout::{
@@ -37,7 +37,7 @@ pub(in crate::panel::retained) fn mount_titlebar(
                 shadow: None,
             }),
         )
-        .with_owner(id.to_string()),
+        .owner(id.to_string()),
     )?;
     cx.child(
         titlebar,

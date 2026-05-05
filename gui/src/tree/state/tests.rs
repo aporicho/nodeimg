@@ -4,10 +4,9 @@ use crate::tree::layout::{
     BoxStyle, LayoutConstraints, LayoutOutput, LeafKind, RelayoutBoundaryReason, Size, TextLayout,
 };
 use crate::tree::{
-    DirtyFlags, DirtyQueues, NodeKind, NodeLocalRuntime, NodeProps, RepaintBoundaryId,
-    RepaintBoundaryReason, RuntimeRetention, RuntimeSlot, RuntimeSlotPolicy, RuntimeSlots,
-    StableId, StylePatch, TreeDumpLevel, TreeIndexError, TreeMutation, TreeNode,
-    TreeSnapshotOptions,
+    DirtyFlags, DirtyQueues, RepaintBoundaryId, RepaintBoundaryReason, RuntimeRetention,
+    RuntimeSlot, RuntimeSlotPolicy, StableId, StylePatch, TreeDumpLevel, TreeIndexError,
+    TreeMutation, TreeNode, TreeNodeBuilder, TreeSnapshotOptions,
 };
 
 #[derive(Debug, Default)]
@@ -32,51 +31,26 @@ impl RuntimeSlot for RetainedTestRuntime {
 }
 
 fn container_node(id: &'static str) -> TreeNode {
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style: BoxStyle::default(),
-        decoration: None,
-        kind: NodeKind::Container,
-        rect: Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 0.0,
-            h: 0.0,
-        },
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    TreeNodeBuilder::container(id, BoxStyle::default()).build()
 }
 
 fn text_node(id: &'static str, content: &'static str) -> TreeNode {
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style: BoxStyle::default(),
-        decoration: None,
-        kind: NodeKind::Leaf(LeafKind::Text {
+    TreeNodeBuilder::leaf(
+        id,
+        LeafKind::Text {
             content: content.to_string(),
             style: crate::renderer::TextStyle::new(crate::renderer::Color::BLACK, 12.0),
             layout: TextLayout::default(),
-        }),
-        rect: Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 10.0,
-            h: 10.0,
         },
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+        BoxStyle::default(),
+    )
+    .rect(Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 10.0,
+        h: 10.0,
+    })
+    .build()
 }
 
 fn layout_output(rect: Rect) -> LayoutOutput {

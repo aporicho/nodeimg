@@ -5,11 +5,11 @@ use super::{
 use crate::renderer::Rect;
 use crate::tree::layout::{
     BoxStyle, Decoration, LayoutDependencyKind, LayoutDependencyScope, LeafKind,
+    RelayoutBoundaryReason,
 };
 use crate::tree::style_patch::apply_style_patch;
 use crate::tree::{
-    NodeId, NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RuntimeSlots, StableId, Tree, TreeNode,
+    NodeId, NodeKind, RectMoveInvalidation, RepaintBoundaryReason, Tree, TreeNode, TreeNodeBuilder,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -34,14 +34,12 @@ pub(crate) struct CompiledNode {
     pub id_suffix: &'static str,
     pub absolute_id: Option<&'static str>,
     pub kind: CompiledNodeKind,
-    pub props: NodeProps,
     pub style: BoxStyle,
     pub decoration: Option<Decoration>,
     pub rect: Rect,
-    pub local_runtime: NodeLocalRuntime,
-    pub layout_meta: NodeLayoutMeta,
-    pub paint_meta: NodePaintMeta,
-    pub mutation_meta: NodeMutationMeta,
+    pub layout_boundary: Option<RelayoutBoundaryReason>,
+    pub paint_boundary: Option<RepaintBoundaryReason>,
+    pub rect_move_invalidation: RectMoveInvalidation,
     pub children: Vec<CompiledNode>,
 }
 
@@ -211,14 +209,12 @@ impl CompiledNode {
             id_suffix,
             absolute_id: None,
             kind,
-            props: NodeProps::default(),
             style,
             decoration: None,
             rect: zero_rect(),
-            local_runtime: NodeLocalRuntime::default(),
-            layout_meta: NodeLayoutMeta::default(),
-            paint_meta: NodePaintMeta::default(),
-            mutation_meta: NodeMutationMeta::default(),
+            layout_boundary: None,
+            paint_boundary: None,
+            rect_move_invalidation: RectMoveInvalidation::Layout,
             children: Vec::new(),
         }
     }
@@ -228,18 +224,21 @@ impl CompiledNode {
         self
     }
 
-    pub(crate) fn with_layout_meta(mut self, layout_meta: NodeLayoutMeta) -> Self {
-        self.layout_meta = layout_meta;
+    pub(crate) fn with_layout_boundary(mut self, boundary: RelayoutBoundaryReason) -> Self {
+        self.layout_boundary = Some(boundary);
         self
     }
 
-    pub(crate) fn with_paint_meta(mut self, paint_meta: NodePaintMeta) -> Self {
-        self.paint_meta = paint_meta;
+    pub(crate) fn with_paint_boundary(mut self, boundary: RepaintBoundaryReason) -> Self {
+        self.paint_boundary = Some(boundary);
         self
     }
 
-    pub(crate) fn with_mutation_meta(mut self, mutation_meta: NodeMutationMeta) -> Self {
-        self.mutation_meta = mutation_meta;
+    pub(crate) fn with_rect_move_invalidation(
+        mut self,
+        invalidation: RectMoveInvalidation,
+    ) -> Self {
+        self.rect_move_invalidation = invalidation;
         self
     }
 
@@ -254,23 +253,26 @@ impl CompiledNode {
     }
 
     fn to_tree_node(&self, stable_id: String) -> TreeNode {
-        TreeNode {
-            id: StableId::from(stable_id),
-            props: self.props.clone(),
-            style: self.style.clone(),
-            decoration: self.decoration.clone(),
-            kind: match &self.kind {
-                CompiledNodeKind::Container => NodeKind::Container,
-                CompiledNodeKind::Leaf(leaf) => NodeKind::Leaf(leaf.clone()),
-            },
-            rect: self.rect,
-            children: Vec::new(),
-            local_runtime: self.local_runtime,
-            layout_meta: self.layout_meta,
-            paint_meta: self.paint_meta,
-            mutation_meta: self.mutation_meta,
-            runtime_slots: RuntimeSlots::default(),
+        let builder = match &self.kind {
+            CompiledNodeKind::Container => {
+                TreeNodeBuilder::container(stable_id, self.style.clone())
+            }
+            CompiledNodeKind::Leaf(leaf) => {
+                TreeNodeBuilder::leaf(stable_id, leaf.clone(), self.style.clone())
+            }
         }
+        .maybe_decoration(self.decoration.clone())
+        .rect(self.rect)
+        .rect_move_invalidation(self.rect_move_invalidation);
+        let builder = match self.layout_boundary {
+            Some(boundary) => builder.layout_boundary(boundary),
+            None => builder,
+        };
+        let builder = match self.paint_boundary {
+            Some(boundary) => builder.paint_boundary(boundary),
+            None => builder,
+        };
+        builder.build()
     }
 }
 

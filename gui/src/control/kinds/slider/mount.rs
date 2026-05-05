@@ -1,4 +1,4 @@
-use crate::control::mount::{container, TreeNodeExt};
+use crate::control::mount::container;
 use crate::control::{ControlInteractionSpec, ControlMetrics, ControlRole};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
@@ -30,8 +30,8 @@ pub(crate) fn mount_slider(
             },
             None,
         )
-        .with_semantic_role(ControlRole::Slider)
-        .with_runtime_slot(interaction),
+        .semantic_role(ControlRole::Slider)
+        .runtime_slot(interaction),
     )?;
     let track = cx.child(
         root,

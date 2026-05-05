@@ -45,9 +45,7 @@ fn node_screen_center_recursive(
 mod tests {
     use super::*;
     use crate::geometry::{Rect, TransformSpec};
-    use crate::tree::node::{NodeLocalRuntime, TreeNode};
-    use crate::tree::{NodeKind, NodeProps, RuntimeSlots};
-    use std::borrow::Cow;
+    use crate::tree::{TreeNode, TreeNodeBuilder};
 
     const EPS: f32 = 1e-5;
 
@@ -63,20 +61,11 @@ mod tests {
     }
 
     fn node(id: &'static str, rect: Rect, children: Vec<NodeId>) -> TreeNode {
-        TreeNode {
-            id: Cow::Borrowed(id).into(),
-            props: NodeProps::default(),
-            rect,
-            style: Default::default(),
-            decoration: None,
-            kind: NodeKind::Container,
-            children,
-            local_runtime: NodeLocalRuntime::default(),
-            layout_meta: Default::default(),
-            paint_meta: Default::default(),
-            mutation_meta: Default::default(),
-            runtime_slots: RuntimeSlots::default(),
-        }
+        let mut node = TreeNodeBuilder::container(id, Default::default())
+            .rect(rect)
+            .build();
+        node.children = children;
+        node
     }
 
     #[test]

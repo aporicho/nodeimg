@@ -1,31 +1,11 @@
 use super::arrange;
 use crate::renderer::Rect;
 use crate::tree::layout::{BoxStyle, Size};
-use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-use crate::tree::{NodeProps, RuntimeSlots, Tree};
-use std::borrow::Cow;
+use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
 /// 构造一个基础 Container 节点（decoration 无、子节点无）
 pub(super) fn container(style: BoxStyle) -> TreeNode {
-    TreeNode {
-        id: Cow::Borrowed("test").into(),
-        props: NodeProps::default(),
-        style,
-        decoration: None,
-        kind: NodeKind::Container,
-        rect: Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 0.0,
-            h: 0.0,
-        },
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    TreeNodeBuilder::container("test", style).build()
 }
 
 /// 不依赖字体的 measure 回调

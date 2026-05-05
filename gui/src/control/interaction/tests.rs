@@ -7,48 +7,39 @@ use crate::renderer::Rect;
 use crate::runtime::RuntimeEventResult;
 use crate::shell::{AppEvent, MouseButton};
 use crate::tree::layout::BoxStyle;
-use crate::tree::{
-    NodeKind, NodeLocalRuntime, NodeProps, RuntimeSlot, RuntimeSlots, StableId, Tree, TreeNode,
-};
+use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
 fn control_node(id: &'static str, rect: Rect, spec: ControlInteractionSpec) -> TreeNode {
-    let mut runtime_slots = RuntimeSlots::default();
-    runtime_slots.ensure_with_policy::<ControlInteractionSpec>(
-        ControlInteractionSpec::default_policy(),
-        || spec,
-    );
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style: BoxStyle {
+    TreeNodeBuilder::container(
+        id,
+        BoxStyle {
             hittable: true,
             ..Default::default()
         },
-        decoration: None,
-        kind: NodeKind::Container,
-        rect,
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots,
-    }
+    )
+    .rect(rect)
+    .runtime_slot(spec)
+    .build()
 }
 
 fn root_with_child(child: TreeNode) -> Tree {
     let mut tree = Tree::new();
     let child_id = tree.insert(child);
-    let mut root = control_node(
+    let mut root = TreeNodeBuilder::container(
         "root",
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 300.0,
-            h: 200.0,
+        BoxStyle {
+            hittable: true,
+            ..Default::default()
         },
-        ControlInteractionSpec::None,
-    );
+    )
+    .rect(Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 300.0,
+        h: 200.0,
+    })
+    .runtime_slot(ControlInteractionSpec::None)
+    .build();
     root.children = vec![child_id];
     let root_id = tree.insert(root);
     tree.set_root(root_id);

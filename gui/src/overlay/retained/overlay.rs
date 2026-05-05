@@ -1,6 +1,6 @@
 use super::data::DropdownOverlayTemplateData;
 use super::dropdown::mount_dropdown_group;
-use super::node_factory::{container, TreeNodeExt};
+use super::node_factory::container;
 use crate::overlay::OverlayContent;
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::tree::layout::{BoxStyle, Overflow, Position, Size};
@@ -27,7 +27,7 @@ pub(in crate::overlay::retained) fn mount_dropdown_overlay(
             },
             None,
         )
-        .with_paint_boundary(RepaintBoundaryReason::Explicit),
+        .paint_boundary(RepaintBoundaryReason::Explicit),
     )?;
     mount_dropdown_group(cx, root, content, &data.theme)?;
     Ok(root)

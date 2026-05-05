@@ -6,9 +6,8 @@ use crate::paint::{
 };
 use crate::theme::Theme;
 use crate::tree::layout::{BoxStyle, LeafKind};
-use crate::tree::node::{NodeId, NodeKind, NodeLocalRuntime, TreeNode};
-use crate::tree::{NodeProps, RuntimeSlots, Tree};
-use std::borrow::Cow;
+use crate::tree::node::NodeId;
+use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
 const EPS: f32 = 1e-5;
 
@@ -38,37 +37,17 @@ pub(super) fn assert_rect_near(actual: Rect, expected: Rect) {
 }
 
 pub(super) fn leaf_node(id: &'static str, kind: LeafKind, rect: Rect) -> TreeNode {
-    TreeNode {
-        id: Cow::Borrowed(id).into(),
-        props: NodeProps::default(),
-        style: BoxStyle::default(),
-        decoration: None,
-        kind: NodeKind::Leaf(kind),
-        rect,
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    TreeNodeBuilder::leaf(id, kind, BoxStyle::default())
+        .rect(rect)
+        .build()
 }
 
 pub(super) fn container_node(id: &'static str, rect: Rect, children: Vec<NodeId>) -> TreeNode {
-    TreeNode {
-        id: Cow::Borrowed(id).into(),
-        props: NodeProps::default(),
-        style: BoxStyle::default(),
-        decoration: None,
-        kind: NodeKind::Container,
-        rect,
-        children,
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    let mut node = TreeNodeBuilder::container(id, BoxStyle::default())
+        .rect(rect)
+        .build();
+    node.children = children;
+    node
 }
 
 pub(super) fn build_display_list_for_test(

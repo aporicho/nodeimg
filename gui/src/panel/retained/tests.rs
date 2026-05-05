@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::data::{PanelContentTemplate, PanelFrameTemplateData};
-use super::node_factory::{container, zero_rect};
+use super::node_factory::container;
 use crate::control::{ControlNode, ControlRole};
 use crate::gesture::Gesture;
 use crate::panel::{PanelConfig, PanelId, PanelRuntime};
@@ -110,4 +110,13 @@ fn panel_frame_template_mounts_root_titlebar_content_and_toolbar_actions() {
         .expect("toolbar add button");
     tree.node_by_str("toolbar::run")
         .expect("toolbar run button");
+}
+
+fn zero_rect() -> Rect {
+    Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        h: 0.0,
+    }
 }

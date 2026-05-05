@@ -1,8 +1,7 @@
 use crate::renderer::{Color, Rect};
 use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
-use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-use crate::tree::{NodeProps, RuntimeSlots};
-use std::borrow::Cow;
+use crate::tree::node::{NodeKind, TreeNode};
+use crate::tree::TreeNodeBuilder;
 
 pub(super) fn node_with_rect(
     id: &'static str,
@@ -11,20 +10,13 @@ pub(super) fn node_with_rect(
     kind: NodeKind,
     rect: Rect,
 ) -> TreeNode {
-    TreeNode {
-        id: Cow::Borrowed(id).into(),
-        props: NodeProps::default(),
-        style,
-        decoration,
-        kind,
-        rect,
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
+    match kind {
+        NodeKind::Container => TreeNodeBuilder::container(id, style),
+        NodeKind::Leaf(leaf) => TreeNodeBuilder::leaf(id, leaf, style),
     }
+    .maybe_decoration(decoration)
+    .rect(rect)
+    .build()
 }
 
 /// 构造一个设定好 rect 的 Container 节点

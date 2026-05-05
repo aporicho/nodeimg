@@ -73,26 +73,18 @@ mod tests {
     use super::*;
     use crate::renderer::Rect;
     use crate::tree::layout::BoxStyle;
-    use crate::tree::{NodeKind, RuntimeSlots, Tree, TreeNode};
+    use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
     fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
-        TreeNode {
-            id: id.into(),
-            props: Default::default(),
-            style: BoxStyle {
+        TreeNodeBuilder::container(
+            id,
+            BoxStyle {
                 hittable: true,
                 ..Default::default()
             },
-            decoration: None,
-            kind: NodeKind::Container,
-            rect,
-            children: Vec::new(),
-            local_runtime: Default::default(),
-            layout_meta: Default::default(),
-            paint_meta: Default::default(),
-            mutation_meta: Default::default(),
-            runtime_slots: RuntimeSlots::default(),
-        }
+        )
+        .rect(rect)
+        .build()
     }
 
     #[test]

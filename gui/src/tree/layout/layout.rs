@@ -31,34 +31,14 @@ pub fn layout<T: LayoutTree>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-    use crate::tree::{NodeProps, RuntimeSlots, Tree};
-    use std::borrow::Cow;
+    use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
     fn no_measure(_text: &str, _style: &crate::renderer::TextStyle) -> (f32, f32) {
         (0.0, 0.0)
     }
 
     fn container(style: super::super::types::BoxStyle) -> TreeNode {
-        TreeNode {
-            id: Cow::Borrowed("test").into(),
-            props: NodeProps::default(),
-            style,
-            decoration: None,
-            kind: NodeKind::Container,
-            rect: Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 0.0,
-                h: 0.0,
-            },
-            children: Vec::new(),
-            local_runtime: NodeLocalRuntime::default(),
-            layout_meta: Default::default(),
-            paint_meta: Default::default(),
-            mutation_meta: Default::default(),
-            runtime_slots: RuntimeSlots::default(),
-        }
+        TreeNodeBuilder::container("test", style).build()
     }
 
     #[test]

@@ -8,9 +8,7 @@ use crate::tree::layout::{
     Align, BoxStyle, Decoration, Direction, Inset, Justify, LeafKind, Overflow, Position,
     RelayoutBoundaryReason, Size, TextLayout,
 };
-use crate::tree::{
-    NodeLayoutMeta, NodeMutationMeta, NodePaintMeta, RectMoveInvalidation, RepaintBoundaryReason,
-};
+use crate::tree::{RectMoveInvalidation, RepaintBoundaryReason};
 
 pub const TEXT_BOX_TEMPLATE: &str = "builtin::text_box";
 pub const CANVAS_ROOT_TEMPLATE: &str = "builtin::canvas_root";
@@ -384,8 +382,8 @@ fn container_with_boundaries(
     paint_boundary: RepaintBoundaryReason,
 ) -> CompiledNode {
     container(id_suffix, style, decoration)
-        .with_layout_meta(NodeLayoutMeta::boundary(layout_boundary))
-        .with_paint_meta(NodePaintMeta::boundary(paint_boundary))
+        .with_layout_boundary(layout_boundary)
+        .with_paint_boundary(paint_boundary)
 }
 
 fn text_leaf(id_suffix: &'static str, content: &str, text_style: TextStyle) -> CompiledNode {
@@ -426,10 +424,8 @@ fn grid_leaf_with_boundary(
             ..BoxStyle::default()
         },
     )
-    .with_paint_meta(NodePaintMeta::boundary(boundary))
-    .with_mutation_meta(NodeMutationMeta {
-        rect_move: RectMoveInvalidation::Repaint,
-    })
+    .with_paint_boundary(boundary)
+    .with_rect_move_invalidation(RectMoveInvalidation::Repaint)
 }
 
 fn connection_leaf(id_suffix: &'static str, kind: LeafKind) -> CompiledNode {
@@ -476,7 +472,7 @@ fn workspace_grid_leaf(id_suffix: &'static str) -> CompiledNode {
     node.style.position = Position::absolute_xy(0.0, 0.0);
     node.style.z_index = -20;
     node.style.hittable = false;
-    node.mutation_meta.rect_move = RectMoveInvalidation::Repaint;
+    node = node.with_rect_move_invalidation(RectMoveInvalidation::Repaint);
     node
 }
 
@@ -780,35 +776,17 @@ fn node_palette_item_text_style() -> TextStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::Rect;
     use crate::template::{InstanceId, SlotValue, SlotValues, TemplateId};
-    use crate::tree::{
-        DirtyFlags, NodeId, NodeKind, NodeLocalRuntime, NodeProps, RuntimeSlots, StableId, Tree,
-        TreeMutation, TreeNode,
-    };
+    use crate::tree::{DirtyFlags, NodeId, NodeKind, Tree, TreeMutation, TreeNodeBuilder};
 
     fn host_tree() -> (Tree, NodeId) {
         let mut tree = Tree::new();
         let root = tree
-            .insert_checked(TreeNode {
-                id: StableId::from("root"),
-                props: NodeProps::default(),
-                style: BoxStyle::default(),
-                decoration: None,
-                kind: NodeKind::Container,
-                rect: Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    w: 0.0,
-                    h: 0.0,
-                },
-                children: Vec::new(),
-                local_runtime: NodeLocalRuntime::default(),
-                layout_meta: NodeLayoutMeta::boundary(RelayoutBoundaryReason::Root),
-                paint_meta: NodePaintMeta::boundary(RepaintBoundaryReason::Root),
-                mutation_meta: NodeMutationMeta::default(),
-                runtime_slots: RuntimeSlots::default(),
-            })
+            .insert_checked(
+                TreeNodeBuilder::container("root", BoxStyle::default())
+                    .layout_boundary(RelayoutBoundaryReason::Root)
+                    .paint_boundary(RepaintBoundaryReason::Root),
+            )
             .expect("root");
         tree.set_root(root);
         (tree, root)

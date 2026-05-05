@@ -1,6 +1,6 @@
 use super::content::mount_panel_content;
 use super::data::PanelFrameTemplateData;
-use super::node_factory::{container, TreeNodeExt};
+use super::node_factory::container;
 use super::titlebar::mount_titlebar;
 use crate::control::ControlRole;
 use crate::renderer::Border;
@@ -45,10 +45,10 @@ pub(in crate::panel::retained) fn mount_panel(
                 shadow: None,
             }),
         )
-        .with_semantic_role(ControlRole::Panel)
-        .with_layout_boundary(RelayoutBoundaryReason::Panel)
-        .with_paint_boundary(RepaintBoundaryReason::PanelFrame)
-        .with_rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),
+        .semantic_role(ControlRole::Panel)
+        .layout_boundary(RelayoutBoundaryReason::Panel)
+        .paint_boundary(RepaintBoundaryReason::PanelFrame)
+        .rect_move_invalidation(RectMoveInvalidation::LayoutAndBoundaryPlacement),
     )?;
 
     if data.config.titlebar_visible {

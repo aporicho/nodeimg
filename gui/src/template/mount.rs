@@ -20,9 +20,9 @@ impl<'a> TemplateMountCx<'a> {
     pub(crate) fn child(
         &mut self,
         parent: NodeId,
-        node: TreeNode,
+        node: impl Into<TreeNode>,
     ) -> Result<NodeId, TemplateError> {
-        let id = self.tree.insert_checked(node)?;
+        let id = self.tree.insert_checked(node.into())?;
         self.mounted.push(id);
         if !self.tree.append_child(parent, id) {
             return Err(TemplateError::MissingParent(parent));

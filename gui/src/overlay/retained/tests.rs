@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::data::DropdownOverlayTemplateData;
-use super::node_factory::{container, zero_rect};
+use super::node_factory::container;
 use crate::icon::names;
 use crate::overlay::{DropdownOverlayContent, OverlayContent};
 use crate::template::{
@@ -76,4 +76,13 @@ fn dropdown_overlay_template_mounts_options_and_marker_icons() {
         &tree.get(second).expect("second marker").kind,
         NodeKind::Leaf(LeafKind::Icon { spec }) if spec.id.as_str() == names::NAV_ARROW_RIGHT.as_str()
     ));
+}
+
+fn zero_rect() -> crate::renderer::Rect {
+    crate::renderer::Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        h: 0.0,
+    }
 }

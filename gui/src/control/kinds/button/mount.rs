@@ -1,4 +1,4 @@
-use crate::control::mount::{container, ellipsis_text_layout, leaf, TreeNodeExt};
+use crate::control::mount::{container, ellipsis_text_layout, leaf};
 use crate::control::ControlRole;
 use crate::gesture::Gesture;
 use crate::renderer::Border;
@@ -45,7 +45,7 @@ pub(crate) fn mount_button(
                 shadow: None,
             }),
         )
-        .with_semantic_role(ControlRole::Button),
+        .semantic_role(ControlRole::Button),
     )?;
     cx.child(
         button,

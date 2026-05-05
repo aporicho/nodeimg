@@ -1,91 +1,21 @@
-use std::borrow::Cow;
-
-use crate::control::ControlRole;
-use crate::renderer::Rect;
-use crate::tree::layout::{BoxStyle, Decoration, LeafKind, RelayoutBoundaryReason};
-use crate::tree::{
-    NodeKind, NodeLayoutMeta, NodeLocalRuntime, NodeMutationMeta, NodePaintMeta, NodeProps,
-    RectMoveInvalidation, RepaintBoundaryReason, RuntimeSlots, StableId, TreeNode,
-};
+use crate::tree::layout::{BoxStyle, Decoration, LeafKind};
+use crate::tree::TreeNodeBuilder;
 
 pub(in crate::panel::retained) fn container(
     id: String,
     style: BoxStyle,
     decoration: Option<Decoration>,
-) -> TreeNode {
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style,
-        decoration,
-        kind: NodeKind::Container,
-        rect: zero_rect(),
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: NodeLayoutMeta::default(),
-        paint_meta: NodePaintMeta::default(),
-        mutation_meta: NodeMutationMeta::default(),
-        runtime_slots: RuntimeSlots::default(),
+) -> TreeNodeBuilder {
+    match decoration {
+        Some(decoration) => TreeNodeBuilder::container(id, style).decoration(decoration),
+        None => TreeNodeBuilder::container(id, style),
     }
 }
 
-pub(in crate::panel::retained) fn leaf(id: String, kind: LeafKind, style: BoxStyle) -> TreeNode {
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style,
-        decoration: None,
-        kind: NodeKind::Leaf(kind),
-        rect: zero_rect(),
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: NodeLayoutMeta::default(),
-        paint_meta: NodePaintMeta::default(),
-        mutation_meta: NodeMutationMeta::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
-}
-
-pub(in crate::panel::retained) trait TreeNodeExt {
-    fn with_semantic_role(self, role: ControlRole) -> Self;
-    fn with_owner(self, owner: String) -> Self;
-    fn with_layout_boundary(self, reason: RelayoutBoundaryReason) -> Self;
-    fn with_paint_boundary(self, reason: RepaintBoundaryReason) -> Self;
-    fn with_rect_move_invalidation(self, invalidation: RectMoveInvalidation) -> Self;
-}
-
-impl TreeNodeExt for TreeNode {
-    fn with_semantic_role(mut self, role: ControlRole) -> Self {
-        self.props.semantic_role = Some(role);
-        self
-    }
-
-    fn with_owner(mut self, owner: String) -> Self {
-        self.props.owner_id = Some(Cow::Owned(owner));
-        self
-    }
-
-    fn with_layout_boundary(mut self, reason: RelayoutBoundaryReason) -> Self {
-        self.layout_meta.set_boundary(reason);
-        self
-    }
-
-    fn with_paint_boundary(mut self, reason: RepaintBoundaryReason) -> Self {
-        self.paint_meta.set_boundary(reason);
-        self
-    }
-
-    fn with_rect_move_invalidation(mut self, invalidation: RectMoveInvalidation) -> Self {
-        self.mutation_meta.rect_move = invalidation;
-        self
-    }
-}
-
-pub(in crate::panel::retained) fn zero_rect() -> Rect {
-    Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 0.0,
-        h: 0.0,
-    }
+pub(in crate::panel::retained) fn leaf(
+    id: String,
+    kind: LeafKind,
+    style: BoxStyle,
+) -> TreeNodeBuilder {
+    TreeNodeBuilder::leaf(id, kind, style)
 }

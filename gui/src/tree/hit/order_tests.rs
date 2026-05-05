@@ -1,32 +1,16 @@
 use super::order::HitOrderCache;
-use crate::renderer::Rect;
 use crate::tree::layout::BoxStyle;
-use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-use crate::tree::{NodeProps, RuntimeSlots, StableId, Tree};
+use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
 fn container(id: &'static str, z_index: i32) -> TreeNode {
-    TreeNode {
-        id: StableId::from(id),
-        props: NodeProps::default(),
-        style: BoxStyle {
+    TreeNodeBuilder::container(
+        id,
+        BoxStyle {
             z_index,
             ..Default::default()
         },
-        decoration: None,
-        kind: NodeKind::Container,
-        rect: Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 0.0,
-            h: 0.0,
-        },
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    )
+    .build()
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::body::mount_node_body;
 use super::card::mount_card;
 use super::header::mount_node_header;
-use super::node_factory::{container, TreeNodeExt};
+use super::node_factory::container;
 use super::ports::mount_pin_column;
 use crate::canvas::node_spec::NodeRenderSpec;
 use crate::canvas::CanvasPortSide;
@@ -41,9 +41,9 @@ pub(super) fn mount_node_card(
             },
             None,
         )
-        .with_layout_boundary(RelayoutBoundaryReason::CanvasNodeCard)
-        .with_paint_boundary(RepaintBoundaryReason::CanvasNodeCard)
-        .with_rect_move_invalidation(RectMoveInvalidation::BoundaryPlacement),
+        .layout_boundary(RelayoutBoundaryReason::CanvasNodeCard)
+        .paint_boundary(RepaintBoundaryReason::CanvasNodeCard)
+        .rect_move_invalidation(RectMoveInvalidation::BoundaryPlacement),
     )?;
 
     mount_pin_column(

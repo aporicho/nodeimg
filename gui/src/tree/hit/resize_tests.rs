@@ -3,25 +3,10 @@ use crate::control::ResizeEdge;
 use crate::geometry::TransformSpec;
 use crate::renderer::{Color, Rect};
 use crate::tree::layout::{BoxStyle, Decoration, Overflow};
-use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-use crate::tree::{NodeProps, RuntimeSlots, Tree};
-use std::borrow::Cow;
+use crate::tree::{Tree, TreeNode, TreeNodeBuilder};
 
 fn container(id: &'static str, style: BoxStyle, rect: Rect) -> TreeNode {
-    TreeNode {
-        id: Cow::Borrowed(id).into(),
-        props: NodeProps::default(),
-        style,
-        decoration: None,
-        kind: NodeKind::Container,
-        rect,
-        children: Vec::new(),
-        local_runtime: NodeLocalRuntime::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    TreeNodeBuilder::container(id, style).rect(rect).build()
 }
 
 fn resizable_style() -> BoxStyle {

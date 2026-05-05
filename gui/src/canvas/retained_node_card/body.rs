@@ -7,7 +7,7 @@ use crate::control::{control_layout_policy, ControlHeight, ControlLayoutPolicy};
 use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::{Align, BoxStyle, Decoration, Direction, LeafKind, Size};
-use crate::tree::{NodeId, TreeNode};
+use crate::tree::{NodeId, TreeNodeBuilder};
 
 pub(super) fn mount_node_body(
     cx: &mut TemplateMountCx<'_>,
@@ -104,7 +104,7 @@ fn body_row(
     align_items: Align,
     height: Size,
     flex_grow: f32,
-) -> TreeNode {
+) -> TreeNodeBuilder {
     container(
         id.to_string(),
         BoxStyle {

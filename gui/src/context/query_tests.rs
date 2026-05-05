@@ -4,43 +4,35 @@ use crate::cursor::CursorKind;
 use crate::gesture::Gesture;
 use crate::renderer::Rect;
 use crate::tree::layout::BoxStyle;
-use crate::tree::{NodeKind, NodeProps, RuntimeSlots, TreeNode};
+use crate::tree::{TreeNode, TreeNodeBuilder};
 
 fn hittable_node(id: &'static str, rect: Rect) -> TreeNode {
-    TreeNode {
-        id: id.into(),
-        props: Default::default(),
-        style: BoxStyle {
+    TreeNodeBuilder::container(
+        id,
+        BoxStyle {
             hittable: true,
             ..Default::default()
         },
-        decoration: None,
-        kind: NodeKind::Container,
-        rect,
-        children: Vec::new(),
-        local_runtime: Default::default(),
-        layout_meta: Default::default(),
-        paint_meta: Default::default(),
-        mutation_meta: Default::default(),
-        runtime_slots: RuntimeSlots::default(),
-    }
+    )
+    .rect(rect)
+    .build()
 }
 
 fn node_with_style(id: &'static str, rect: Rect, style: BoxStyle) -> TreeNode {
-    TreeNode {
-        style,
-        ..hittable_node(id, rect)
-    }
+    TreeNodeBuilder::container(id, style).rect(rect).build()
 }
 
 fn node_with_role(id: &'static str, rect: Rect, role: ControlRole) -> TreeNode {
-    TreeNode {
-        props: NodeProps {
-            semantic_role: Some(role),
+    TreeNodeBuilder::container(
+        id,
+        BoxStyle {
+            hittable: true,
             ..Default::default()
         },
-        ..hittable_node(id, rect)
-    }
+    )
+    .rect(rect)
+    .semantic_role(role)
+    .build()
 }
 
 #[test]

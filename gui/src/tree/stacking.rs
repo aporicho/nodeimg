@@ -46,35 +46,18 @@ fn sorted_children(tree: &Tree, children: &[NodeId], reverse: bool) -> Vec<NodeI
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::Rect;
     use crate::tree::layout::BoxStyle;
-    use crate::tree::node::{NodeKind, NodeLocalRuntime, TreeNode};
-    use crate::tree::{NodeProps, RuntimeSlots};
-    use std::borrow::Cow;
+    use crate::tree::{TreeNode, TreeNodeBuilder};
 
     fn container(z_index: i32) -> TreeNode {
-        TreeNode {
-            id: Cow::Borrowed("test").into(),
-            props: NodeProps::default(),
-            style: BoxStyle {
+        TreeNodeBuilder::container(
+            "test",
+            BoxStyle {
                 z_index,
                 ..Default::default()
             },
-            decoration: None,
-            kind: NodeKind::Container,
-            rect: Rect {
-                x: 0.0,
-                y: 0.0,
-                w: 0.0,
-                h: 0.0,
-            },
-            children: Vec::new(),
-            local_runtime: NodeLocalRuntime::default(),
-            layout_meta: Default::default(),
-            paint_meta: Default::default(),
-            mutation_meta: Default::default(),
-            runtime_slots: RuntimeSlots::default(),
-        }
+        )
+        .build()
     }
 
     #[test]

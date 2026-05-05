@@ -5,13 +5,13 @@ use crate::tree::repaint::RepaintBoundaryId;
 use crate::tree::StableId;
 
 impl Tree {
-    pub fn insert(&mut self, node: TreeNode) -> NodeId {
-        self.insert_with_index_policy(node, false)
+    pub fn insert(&mut self, node: impl Into<TreeNode>) -> NodeId {
+        self.insert_with_index_policy(node.into(), false)
             .expect("unchecked insertion does not reject duplicate stable ids")
     }
 
-    pub fn insert_checked(&mut self, node: TreeNode) -> Result<NodeId, TreeIndexError> {
-        self.insert_with_index_policy(node, true)
+    pub fn insert_checked(&mut self, node: impl Into<TreeNode>) -> Result<NodeId, TreeIndexError> {
+        self.insert_with_index_policy(node.into(), true)
     }
 
     fn insert_with_index_policy(

@@ -64,6 +64,8 @@ check_required_match "control kinds have a single registry" 'pub\(crate\) fn con
 check_required_match "control kind descriptor API exists" 'struct ControlKindDescriptor' gui/src/control/kinds/descriptor.rs
 check_required_match "control registry dispatches through descriptors" 'CONTROL_DESCRIPTORS' gui/src/control/kinds/registry.rs
 check_required_match "workspace owns canvas text-box sync adaptation" 'ControlTextBoxSyncItem' app/src/workspace/control_sync.rs
+check_required_match "tree node construction has a standard builder module" 'pub\(crate\) use builder::TreeNodeBuilder;' gui/src/tree/node_factory/mod.rs
+check_required_match "tree facade exports the standard node builder internally" 'pub\(crate\) use node_factory::TreeNodeBuilder;' gui/src/tree/mod.rs
 check_missing_path "old retained UI gate compatibility wrapper" scripts/check_retained_ui_gates.sh
 check_missing_path "old widget module tree" gui/src/widget
 check_missing_path "old ui convenience module" gui/src/ui.rs
@@ -253,6 +255,38 @@ check_no_match \
     'intrinsics_snapshot|control_intrinsics_snapshot' \
     app/src \
     gui/src
+
+check_no_match \
+    "external GUI modules must construct tree nodes through TreeNodeBuilder" \
+    '(^[[:space:]]*|[({=,][[:space:]]*)TreeNode[[:space:]]*\{' \
+    gui/src/control \
+    gui/src/canvas \
+    gui/src/panel \
+    gui/src/overlay \
+    gui/src/template \
+    gui/src/context \
+    gui/src/event \
+    app/src
+
+check_no_match \
+    "external GUI modules must not fill TreeNode internal defaults directly" \
+    'NodeProps::default|NodeLocalRuntime::default|NodeLayoutMeta::|NodePaintMeta::|NodeMutationMeta::|RuntimeSlots::default|StableId::from' \
+    gui/src/control \
+    gui/src/canvas \
+    gui/src/panel \
+    gui/src/overlay \
+    gui/src/template \
+    gui/src/context \
+    gui/src/event \
+    app/src
+
+check_no_match \
+    "local retained node factory extensions must not replace the standard TreeNodeBuilder API" \
+    'TreeNodeExt|with_semantic_role|with_runtime_slot|with_layout_boundary|with_paint_boundary|with_rect_move_invalidation|with_owner' \
+    gui/src/control \
+    gui/src/canvas \
+    gui/src/panel \
+    gui/src/overlay
 
 check_no_match \
     "app-facing ControlsApi must not expose text-box-specific dirty intrinsic state" \
