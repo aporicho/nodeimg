@@ -7,6 +7,7 @@ use super::node_palette::NodePaletteState;
 use super::project_layout;
 use super::project_layout::ProjectLayout;
 use super::showcase_node;
+use super::showcase_state::ShowcaseState;
 use crate::image_demo::ImageDemoController;
 use crate::panels::EnginePanelState;
 use engine::facade::EngineFacade;
@@ -24,6 +25,7 @@ use gui::canvas::{
     CanvasPortRef, CanvasPortSide,
 };
 use gui::context::{Context, HitChain};
+use gui::control::ControlValue;
 use gui::geometry::ResizeEdge;
 use gui::theme::Theme;
 
@@ -33,7 +35,7 @@ pub(crate) struct WorkspaceController {
     canvas_node_drag: CanvasNodeDragController,
     canvas_node_resize: CanvasNodeResizeController,
     canvas_node_templates: engine_adapter::CanvasNodeTemplateCache,
-    text_area_showcase_value: String,
+    showcase_state: ShowcaseState,
     last_engine_action: String,
 }
 
@@ -51,7 +53,7 @@ impl WorkspaceController {
             canvas_node_drag: CanvasNodeDragController::default(),
             canvas_node_resize: CanvasNodeResizeController::default(),
             canvas_node_templates: engine_adapter::CanvasNodeTemplateCache::default(),
-            text_area_showcase_value: "A compact text field".to_string(),
+            showcase_state: ShowcaseState::default(),
             last_engine_action: "Ready".to_string(),
         }
     }
@@ -203,10 +205,7 @@ impl WorkspaceController {
             &mut self.canvas_node_templates,
         );
         views.extend(showcase_layouts.into_iter().filter_map(|layout| {
-            showcase_node::showcase_render_view_for_layout_with_text(
-                layout,
-                &self.text_area_showcase_value,
-            )
+            showcase_node::showcase_render_view_for_layout(layout, &self.showcase_state)
         }));
         views
     }
@@ -345,15 +344,8 @@ impl WorkspaceController {
         self.canvas_node_resize.end(gui, camera, id, edge, x, y)
     }
 
-    pub(crate) fn update_text_area_showcase_value(&mut self, id: &str, value: String) -> bool {
-        let Some(owner_id) = canvas_node_event_owner_id(id) else {
-            return false;
-        };
-        if owner_id != showcase_node::TEXT_AREA_OWNER_ID {
-            return false;
-        }
-        self.text_area_showcase_value = value;
-        true
+    pub(crate) fn update_showcase_control_value(&mut self, id: &str, value: ControlValue) -> bool {
+        self.showcase_state.update_control_value(id, value)
     }
 
     pub(crate) fn toggle_canvas_port_group(&mut self, gui: &mut Context, id: &str) -> bool {
@@ -636,6 +628,7 @@ mod tests {
     use super::*;
     use crate::workspace::composition::WorkspaceUiComposition;
     use crate::workspace::diagnostic_scene;
+    use gui::control::ControlSpec;
     use gui::theme::light_theme;
 
     #[test]
@@ -712,6 +705,54 @@ mod tests {
         assert!(views
             .iter()
             .any(|view| view.state.owner_id == showcase_node::TEXT_AREA_OWNER_ID));
+    }
+
+    #[test]
+    fn showcase_control_values_update_rendered_specs() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+        let theme = light_theme();
+
+        assert!(controller.update_showcase_control_value(
+            "canvas_node::showcase_node::all_controls::body::param::Sampler::control::content",
+            ControlValue::Selection(2),
+        ));
+        assert!(controller.update_showcase_control_value(
+            "canvas_node::showcase_node::all_controls::body::param::Tint::control::content",
+            ControlValue::Color([0.2, 0.4, 0.6, 1.0]),
+        ));
+        assert!(controller.update_showcase_control_value(
+            "canvas_node::showcase_node::all_controls::body::param::Output::control::content",
+            ControlValue::FilePath("/tmp/out.png".to_string()),
+        ));
+
+        let views =
+            controller.canvas_node_render_views(&mut gui, &theme, WorkspaceUiComposition::full());
+        let showcase = views
+            .iter()
+            .find(|view| view.state.owner_id == showcase_node::SHOWCASE_OWNER_ID)
+            .expect("showcase view");
+
+        assert!(showcase
+            .template
+            .params
+            .iter()
+            .any(|param| { matches!(&param.control, ControlSpec::Select { selected: 2, .. }) }));
+        assert!(showcase.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::Color { rgba }
+                if (rgba[0] - 0.2).abs() < 0.0001
+                    && (rgba[1] - 0.4).abs() < 0.0001
+                    && (rgba[2] - 0.6).abs() < 0.0001
+            )
+        }));
+        assert!(showcase.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::FilePath { path, .. } if path == "/tmp/out.png"
+            )
+        }));
     }
 
     #[test]

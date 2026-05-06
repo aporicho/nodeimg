@@ -53,6 +53,10 @@ pub(crate) enum TextBoxValueKind {
         step: f32,
         precision: usize,
     },
+    Color {
+        rgba: [f32; 4],
+    },
+    FilePath,
 }
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,4 @@
+mod color_value;
 mod interaction;
 mod intrinsic;
 mod kind;
@@ -9,6 +10,8 @@ mod system_context;
 pub(crate) mod text_box;
 mod value;
 
+pub use color_value::format_color_hex;
+pub(crate) use color_value::parse_color_hex;
 pub(crate) use interaction::{ControlInteractionSpec, ControlInteractionSystem};
 pub use intrinsic::ControlIntrinsic;
 pub use kind::ControlKind;

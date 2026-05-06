@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use super::diagnostics::log_text_box_sizing;
 use super::layout::fallback_height;
-use super::model::TextBoxSpec;
+use super::model::{TextBoxSpec, TextBoxValueKind};
 use super::registry::TextBoxRegistry;
 use super::retained_lookup::{find_rect, text_box_owner_from_retained_node};
 use super::runtime::TextBoxRuntime;
-use crate::control::{text_box_value_style, ControlIntrinsic};
+use crate::control::{parse_color_hex, text_box_value_style, ControlIntrinsic};
 use crate::renderer::{Rect, TextMeasurer};
 use crate::text::TextLayoutCache;
 use crate::theme::Theme;
@@ -124,12 +124,15 @@ impl TextBoxStore {
         }
     }
 
-    pub(crate) fn revert_unfocused_numbers(&mut self, focused_control_id: Option<&str>) {
+    pub(crate) fn revert_unfocused_commit_sensitive_values(
+        &mut self,
+        focused_control_id: Option<&str>,
+    ) {
         for (control_id, runtime) in &mut self.runtimes {
-            if Some(control_id.as_str()) != focused_control_id
-                && runtime.is_number()
-                && runtime.editor().text() != runtime.external_text()
-            {
+            if Some(control_id.as_str()) == focused_control_id {
+                continue;
+            }
+            if should_revert_unfocused(runtime) {
                 runtime.revert_to_external();
             }
         }
@@ -143,6 +146,17 @@ impl TextBoxStore {
         let focused = focused?;
         let node = tree.get(focused)?;
         text_box_owner_from_retained_node(tree, node.id.as_ref())
+    }
+}
+
+fn should_revert_unfocused(runtime: &TextBoxRuntime) -> bool {
+    match runtime.value_kind() {
+        TextBoxValueKind::Number { .. } => runtime.editor().text() != runtime.external_text(),
+        TextBoxValueKind::Color { rgba } => {
+            runtime.editor().text() != runtime.external_text()
+                && parse_color_hex(runtime.editor().text(), rgba[3]).is_none()
+        }
+        TextBoxValueKind::Text | TextBoxValueKind::FilePath => false,
     }
 }
 

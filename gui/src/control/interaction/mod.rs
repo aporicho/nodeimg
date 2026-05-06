@@ -1,3 +1,4 @@
+mod select;
 mod slider;
 mod spec;
 mod system;

@@ -13,6 +13,10 @@ pub(crate) enum ControlInteractionSpec {
         max: f32,
         step: f32,
     },
+    Select {
+        selected: usize,
+        options_len: usize,
+    },
 }
 
 impl ControlInteractionSpec {
@@ -26,6 +30,13 @@ impl ControlInteractionSpec {
             min,
             max,
             step,
+        }
+    }
+
+    pub(crate) fn select(selected: usize, options_len: usize) -> Self {
+        Self::Select {
+            selected,
+            options_len,
         }
     }
 

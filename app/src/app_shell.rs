@@ -715,16 +715,7 @@ impl AppShell {
                 );
             }
             AppMessage::ControlValueChanged { id, value } => {
-                let changed = match value {
-                    ControlValue::Text(value) => {
-                        self.workspace.update_text_area_showcase_value(&id, value)
-                    }
-                    ControlValue::Number(_)
-                    | ControlValue::Bool(_)
-                    | ControlValue::Selection(_)
-                    | ControlValue::Color(_)
-                    | ControlValue::FilePath(_) => false,
-                };
+                let changed = self.workspace.update_showcase_control_value(&id, value);
                 self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::LongPress(id) => {

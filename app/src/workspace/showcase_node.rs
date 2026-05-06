@@ -5,8 +5,11 @@ use gui::canvas::node_template::{
 use gui::canvas::{
     CanvasNodeIdentity, CanvasNodeLayout, CanvasPortConnectionState, CanvasPortSide,
 };
-use gui::control::ControlSpec;
-use gui::renderer::Rect;
+use gui::control::{ControlNode, ControlSpec};
+use gui::layout::TextureHandle;
+use gui::renderer::{ImageFit, ImageStyle, Rect};
+
+use super::showcase_state::{ShowcaseState, SAMPLER_OPTIONS};
 
 pub(crate) const SHOWCASE_OWNER_ID: &str = "showcase_node::all_controls";
 pub(crate) const SOLO_OWNER_ID: &str = "showcase_node::solo_control";
@@ -52,27 +55,46 @@ pub(crate) fn is_showcase_node(owner_id: &str) -> bool {
     owner_id == SHOWCASE_OWNER_ID || owner_id == SOLO_OWNER_ID || owner_id == TEXT_AREA_OWNER_ID
 }
 
-pub(crate) fn showcase_render_view_for_layout_with_text(
+pub(crate) fn showcase_render_view_for_layout(
     layout: CanvasNodeLayout,
-    text_area_value: &str,
+    state: &ShowcaseState,
 ) -> Option<CanvasNodeRenderView> {
     let template = match layout.owner_id.as_str() {
-        SHOWCASE_OWNER_ID => showcase_node_template(),
-        SOLO_OWNER_ID => solo_node_template(),
-        TEXT_AREA_OWNER_ID => text_area_node_template(text_area_value),
+        SHOWCASE_OWNER_ID => showcase_node_template(state),
+        SOLO_OWNER_ID => solo_node_template(state),
+        TEXT_AREA_OWNER_ID => text_area_node_template(state),
         _ => return None,
     };
     let state = showcase_instance_state(&template, layout);
     Some(CanvasNodeRenderView { template, state })
 }
 
-pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
+pub(crate) fn showcase_node_template(state: &ShowcaseState) -> CanvasNodeTemplate {
     CanvasNodeTemplate {
         type_id: "showcase_node::all_controls".to_string(),
         title: "Node Control Showcase".to_string(),
         subtitle: "all canvas param controls".to_string(),
         category: "ui/showcase".to_string(),
         params: vec![
+            CanvasNodeParamTemplate::new(
+                "Action",
+                "Action",
+                "button",
+                "Run",
+                ControlSpec::Button {
+                    label: "Run".to_string(),
+                },
+            ),
+            CanvasNodeParamTemplate::new(
+                "Status",
+                "Status",
+                "label",
+                "Ready",
+                ControlSpec::Label {
+                    text: "Ready".to_string(),
+                    muted: false,
+                },
+            ),
             CanvasNodeParamTemplate::new(
                 "Readonly",
                 "Readonly",
@@ -88,7 +110,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "string",
                 "A long prompt value",
                 ControlSpec::Text {
-                    value: "A long prompt value".to_string(),
+                    value: state.prompt().to_string(),
                 },
             ),
             CanvasNodeParamTemplate::new(
@@ -97,7 +119,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "int",
                 "42",
                 ControlSpec::Number {
-                    value: 42.0,
+                    value: state.seed(),
                     min: 0.0,
                     max: 9999.0,
                     step: 1.0,
@@ -110,7 +132,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "float",
                 "0.65",
                 ControlSpec::Slider {
-                    value: 0.65,
+                    value: state.strength(),
                     min: 0.0,
                     max: 1.0,
                     step: 0.01,
@@ -121,7 +143,9 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Enabled",
                 "bool",
                 "true",
-                ControlSpec::Toggle { checked: true },
+                ControlSpec::Toggle {
+                    checked: state.enabled(),
+                },
             ),
             CanvasNodeParamTemplate::new(
                 "Sampler",
@@ -129,12 +153,11 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "enum",
                 "Euler",
                 ControlSpec::Select {
-                    options: vec![
-                        "Euler".to_string(),
-                        "DPM++ 2M".to_string(),
-                        "UniPC".to_string(),
-                    ],
-                    selected: 0,
+                    options: SAMPLER_OPTIONS
+                        .iter()
+                        .map(|option| option.to_string())
+                        .collect(),
+                    selected: state.sampler(),
                 },
             ),
             CanvasNodeParamTemplate::new(
@@ -142,9 +165,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "Tint",
                 "color",
                 "#FF8040",
-                ControlSpec::Color {
-                    rgba: [1.0, 0.5, 0.25, 1.0],
-                },
+                ControlSpec::Color { rgba: state.tint() },
             ),
             CanvasNodeParamTemplate::new(
                 "Output",
@@ -152,8 +173,32 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
                 "file_path",
                 "*.png",
                 ControlSpec::FilePath {
-                    path: String::new(),
+                    path: state.output_path().to_string(),
                     extensions: vec!["png".to_string(), "jpg".to_string()],
+                },
+            ),
+            CanvasNodeParamTemplate::new(
+                "Preview",
+                "Preview",
+                "image",
+                "sample",
+                ControlSpec::Image {
+                    texture: TextureHandle(1),
+                    image_style: ImageStyle::default().with_fit(ImageFit::Contain),
+                    min_height: 96.0,
+                },
+            ),
+            CanvasNodeParamTemplate::new(
+                "Advanced",
+                "Advanced",
+                "group",
+                "nested",
+                ControlSpec::Group {
+                    title: "Advanced".to_string(),
+                    children: vec![
+                        ControlNode::muted_label("hint", "Nested group"),
+                        ControlNode::toggle("flag", state.enabled()),
+                    ],
                 },
             ),
         ],
@@ -165,7 +210,7 @@ pub(crate) fn showcase_node_template() -> CanvasNodeTemplate {
     }
 }
 
-pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
+pub(crate) fn solo_node_template(state: &ShowcaseState) -> CanvasNodeTemplate {
     CanvasNodeTemplate {
         type_id: "showcase_node::solo_control".to_string(),
         title: "Solo Control".to_string(),
@@ -177,7 +222,7 @@ pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
             "float",
             "0.65",
             ControlSpec::Slider {
-                value: 0.65,
+                value: state.solo_strength(),
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
@@ -188,7 +233,7 @@ pub(crate) fn solo_node_template() -> CanvasNodeTemplate {
     }
 }
 
-pub(crate) fn text_area_node_template(value: &str) -> CanvasNodeTemplate {
+pub(crate) fn text_area_node_template(state: &ShowcaseState) -> CanvasNodeTemplate {
     CanvasNodeTemplate {
         type_id: "showcase_node::text_area_control".to_string(),
         title: "Text Area".to_string(),
@@ -200,7 +245,7 @@ pub(crate) fn text_area_node_template(value: &str) -> CanvasNodeTemplate {
             "",
             "",
             ControlSpec::TextArea {
-                value: value.to_string(),
+                value: state.text_area_prompt().to_string(),
                 min_rows: 5,
             },
         )],
@@ -245,8 +290,17 @@ mod tests {
 
     #[test]
     fn showcase_node_contains_all_current_control_shapes() {
-        let template = showcase_node_template();
+        let state = ShowcaseState::default();
+        let template = showcase_node_template(&state);
 
+        assert!(template
+            .params
+            .iter()
+            .any(|param| matches!(param.control, ControlSpec::Button { .. })));
+        assert!(template
+            .params
+            .iter()
+            .any(|param| matches!(param.control, ControlSpec::Label { .. })));
         assert!(template
             .params
             .iter()
@@ -279,12 +333,21 @@ mod tests {
             .params
             .iter()
             .any(|param| matches!(param.control, ControlSpec::FilePath { .. })));
+        assert!(template
+            .params
+            .iter()
+            .any(|param| matches!(param.control, ControlSpec::Image { .. })));
+        assert!(template
+            .params
+            .iter()
+            .any(|param| matches!(param.control, ControlSpec::Group { .. })));
     }
 
     #[test]
     fn solo_node_contains_one_tunable_control() {
         let identity = solo_node_identity();
-        let view = showcase_render_view_for_layout_with_text(
+        let state = ShowcaseState::default();
+        let view = showcase_render_view_for_layout(
             CanvasNodeLayout {
                 owner_id: identity.owner_id,
                 rect: identity.default_rect,
@@ -292,7 +355,7 @@ mod tests {
                 collapsed: false,
                 user_min_height: None,
             },
-            "A compact text field",
+            &state,
         )
         .expect("solo render view");
 
@@ -309,7 +372,8 @@ mod tests {
     #[test]
     fn text_area_node_contains_only_one_text_area_control() {
         let identity = text_area_node_identity();
-        let view = showcase_render_view_for_layout_with_text(
+        let state = ShowcaseState::default();
+        let view = showcase_render_view_for_layout(
             CanvasNodeLayout {
                 owner_id: identity.owner_id,
                 rect: identity.default_rect,
@@ -317,7 +381,7 @@ mod tests {
                 collapsed: false,
                 user_min_height: None,
             },
-            "A compact text field",
+            &state,
         )
         .expect("text area render view");
 

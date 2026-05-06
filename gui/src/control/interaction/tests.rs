@@ -146,6 +146,95 @@ fn toggle_release_outside_same_control_is_cancelled_without_value() {
 }
 
 #[test]
+fn select_outputs_next_selection_on_release_inside_same_control() {
+    let tree = root_with_child(control_node(
+        "select",
+        Rect {
+            x: 10.0,
+            y: 10.0,
+            w: 100.0,
+            h: 24.0,
+        },
+        ControlInteractionSpec::select(1, 3),
+    ));
+    let mut system = ControlInteractionSystem::new();
+    let mut interaction = InteractionState::new();
+
+    let press = handle(
+        &mut system,
+        &tree,
+        &mut interaction,
+        AppEvent::MousePress {
+            x: 20.0,
+            y: 20.0,
+            button: MouseButton::Left,
+        },
+    );
+    assert!(press.cancel_gesture);
+    assert!(press.output.events.is_empty());
+
+    let release = handle(
+        &mut system,
+        &tree,
+        &mut interaction,
+        AppEvent::MouseRelease {
+            x: 20.0,
+            y: 20.0,
+            button: MouseButton::Left,
+        },
+    );
+
+    assert!(release.cancel_gesture);
+    assert!(matches!(
+        &release.output.events[0],
+        GuiEvent::Control(ControlEvent::ValueChanged {
+            id,
+            value: ControlValue::Selection(2)
+        }) if id == "select"
+    ));
+}
+
+#[test]
+fn select_with_no_options_consumes_without_value() {
+    let tree = root_with_child(control_node(
+        "select",
+        Rect {
+            x: 10.0,
+            y: 10.0,
+            w: 100.0,
+            h: 24.0,
+        },
+        ControlInteractionSpec::select(0, 0),
+    ));
+    let mut system = ControlInteractionSystem::new();
+    let mut interaction = InteractionState::new();
+
+    handle(
+        &mut system,
+        &tree,
+        &mut interaction,
+        AppEvent::MousePress {
+            x: 20.0,
+            y: 20.0,
+            button: MouseButton::Left,
+        },
+    );
+    let release = handle(
+        &mut system,
+        &tree,
+        &mut interaction,
+        AppEvent::MouseRelease {
+            x: 20.0,
+            y: 20.0,
+            button: MouseButton::Left,
+        },
+    );
+
+    assert!(release.cancel_gesture);
+    assert!(release.output.events.is_empty());
+}
+
+#[test]
 fn slider_press_outputs_snapped_number() {
     let tree = root_with_child(control_node(
         "slider",

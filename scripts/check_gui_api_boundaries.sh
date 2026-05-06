@@ -286,6 +286,11 @@ check_no_match \
     app/src
 
 check_no_match \
+    "app must not silently ignore non-text ControlValue variants" \
+    'ControlValue::(Number|Bool|Selection|Color|FilePath)\([^)]*\)[[:space:]]*=>[[:space:]]*false' \
+    app/src
+
+check_no_match \
     "control intrinsic API must not expose snapshot aliases" \
     'intrinsics_snapshot|control_intrinsics_snapshot' \
     app/src \

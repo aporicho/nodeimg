@@ -63,7 +63,8 @@ impl TextBoxSystem {
     fn sync_sessions(&mut self, tree: &Tree, focused: Option<NodeId>, captured: Option<NodeId>) {
         let focused = self.focused_control_id(tree, focused);
         self.store.clear_unfocused_preedit(focused.as_deref());
-        self.store.revert_unfocused_numbers(focused.as_deref());
+        self.store
+            .revert_unfocused_commit_sensitive_values(focused.as_deref());
 
         let keep_drag = self
             .active_drag_text_box

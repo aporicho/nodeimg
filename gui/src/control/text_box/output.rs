@@ -1,7 +1,7 @@
 use super::model::TextBoxValueKind;
 use super::number::live_number_output;
 use super::system::TextBoxSystem;
-use crate::control::{ControlValue, SystemCx};
+use crate::control::{parse_color_hex, ControlValue, SystemCx};
 use crate::output::{ControlEvent, FrameworkOutput, OutputBuilder};
 use crate::tree::Tree;
 
@@ -29,6 +29,12 @@ pub(super) fn output_for_editor(
         TextBoxValueKind::Number {
             value, min, max, ..
         } => live_number_output(control_id, runtime.editor().text(), value, min, max),
+        TextBoxValueKind::Color { rgba } => {
+            changed_color_output(control_id, runtime.editor().text(), rgba)
+        }
+        TextBoxValueKind::FilePath => {
+            changed_file_path_output(control_id, runtime.editor().text(), runtime.external_text())
+        }
     }
 }
 
@@ -56,4 +62,45 @@ pub(super) fn changed_number_output(
             })
             .finish()
     }
+}
+
+pub(super) fn changed_color_output(
+    control_id: &str,
+    text: &str,
+    external_rgba: [f32; 4],
+) -> FrameworkOutput {
+    let Some(next) = parse_color_hex(text, external_rgba[3]) else {
+        return FrameworkOutput::default();
+    };
+    if colors_match(next, external_rgba) {
+        return FrameworkOutput::default();
+    }
+    OutputBuilder::new()
+        .control(ControlEvent::ValueChanged {
+            id: control_id.to_string(),
+            value: ControlValue::Color(next),
+        })
+        .finish()
+}
+
+pub(super) fn changed_file_path_output(
+    control_id: &str,
+    text: &str,
+    external_text: &str,
+) -> FrameworkOutput {
+    if text == external_text {
+        return FrameworkOutput::default();
+    }
+    OutputBuilder::new()
+        .control(ControlEvent::ValueChanged {
+            id: control_id.to_string(),
+            value: ControlValue::FilePath(text.to_string()),
+        })
+        .finish()
+}
+
+fn colors_match(left: [f32; 4], right: [f32; 4]) -> bool {
+    left.into_iter()
+        .zip(right)
+        .all(|(left, right)| (left - right).abs() <= 0.000_001)
 }

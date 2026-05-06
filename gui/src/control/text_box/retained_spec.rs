@@ -1,5 +1,5 @@
 use super::model::{TextBoxSpec, TextBoxValueKind};
-use crate::control::{format_number, ControlSpec, TextBoxFont, TextBoxMode};
+use crate::control::{format_color_hex, format_number, ControlSpec, TextBoxFont, TextBoxMode};
 use crate::theme::{ControlSize, Density, Theme};
 
 pub(super) fn retained_control_text_box_spec(
@@ -44,6 +44,22 @@ pub(super) fn retained_control_text_box_spec(
             },
             tokens,
             font: TextBoxFont::Mono,
+            disabled: false,
+        }),
+        ControlSpec::Color { rgba } => Some(TextBoxSpec {
+            external_text: format_color_hex(*rgba),
+            mode: TextBoxMode::SingleLine,
+            value_kind: TextBoxValueKind::Color { rgba: *rgba },
+            tokens,
+            font: TextBoxFont::Mono,
+            disabled: false,
+        }),
+        ControlSpec::FilePath { path, .. } => Some(TextBoxSpec {
+            external_text: path.clone(),
+            mode: TextBoxMode::SingleLine,
+            value_kind: TextBoxValueKind::FilePath,
+            tokens,
+            font: TextBoxFont::Body,
             disabled: false,
         }),
         _ => None,

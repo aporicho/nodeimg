@@ -8,7 +8,7 @@ use gui::canvas::{
     CanvasPendingConnectionView, CanvasSceneChange,
 };
 use gui::context::Context;
-use gui::control::ControlSpec;
+use gui::control::{format_color_hex, ControlSpec};
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
@@ -816,15 +816,9 @@ fn canvas_node_param_texts(
                 options.get(*selected).cloned().unwrap_or_default(),
             ),
             ControlSpec::FilePath { path, .. } => (control_id, path.clone()),
-            ControlSpec::Color { rgba } => (
-                format!("{control_id}::value"),
-                format!(
-                    "#{:02X}{:02X}{:02X}",
-                    (rgba[0].clamp(0.0, 1.0) * 255.0) as u8,
-                    (rgba[1].clamp(0.0, 1.0) * 255.0) as u8,
-                    (rgba[2].clamp(0.0, 1.0) * 255.0) as u8
-                ),
-            ),
+            ControlSpec::Color { rgba } => {
+                (format!("{control_id}::value"), format_color_hex(*rgba))
+            }
             ControlSpec::Button { .. }
             | ControlSpec::Image { .. }
             | ControlSpec::Group { .. }
@@ -858,6 +852,7 @@ mod tests {
     use crate::workspace::diagnostic_scene;
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
+    use crate::workspace::showcase_state::ShowcaseState;
     use gui::canvas::CanvasNodeLayout;
     use gui::control::ControlValue;
     use gui::cursor::CursorKind;
@@ -1531,7 +1526,8 @@ mod tests {
             }],
         };
         let full_identity = showcase_node::solo_node_identity();
-        let full_node = showcase_node::showcase_render_view_for_layout_with_text(
+        let showcase_state = ShowcaseState::default();
+        let full_node = showcase_node::showcase_render_view_for_layout(
             CanvasNodeLayout {
                 owner_id: full_identity.owner_id.clone(),
                 rect: full_identity.default_rect,
@@ -1539,7 +1535,7 @@ mod tests {
                 collapsed: false,
                 user_min_height: None,
             },
-            "unused",
+            &showcase_state,
         )
         .expect("showcase node");
         let full_nodes = vec![full_node];
@@ -1616,7 +1612,12 @@ mod tests {
         let theme = light_theme();
         let engine_panel = empty_engine_panel();
         let identity = showcase_node::text_area_node_identity();
-        let view = showcase_node::showcase_render_view_for_layout_with_text(
+        let mut showcase_state = ShowcaseState::default();
+        showcase_state.update_control_value(
+            "canvas_node::showcase_node::text_area_control::body::param::Prompt::control::content",
+            ControlValue::Text("hello".to_string()),
+        );
+        let view = showcase_node::showcase_render_view_for_layout(
             CanvasNodeLayout {
                 owner_id: identity.owner_id.clone(),
                 rect: identity.default_rect,
@@ -1624,7 +1625,7 @@ mod tests {
                 collapsed: false,
                 user_min_height: None,
             },
-            "hello",
+            &showcase_state,
         )
         .expect("text area view");
         let nodes = vec![view];

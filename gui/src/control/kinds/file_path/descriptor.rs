@@ -25,10 +25,10 @@ fn mount(
     control: &ControlSpec,
     _interaction: crate::control::ControlInteractionSpec,
     theme: &Theme,
-    _metrics: ControlMetrics,
+    metrics: ControlMetrics,
 ) -> Result<(), TemplateError> {
     let ControlSpec::FilePath { path, .. } = control else {
         unreachable!("file_path descriptor received non-file_path control");
     };
-    mount_file_path(cx, parent, id, path, theme)
+    mount_file_path(cx, parent, id, path, theme, metrics)
 }

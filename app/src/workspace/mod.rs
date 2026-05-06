@@ -13,3 +13,4 @@ pub(crate) mod scene_controller;
 pub(crate) mod scene_state;
 pub(crate) mod scene_sync;
 pub(crate) mod showcase_node;
+pub(crate) mod showcase_state;

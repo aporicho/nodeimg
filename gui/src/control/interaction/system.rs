@@ -1,3 +1,4 @@
+use super::select::SelectRuntime;
 use super::slider::SliderRuntime;
 use super::toggle::ToggleRuntime;
 use crate::control::SystemCx;
@@ -6,6 +7,7 @@ use crate::shell::{AppEvent, MouseButton};
 
 #[derive(Default)]
 pub(crate) struct ControlInteractionSystem {
+    select: SelectRuntime,
     slider: SliderRuntime,
     toggle: ToggleRuntime,
 }
@@ -28,6 +30,7 @@ impl ControlInteractionSystem {
             } => self
                 .slider
                 .handle_mouse_press(&cx, x, y)
+                .or_else(|| self.select.handle_mouse_press(&cx, x, y))
                 .or_else(|| self.toggle.handle_mouse_press(&cx, x, y))
                 .unwrap_or_default(),
             AppEvent::MouseMove { x, y } => {
@@ -40,9 +43,11 @@ impl ControlInteractionSystem {
             } => self
                 .slider
                 .handle_mouse_release(&cx, x, y)
+                .or_else(|| self.select.handle_mouse_release(&cx, x, y))
                 .or_else(|| self.toggle.handle_mouse_release(&cx, x, y))
                 .unwrap_or_default(),
             AppEvent::Unfocused => {
+                self.select.clear();
                 self.slider.clear();
                 self.toggle.clear();
                 RuntimeEventResult::default()

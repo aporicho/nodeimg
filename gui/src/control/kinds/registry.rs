@@ -147,6 +147,10 @@ mod tests {
             control_interaction_spec(&ControlSpec::slider(1.0, 0.0, 2.0, 1.0)).is_interactive()
         );
         assert!(control_interaction_spec(&ControlSpec::toggle(true)).is_interactive());
+        assert!(
+            control_interaction_spec(&ControlSpec::select(vec!["A".to_string()], 0))
+                .is_interactive()
+        );
         assert!(!control_interaction_spec(&ControlSpec::label("Label")).is_interactive());
     }
 
