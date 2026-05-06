@@ -18,7 +18,7 @@ pub(crate) struct WorkspaceUiComposition {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CanvasNodeComposition {
-    DiagnosticMinimal,
+    EngineCleanRoom,
     EngineAndShowcase,
 }
 
@@ -26,7 +26,7 @@ impl WorkspaceUiComposition {
     pub(crate) fn clean_room() -> Self {
         Self {
             kind: WorkspaceUiCompositionKind::CleanRoom,
-            canvas_nodes: CanvasNodeComposition::DiagnosticMinimal,
+            canvas_nodes: CanvasNodeComposition::EngineCleanRoom,
             connections: false,
             panel_mode: PanelWorkspaceMode::CleanRoom,
             node_palette: false,

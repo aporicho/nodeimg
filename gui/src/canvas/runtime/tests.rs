@@ -1,9 +1,10 @@
 use super::model::CanvasInteractionRuntime;
 use super::{
-    begin_pending_connection, cancel_pending_connection, clear_selection, export_node_layouts,
-    hovered_port_id, import_node_layouts, is_node_selected, move_node_by, pending_connection,
-    port_group_view, resize_node_by, select_node, set_hovered_port, sync_node_layouts,
-    toggle_port_group, update_pending_connection,
+    begin_pending_connection, bring_node_to_front, cancel_pending_connection, clear_selection,
+    export_node_layouts, hovered_port_id, import_node_layouts, is_node_selected, move_node_by,
+    node_layout, pending_connection, port_group_view, resize_node_by, resize_node_from,
+    select_node, set_hovered_port, set_node_rect, sync_node_layouts, toggle_port_group,
+    update_pending_connection,
 };
 use crate::canvas::{CanvasNodeIdentity, CanvasNodeLayout, CanvasPortSide};
 use crate::geometry::ResizeEdge;
@@ -135,6 +136,7 @@ fn canvas_interaction_state_tracks_selection_and_prunes_stale_nodes() {
 
     sync_node_layouts(&mut tree, &[first.clone(), second.clone()]);
     assert!(select_node(&mut tree, "engine_node::1"));
+    assert!(!select_node(&mut tree, "engine_node::1"));
     assert!(is_node_selected(&tree, "engine_node::1"));
     assert!(!is_node_selected(&tree, "engine_node::2"));
     assert!(toggle_port_group(
@@ -186,6 +188,98 @@ fn canvas_interaction_state_tracks_selection_and_prunes_stale_nodes() {
     assert!(!port_group_view(&tree, "engine_node::1", CanvasPortSide::Input).open);
     assert!(pending_connection(&tree).is_none());
     assert!(hovered_port_id(&tree).is_none());
+}
+
+#[test]
+fn canvas_node_frame_api_sets_rect_and_brings_nodes_to_front() {
+    let mut tree = Tree::new();
+    sync_node_layouts(
+        &mut tree,
+        &[
+            CanvasNodeIdentity {
+                owner_id: "engine_node::1".to_string(),
+                default_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w: 304.0,
+                    h: 132.0,
+                },
+            },
+            CanvasNodeIdentity {
+                owner_id: "engine_node::2".to_string(),
+                default_rect: Rect {
+                    x: 20.0,
+                    y: 20.0,
+                    w: 304.0,
+                    h: 132.0,
+                },
+            },
+        ],
+    );
+
+    assert_eq!(node_layout(&tree, "engine_node::1").unwrap().z_index, 0);
+    assert_eq!(node_layout(&tree, "engine_node::2").unwrap().z_index, 1);
+    assert!(bring_node_to_front(&mut tree, "engine_node::1"));
+    assert_eq!(node_layout(&tree, "engine_node::1").unwrap().z_index, 2);
+    assert!(!bring_node_to_front(&mut tree, "engine_node::1"));
+
+    let rect = Rect {
+        x: 40.0,
+        y: 50.0,
+        w: 380.0,
+        h: 190.0,
+    };
+    assert!(set_node_rect(&mut tree, "engine_node::1", rect));
+    assert!(!set_node_rect(&mut tree, "engine_node::1", rect));
+    assert_eq!(node_layout(&tree, "engine_node::1").unwrap().rect, rect);
+}
+
+#[test]
+fn canvas_node_resize_from_start_rect_keeps_opposite_corner_fixed_after_clamp() {
+    let mut tree = Tree::new();
+    let identity = CanvasNodeIdentity {
+        owner_id: "engine_node::1".to_string(),
+        default_rect: Rect {
+            x: 10.0,
+            y: 20.0,
+            w: 420.0,
+            h: 220.0,
+        },
+    };
+    sync_node_layouts(&mut tree, &[identity]);
+    let start = node_layout(&tree, "engine_node::1").unwrap().rect;
+    let fixed_right = start.x + start.w;
+    let fixed_bottom = start.y + start.h;
+
+    assert!(resize_node_from(
+        &mut tree,
+        "engine_node::1",
+        start,
+        ResizeEdge::TopLeft,
+        500.0,
+        500.0,
+    ));
+    let clamped = node_layout(&tree, "engine_node::1").unwrap().rect;
+    assert_eq!(clamped.x + clamped.w, fixed_right);
+    assert_eq!(clamped.y + clamped.h, fixed_bottom);
+    assert_eq!(clamped.w, 304.0);
+    assert_eq!(clamped.h, 132.0);
+
+    assert!(resize_node_from(
+        &mut tree,
+        "engine_node::1",
+        start,
+        ResizeEdge::TopLeft,
+        -40.0,
+        -30.0,
+    ));
+    let expanded = node_layout(&tree, "engine_node::1").unwrap().rect;
+    assert_eq!(expanded.x, start.x - 40.0);
+    assert_eq!(expanded.y, start.y - 30.0);
+    assert_eq!(expanded.w, start.w + 40.0);
+    assert_eq!(expanded.h, start.h + 30.0);
+    assert_eq!(expanded.x + expanded.w, fixed_right);
+    assert_eq!(expanded.y + expanded.h, fixed_bottom);
 }
 
 #[test]

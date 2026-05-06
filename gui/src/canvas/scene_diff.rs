@@ -1,26 +1,15 @@
 use crate::canvas::node_template::CanvasNodeRenderView;
 use crate::canvas::retained_node_card::CanvasNodeCardTemplateData;
-use crate::renderer::{Point, Rect};
+use crate::renderer::Point;
 use crate::template::{
     InstanceId, SlotValue, SlotValues, TemplateId, TemplatePayload, CANVAS_CONNECTION_TEMPLATE,
     CANVAS_NODE_CARD_TEMPLATE, CANVAS_PENDING_CONNECTION_TEMPLATE,
 };
 use crate::theme::Theme;
-use crate::tree::{NodeId, StylePatch, TreeMutation};
+use crate::tree::{NodeId, TreeMutation};
 
 #[derive(Clone, Debug)]
 pub enum CanvasSceneChange {
-    AddNode {
-        parent: NodeId,
-        owner_id: String,
-    },
-    AddNodeWithState {
-        parent: NodeId,
-        owner_id: String,
-        rect: Rect,
-        label: String,
-        z_index: i32,
-    },
     AddNodeCard {
         parent: NodeId,
         view: CanvasNodeRenderView,
@@ -51,18 +40,6 @@ pub enum CanvasSceneChange {
     RemovePendingConnection {
         root: NodeId,
     },
-    DragNode {
-        root: NodeId,
-        rect: Rect,
-    },
-    ResizeNode {
-        root: NodeId,
-        rect: Rect,
-    },
-    SelectNode {
-        root: NodeId,
-        selected: bool,
-    },
     SetText {
         node: NodeId,
         value: String,
@@ -71,29 +48,6 @@ pub enum CanvasSceneChange {
 
 pub fn scene_change_to_mutation(change: CanvasSceneChange) -> TreeMutation {
     match change {
-        CanvasSceneChange::AddNode { parent, owner_id } => TreeMutation::MountTemplate {
-            parent,
-            template: TemplateId::from(CANVAS_NODE_CARD_TEMPLATE),
-            instance: InstanceId::from(format!("canvas_node::{owner_id}")),
-            payload: TemplatePayload::default(),
-        },
-        CanvasSceneChange::AddNodeWithState {
-            parent,
-            owner_id,
-            rect,
-            label,
-            z_index,
-        } => TreeMutation::MountTemplate {
-            parent,
-            template: TemplateId::from(CANVAS_NODE_CARD_TEMPLATE),
-            instance: InstanceId::from(format!("canvas_node::{owner_id}")),
-            payload: TemplatePayload::from(
-                SlotValues::new()
-                    .with("rect", SlotValue::Rect(rect))
-                    .with("label", SlotValue::Text(label))
-                    .with("z_index", SlotValue::ZIndex(z_index)),
-            ),
-        },
         CanvasSceneChange::AddNodeCard {
             parent,
             view,
@@ -150,18 +104,6 @@ pub fn scene_change_to_mutation(change: CanvasSceneChange) -> TreeMutation {
             cursor_canvas,
         },
         CanvasSceneChange::RemovePendingConnection { root } => TreeMutation::Unmount { node: root },
-        CanvasSceneChange::DragNode { root, rect } => TreeMutation::SetRect { node: root, rect },
-        CanvasSceneChange::ResizeNode { root, rect } => TreeMutation::SetRect { node: root, rect },
-        CanvasSceneChange::SelectNode { root, selected } => {
-            let z_index = selected.then_some(1).unwrap_or(0);
-            TreeMutation::SetStyle {
-                node: root,
-                patch: StylePatch {
-                    z_index: Some(z_index),
-                    ..StylePatch::default()
-                },
-            }
-        }
         CanvasSceneChange::SetText { node, value } => TreeMutation::SetText { node, value },
     }
 }

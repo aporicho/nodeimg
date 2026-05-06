@@ -22,7 +22,7 @@ pub(crate) fn mount_control(
         container(
             id.to_string(),
             BoxStyle {
-                width: Size::Fixed(metrics.control_width),
+                width: Size::Fill,
                 height: match policy.height {
                     ControlHeight::Fixed(height) => Size::Fixed(height),
                     ControlHeight::Fill { .. } => Size::Fill,

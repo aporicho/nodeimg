@@ -1,14 +1,17 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::canvas_node_event_owner_id;
+use gui::canvas::CanvasNodeLayout;
 use gui::context::Context;
 use gui::geometry::ResizeEdge;
+use gui::renderer::Rect;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CanvasNodeResizeSession {
     owner_id: String,
     edge: ResizeEdge,
-    last_canvas_x: f32,
-    last_canvas_y: f32,
+    start_rect: Rect,
+    start_canvas_x: f32,
+    start_canvas_y: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -37,14 +40,29 @@ impl CanvasNodeResizeController {
             );
             return false;
         };
+        let Some(CanvasNodeLayout { rect, .. }) = gui.canvas().node_layout(owner_id) else {
+            tracing::trace!(
+                target: "nodeimg::render_trace::node",
+                stable_id,
+                owner_id,
+                edge = ?edge,
+                x,
+                y,
+                "ignore canvas node resize start: layout not found"
+            );
+            return false;
+        };
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
         self.active = Some(CanvasNodeResizeSession {
             owner_id: owner_id.to_string(),
             edge,
-            last_canvas_x: canvas_x,
-            last_canvas_y: canvas_y,
+            start_rect: rect,
+            start_canvas_x: canvas_x,
+            start_canvas_y: canvas_y,
         });
-        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, 0.0, 0.0);
+        let selected = gui.canvas_mut().select_node(owner_id);
+        let raised = gui.canvas_mut().bring_node_to_front(owner_id);
+        let resized = selected || raised;
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             stable_id,
@@ -54,6 +72,10 @@ impl CanvasNodeResizeController {
             screen_y = y,
             canvas_x,
             canvas_y,
+            start_x = rect.x,
+            start_y = rect.y,
+            start_w = rect.w,
+            start_h = rect.h,
             resized,
             "start canvas node resize"
         );
@@ -106,13 +128,11 @@ impl CanvasNodeResizeController {
         }
 
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        let prev_canvas_x = active.last_canvas_x;
-        let prev_canvas_y = active.last_canvas_y;
-        let dx = canvas_x - active.last_canvas_x;
-        let dy = canvas_y - active.last_canvas_y;
-        active.last_canvas_x = canvas_x;
-        active.last_canvas_y = canvas_y;
-        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, dx, dy);
+        let dx = canvas_x - active.start_canvas_x;
+        let dy = canvas_y - active.start_canvas_y;
+        let resized = gui
+            .canvas_mut()
+            .resize_node_from(owner_id, active.start_rect, edge, dx, dy);
         tracing::trace!(
             target: "nodeimg::render_trace::node",
             stable_id,
@@ -122,8 +142,12 @@ impl CanvasNodeResizeController {
             screen_y = y,
             canvas_x,
             canvas_y,
-            prev_canvas_x,
-            prev_canvas_y,
+            start_canvas_x = active.start_canvas_x,
+            start_canvas_y = active.start_canvas_y,
+            start_x = active.start_rect.x,
+            start_y = active.start_rect.y,
+            start_w = active.start_rect.w,
+            start_h = active.start_rect.h,
             dx,
             dy,
             resized,
@@ -177,12 +201,15 @@ impl CanvasNodeResizeController {
             return false;
         }
 
+        let start_rect = active.start_rect;
+        let start_canvas_x = active.start_canvas_x;
+        let start_canvas_y = active.start_canvas_y;
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        let prev_canvas_x = active.last_canvas_x;
-        let prev_canvas_y = active.last_canvas_y;
-        let dx = canvas_x - prev_canvas_x;
-        let dy = canvas_y - prev_canvas_y;
-        let resized = gui.canvas_mut().resize_node_by(owner_id, edge, dx, dy);
+        let dx = canvas_x - start_canvas_x;
+        let dy = canvas_y - start_canvas_y;
+        let resized = gui
+            .canvas_mut()
+            .resize_node_from(owner_id, start_rect, edge, dx, dy);
         self.active = None;
         tracing::trace!(
             target: "nodeimg::render_trace::node",
@@ -193,8 +220,12 @@ impl CanvasNodeResizeController {
             screen_y = y,
             canvas_x,
             canvas_y,
-            prev_canvas_x,
-            prev_canvas_y,
+            start_canvas_x,
+            start_canvas_y,
+            start_x = start_rect.x,
+            start_y = start_rect.y,
+            start_w = start_rect.w,
+            start_h = start_rect.h,
             dx,
             dy,
             resized,
@@ -219,7 +250,7 @@ mod tests {
                 x: 10.0,
                 y: 20.0,
                 w: 304.0,
-                h: 120.0,
+                h: 132.0,
             },
         }]);
         let mut camera = Camera::new();

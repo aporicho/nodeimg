@@ -1,13 +1,13 @@
 use super::canvas_drag::CanvasNodeDragController;
 use super::canvas_resize::CanvasNodeResizeController;
 use super::composition::{CanvasNodeComposition, WorkspaceUiComposition};
-use super::diagnostic_scene;
 use super::engine_adapter;
 use super::node_palette::NodePaletteState;
 use super::project_layout;
 use super::project_layout::ProjectLayout;
 use super::showcase_node;
 use super::showcase_state::ShowcaseState;
+use super::ui_control_test_node;
 use crate::image_demo::ImageDemoController;
 use crate::panels::EnginePanelState;
 use engine::facade::EngineFacade;
@@ -31,10 +31,12 @@ use gui::theme::Theme;
 
 pub(crate) struct WorkspaceController {
     engine: Engine,
+    clean_room_engine: Engine,
     image_demo: ImageDemoController,
     canvas_node_drag: CanvasNodeDragController,
     canvas_node_resize: CanvasNodeResizeController,
     canvas_node_templates: engine_adapter::CanvasNodeTemplateCache,
+    clean_room_canvas_node_templates: engine_adapter::CanvasNodeTemplateCache,
     showcase_state: ShowcaseState,
     last_engine_action: String,
 }
@@ -49,10 +51,12 @@ impl WorkspaceController {
     pub(crate) fn new() -> Self {
         Self {
             engine: Engine::new(None),
+            clean_room_engine: ui_control_test_node::clean_room_engine(),
             image_demo: ImageDemoController::default(),
             canvas_node_drag: CanvasNodeDragController::default(),
             canvas_node_resize: CanvasNodeResizeController::default(),
             canvas_node_templates: engine_adapter::CanvasNodeTemplateCache::default(),
+            clean_room_canvas_node_templates: engine_adapter::CanvasNodeTemplateCache::default(),
             showcase_state: ShowcaseState::default(),
             last_engine_action: "Ready".to_string(),
         }
@@ -132,8 +136,7 @@ impl WorkspaceController {
                 &control_intrinsics,
                 theme,
             );
-            let sizing_changed = request.missing_auto_height_intrinsics == 0
-                && gui.canvas_mut().apply_node_sizing(owner_id, request);
+            let sizing_changed = gui.canvas_mut().apply_node_sizing(owner_id, request);
             let height_delta = request.target_height - view.state.layout.rect.h;
             if sizing_changed || height_delta.abs() > 0.5 {
                 tracing::trace!(
@@ -182,12 +185,12 @@ impl WorkspaceController {
         layouts: Vec<CanvasNodeLayout>,
         composition: WorkspaceUiComposition,
     ) -> Vec<CanvasNodeRenderView> {
-        if composition.canvas_nodes() == CanvasNodeComposition::DiagnosticMinimal {
-            return layouts
-                .into_iter()
-                .filter(|layout| layout.owner_id == diagnostic_scene::DIAGNOSTIC_NODE_OWNER_ID)
-                .map(diagnostic_scene::diagnostic_render_view_for_layout)
-                .collect();
+        if composition.canvas_nodes() == CanvasNodeComposition::EngineCleanRoom {
+            return engine_adapter::canvas_node_render_views(
+                &self.clean_room_engine,
+                layouts,
+                &mut self.clean_room_canvas_node_templates,
+            );
         }
 
         let showcase_layouts = layouts
@@ -215,8 +218,8 @@ impl WorkspaceController {
         composition: WorkspaceUiComposition,
     ) -> Vec<CanvasNodeIdentity> {
         match composition.canvas_nodes() {
-            CanvasNodeComposition::DiagnosticMinimal => {
-                vec![diagnostic_scene::diagnostic_node_identity()]
+            CanvasNodeComposition::EngineCleanRoom => {
+                engine_adapter::canvas_node_identities(&self.clean_room_engine)
             }
             CanvasNodeComposition::EngineAndShowcase => {
                 let mut identities = engine_adapter::canvas_node_identities(&self.engine);
@@ -344,8 +347,21 @@ impl WorkspaceController {
         self.canvas_node_resize.end(gui, camera, id, edge, x, y)
     }
 
-    pub(crate) fn update_showcase_control_value(&mut self, id: &str, value: ControlValue) -> bool {
-        self.showcase_state.update_control_value(id, value)
+    pub(crate) fn update_control_value(
+        &mut self,
+        id: &str,
+        value: ControlValue,
+        composition: WorkspaceUiComposition,
+    ) -> bool {
+        match composition.canvas_nodes() {
+            CanvasNodeComposition::EngineCleanRoom => {
+                engine_adapter::update_engine_control_value(&mut self.clean_room_engine, id, value)
+            }
+            CanvasNodeComposition::EngineAndShowcase => {
+                engine_adapter::update_engine_control_value(&mut self.engine, id, value.clone())
+                    || self.showcase_state.update_control_value(id, value)
+            }
+        }
     }
 
     pub(crate) fn toggle_canvas_port_group(&mut self, gui: &mut Context, id: &str) -> bool {
@@ -360,7 +376,9 @@ impl WorkspaceController {
         let Some(owner_id) = canvas_node_event_owner_id(id) else {
             return false;
         };
-        gui.canvas_mut().select_node(owner_id)
+        let selected = gui.canvas_mut().select_node(owner_id);
+        let raised = gui.canvas_mut().bring_node_to_front(owner_id);
+        selected || raised
     }
 
     pub(crate) fn clear_canvas_selection(&mut self, gui: &mut Context) -> bool {
@@ -627,7 +645,7 @@ impl Default for WorkspaceController {
 mod tests {
     use super::*;
     use crate::workspace::composition::WorkspaceUiComposition;
-    use crate::workspace::diagnostic_scene;
+    use crate::workspace::ui_control_test_node::UI_CONTROL_TEST_TYPE_ID;
     use gui::control::ControlSpec;
     use gui::theme::light_theme;
 
@@ -713,17 +731,20 @@ mod tests {
         let mut gui = Context::new();
         let theme = light_theme();
 
-        assert!(controller.update_showcase_control_value(
+        assert!(controller.update_control_value(
             "canvas_node::showcase_node::all_controls::body::param::Sampler::control::content",
             ControlValue::Selection(2),
+            WorkspaceUiComposition::full(),
         ));
-        assert!(controller.update_showcase_control_value(
+        assert!(controller.update_control_value(
             "canvas_node::showcase_node::all_controls::body::param::Tint::control::content",
             ControlValue::Color([0.2, 0.4, 0.6, 1.0]),
+            WorkspaceUiComposition::full(),
         ));
-        assert!(controller.update_showcase_control_value(
+        assert!(controller.update_control_value(
             "canvas_node::showcase_node::all_controls::body::param::Output::control::content",
             ControlValue::FilePath("/tmp/out.png".to_string()),
+            WorkspaceUiComposition::full(),
         ));
 
         let views =
@@ -756,7 +777,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_room_canvas_nodes_include_only_diagnostic_node() {
+    fn clean_room_canvas_nodes_include_only_dev_engine_test_node() {
         let mut controller = WorkspaceController::new();
         let mut gui = Context::new();
         let theme = light_theme();
@@ -769,13 +790,93 @@ mod tests {
         );
 
         assert_eq!(views.len(), 1);
-        assert_eq!(
-            views[0].state.owner_id,
-            diagnostic_scene::DIAGNOSTIC_NODE_OWNER_ID
-        );
+        assert_eq!(views[0].state.owner_id, "engine_node::0");
+        assert_eq!(views[0].template.type_id, UI_CONTROL_TEST_TYPE_ID);
+        assert_eq!(views[0].template.params.len(), 8);
         assert!(!views
             .iter()
             .any(|view| view.state.owner_id == showcase_node::SHOWCASE_OWNER_ID));
+    }
+
+    #[test]
+    fn clean_room_engine_control_values_update_rendered_specs() {
+        let mut controller = WorkspaceController::new();
+        let mut gui = Context::new();
+        let theme = light_theme();
+        let composition = WorkspaceUiComposition::clean_room();
+
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::strength::control::content",
+            ControlValue::Number(0.9),
+            composition,
+        ));
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::seed::control::content",
+            ControlValue::Number(7.2),
+            composition,
+        ));
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::enabled::control::content",
+            ControlValue::Bool(false),
+            composition,
+        ));
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::mode::control::content",
+            ControlValue::Selection(2),
+            composition,
+        ));
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::tint::control::content",
+            ControlValue::Color([0.2, 0.4, 0.6, 1.0]),
+            composition,
+        ));
+        assert!(controller.update_control_value(
+            "canvas_node::engine_node::0::body::param::output_path::control::content",
+            ControlValue::FilePath("next.png".to_string()),
+            composition,
+        ));
+
+        let views = controller.canvas_node_render_views(&mut gui, &theme, composition);
+        let node = &views[0];
+
+        assert!(node.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::Slider { value, .. } if (*value - 0.9).abs() < 0.0001
+            )
+        }));
+        assert!(node.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::Number { value, .. } if (*value - 7.0).abs() < 0.0001
+            )
+        }));
+        assert!(node
+            .template
+            .params
+            .iter()
+            .any(|param| { matches!(&param.control, ControlSpec::Toggle { checked: false }) }));
+        assert!(node
+            .template
+            .params
+            .iter()
+            .any(|param| { matches!(&param.control, ControlSpec::Select { selected: 2, .. }) }));
+        assert!(node.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::Color { rgba }
+                    if (rgba[0] - 0.2).abs() < 0.0001
+                        && (rgba[1] - 0.4).abs() < 0.0001
+                        && (rgba[2] - 0.6).abs() < 0.0001
+            )
+        }));
+        assert!(node.template.params.iter().any(|param| {
+            matches!(
+                &param.control,
+                ControlSpec::FilePath { path, .. } if path == "next.png"
+            )
+        }));
+        assert!(!controller.update_control_value("other", ControlValue::Bool(false), composition));
     }
 
     #[test]

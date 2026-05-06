@@ -715,7 +715,8 @@ impl AppShell {
                 );
             }
             AppMessage::ControlValueChanged { id, value } => {
-                let changed = self.workspace.update_showcase_control_value(&id, value);
+                let composition = WorkspaceUiComposition::for_app_mode(self.mode);
+                let changed = self.workspace.update_control_value(&id, value, composition);
                 self.mark_workspace_scene_dirty_if(changed, WorkspaceSceneDirtyReason::EngineGraph);
             }
             AppMessage::LongPress(id) => {

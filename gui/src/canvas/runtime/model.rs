@@ -76,9 +76,13 @@ pub(crate) struct CanvasInteractionRuntime {
 }
 
 impl CanvasInteractionRuntime {
-    pub(crate) fn select_single(&mut self, owner_id: &str) {
+    pub(crate) fn select_single(&mut self, owner_id: &str) -> bool {
+        if self.selected_owner_ids.len() == 1 && self.selected_owner_ids.contains(owner_id) {
+            return false;
+        }
         self.selected_owner_ids.clear();
         self.selected_owner_ids.insert(owner_id.to_string());
+        true
     }
 
     pub(crate) fn clear(&mut self) -> bool {

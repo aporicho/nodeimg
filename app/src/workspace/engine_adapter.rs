@@ -11,7 +11,7 @@ use gui::canvas::{
     canvas_port_stable_id, CanvasConnectionView, CanvasNodeIdentity, CanvasNodeLayout,
     CanvasPortConnectionState, CanvasPortSide,
 };
-use gui::control::ControlSpec;
+use gui::control::{ControlSpec, ControlValue};
 use gui::renderer::Rect;
 use std::collections::HashMap;
 
@@ -150,7 +150,11 @@ pub(crate) fn canvas_node_render_views(
             let node_id = parse_engine_node_owner_id(&layout.owner_id)?;
             let node = graph.nodes.get(&node_id)?;
             let node_def = defs_by_type.get(node.type_id.as_str()).copied()?;
-            let template = template_cache.template_for_def(node_def);
+            let template = canvas_node_template_with_params(
+                template_cache.template_for_def(node_def),
+                node_def,
+                &node.params,
+            );
             let layout = layout_with_content_height(
                 layout,
                 template.params.len(),
@@ -186,6 +190,44 @@ pub(crate) fn canvas_node_render_views(
             .then_with(|| a.state.owner_id.cmp(&b.state.owner_id))
     });
     views
+}
+
+pub(crate) fn update_engine_control_value(
+    engine: &mut Engine,
+    id: &str,
+    value: ControlValue,
+) -> bool {
+    let Some((owner_id, param_name)) = parse_canvas_param_control_id(id) else {
+        return false;
+    };
+    let Some(node_id) = parse_engine_node_owner_id(&owner_id) else {
+        return false;
+    };
+
+    let graph = engine.query_graph_snapshot();
+    let Some(node) = graph.nodes.get(&node_id) else {
+        return false;
+    };
+    let Some(node_def) = engine
+        .list_node_defs()
+        .into_iter()
+        .find(|def| def.type_id == node.type_id)
+    else {
+        return false;
+    };
+    let Some(param) = node_def
+        .params
+        .iter()
+        .find(|param| param.name == param_name)
+    else {
+        return false;
+    };
+    let Some(value) = control_value_to_engine_value(param, value) else {
+        return false;
+    };
+
+    engine.set_param(node_id, &param_name, value, false);
+    true
 }
 
 pub(crate) fn canvas_connection_views(engine: &Engine) -> Vec<CanvasConnectionView> {
@@ -311,7 +353,6 @@ fn canvas_node_param_templates(
                 .iter()
                 .any(|expose| matches!(expose, engine::node_manager::ParamExpose::Control))
         })
-        .take(5)
         .map(|param| {
             let value = compact_value(&param.default_value);
             CanvasNodeParamTemplate::new(
@@ -325,10 +366,40 @@ fn canvas_node_param_templates(
         .collect()
 }
 
+fn canvas_node_template_with_params(
+    mut template: CanvasNodeTemplate,
+    node_def: &engine::node_manager::NodeDef,
+    params: &HashMap<String, types::Value>,
+) -> CanvasNodeTemplate {
+    for template_param in &mut template.params {
+        let Some(param_def) = node_def
+            .params
+            .iter()
+            .find(|param| param.name == template_param.key)
+        else {
+            continue;
+        };
+        let value = params
+            .get(&param_def.name)
+            .unwrap_or(&param_def.default_value);
+        template_param.default_value = compact_value(value);
+        template_param.control = EngineControlMapper.control_for_param_value(param_def, value);
+    }
+    template
+}
+
 struct EngineControlMapper;
 
 impl EngineControlMapper {
     fn control_for_param(&self, param: &engine::node_manager::ParamDef) -> ControlSpec {
+        self.control_for_param_value(param, &param.default_value)
+    }
+
+    fn control_for_param_value(
+        &self,
+        param: &engine::node_manager::ParamDef,
+        value: &types::Value,
+    ) -> ControlSpec {
         if let Some(constraint) = &param.constraint {
             match constraint.type_id.as_str() {
                 "enum" => {
@@ -343,7 +414,7 @@ impl EngineControlMapper {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    let selected_value = match &param.default_value {
+                    let selected_value = match value {
                         types::Value::String(value) => value.as_str(),
                         _ => "",
                     };
@@ -364,7 +435,7 @@ impl EngineControlMapper {
                         .get("max")
                         .and_then(|value| value.as_f64())
                         .unwrap_or(1.0) as f32;
-                    return match &param.default_value {
+                    return match value {
                         types::Value::Float(value) => ControlSpec::slider(*value, min, max, 0.01),
                         types::Value::Int(value) => {
                             ControlSpec::number(*value as f32, min, max, 1.0, 0)
@@ -384,7 +455,7 @@ impl EngineControlMapper {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    let path = match &param.default_value {
+                    let path = match value {
                         types::Value::String(value) => value.clone(),
                         _ => String::new(),
                     };
@@ -394,7 +465,7 @@ impl EngineControlMapper {
             }
         }
 
-        match &param.default_value {
+        match value {
             types::Value::Float(value) => ControlSpec::number(*value, f32::MIN, f32::MAX, 0.01, 2),
             types::Value::Int(value) => {
                 ControlSpec::number(*value as f32, i32::MIN as f32, i32::MAX as f32, 1.0, 0)
@@ -407,6 +478,69 @@ impl EngineControlMapper {
             }
         }
     }
+}
+
+fn control_value_to_engine_value(
+    param: &engine::node_manager::ParamDef,
+    value: ControlValue,
+) -> Option<types::Value> {
+    let value = match value {
+        ControlValue::Selection(selected) => {
+            let constraint = param.constraint.as_ref()?;
+            if constraint.type_id != "enum" {
+                return None;
+            }
+            let option = constraint
+                .params
+                .get("options")
+                .and_then(|value| value.as_array())?
+                .get(selected)?
+                .as_str()?;
+            return Some(types::Value::String(option.to_string()));
+        }
+        value => value,
+    };
+
+    if param.data_type == types::DataType::string() {
+        return match value {
+            ControlValue::Text(value) | ControlValue::FilePath(value) => {
+                Some(types::Value::String(value))
+            }
+            _ => None,
+        };
+    }
+    if param.data_type == types::DataType::float() {
+        return match value {
+            ControlValue::Number(value) => Some(types::Value::Float(value)),
+            _ => None,
+        };
+    }
+    if param.data_type == types::DataType::int() {
+        return match value {
+            ControlValue::Number(value) => Some(types::Value::Int(value.round() as i64)),
+            _ => None,
+        };
+    }
+    if param.data_type == types::DataType::bool() {
+        return match value {
+            ControlValue::Bool(value) => Some(types::Value::Bool(value)),
+            _ => None,
+        };
+    }
+    if param.data_type == types::DataType::color() {
+        return match value {
+            ControlValue::Color(value) => Some(types::Value::Color(value)),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn parse_canvas_param_control_id(id: &str) -> Option<(String, String)> {
+    let owner_path = id.strip_prefix("canvas_node::")?;
+    let (owner_id, rest) = owner_path.split_once("::body::param::")?;
+    let (param_name, _) = rest.split_once("::control::content")?;
+    Some((owner_id.to_string(), param_name.to_string()))
 }
 
 fn compact_value(value: &types::Value) -> String {
@@ -670,6 +804,87 @@ mod tests {
         assert!(!views[0].state.port_states.is_empty());
         assert!(views[0].state.layout.rect.h > 40.0);
         assert_eq!(template_cache.len(), 1);
+    }
+
+    #[test]
+    fn canvas_node_render_views_hydrate_controls_from_node_instance_params() {
+        let mut engine = Engine::new(None);
+        let node_id = engine.add_node("image_gen").unwrap();
+        engine.set_param(
+            node_id,
+            "prompt",
+            types::Value::String("from graph".to_string()),
+            false,
+        );
+        let owner_id = engine_node_owner_id(node_id);
+        let mut template_cache = CanvasNodeTemplateCache::default();
+
+        let views = canvas_node_render_views(
+            &engine,
+            vec![CanvasNodeLayout {
+                owner_id,
+                rect: default_canvas_node_rect(0),
+                z_index: 0,
+                collapsed: false,
+                user_min_height: None,
+            }],
+            &mut template_cache,
+        );
+
+        assert!(views[0].template.params.iter().any(|param| {
+            param.key == "prompt"
+                && matches!(
+                    &param.control,
+                    ControlSpec::Text { value } if value == "from graph"
+                )
+        }));
+    }
+
+    #[test]
+    fn canvas_node_param_templates_do_not_truncate_control_params() {
+        let mut def = test_node_def("many_params", 1);
+        def.params = (0..6)
+            .map(|index| {
+                test_param(
+                    &format!("param_{index}"),
+                    types::DataType::string(),
+                    types::Value::String(index.to_string()),
+                    None,
+                )
+            })
+            .collect();
+
+        let params = canvas_node_param_templates(&def);
+
+        assert_eq!(params.len(), 6);
+    }
+
+    #[test]
+    fn update_engine_control_value_commits_to_graph_params() {
+        let mut engine = Engine::new(None);
+        let node_id = engine.add_node("image_gen").unwrap();
+        let control_id = format!(
+            "canvas_node::engine_node::{}::body::param::mode::control::content",
+            node_id.0
+        );
+
+        assert!(update_engine_control_value(
+            &mut engine,
+            &control_id,
+            ControlValue::Selection(0),
+        ));
+
+        let graph = engine.query_graph_snapshot();
+        let node = graph.nodes.get(&node_id).expect("node");
+        assert!(matches!(
+            node.params.get("mode"),
+            Some(types::Value::String(value)) if value == "text_to_image"
+        ));
+        assert!(!update_engine_control_value(
+            &mut engine,
+            "other",
+            ControlValue::Bool(false),
+        ));
     }
 
     #[test]

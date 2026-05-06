@@ -1,12 +1,15 @@
 use gui::canvas::camera::Camera;
 use gui::canvas::canvas_node_event_owner_id;
+use gui::canvas::CanvasNodeLayout;
 use gui::context::Context;
+use gui::renderer::Rect;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CanvasNodeDragSession {
     owner_id: String,
-    last_canvas_x: f32,
-    last_canvas_y: f32,
+    start_rect: Rect,
+    start_canvas_x: f32,
+    start_canvas_y: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -26,13 +29,19 @@ impl CanvasNodeDragController {
         let Some(owner_id) = canvas_node_event_owner_id(stable_id) else {
             return false;
         };
+        let Some(CanvasNodeLayout { rect, .. }) = gui.canvas().node_layout(owner_id) else {
+            return false;
+        };
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
         self.active = Some(CanvasNodeDragSession {
             owner_id: owner_id.to_string(),
-            last_canvas_x: canvas_x,
-            last_canvas_y: canvas_y,
+            start_rect: rect,
+            start_canvas_x: canvas_x,
+            start_canvas_y: canvas_y,
         });
-        gui.canvas_mut().move_node_by(owner_id, 0.0, 0.0)
+        let selected = gui.canvas_mut().select_node(owner_id);
+        let raised = gui.canvas_mut().bring_node_to_front(owner_id);
+        selected || raised
     }
 
     pub(crate) fn drag(
@@ -54,11 +63,12 @@ impl CanvasNodeDragController {
         }
 
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        let dx = canvas_x - active.last_canvas_x;
-        let dy = canvas_y - active.last_canvas_y;
-        active.last_canvas_x = canvas_x;
-        active.last_canvas_y = canvas_y;
-        gui.canvas_mut().move_node_by(owner_id, dx, dy)
+        let dx = canvas_x - active.start_canvas_x;
+        let dy = canvas_y - active.start_canvas_y;
+        let mut rect = active.start_rect;
+        rect.x += dx;
+        rect.y += dy;
+        gui.canvas_mut().set_node_rect(owner_id, rect)
     }
 
     pub(crate) fn end(
@@ -79,9 +89,12 @@ impl CanvasNodeDragController {
             return false;
         }
         let (canvas_x, canvas_y) = camera.screen_to_canvas(x, y);
-        let dx = canvas_x - active.last_canvas_x;
-        let dy = canvas_y - active.last_canvas_y;
-        let moved = gui.canvas_mut().move_node_by(owner_id, dx, dy);
+        let dx = canvas_x - active.start_canvas_x;
+        let dy = canvas_y - active.start_canvas_y;
+        let mut rect = active.start_rect;
+        rect.x += dx;
+        rect.y += dy;
+        let moved = gui.canvas_mut().set_node_rect(owner_id, rect);
         self.active = None;
         moved
     }

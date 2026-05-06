@@ -12,7 +12,7 @@ use gui::control::{format_color_hex, ControlSpec};
 use gui::diagnostics::render_trace::{self, RectSummary, RenderTraceStage};
 use gui::diagnostics::tree_dump::TreeDumpPhase;
 use gui::geometry::TransformSpec;
-use gui::layout::{Decoration, TextureHandle};
+use gui::layout::{Decoration, Size, TextureHandle};
 use gui::panel::PanelFrameTemplateData;
 use gui::renderer::{Border, Point, Rect};
 use gui::scene::{MutationError, SceneMutation, StylePatch};
@@ -370,10 +370,13 @@ impl WorkspaceSceneController {
             if let Some(root) = gui.query().node_id_by_name(&stable_id) {
                 let previous = self.canvas.node_state(owner_id);
                 if previous.and_then(|state| state.rect) != next_state.rect {
-                    mutations.push(SceneMutation::SetRect {
-                        node: root,
-                        rect: view.state.layout.rect,
-                    });
+                    push_canvas_node_frame_mutations(
+                        gui,
+                        mutations,
+                        &stable_id,
+                        root,
+                        view.state.layout.rect,
+                    );
                 }
                 if previous.and_then(|state| state.z_index) != next_state.z_index {
                     mutations.push(SceneMutation::SetZIndex {
@@ -701,6 +704,46 @@ impl WorkspaceSceneController {
     }
 }
 
+fn push_canvas_node_frame_mutations(
+    gui: &Context,
+    mutations: &mut Vec<SceneMutation>,
+    stable_id: &str,
+    root: usize,
+    rect: Rect,
+) {
+    mutations.push(SceneMutation::SetRect { node: root, rect });
+    push_node_frame_size_patch(mutations, root, rect);
+    if let Some(card) = gui.query().node_id_by_name(&format!("{stable_id}::card")) {
+        push_node_frame_size_patch(mutations, card, rect);
+    }
+    for suffix in ["::pin_column::input", "::pin_column::output"] {
+        if let Some(node) = gui.query().node_id_by_name(&format!("{stable_id}{suffix}")) {
+            push_pin_column_height_patch(mutations, node, rect.h);
+        }
+    }
+}
+
+fn push_node_frame_size_patch(mutations: &mut Vec<SceneMutation>, node: usize, rect: Rect) {
+    mutations.push(SceneMutation::SetStyle {
+        node,
+        patch: StylePatch {
+            width: Some(Size::Fixed(rect.w)),
+            height: Some(Size::Fixed(rect.h)),
+            ..StylePatch::default()
+        },
+    });
+}
+
+fn push_pin_column_height_patch(mutations: &mut Vec<SceneMutation>, node: usize, height: f32) {
+    mutations.push(SceneMutation::SetStyle {
+        node,
+        patch: StylePatch {
+            height: Some(Size::Fixed(height)),
+            ..StylePatch::default()
+        },
+    });
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 struct SceneSyncTraceSummary {
@@ -819,8 +862,8 @@ fn canvas_node_param_texts(
             ControlSpec::Color { rgba } => {
                 (format!("{control_id}::value"), format_color_hex(*rgba))
             }
-            ControlSpec::Button { .. }
-            | ControlSpec::Image { .. }
+            ControlSpec::Button { label } => (format!("{control_id}::label"), label.clone()),
+            ControlSpec::Image { .. }
             | ControlSpec::Group { .. }
             | ControlSpec::Label { .. }
             | ControlSpec::Slider { .. }
@@ -848,11 +891,13 @@ fn panel_applied_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace::composition::WorkspaceUiComposition;
     use crate::workspace::control_sync::canvas_text_box_sync_items;
-    use crate::workspace::diagnostic_scene;
+    use crate::workspace::controller::WorkspaceController;
     use crate::workspace::node_palette::NodePaletteItem;
     use crate::workspace::showcase_node;
     use crate::workspace::showcase_state::ShowcaseState;
+    use crate::workspace::ui_control_test_node::UI_CONTROL_TEST_TYPE_ID;
     use gui::canvas::CanvasNodeLayout;
     use gui::control::ControlValue;
     use gui::cursor::CursorKind;
@@ -870,6 +915,14 @@ mod tests {
             w: 900.0,
             h: 700.0,
         }
+    }
+
+    fn clean_room_canvas_nodes(
+        workspace: &mut WorkspaceController,
+        gui: &mut Context,
+        theme: &Theme,
+    ) -> Vec<CanvasNodeRenderView> {
+        workspace.canvas_node_render_views(gui, theme, WorkspaceUiComposition::clean_room())
     }
 
     #[test]
@@ -1055,19 +1108,12 @@ mod tests {
     #[test]
     fn clean_room_scene_mounts_grid_toolbar_and_one_node() {
         let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
         let mut controller = WorkspaceSceneController::default();
         let camera = Camera::new();
         let theme = light_theme();
         let engine_panel = empty_engine_panel();
-        let identity = diagnostic_scene::diagnostic_node_identity();
-        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
-            owner_id: identity.owner_id.clone(),
-            rect: identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-            user_min_height: None,
-        });
-        let nodes = vec![node];
+        let nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
 
         let first = controller
             .sync(
@@ -1105,9 +1151,8 @@ mod tests {
         assert!(first.mutations_queued > 0);
         assert_eq!(second.mutations_queued, 0);
         assert!(gui.query().node_exists("canvas_grid"));
-        assert!(gui
-            .query()
-            .node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(gui.query().node_exists("canvas_node::engine_node::0"));
+        assert_eq!(nodes[0].template.type_id, UI_CONTROL_TEST_TYPE_ID);
         assert!(gui.query().node_exists("toolbar"));
         assert!(gui.query().node_exists("preview"));
         assert!(!gui.query().node_exists("engine"));
@@ -1125,21 +1170,290 @@ mod tests {
     }
 
     #[test]
-    fn clean_room_panel_drag_moves_toolbar_root_and_hit_targets() {
+    fn clean_room_engine_text_param_updates_without_remounting_node() {
         let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
         let mut controller = WorkspaceSceneController::default();
         let camera = Camera::new();
         let theme = light_theme();
         let engine_panel = empty_engine_panel();
-        let identity = diagnostic_scene::diagnostic_node_identity();
-        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
-            owner_id: identity.owner_id.clone(),
-            rect: identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-            user_min_height: None,
-        });
-        let nodes = vec![node];
+        let nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("initial clean room sync");
+        assert!(workspace.update_control_value(
+            "canvas_node::engine_node::0::body::param::prompt::control::content",
+            ControlValue::Text("changed".to_string()),
+            WorkspaceUiComposition::clean_room(),
+        ));
+        let updated_nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
+
+        let update = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &updated_nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("updated clean room sync");
+
+        assert_eq!(update.nodes_added, 0);
+        assert_eq!(update.nodes_removed, 0);
+        assert_eq!(update.mutations_queued, 1);
+    }
+
+    #[test]
+    fn clean_room_canvas_node_resize_updates_retained_card_without_remounting() {
+        let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("initial clean room sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let card_id = "canvas_node::engine_node::0::card";
+        let before_card = gui.query().node_rect(card_id).expect("node card rect");
+        let start_x = before_card.x + before_card.w;
+        let start_y = before_card.y + before_card.h;
+
+        assert!(workspace.start_canvas_node_resize(
+            &mut gui,
+            &camera,
+            card_id,
+            ResizeEdge::BottomRight,
+            start_x,
+            start_y,
+        ));
+        assert!(workspace.resize_canvas_node(
+            &mut gui,
+            &camera,
+            card_id,
+            ResizeEdge::BottomRight,
+            start_x + 70.0,
+            start_y + 40.0,
+        ));
+        assert!(!workspace.end_canvas_node_resize(
+            &mut gui,
+            &camera,
+            card_id,
+            ResizeEdge::BottomRight,
+            start_x + 70.0,
+            start_y + 40.0,
+        ));
+
+        let resized_nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
+        let update = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &resized_nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::clean_room(),
+                },
+            )
+            .expect("resized clean room sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let after_card = gui.query().node_rect(card_id).expect("resized node card");
+        assert_eq!(update.nodes_added, 0);
+        assert_eq!(update.nodes_removed, 0);
+        assert!(update.mutations_queued > 0);
+        assert_eq!(after_card.w, before_card.w + 70.0);
+        assert_eq!(after_card.h, before_card.h + 40.0);
+
+        let right_edge_hit = gui.query().pointer_hit_at(
+            after_card.x + after_card.w,
+            after_card.y + after_card.h * 0.5,
+        );
+        assert_eq!(
+            gui.query().cursor_for_hit(&right_edge_hit),
+            CursorKind::Resize(ResizeEdge::Right)
+        );
+    }
+
+    #[test]
+    fn full_canvas_node_top_left_resize_keeps_card_frame_as_runtime_rect() {
+        let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let composition = WorkspaceUiComposition::full();
+        let nodes = workspace.canvas_node_render_views(&mut gui, &theme, composition);
+
+        controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
+                },
+            )
+            .expect("initial full sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let node_id = format!("canvas_node::{}", showcase_node::SHOWCASE_OWNER_ID);
+        let card_id = format!("{node_id}::card");
+        let input_column_id = format!("{node_id}::pin_column::input");
+        let output_column_id = format!("{node_id}::pin_column::output");
+        let before_root = gui.query().node_rect(&node_id).expect("node root rect");
+        let before_card = gui.query().node_rect(&card_id).expect("node card rect");
+        let before_input = gui
+            .query()
+            .node_rect(&input_column_id)
+            .expect("input pin column rect");
+        let before_output = gui
+            .query()
+            .node_rect(&output_column_id)
+            .expect("output pin column rect");
+
+        assert_eq!(before_root, before_card);
+        assert!(before_input.x + before_input.w < before_card.x);
+        assert!(before_output.x > before_card.x + before_card.w);
+
+        let start_x = before_card.x;
+        let start_y = before_card.y;
+        let dx = -48.0;
+        let dy = -36.0;
+        assert!(workspace.start_canvas_node_resize(
+            &mut gui,
+            &camera,
+            &card_id,
+            ResizeEdge::TopLeft,
+            start_x,
+            start_y,
+        ));
+        assert!(workspace.resize_canvas_node(
+            &mut gui,
+            &camera,
+            &card_id,
+            ResizeEdge::TopLeft,
+            start_x + dx,
+            start_y + dy,
+        ));
+        assert!(!workspace.end_canvas_node_resize(
+            &mut gui,
+            &camera,
+            &card_id,
+            ResizeEdge::TopLeft,
+            start_x + dx,
+            start_y + dy,
+        ));
+
+        let resized_nodes = workspace.canvas_node_render_views(&mut gui, &theme, composition);
+        let update = controller
+            .sync(
+                &mut gui,
+                WorkspaceSceneInput {
+                    viewport: viewport(),
+                    camera: &camera,
+                    canvas_nodes: &resized_nodes,
+                    canvas_connections: &[],
+                    pending_connection: None,
+                    theme: &theme,
+                    preview_image: TextureHandle(1),
+                    engine_panel: &engine_panel,
+                    features: WorkspaceSceneFeatures::full(),
+                },
+            )
+            .expect("resized full sync");
+        gui.rendering()
+            .flush_layout_dirty(viewport(), &mut TextMeasurer::new());
+
+        let after_root = gui.query().node_rect(&node_id).expect("node root rect");
+        let after_card = gui.query().node_rect(&card_id).expect("resized node card");
+        let after_input = gui
+            .query()
+            .node_rect(&input_column_id)
+            .expect("input pin column rect");
+        let after_output = gui
+            .query()
+            .node_rect(&output_column_id)
+            .expect("output pin column rect");
+
+        assert_eq!(update.nodes_added, 0);
+        assert_eq!(update.nodes_removed, 0);
+        assert!(update.mutations_queued > 0);
+        assert_eq!(after_root, after_card);
+        assert_eq!(after_card.x, before_card.x + dx);
+        assert_eq!(after_card.y, before_card.y + dy);
+        assert_eq!(after_card.w, before_card.w - dx);
+        assert_eq!(after_card.h, before_card.h - dy);
+        assert_eq!(after_card.x + after_card.w, before_card.x + before_card.w);
+        assert_eq!(after_card.y + after_card.h, before_card.y + before_card.h);
+        assert!(after_input.x + after_input.w < after_card.x);
+        assert!(after_output.x > after_card.x + after_card.w);
+        assert_eq!(after_input.h, after_card.h);
+        assert_eq!(after_output.h, after_card.h);
+    }
+
+    #[test]
+    fn clean_room_panel_drag_moves_toolbar_root_and_hit_targets() {
+        let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
+        let mut controller = WorkspaceSceneController::default();
+        let camera = Camera::new();
+        let theme = light_theme();
+        let engine_panel = empty_engine_panel();
+        let nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
 
         controller
             .sync(
@@ -1326,19 +1640,12 @@ mod tests {
     #[test]
     fn clean_room_panel_top_left_resize_clamps_and_updates_hit_targets() {
         let mut gui = Context::new();
+        let mut workspace = WorkspaceController::new();
         let mut controller = WorkspaceSceneController::default();
         let camera = Camera::new();
         let theme = light_theme();
         let engine_panel = empty_engine_panel();
-        let identity = diagnostic_scene::diagnostic_node_identity();
-        let node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
-            owner_id: identity.owner_id.clone(),
-            rect: identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-            user_min_height: None,
-        });
-        let nodes = vec![node];
+        let nodes = clean_room_canvas_nodes(&mut workspace, &mut gui, &theme);
 
         controller
             .sync(
@@ -1562,15 +1869,8 @@ mod tests {
         assert!(gui.query().node_exists("toolbar"));
         assert!(gui.query().node_exists("node_palette"));
 
-        let clean_identity = diagnostic_scene::diagnostic_node_identity();
-        let clean_node = diagnostic_scene::diagnostic_render_view_for_layout(CanvasNodeLayout {
-            owner_id: clean_identity.owner_id.clone(),
-            rect: clean_identity.default_rect,
-            z_index: 0,
-            collapsed: false,
-            user_min_height: None,
-        });
-        let clean_nodes = vec![clean_node];
+        let mut clean_workspace = WorkspaceController::new();
+        let clean_nodes = clean_room_canvas_nodes(&mut clean_workspace, &mut gui, &theme);
         controller
             .sync(
                 &mut gui,
@@ -1588,9 +1888,7 @@ mod tests {
             )
             .expect("clean room sync");
 
-        assert!(gui
-            .query()
-            .node_exists("canvas_node::diagnostic_node::retained_clean_room"));
+        assert!(gui.query().node_exists("canvas_node::engine_node::0"));
         assert!(!gui
             .query()
             .node_exists("canvas_node::showcase_node::solo_control"));

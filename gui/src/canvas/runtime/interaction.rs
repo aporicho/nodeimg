@@ -29,8 +29,7 @@ pub(crate) fn select_node(tree: &mut Tree, owner_id: &str) -> bool {
         return false;
     }
     tree.ensure_runtime_slot_by_stable_id::<CanvasInteractionRuntime>(CANVAS_INTERACTION_ID)
-        .select_single(owner_id);
-    true
+        .select_single(owner_id)
 }
 
 pub(crate) fn clear_selection(tree: &mut Tree) -> bool {

@@ -9,7 +9,7 @@ use crate::template::{TemplateError, TemplateMountCx};
 use crate::theme::Theme;
 use crate::tree::layout::Gesture;
 use crate::tree::layout::{
-    Align, BoxStyle, Decoration, Direction, LeafKind, Overflow, Position, Size,
+    Align, BoxStyle, Decoration, Direction, Inset, LeafKind, Overflow, Position, Size,
 };
 use crate::tree::NodeId;
 
@@ -28,13 +28,13 @@ pub(super) fn mount_pin_column(
         container(
             id.to_string(),
             BoxStyle {
-                position: Position::relative(),
+                position: pin_column_position(side, metrics),
                 width: Size::Auto,
-                height: Size::Auto,
+                height: Size::Fixed(metrics.card_height),
                 direction: Direction::Column,
                 gap: metrics.pin_row_gap,
                 align_items: Align::Start,
-                justify_content: crate::tree::layout::Justify::Start,
+                justify_content: crate::tree::layout::Justify::Center,
                 overflow: Overflow::Visible,
                 hittable: false,
                 ..BoxStyle::default()
@@ -50,6 +50,28 @@ pub(super) fn mount_pin_column(
         mount_port_group_trigger(cx, column, trigger, theme, metrics)?;
     }
     Ok(())
+}
+
+fn pin_column_position(side: CanvasPortSide, metrics: NodeCardMetrics) -> Position {
+    let column_width = pin_column_width(metrics);
+    match side {
+        CanvasPortSide::Input => Position::absolute_inset(Inset {
+            top: Some(0.0),
+            right: None,
+            bottom: None,
+            left: Some(-(metrics.column_gap + column_width)),
+        }),
+        CanvasPortSide::Output => Position::absolute_inset(Inset {
+            top: Some(0.0),
+            right: Some(-(metrics.column_gap + column_width)),
+            bottom: None,
+            left: None,
+        }),
+    }
+}
+
+fn pin_column_width(metrics: NodeCardMetrics) -> f32 {
+    metrics.pin_label_width + metrics.pin_label_gap + metrics.pin_dot_diameter
 }
 
 fn mount_port_group_trigger(

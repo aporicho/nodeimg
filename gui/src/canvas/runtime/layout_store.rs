@@ -63,6 +63,12 @@ pub(crate) fn export_node_layouts(tree: &Tree) -> Vec<CanvasNodeLayout> {
     layouts
 }
 
+pub(crate) fn node_layout(tree: &Tree, owner_id: &str) -> Option<CanvasNodeLayout> {
+    let stable_id = canvas_node_stable_id(owner_id);
+    tree.runtime_slot_by_stable_id::<CanvasNodeRuntime>(&stable_id)
+        .map(CanvasNodeRuntime::to_layout)
+}
+
 pub(crate) fn import_node_layouts(tree: &mut Tree, layouts: &[CanvasNodeLayout]) {
     for layout in layouts {
         let stable_id = canvas_node_stable_id(&layout.owner_id);
@@ -75,4 +81,32 @@ pub(crate) fn import_node_layouts(tree: &mut Tree, layouts: &[CanvasNodeLayout])
         runtime.collapsed = layout.collapsed;
         runtime.user_min_height = layout.user_min_height;
     }
+}
+
+pub(crate) fn bring_node_to_front(tree: &mut Tree, owner_id: &str) -> bool {
+    let stable_id = canvas_node_stable_id(owner_id);
+    let Some(current) = tree
+        .runtime_slot_by_stable_id::<CanvasNodeRuntime>(&stable_id)
+        .map(|runtime| runtime.z_index)
+    else {
+        return false;
+    };
+
+    let max_other = export_node_layouts(tree)
+        .into_iter()
+        .filter(|layout| layout.owner_id != owner_id)
+        .map(|layout| layout.z_index)
+        .max();
+    let Some(max_other) = max_other else {
+        return false;
+    };
+    if current > max_other {
+        return false;
+    }
+
+    let Some(runtime) = tree.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id) else {
+        return false;
+    };
+    runtime.z_index = max_other + 1;
+    true
 }

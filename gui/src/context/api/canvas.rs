@@ -10,6 +10,10 @@ impl CanvasApi<'_> {
         self.ctx.export_canvas_node_layouts()
     }
 
+    pub fn node_layout(&self, owner_id: &str) -> Option<crate::canvas::CanvasNodeLayout> {
+        self.ctx.canvas_node_layout(owner_id)
+    }
+
     pub fn port_group_view(
         &self,
         owner_id: &str,
@@ -55,8 +59,28 @@ impl CanvasMutApi<'_> {
         self.ctx.move_canvas_node_by(owner_id, dx, dy)
     }
 
+    pub fn set_node_rect(&mut self, owner_id: &str, rect: crate::renderer::Rect) -> bool {
+        self.ctx.set_canvas_node_rect(owner_id, rect)
+    }
+
     pub fn resize_node_by(&mut self, owner_id: &str, edge: ResizeEdge, dx: f32, dy: f32) -> bool {
         self.ctx.resize_canvas_node_by(owner_id, edge, dx, dy)
+    }
+
+    pub fn resize_node_from(
+        &mut self,
+        owner_id: &str,
+        start_rect: crate::renderer::Rect,
+        edge: ResizeEdge,
+        dx: f32,
+        dy: f32,
+    ) -> bool {
+        self.ctx
+            .resize_canvas_node_from(owner_id, start_rect, edge, dx, dy)
+    }
+
+    pub fn bring_node_to_front(&mut self, owner_id: &str) -> bool {
+        self.ctx.bring_canvas_node_to_front(owner_id)
     }
 
     pub fn ensure_node_min_size(

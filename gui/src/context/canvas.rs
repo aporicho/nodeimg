@@ -13,6 +13,13 @@ impl Context {
         crate::canvas::runtime::export_node_layouts(&self.tree)
     }
 
+    pub(crate) fn canvas_node_layout(
+        &self,
+        owner_id: &str,
+    ) -> Option<crate::canvas::CanvasNodeLayout> {
+        crate::canvas::runtime::node_layout(&self.tree, owner_id)
+    }
+
     pub(crate) fn import_canvas_node_layouts(
         &mut self,
         layouts: &[crate::canvas::CanvasNodeLayout],
@@ -24,6 +31,14 @@ impl Context {
         crate::canvas::runtime::move_node_by(&mut self.tree, owner_id, dx, dy)
     }
 
+    pub(crate) fn set_canvas_node_rect(
+        &mut self,
+        owner_id: &str,
+        rect: crate::renderer::Rect,
+    ) -> bool {
+        crate::canvas::runtime::set_node_rect(&mut self.tree, owner_id, rect)
+    }
+
     pub(crate) fn resize_canvas_node_by(
         &mut self,
         owner_id: &str,
@@ -32,6 +47,21 @@ impl Context {
         dy: f32,
     ) -> bool {
         crate::canvas::runtime::resize_node_by(&mut self.tree, owner_id, edge, dx, dy)
+    }
+
+    pub(crate) fn resize_canvas_node_from(
+        &mut self,
+        owner_id: &str,
+        start_rect: crate::renderer::Rect,
+        edge: ResizeEdge,
+        dx: f32,
+        dy: f32,
+    ) -> bool {
+        crate::canvas::runtime::resize_node_from(&mut self.tree, owner_id, start_rect, edge, dx, dy)
+    }
+
+    pub(crate) fn bring_canvas_node_to_front(&mut self, owner_id: &str) -> bool {
+        crate::canvas::runtime::bring_node_to_front(&mut self.tree, owner_id)
     }
 
     pub(crate) fn ensure_canvas_node_min_size(

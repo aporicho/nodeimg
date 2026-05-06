@@ -21,6 +21,19 @@ pub(crate) fn move_node_by(tree: &mut Tree, owner_id: &str, dx: f32, dy: f32) ->
     true
 }
 
+pub(crate) fn set_node_rect(tree: &mut Tree, owner_id: &str, rect: crate::renderer::Rect) -> bool {
+    let stable_id = canvas_node_stable_id(owner_id);
+    let Some(runtime) = tree.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id) else {
+        return false;
+    };
+    if runtime.rect == rect {
+        return false;
+    }
+    runtime.rect = rect;
+    connection_layer::mark_dirty(tree);
+    true
+}
+
 pub(crate) fn resize_node_by(
     tree: &mut Tree,
     owner_id: &str,
@@ -84,6 +97,33 @@ pub(crate) fn resize_node_by(
     );
     connection_layer::mark_dirty(tree);
     true
+}
+
+pub(crate) fn resize_node_from(
+    tree: &mut Tree,
+    owner_id: &str,
+    start_rect: crate::renderer::Rect,
+    edge: ResizeEdge,
+    dx: f32,
+    dy: f32,
+) -> bool {
+    let mut rect = start_rect;
+    resize_rect_by_edge(
+        &mut rect,
+        edge,
+        dx,
+        dy,
+        CANVAS_NODE_MIN_WIDTH,
+        CANVAS_NODE_MIN_HEIGHT,
+    );
+    let changed = set_node_rect(tree, owner_id, rect);
+    if changed && is_vertical_resize_edge(edge) {
+        let stable_id = canvas_node_stable_id(owner_id);
+        if let Some(runtime) = tree.runtime_slot_by_stable_id_mut::<CanvasNodeRuntime>(&stable_id) {
+            runtime.user_min_height = Some(runtime.rect.h);
+        }
+    }
+    changed
 }
 
 pub(crate) fn ensure_node_min_size(
